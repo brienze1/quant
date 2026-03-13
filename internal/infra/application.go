@@ -22,6 +22,10 @@ func Run(assets embed.FS) error {
 	}
 	defer database.Close()
 
+	// On startup, mark any "running" sessions as "paused" since their processes
+	// died when the app was closed. Output is preserved on disk for replay.
+	_, _ = database.Exec(`UPDATE sessions SET status = 'paused', pid = 0 WHERE status = 'running'`)
+
 	injector := dependency.NewInjector(database)
 	sessionCtrl := injector.SessionController()
 	repoCtrl := injector.RepoController()
