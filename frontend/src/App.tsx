@@ -197,14 +197,20 @@ function App() {
     }
   }
 
+  function clearTransition(id: string) {
+    setTimeout(() => {
+      setTransitionStatus((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    }, 2000);
+  }
+
   async function handleStart(id: string, rows: number, cols: number) {
     try {
       setError(null);
       setTransitionStatus((prev) => ({ ...prev, [id]: "starting" }));
       await api.startSession(id, rows, cols);
+      clearTransition(id);
     } catch (err) {
       setError(String(err));
-    } finally {
       setTransitionStatus((prev) => { const n = { ...prev }; delete n[id]; return n; });
     }
   }
@@ -214,9 +220,9 @@ function App() {
       setError(null);
       setTransitionStatus((prev) => ({ ...prev, [id]: "resuming" }));
       await api.resumeSession(id, rows, cols);
+      clearTransition(id);
     } catch (err) {
       setError(String(err));
-    } finally {
       setTransitionStatus((prev) => { const n = { ...prev }; delete n[id]; return n; });
     }
   }
@@ -226,9 +232,9 @@ function App() {
       setError(null);
       setTransitionStatus((prev) => ({ ...prev, [id]: "stopping" }));
       await api.stopSession(id);
+      clearTransition(id);
     } catch (err) {
       setError(String(err));
-    } finally {
       setTransitionStatus((prev) => { const n = { ...prev }; delete n[id]; return n; });
     }
   }
@@ -320,6 +326,7 @@ function App() {
             onClose={() => setActiveSessionId(null)}
             onStart={handleStart}
             onResume={handleResume}
+            displayStatus={transitionStatus[activeSession.id] ?? activeSession.status}
           />
         ) : (
           <EmptyState />

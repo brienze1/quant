@@ -14,6 +14,7 @@ interface Props {
   onClose: () => void;
   onStart: (id: string, rows: number, cols: number) => void;
   onResume: (id: string, rows: number, cols: number) => void;
+  displayStatus: import("./StatusBadge").DisplayStatus;
 }
 
 export function SessionPanel({
@@ -24,6 +25,7 @@ export function SessionPanel({
   onClose,
   onStart,
   onResume,
+  displayStatus,
 }: Props) {
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -189,7 +191,8 @@ export function SessionPanel({
     return () => observer.disconnect();
   }, [session.id]);
 
-  const isRunning = session.status === "running";
+  const isRunning = displayStatus === "running";
+  const isPaused = displayStatus === "paused";
 
   function handleResume() {
     if (termRef.current && fitAddonRef.current) {
@@ -211,7 +214,7 @@ export function SessionPanel({
         }}
       >
         <div className="flex items-center gap-2 overflow-hidden">
-          <StatusDot status={session.status} />
+          <StatusDot status={displayStatus} />
           <span
             className="text-xs font-bold overflow-hidden whitespace-nowrap"
             style={{ color: "#FAFAFA", textOverflow: "ellipsis" }}
@@ -243,7 +246,7 @@ export function SessionPanel({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {session.status === "paused" && (
+          {isPaused && (
             <ActionBtn label="$ resume" onClick={handleResume} color="#10B981" />
           )}
           {isRunning && (

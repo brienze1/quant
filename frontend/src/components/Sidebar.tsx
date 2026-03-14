@@ -147,8 +147,9 @@ export function Sidebar({
     e.preventDefault();
     e.stopPropagation();
 
+    const displaySt = transitionStatus[session.id] ?? session.status;
     const items: MenuItem[] = [
-      { type: "label", text: `// session [${session.status}]` },
+      { type: "label", text: `// session [${displaySt}]` },
     ];
 
     items.push({
