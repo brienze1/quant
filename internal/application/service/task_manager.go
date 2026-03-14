@@ -14,25 +14,30 @@ import (
 
 // taskManagerService implements the adapter.TaskManager interface.
 type taskManagerService struct {
-	findTask   usecase.FindTask
-	saveTask   usecase.SaveTask
-	deleteTask usecase.DeleteTask
-	findRepo   usecase.FindRepo
+	findTask      usecase.FindTask
+	saveTask      usecase.SaveTask
+	deleteTask    usecase.DeleteTask
+	findRepo      usecase.FindRepo
+	findSession   usecase.FindSession
+	deleteSession usecase.DeleteSession
 }
 
 // NewTaskManagerService creates a new TaskManager service.
-// Returns the adapter.TaskManager interface, not the concrete type.
 func NewTaskManagerService(
 	findTask usecase.FindTask,
 	saveTask usecase.SaveTask,
 	deleteTask usecase.DeleteTask,
 	findRepo usecase.FindRepo,
+	findSession usecase.FindSession,
+	deleteSession usecase.DeleteSession,
 ) adapter.TaskManager {
 	return &taskManagerService{
-		findTask:   findTask,
-		saveTask:   saveTask,
-		deleteTask: deleteTask,
-		findRepo:   findRepo,
+		findTask:      findTask,
+		saveTask:      saveTask,
+		deleteTask:    deleteTask,
+		findRepo:      findRepo,
+		findSession:   findSession,
+		deleteSession: deleteSession,
 	}
 }
 
@@ -89,7 +94,7 @@ func (s *taskManagerService) GetTask(id string) (*entity.Task, error) {
 	return task, nil
 }
 
-// DeleteTask removes a task by ID.
+// DeleteTask removes a task and all its sessions by ID.
 func (s *taskManagerService) DeleteTask(id string) error {
 	task, err := s.findTask.FindTaskByID(id)
 	if err != nil {
@@ -98,6 +103,19 @@ func (s *taskManagerService) DeleteTask(id string) error {
 
 	if task == nil {
 		return fmt.Errorf("task not found: %s", id)
+	}
+
+	// Delete all sessions belonging to this task first.
+	sessions, err := s.findSession.FindByTaskID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find sessions for task: %w", err)
+	}
+
+	for _, session := range sessions {
+		err = s.deleteSession.Delete(session.ID)
+		if err != nil {
+			return fmt.Errorf("failed to delete session %s: %w", session.ID, err)
+		}
 	}
 
 	err = s.deleteTask.DeleteTask(id)

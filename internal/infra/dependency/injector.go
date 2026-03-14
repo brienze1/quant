@@ -105,11 +105,14 @@ func (i *Injector) RepoManager() appAdapter.RepoManager {
 func (i *Injector) TaskManager() appAdapter.TaskManager {
 	if i.taskManager == nil {
 		tp := i.TaskPersistence()
+		sp := i.SessionPersistence()
 		i.taskManager = service.NewTaskManagerService(
 			tp,                  // FindTask
 			tp,                  // SaveTask
 			tp,                  // DeleteTask
 			i.RepoPersistence(), // FindRepo
+			sp,                  // FindSession
+			sp,                  // DeleteSession
 		)
 	}
 	return i.taskManager

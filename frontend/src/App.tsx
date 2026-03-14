@@ -17,13 +17,15 @@ import { NewTaskModal } from "./components/NewTaskModal";
 import { NewSessionModal } from "./components/NewSessionModal";
 import { TabBar } from "./components/TabBar";
 import { MoveSessionModal } from "./components/MoveSessionModal";
+import { ConfirmModal } from "./components/ConfirmModal";
 
 type ModalState =
   | { type: "none" }
   | { type: "openRepo" }
   | { type: "newTask"; repoId: string }
   | { type: "newSession"; repoId: string; taskId?: string }
-  | { type: "moveSession"; sessionId: string; repoId: string };
+  | { type: "moveSession"; sessionId: string; repoId: string }
+  | { type: "confirm"; message: string; onConfirm: () => void };
 
 function App() {
   const [repos, setRepos] = useState<Repo[]>([]);
@@ -358,13 +360,34 @@ function App() {
     }
   }
 
-  async function handleDeleteTask(taskId: string) {
+  async function executeDeleteTask(taskId: string) {
+    // Remove open tabs for sessions in this task.
+    const sessions = sessionsByTask[taskId] ?? [];
+    for (const s of sessions) {
+      setOpenTabIds((prev) => prev.filter((id) => id !== s.id));
+    }
     try {
       setError(null);
       await api.deleteTask(taskId);
       await loadAll();
     } catch (err) {
       setError(String(err));
+    }
+  }
+
+  function handleDeleteTask(taskId: string) {
+    const sessions = sessionsByTask[taskId] ?? [];
+    if (sessions.length > 0) {
+      setModal({
+        type: "confirm",
+        message: `this task has ${sessions.length} session${sessions.length > 1 ? "s" : ""}.\ndeleting it will remove all sessions within.`,
+        onConfirm: () => {
+          setModal({ type: "none" });
+          executeDeleteTask(taskId);
+        },
+      });
+    } else {
+      executeDeleteTask(taskId);
     }
   }
 
@@ -520,6 +543,15 @@ function App() {
           currentTaskId={moveSessionTask}
           tasks={tasksByRepo[modal.repoId] ?? []}
           onSelect={handleMoveSessionSelect}
+          onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+
+      {modal.type === "confirm" && (
+        <ConfirmModal
+          message={modal.message}
+          confirmLabel="delete"
+          onConfirm={modal.onConfirm}
           onCancel={() => setModal({ type: "none" })}
         />
       )}
