@@ -123,6 +123,10 @@ export function getSessionOutput(id: string): Promise<string> {
   return callGo(PKG, SESSION_CTRL, "GetSessionOutput", id);
 }
 
+export function moveSessionToTask(sessionId: string, newTaskId: string): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "MoveSessionToTask", sessionId, newTaskId);
+}
+
 // --- Actions ---
 
 const ACTION_CTRL = "actionController";

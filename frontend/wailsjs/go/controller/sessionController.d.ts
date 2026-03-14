@@ -17,6 +17,8 @@ export function ListSessionsByRepo(arg1:string):Promise<Array<dto.SessionRespons
 
 export function ListSessionsByTask(arg1:string):Promise<Array<dto.SessionResponse>>;
 
+export function MoveSessionToTask(arg1:string,arg2:string):Promise<void>;
+
 export function OnShutdown(arg1:context.Context):Promise<void>;
 
 export function OnStartup(arg1:context.Context):Promise<void>;

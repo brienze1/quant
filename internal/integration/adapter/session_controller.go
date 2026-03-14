@@ -23,4 +23,5 @@ type SessionController interface {
 	SendMessage(id string, message string) error
 	ResizeTerminal(id string, rows int, cols int) error
 	GetSessionOutput(id string) (string, error)
+	MoveSessionToTask(sessionID string, newTaskID string) error
 }

@@ -15,12 +15,15 @@ import { EmptyState } from "./components/EmptyState";
 import { OpenRepoModal } from "./components/OpenRepoModal";
 import { NewTaskModal } from "./components/NewTaskModal";
 import { NewSessionModal } from "./components/NewSessionModal";
+import { TabBar } from "./components/TabBar";
+import { MoveSessionModal } from "./components/MoveSessionModal";
 
 type ModalState =
   | { type: "none" }
   | { type: "openRepo" }
   | { type: "newTask"; repoId: string }
-  | { type: "newSession"; repoId: string; taskId?: string };
+  | { type: "newSession"; repoId: string; taskId?: string }
+  | { type: "moveSession"; sessionId: string; repoId: string };
 
 function App() {
   const [repos, setRepos] = useState<Repo[]>([]);
@@ -28,7 +31,13 @@ function App() {
   const [sessionsByRepo, setSessionsByRepo] = useState<Record<string, Session[]>>({});
   const [sessionsByTask, setSessionsByTask] = useState<Record<string, Session[]>>({});
   const [actionsBySession, setActionsBySession] = useState<Record<string, Action[]>>({});
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+
+  // Tab model: multiple open tabs, one active
+  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  // selectedSessionId tracks sidebar highlight (may differ from active tab)
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [transitionStatus, setTransitionStatus] = useState<Record<string, "starting" | "stopping" | "resuming">>({});
   const [activeOutputIds, setActiveOutputIds] = useState<Set<string>>(new Set());
@@ -37,8 +46,10 @@ function App() {
   const [error, setError] = useState<string | null>(null);
 
   // keep refs for polling callbacks
-  const activeSessionIdRef = useRef(activeSessionId);
-  activeSessionIdRef.current = activeSessionId;
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  const openTabIdsRef = useRef(openTabIds);
+  openTabIdsRef.current = openTabIds;
   const expandedSessionIdRef = useRef(expandedSessionId);
   expandedSessionIdRef.current = expandedSessionId;
   const reposRef = useRef(repos);
@@ -46,8 +57,8 @@ function App() {
   const tasksByRepoRef = useRef(tasksByRepo);
   tasksByRepoRef.current = tasksByRepo;
 
-  // find active session object
-  const activeSession = findSession(activeSessionId, sessionsByRepo, sessionsByTask);
+  // find active session object (the one shown in the main panel)
+  const activeSession = findSession(activeTabId, sessionsByRepo, sessionsByTask);
 
   // find task for active session
   const activeTask = activeSession?.taskId
@@ -141,21 +152,23 @@ function App() {
     return () => clearInterval(interval);
   }, [fetchSessionsForRepo, fetchSessionsForTask]);
 
-  // poll actions for active/expanded session every 2s
+  // poll actions for all open tabs + expanded session every 2s
   useEffect(() => {
     const interval = setInterval(() => {
       const ids = new Set<string>();
-      if (activeSessionIdRef.current) ids.add(activeSessionIdRef.current);
+      for (const tabId of openTabIdsRef.current) {
+        ids.add(tabId);
+      }
       if (expandedSessionIdRef.current) ids.add(expandedSessionIdRef.current);
       ids.forEach((id) => fetchActions(id));
     }, 2000);
     return () => clearInterval(interval);
   }, [fetchActions]);
 
-  // fetch actions when active/expanded changes
+  // fetch actions when active tab or expanded session changes
   useEffect(() => {
-    if (activeSessionId) fetchActions(activeSessionId);
-  }, [activeSessionId, fetchActions]);
+    if (activeTabId) fetchActions(activeTabId);
+  }, [activeTabId, fetchActions]);
 
   useEffect(() => {
     if (expandedSessionId) fetchActions(expandedSessionId);
@@ -182,7 +195,7 @@ function App() {
         return next;
       });
 
-      // After 5s of quiet, mark as "waiting"
+      // After 3s of quiet, mark as "waiting"
       if (outputTimers.current[id]) clearTimeout(outputTimers.current[id]);
       outputTimers.current[id] = setTimeout(() => {
         setActiveOutputIds((prev) => {
@@ -197,13 +210,43 @@ function App() {
     return () => { if (cancel) cancel(); };
   }, []);
 
-  // Compute display status for a session:
-  // transitional ("starting"/"stopping"/"resuming") > activeOutput ("running") > quiet running ("waiting") > base status
+  // Compute display status for a session
   function getDisplayStatus(sessionId: string, baseStatus: Session["status"]): import("./components/StatusBadge").DisplayStatus {
     if (transitionStatus[sessionId]) return transitionStatus[sessionId];
     if (baseStatus === "running" && activeOutputIds.has(sessionId)) return "running";
     if (baseStatus === "running" && !activeOutputIds.has(sessionId)) return "waiting";
     return baseStatus;
+  }
+
+  // --- tab handlers ---
+
+  function handleOpenTab(id: string) {
+    setOpenTabIds((prev) => {
+      if (prev.includes(id)) return prev;
+      return [...prev, id];
+    });
+    setActiveTabId(id);
+    setSelectedSessionId(id);
+  }
+
+  function handleCloseTab(id: string) {
+    setOpenTabIds((prev) => {
+      const next = prev.filter((t) => t !== id);
+      return next;
+    });
+    setActiveTabId((prev) => {
+      if (prev !== id) return prev;
+      // Switch to adjacent tab
+      const idx = openTabIds.indexOf(id);
+      if (openTabIds.length <= 1) return null;
+      if (idx === openTabIds.length - 1) return openTabIds[idx - 1];
+      return openTabIds[idx + 1];
+    });
+  }
+
+  function handleSelectTab(id: string) {
+    setActiveTabId(id);
+    setSelectedSessionId(id);
   }
 
   // --- handlers ---
@@ -237,7 +280,8 @@ function App() {
       setModal({ type: "none" });
       await fetchSessionsForRepo(req.repoId);
       if (req.taskId) await fetchSessionsForTask(req.taskId);
-      setActiveSessionId(session.id);
+      // Open the new session in a tab
+      handleOpenTab(session.id);
       // Session is created idle; terminal auto-starts it via onStart
     } catch (err) {
       setError(String(err));
@@ -290,7 +334,14 @@ function App() {
     try {
       setError(null);
       await api.deleteSession(id);
-      if (activeSessionId === id) setActiveSessionId(null);
+      // Remove from tabs if present
+      setOpenTabIds((prev) => prev.filter((t) => t !== id));
+      setActiveTabId((prev) => {
+        if (prev !== id) return prev;
+        const remaining = openTabIds.filter((t) => t !== id);
+        return remaining.length > 0 ? remaining[remaining.length - 1] : null;
+      });
+      if (selectedSessionId === id) setSelectedSessionId(null);
       if (expandedSessionId === id) setExpandedSessionId(null);
     } catch (err) {
       setError(String(err));
@@ -317,6 +368,46 @@ function App() {
     }
   }
 
+  // Double-click handler: open tab, and if idle/paused the SessionPanel auto-handles start.
+  // For idle sessions, opening the tab is enough (SessionPanel auto-starts idle sessions).
+  // For paused sessions, we just open the tab — user can click resume in the panel.
+  function handleDoubleClickSession(id: string) {
+    handleOpenTab(id);
+  }
+
+  function handleMoveSession(sessionId: string, repoId: string) {
+    setModal({ type: "moveSession", sessionId, repoId });
+  }
+
+  async function handleMoveSessionSelect(sessionId: string, targetTaskId: string) {
+    try {
+      setError(null);
+      await api.moveSessionToTask(sessionId, targetTaskId);
+      setModal({ type: "none" });
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  // Build tab data for TabBar
+  const tabs = openTabIds
+    .map((id) => {
+      const session = findSession(id, sessionsByRepo, sessionsByTask);
+      if (!session) return null;
+      return {
+        id: session.id,
+        name: session.name,
+        displayStatus: getDisplayStatus(session.id, session.status),
+      };
+    })
+    .filter((t): t is NonNullable<typeof t> => t !== null);
+
+  // Find the current task for the move session modal
+  const moveSessionTask = modal.type === "moveSession"
+    ? findSession(modal.sessionId, sessionsByRepo, sessionsByTask)?.taskId ?? ""
+    : "";
+
   return (
     <div className="flex h-screen w-screen" style={{ backgroundColor: "#0A0A0A" }}>
       <Sidebar
@@ -326,10 +417,12 @@ function App() {
         sessionsByTask={sessionsByTask}
         getDisplayStatus={getDisplayStatus}
         actionsBySession={actionsBySession}
-        activeSessionId={activeSessionId}
+        openTabIds={openTabIds}
+        activeSessionId={selectedSessionId}
         expandedSessionId={expandedSessionId}
-        onSelectSession={setActiveSessionId}
+        onSelectSession={setSelectedSessionId}
         onExpandSession={setExpandedSessionId}
+        onOpenTab={handleOpenTab}
         onOpenRepo={() => setModal({ type: "openRepo" })}
         onCreateTask={(repoId) => setModal({ type: "newTask", repoId })}
         onCreateSession={(repoId, taskId) =>
@@ -338,6 +431,8 @@ function App() {
         onRemoveRepo={handleRemoveRepo}
         onDeleteTask={handleDeleteTask}
         onDeleteSession={handleDelete}
+        onMoveSession={handleMoveSession}
+        onDoubleClickSession={handleDoubleClickSession}
       />
 
       <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "#0A0A0A" }}>
@@ -364,13 +459,23 @@ function App() {
           </div>
         )}
 
+        {/* Tab bar */}
+        {tabs.length > 0 && (
+          <TabBar
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onSelectTab={handleSelectTab}
+            onCloseTab={handleCloseTab}
+          />
+        )}
+
         {activeSession ? (
           <SessionPanel
             session={activeSession}
             task={activeTask}
             onStop={handleStop}
             onDelete={handleDelete}
-            onClose={() => setActiveSessionId(null)}
+            onClose={() => handleCloseTab(activeSession.id)}
             onStart={handleStart}
             onResume={handleResume}
             displayStatus={getDisplayStatus(activeSession.id, activeSession.status)}
@@ -403,6 +508,16 @@ function App() {
           defaultRepoId={modal.repoId}
           defaultTaskId={modal.taskId}
           onSubmit={handleCreateSession}
+          onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+
+      {modal.type === "moveSession" && (
+        <MoveSessionModal
+          sessionId={modal.sessionId}
+          currentTaskId={moveSessionTask}
+          tasks={tasksByRepo[modal.repoId] ?? []}
+          onSelect={handleMoveSessionSelect}
           onCancel={() => setModal({ type: "none" })}
         />
       )}

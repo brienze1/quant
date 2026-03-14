@@ -20,4 +20,5 @@ type SessionManager interface {
 	SendMessage(id string, message string) error
 	ResizeTerminal(id string, rows int, cols int) error
 	GetSessionOutput(id string) (string, error)
+	UpdateSessionTask(sessionID string, newTaskID string) error
 }

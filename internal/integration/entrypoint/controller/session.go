@@ -114,6 +114,11 @@ func (c *sessionController) ResizeTerminal(id string, rows int, cols int) error 
 	return c.sessionManager.ResizeTerminal(id, rows, cols)
 }
 
+// MoveSessionToTask moves a session to a different task.
+func (c *sessionController) MoveSessionToTask(sessionID string, newTaskID string) error {
+	return c.sessionManager.UpdateSessionTask(sessionID, newTaskID)
+}
+
 // GetSessionOutput returns the persisted output for a session.
 func (c *sessionController) GetSessionOutput(id string) (string, error) {
 	return c.sessionManager.GetSessionOutput(id)

@@ -14,16 +14,20 @@ interface SidebarProps {
   sessionsByTask: Record<string, Session[]>;
   actionsBySession: Record<string, Action[]>;
   getDisplayStatus: (sessionId: string, baseStatus: Session["status"]) => import("./StatusBadge").DisplayStatus;
+  openTabIds: string[];
   activeSessionId: string | null;
   expandedSessionId: string | null;
   onSelectSession: (id: string) => void;
   onExpandSession: (id: string | null) => void;
+  onOpenTab: (id: string) => void;
   onOpenRepo: () => void;
   onCreateTask: (repoId: string) => void;
   onCreateSession: (repoId: string, taskId?: string) => void;
   onRemoveRepo: (repoId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onMoveSession?: (sessionId: string, repoId: string) => void;
+  onDoubleClickSession?: (id: string) => void;
 }
 
 export function Sidebar({
@@ -33,16 +37,20 @@ export function Sidebar({
   sessionsByTask,
   actionsBySession,
   getDisplayStatus,
+  openTabIds,
   activeSessionId,
   expandedSessionId,
   onSelectSession,
   onExpandSession,
+  onOpenTab,
   onOpenRepo,
   onCreateTask,
   onCreateSession,
   onRemoveRepo,
   onDeleteTask,
   onDeleteSession,
+  onMoveSession,
+  onDoubleClickSession,
 }: SidebarProps) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -180,13 +188,19 @@ export function Sidebar({
       label: "rename",
       onClick: () => console.log("TODO: rename session", session.id),
     });
-    items.push({
-      type: "item",
-      icon: "$",
-      iconColor: "#6B7280",
-      label: "move to task",
-      onClick: () => console.log("TODO: move session to task", session.id),
-    });
+
+    // Only show "move to task" if there are >= 2 tasks in the repo
+    const repoTasks = tasksByRepo[session.repoId] ?? [];
+    if (repoTasks.length >= 2 && onMoveSession) {
+      items.push({
+        type: "item",
+        icon: "$",
+        iconColor: "#6B7280",
+        label: "move to task",
+        onClick: () => onMoveSession(session.id, session.repoId),
+      });
+    }
+
     items.push({ type: "separator" });
     items.push({
       type: "item",
@@ -241,15 +255,18 @@ export function Sidebar({
             sessionsByTask={sessionsByTask}
             actionsBySession={actionsBySession}
             getDisplayStatus={getDisplayStatus}
+            openTabIds={openTabIds}
             activeSessionId={activeSessionId}
             expandedSessionId={expandedSessionId}
             onSelectSession={onSelectSession}
             onExpandSession={onExpandSession}
+            onOpenTab={onOpenTab}
             onCreateTask={onCreateTask}
             onCreateSession={onCreateSession}
             onRepoContextMenu={openRepoContextMenu}
             onTaskContextMenu={openTaskContextMenu}
             onSessionContextMenu={openSessionContextMenu}
+            onDoubleClickSession={onDoubleClickSession}
             showSeparator={idx < repos.length - 1}
           />
         ))}
@@ -296,15 +313,18 @@ function RepoNode({
   sessionsByTask,
   actionsBySession,
   getDisplayStatus,
+  openTabIds,
   activeSessionId,
   expandedSessionId,
   onSelectSession,
   onExpandSession,
+  onOpenTab,
   onCreateTask,
   onCreateSession,
   onRepoContextMenu,
   onTaskContextMenu,
   onSessionContextMenu,
+  onDoubleClickSession,
   showSeparator,
 }: {
   repo: Repo;
@@ -312,15 +332,18 @@ function RepoNode({
   sessionsByTask: Record<string, Session[]>;
   actionsBySession: Record<string, Action[]>;
   getDisplayStatus: (sessionId: string, baseStatus: Session["status"]) => import("./StatusBadge").DisplayStatus;
+  openTabIds: string[];
   activeSessionId: string | null;
   expandedSessionId: string | null;
   onSelectSession: (id: string) => void;
   onExpandSession: (id: string | null) => void;
+  onOpenTab: (id: string) => void;
   onCreateTask: (repoId: string) => void;
   onCreateSession: (repoId: string, taskId?: string) => void;
   onRepoContextMenu: (e: React.MouseEvent, repo: Repo) => void;
   onTaskContextMenu: (e: React.MouseEvent, task: Task) => void;
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
+  onDoubleClickSession?: (id: string) => void;
   showSeparator: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -369,13 +392,16 @@ function RepoNode({
               sessions={sessionsByTask[task.id] ?? []}
               actionsBySession={actionsBySession}
               getDisplayStatus={getDisplayStatus}
+              openTabIds={openTabIds}
               activeSessionId={activeSessionId}
               expandedSessionId={expandedSessionId}
               onSelectSession={onSelectSession}
               onExpandSession={onExpandSession}
+              onOpenTab={onOpenTab}
               onCreateSession={onCreateSession}
               onTaskContextMenu={onTaskContextMenu}
               onSessionContextMenu={onSessionContextMenu}
+              onDoubleClickSession={onDoubleClickSession}
             />
           ))}
 
@@ -408,25 +434,31 @@ function TaskNode({
   sessions,
   actionsBySession,
   getDisplayStatus,
+  openTabIds,
   activeSessionId,
   expandedSessionId,
   onSelectSession,
   onExpandSession,
+  onOpenTab,
   onCreateSession,
   onTaskContextMenu,
   onSessionContextMenu,
+  onDoubleClickSession,
 }: {
   task: Task;
   sessions: Session[];
   actionsBySession: Record<string, Action[]>;
   getDisplayStatus: (sessionId: string, baseStatus: Session["status"]) => import("./StatusBadge").DisplayStatus;
+  openTabIds: string[];
   activeSessionId: string | null;
   expandedSessionId: string | null;
   onSelectSession: (id: string) => void;
   onExpandSession: (id: string | null) => void;
+  onOpenTab: (id: string) => void;
   onCreateSession: (repoId: string, taskId?: string) => void;
   onTaskContextMenu: (e: React.MouseEvent, task: Task) => void;
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
+  onDoubleClickSession?: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -459,17 +491,20 @@ function TaskNode({
 
       {expanded && (
         <div>
-          {sessions.map((session) => (
+          {[...sessions].sort((a, b) => a.name.localeCompare(b.name)).map((session) => (
             <SessionNode
               key={session.id}
               session={session}
               actions={actionsBySession[session.id] ?? []}
               displayStatus={getDisplayStatus(session.id, session.status)}
+              isTabOpen={openTabIds.includes(session.id)}
               activeSessionId={activeSessionId}
               expandedSessionId={expandedSessionId}
               onSelectSession={onSelectSession}
               onExpandSession={onExpandSession}
+              onOpenTab={onOpenTab}
               onSessionContextMenu={onSessionContextMenu}
+              onDoubleClickSession={onDoubleClickSession}
               depth={2}
             />
           ))}
@@ -496,21 +531,27 @@ function SessionNode({
   session,
   actions,
   displayStatus,
+  isTabOpen,
   activeSessionId,
   expandedSessionId,
   onSelectSession,
   onExpandSession,
+  onOpenTab,
   onSessionContextMenu,
+  onDoubleClickSession,
   depth,
 }: {
   session: Session;
   actions: Action[];
   displayStatus: import("./StatusBadge").DisplayStatus;
+  isTabOpen: boolean;
   activeSessionId: string | null;
   expandedSessionId: string | null;
   onSelectSession: (id: string) => void;
   onExpandSession: (id: string | null) => void;
+  onOpenTab: (id: string) => void;
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
+  onDoubleClickSession?: (id: string) => void;
   depth: number;
 }) {
   const isActive = activeSessionId === session.id;
@@ -518,13 +559,41 @@ function SessionNode({
   const paddingLeft = 16 + depth * 16;
   const hasWorktree = !!session.worktreePath;
 
+  // Single click: select session + toggle action log expansion.
+  // If the tab is already open OR the session is running/waiting, switch to the tab.
+  function handleClick() {
+    onSelectSession(session.id);
+    onExpandSession(isExpanded ? null : session.id);
+
+    if (isTabOpen) {
+      onOpenTab(session.id);
+      return;
+    }
+
+    const isRunningOrWaiting =
+      displayStatus === "running" ||
+      displayStatus === "waiting" ||
+      displayStatus === "starting" ||
+      displayStatus === "resuming";
+
+    if (isRunningOrWaiting) {
+      onOpenTab(session.id);
+    }
+  }
+
+  // Double click: always open tab. If idle, also triggers start. If paused, triggers resume.
+  function handleDoubleClick() {
+    onOpenTab(session.id);
+    if (onDoubleClickSession) {
+      onDoubleClickSession(session.id);
+    }
+  }
+
   return (
     <div>
       <button
-        onClick={() => {
-          onSelectSession(session.id);
-          onExpandSession(isExpanded ? null : session.id);
-        }}
+        onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => onSessionContextMenu(e, session)}
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-xs transition-colors"
         style={{

@@ -30,6 +30,10 @@ export function ListSessionsByTask(arg1) {
   return window['go']['controller']['sessionController']['ListSessionsByTask'](arg1);
 }
 
+export function MoveSessionToTask(arg1, arg2) {
+  return window['go']['controller']['sessionController']['MoveSessionToTask'](arg1, arg2);
+}
+
 export function OnShutdown(arg1) {
   return window['go']['controller']['sessionController']['OnShutdown'](arg1);
 }

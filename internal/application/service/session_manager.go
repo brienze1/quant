@@ -286,6 +286,20 @@ func (s *sessionManagerService) ResizeTerminal(id string, rows int, cols int) er
 	return s.spawnProcess.Resize(id, uint16(rows), uint16(cols))
 }
 
+// UpdateSessionTask moves a session to a different task.
+func (s *sessionManagerService) UpdateSessionTask(sessionID string, newTaskID string) error {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return err
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+	session.TaskID = newTaskID
+	session.UpdatedAt = time.Now()
+	return s.updateSession.Update(*session)
+}
+
 // GetSessionOutput returns the persisted terminal output for a session.
 func (s *sessionManagerService) GetSessionOutput(id string) (string, error) {
 	data, err := s.spawnProcess.GetOutput(id)
