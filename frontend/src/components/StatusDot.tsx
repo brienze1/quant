@@ -1,18 +1,19 @@
 import type { DisplayStatus } from "./StatusBadge";
 
 const statusColors: Record<DisplayStatus, string> = {
-  running: "#10B981",
-  paused: "#F59E0B",
-  idle: "#6B7280",
-  done: "#06B6D4",
-  error: "#EF4444",
-  starting: "#10B981",
-  stopping: "#F59E0B",
-  resuming: "#10B981",
+  running: "#10B981",    // green
+  waiting: "#06B6D4",    // cyan
+  idle: "#6B7280",       // gray
+  paused: "#6B7280",     // gray
+  done: "#06B6D4",       // cyan
+  error: "#EF4444",      // red
+  starting: "#A78BFA",   // purple
+  resuming: "#A78BFA",   // purple
+  stopping: "#F59E0B",   // amber
 };
 
-const isTransitional = (s: DisplayStatus) =>
-  s === "starting" || s === "stopping" || s === "resuming";
+const isAnimated = (s: DisplayStatus) =>
+  s === "starting" || s === "stopping" || s === "resuming" || s === "running";
 
 interface Props {
   status: DisplayStatus;
@@ -25,7 +26,7 @@ export function StatusDot({ status, className = "" }: Props) {
       className={`inline-block h-2 w-2 shrink-0 ${className}`}
       style={{
         backgroundColor: statusColors[status],
-        animation: isTransitional(status) ? "pulse-dot 0.8s ease-in-out infinite" : undefined,
+        animation: isAnimated(status) ? "pulse-dot 0.8s ease-in-out infinite" : undefined,
       }}
       title={status}
     />

@@ -1,21 +1,22 @@
 import { useEffect, useState } from "react";
 import type { Session } from "../types";
 
-export type DisplayStatus = Session["status"] | "starting" | "stopping" | "resuming";
+export type DisplayStatus = Session["status"] | "starting" | "stopping" | "resuming" | "waiting";
 
 const statusColors: Record<DisplayStatus, string> = {
-  running: "#10B981",
-  paused: "#F59E0B",
-  idle: "#6B7280",
-  done: "#06B6D4",
-  error: "#EF4444",
-  starting: "#10B981",
-  stopping: "#F59E0B",
-  resuming: "#10B981",
+  running: "#10B981",    // green — only running is green
+  waiting: "#06B6D4",    // cyan — done, waiting for input
+  idle: "#6B7280",       // gray — never started
+  paused: "#6B7280",     // gray — same as idle
+  done: "#06B6D4",       // cyan
+  error: "#EF4444",      // red
+  starting: "#A78BFA",   // purple — transitional
+  resuming: "#A78BFA",   // purple — transitional
+  stopping: "#F59E0B",   // amber — transitional
 };
 
-const isTransitional = (s: DisplayStatus) =>
-  s === "starting" || s === "stopping" || s === "resuming";
+const isAnimated = (s: DisplayStatus) =>
+  s === "starting" || s === "stopping" || s === "resuming" || s === "running";
 
 interface Props {
   status: DisplayStatus;
@@ -45,7 +46,7 @@ export function StatusBadge({ status, className = "" }: Props) {
         fontSize: "9px",
       }}
     >
-      [{isTransitional(status) ? <>{status}<AnimatedDots /></> : status}]
+      [{isAnimated(status) ? <>{status}<AnimatedDots /></> : status}]
     </span>
   );
 }

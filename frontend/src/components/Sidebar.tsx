@@ -13,7 +13,7 @@ interface SidebarProps {
   sessionsByRepo: Record<string, Session[]>;
   sessionsByTask: Record<string, Session[]>;
   actionsBySession: Record<string, Action[]>;
-  transitionStatus: Record<string, "starting" | "stopping" | "resuming">;
+  getDisplayStatus: (sessionId: string, baseStatus: Session["status"]) => import("./StatusBadge").DisplayStatus;
   activeSessionId: string | null;
   expandedSessionId: string | null;
   onSelectSession: (id: string) => void;
@@ -32,7 +32,7 @@ export function Sidebar({
   sessionsByRepo,
   sessionsByTask,
   actionsBySession,
-  transitionStatus,
+  getDisplayStatus,
   activeSessionId,
   expandedSessionId,
   onSelectSession,
@@ -147,7 +147,7 @@ export function Sidebar({
     e.preventDefault();
     e.stopPropagation();
 
-    const displaySt = transitionStatus[session.id] ?? session.status;
+    const displaySt = getDisplayStatus(session.id, session.status);
     const items: MenuItem[] = [
       { type: "label", text: `// session [${displaySt}]` },
     ];
@@ -240,7 +240,7 @@ export function Sidebar({
             tasks={tasksByRepo[repo.id] ?? []}
             sessionsByTask={sessionsByTask}
             actionsBySession={actionsBySession}
-            transitionStatus={transitionStatus}
+            getDisplayStatus={getDisplayStatus}
             activeSessionId={activeSessionId}
             expandedSessionId={expandedSessionId}
             onSelectSession={onSelectSession}
@@ -295,7 +295,7 @@ function RepoNode({
   tasks,
   sessionsByTask,
   actionsBySession,
-  transitionStatus,
+  getDisplayStatus,
   activeSessionId,
   expandedSessionId,
   onSelectSession,
@@ -311,7 +311,7 @@ function RepoNode({
   tasks: Task[];
   sessionsByTask: Record<string, Session[]>;
   actionsBySession: Record<string, Action[]>;
-  transitionStatus: Record<string, "starting" | "stopping" | "resuming">;
+  getDisplayStatus: (sessionId: string, baseStatus: Session["status"]) => import("./StatusBadge").DisplayStatus;
   activeSessionId: string | null;
   expandedSessionId: string | null;
   onSelectSession: (id: string) => void;
@@ -368,7 +368,7 @@ function RepoNode({
               task={task}
               sessions={sessionsByTask[task.id] ?? []}
               actionsBySession={actionsBySession}
-              transitionStatus={transitionStatus}
+              getDisplayStatus={getDisplayStatus}
               activeSessionId={activeSessionId}
               expandedSessionId={expandedSessionId}
               onSelectSession={onSelectSession}
@@ -407,7 +407,7 @@ function TaskNode({
   task,
   sessions,
   actionsBySession,
-  transitionStatus,
+  getDisplayStatus,
   activeSessionId,
   expandedSessionId,
   onSelectSession,
@@ -419,7 +419,7 @@ function TaskNode({
   task: Task;
   sessions: Session[];
   actionsBySession: Record<string, Action[]>;
-  transitionStatus: Record<string, "starting" | "stopping" | "resuming">;
+  getDisplayStatus: (sessionId: string, baseStatus: Session["status"]) => import("./StatusBadge").DisplayStatus;
   activeSessionId: string | null;
   expandedSessionId: string | null;
   onSelectSession: (id: string) => void;
@@ -464,7 +464,7 @@ function TaskNode({
               key={session.id}
               session={session}
               actions={actionsBySession[session.id] ?? []}
-              displayStatus={transitionStatus[session.id] ?? session.status}
+              displayStatus={getDisplayStatus(session.id, session.status)}
               activeSessionId={activeSessionId}
               expandedSessionId={expandedSessionId}
               onSelectSession={onSelectSession}

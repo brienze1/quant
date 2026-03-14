@@ -31,6 +31,8 @@ function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [transitionStatus, setTransitionStatus] = useState<Record<string, "starting" | "stopping" | "resuming">>({});
+  const [activeOutputIds, setActiveOutputIds] = useState<Set<string>>(new Set());
+  const outputTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const [error, setError] = useState<string | null>(null);
 
@@ -159,6 +161,51 @@ function App() {
     if (expandedSessionId) fetchActions(expandedSessionId);
   }, [expandedSessionId, fetchActions]);
 
+  // Track PTY output activity to distinguish "running" vs "waiting"
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w?.runtime?.EventsOn) return;
+
+    const cancel = w.runtime.EventsOn("session:output", (data: { sessionId: string; data: string }) => {
+      const id = data.sessionId;
+
+      // Ignore tiny output bursts (cursor blink, status bar updates).
+      // Only mark as "running" if we receive meaningful content (>20 bytes).
+      if (!data.data || data.data.length < 20) return;
+
+      // Mark session as actively outputting
+      setActiveOutputIds((prev) => {
+        if (prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+
+      // After 5s of quiet, mark as "waiting"
+      if (outputTimers.current[id]) clearTimeout(outputTimers.current[id]);
+      outputTimers.current[id] = setTimeout(() => {
+        setActiveOutputIds((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 3000);
+    });
+
+    return () => { if (cancel) cancel(); };
+  }, []);
+
+  // Compute display status for a session:
+  // transitional ("starting"/"stopping"/"resuming") > activeOutput ("running") > quiet running ("waiting") > base status
+  function getDisplayStatus(sessionId: string, baseStatus: Session["status"]): import("./components/StatusBadge").DisplayStatus {
+    if (transitionStatus[sessionId]) return transitionStatus[sessionId];
+    if (baseStatus === "running" && activeOutputIds.has(sessionId)) return "running";
+    if (baseStatus === "running" && !activeOutputIds.has(sessionId)) return "waiting";
+    return baseStatus;
+  }
+
   // --- handlers ---
 
   async function handleOpenRepo(req: CreateRepoRequest) {
@@ -277,7 +324,7 @@ function App() {
         tasksByRepo={tasksByRepo}
         sessionsByRepo={sessionsByRepo}
         sessionsByTask={sessionsByTask}
-        transitionStatus={transitionStatus}
+        getDisplayStatus={getDisplayStatus}
         actionsBySession={actionsBySession}
         activeSessionId={activeSessionId}
         expandedSessionId={expandedSessionId}
@@ -326,7 +373,7 @@ function App() {
             onClose={() => setActiveSessionId(null)}
             onStart={handleStart}
             onResume={handleResume}
-            displayStatus={transitionStatus[activeSession.id] ?? activeSession.status}
+            displayStatus={getDisplayStatus(activeSession.id, activeSession.status)}
           />
         ) : (
           <EmptyState />
