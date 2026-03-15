@@ -36,6 +36,7 @@ export function SessionPanel({
   const sessionIdRef = useRef(session.id);
   const [autoScroll, setAutoScroll] = useState(true);
   const autoScrollRef = useRef(true);
+  const isWritingRef = useRef(false); // true while xterm.write() is executing
 
   // Track session ID changes to know when we need a fresh terminal.
   sessionIdRef.current = session.id;
@@ -104,21 +105,25 @@ export function SessionPanel({
     }
 
     // Detect manual scroll-up to disable auto-scroll.
-    // Use wheel event on the viewport element for reliable detection.
+    // Only respond to user-initiated scrolls (wheel events), not programmatic
+    // scroll changes caused by xterm.write() which can reposition the viewport.
     const viewportEl = termContainerRef.current.querySelector('.xterm-viewport');
     if (viewportEl) {
-      viewportEl.addEventListener('scroll', () => {
-        const buf = term.buffer.active;
-        const isAtBottom = buf.viewportY >= buf.baseY;
-        if (!isAtBottom && autoScrollRef.current) {
-          autoScrollRef.current = false;
-          setAutoScroll(false);
-        }
-        // Re-enable auto-scroll when user scrolls back to bottom
-        if (isAtBottom && !autoScrollRef.current) {
-          autoScrollRef.current = true;
-          setAutoScroll(true);
-        }
+      viewportEl.addEventListener('wheel', () => {
+        // Small delay to let xterm process the wheel event and update viewport position
+        requestAnimationFrame(() => {
+          if (isWritingRef.current) return;
+          const buf = term.buffer.active;
+          const isAtBottom = buf.viewportY >= buf.baseY;
+          if (!isAtBottom && autoScrollRef.current) {
+            autoScrollRef.current = false;
+            setAutoScroll(false);
+          }
+          if (isAtBottom && !autoScrollRef.current) {
+            autoScrollRef.current = true;
+            setAutoScroll(true);
+          }
+        });
       });
     }
 
@@ -162,10 +167,13 @@ export function SessionPanel({
       "session:output",
       (data: { sessionId: string; data: string }) => {
         if (data.sessionId === session.id && termRef.current) {
-          termRef.current.write(data.data);
-          if (autoScrollRef.current) {
-            termRef.current.scrollToBottom();
-          }
+          isWritingRef.current = true;
+          termRef.current.write(data.data, () => {
+            if (autoScrollRef.current && termRef.current) {
+              termRef.current.scrollToBottom();
+            }
+            isWritingRef.current = false;
+          });
         }
       }
     );
@@ -187,7 +195,13 @@ export function SessionPanel({
         .getSessionOutput(session.id)
         .then((output) => {
           if (output && termRef.current) {
-            termRef.current.write(output);
+            isWritingRef.current = true;
+            termRef.current.write(output, () => {
+              if (autoScrollRef.current && termRef.current) {
+                termRef.current.scrollToBottom();
+              }
+              isWritingRef.current = false;
+            });
           }
         })
         .catch(() => {});
