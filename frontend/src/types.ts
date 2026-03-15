@@ -69,3 +69,43 @@ export interface CreateSessionRequest {
   useWorktree?: boolean;
   skipPermissions?: boolean;
 }
+
+export interface Config {
+  // General
+  startOnLogin: boolean;
+  notifications: boolean;
+
+  // Git & Branches
+  autoPull: boolean;
+  defaultPullBranch: string;
+  branchNamePattern: string;
+  deleteBranchOnDone: boolean;
+  branchOverrides: Record<string, string>;
+
+  // Sessions
+  useWorktreeDefault: boolean;
+  skipPermissions: boolean;
+  maxConcurrentSessions: number;
+  autoResumeOnStart: boolean;
+  autoStopIdle: boolean;
+  idleTimeoutMinutes: number;
+
+  // Storage & Data
+  dataDirectory: string;
+  worktreeDirectory: string;
+  logDirectory: string;
+
+  // Terminal
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  cursorStyle: string;
+  cursorBlink: boolean;
+  scrollbackLines: number;
+
+  // Claude CLI
+  cliBinaryPath: string;
+  extraCliArgs: string;
+  defaultModel: string;
+  envVariables: Record<string, string>;
+}

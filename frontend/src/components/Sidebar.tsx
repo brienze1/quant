@@ -34,6 +34,7 @@ interface SidebarProps {
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   onError?: (msg: string) => void;
+  onOpenSettings?: () => void;
 }
 
 export function Sidebar({
@@ -63,6 +64,7 @@ export function Sidebar({
   onDoubleClickSession,
   onDropSession,
   onError,
+  onOpenSettings,
 }: SidebarProps) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -399,28 +401,47 @@ export function Sidebar({
       </nav>
 
       {/* bottom bar */}
-      {!showArchived && (
-        <div className="p-3" style={{ borderTop: "1px solid #2a2a2a" }}>
+      <div className="flex items-center gap-2 p-3" style={{ borderTop: "1px solid #2a2a2a" }}>
+        <button
+          onClick={() => {
+            if (repos.length > 0) {
+              onCreateSession(repos[0].id);
+            }
+          }}
+          className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm lowercase transition-colors"
+          style={{
+            backgroundColor: "#10B981",
+            color: "#0A0A0A",
+            fontFamily: "'JetBrains Mono', monospace",
+            fontWeight: 500,
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#059669")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#10B981")}
+        >
+          $ new_session
+        </button>
+        {onOpenSettings && (
           <button
-            onClick={() => {
-              if (repos.length > 0) {
-                onCreateSession(repos[0].id);
-              }
-            }}
-            className="w-full flex items-center justify-center gap-1 px-3 py-2 text-sm lowercase transition-colors"
+            onClick={onOpenSettings}
+            className="flex items-center justify-center shrink-0 transition-colors"
             style={{
-              backgroundColor: "#10B981",
-              color: "#0A0A0A",
+              width: 36,
+              height: 36,
+              color: "#6B7280",
               fontFamily: "'JetBrains Mono', monospace",
-              fontWeight: 500,
+              fontSize: 16,
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#059669")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#10B981")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+            title="settings"
           >
-            $ new_session
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* context menu overlay */}
       {contextMenu && (

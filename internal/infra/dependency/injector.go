@@ -27,10 +27,14 @@ type Injector struct {
 	taskManager        appAdapter.TaskManager
 	actionLogger       appAdapter.ActionLogger
 	sessionManager     appAdapter.SessionManager
+	configPersistence  intAdapter.ConfigPersistence
+	databaseManager    intAdapter.DatabaseManager
+	configManager      appAdapter.ConfigManager
 	repoController     intAdapter.RepoController
 	taskController     intAdapter.TaskController
 	actionController   intAdapter.ActionController
 	sessionController  intAdapter.SessionController
+	configController   intAdapter.ConfigController
 }
 
 // NewInjector creates a new dependency injector with the given database connection.
@@ -179,4 +183,44 @@ func (i *Injector) SessionController() intAdapter.SessionController {
 		i.sessionController = controller.NewSessionController(i.SessionManager())
 	}
 	return i.sessionController
+}
+
+// ConfigPersistence returns the singleton ConfigPersistence instance.
+func (i *Injector) ConfigPersistence() intAdapter.ConfigPersistence {
+	if i.configPersistence == nil {
+		i.configPersistence = persistence.NewConfigPersistence()
+	}
+	return i.configPersistence
+}
+
+// DatabaseManager returns the singleton DatabaseManager instance.
+func (i *Injector) DatabaseManager() intAdapter.DatabaseManager {
+	if i.databaseManager == nil {
+		i.databaseManager = persistence.NewDatabaseManager(i.db)
+	}
+	return i.databaseManager
+}
+
+// ConfigManager returns the singleton ConfigManager service instance.
+func (i *Injector) ConfigManager() appAdapter.ConfigManager {
+	if i.configManager == nil {
+		cp := i.ConfigPersistence()
+		dm := i.DatabaseManager()
+		i.configManager = service.NewConfigManagerService(
+			cp, // LoadConfig
+			cp, // SaveConfig
+			dm, // ResetDatabase
+			dm, // ClearSessionLogs
+			dm, // GetDatabasePath
+		)
+	}
+	return i.configManager
+}
+
+// ConfigController returns the singleton ConfigController instance.
+func (i *Injector) ConfigController() intAdapter.ConfigController {
+	if i.configController == nil {
+		i.configController = controller.NewConfigController(i.ConfigManager())
+	}
+	return i.configController
 }

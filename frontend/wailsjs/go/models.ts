@@ -20,6 +20,68 @@ export namespace dto {
 	        this.timestamp = source["timestamp"];
 	    }
 	}
+	export class ConfigResponse {
+	    startOnLogin: boolean;
+	    notifications: boolean;
+	    autoPull: boolean;
+	    defaultPullBranch: string;
+	    branchNamePattern: string;
+	    deleteBranchOnDone: boolean;
+	    branchOverrides: Record<string, string>;
+	    useWorktreeDefault: boolean;
+	    skipPermissions: boolean;
+	    maxConcurrentSessions: number;
+	    autoResumeOnStart: boolean;
+	    autoStopIdle: boolean;
+	    idleTimeoutMinutes: number;
+	    dataDirectory: string;
+	    worktreeDirectory: string;
+	    logDirectory: string;
+	    fontFamily: string;
+	    fontSize: number;
+	    lineHeight: number;
+	    cursorStyle: string;
+	    cursorBlink: boolean;
+	    scrollbackLines: number;
+	    cliBinaryPath: string;
+	    extraCliArgs: string;
+	    defaultModel: string;
+	    envVariables: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConfigResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.startOnLogin = source["startOnLogin"];
+	        this.notifications = source["notifications"];
+	        this.autoPull = source["autoPull"];
+	        this.defaultPullBranch = source["defaultPullBranch"];
+	        this.branchNamePattern = source["branchNamePattern"];
+	        this.deleteBranchOnDone = source["deleteBranchOnDone"];
+	        this.branchOverrides = source["branchOverrides"];
+	        this.useWorktreeDefault = source["useWorktreeDefault"];
+	        this.skipPermissions = source["skipPermissions"];
+	        this.maxConcurrentSessions = source["maxConcurrentSessions"];
+	        this.autoResumeOnStart = source["autoResumeOnStart"];
+	        this.autoStopIdle = source["autoStopIdle"];
+	        this.idleTimeoutMinutes = source["idleTimeoutMinutes"];
+	        this.dataDirectory = source["dataDirectory"];
+	        this.worktreeDirectory = source["worktreeDirectory"];
+	        this.logDirectory = source["logDirectory"];
+	        this.fontFamily = source["fontFamily"];
+	        this.fontSize = source["fontSize"];
+	        this.lineHeight = source["lineHeight"];
+	        this.cursorStyle = source["cursorStyle"];
+	        this.cursorBlink = source["cursorBlink"];
+	        this.scrollbackLines = source["scrollbackLines"];
+	        this.cliBinaryPath = source["cliBinaryPath"];
+	        this.extraCliArgs = source["extraCliArgs"];
+	        this.defaultModel = source["defaultModel"];
+	        this.envVariables = source["envVariables"];
+	    }
+	}
 	export class CreateRepoRequest {
 	    name: string;
 	    path: string;
@@ -90,6 +152,68 @@ export namespace dto {
 	        this.path = source["path"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
+	    }
+	}
+	export class SaveConfigRequest {
+	    startOnLogin: boolean;
+	    notifications: boolean;
+	    autoPull: boolean;
+	    defaultPullBranch: string;
+	    branchNamePattern: string;
+	    deleteBranchOnDone: boolean;
+	    branchOverrides: Record<string, string>;
+	    useWorktreeDefault: boolean;
+	    skipPermissions: boolean;
+	    maxConcurrentSessions: number;
+	    autoResumeOnStart: boolean;
+	    autoStopIdle: boolean;
+	    idleTimeoutMinutes: number;
+	    dataDirectory: string;
+	    worktreeDirectory: string;
+	    logDirectory: string;
+	    fontFamily: string;
+	    fontSize: number;
+	    lineHeight: number;
+	    cursorStyle: string;
+	    cursorBlink: boolean;
+	    scrollbackLines: number;
+	    cliBinaryPath: string;
+	    extraCliArgs: string;
+	    defaultModel: string;
+	    envVariables: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new SaveConfigRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.startOnLogin = source["startOnLogin"];
+	        this.notifications = source["notifications"];
+	        this.autoPull = source["autoPull"];
+	        this.defaultPullBranch = source["defaultPullBranch"];
+	        this.branchNamePattern = source["branchNamePattern"];
+	        this.deleteBranchOnDone = source["deleteBranchOnDone"];
+	        this.branchOverrides = source["branchOverrides"];
+	        this.useWorktreeDefault = source["useWorktreeDefault"];
+	        this.skipPermissions = source["skipPermissions"];
+	        this.maxConcurrentSessions = source["maxConcurrentSessions"];
+	        this.autoResumeOnStart = source["autoResumeOnStart"];
+	        this.autoStopIdle = source["autoStopIdle"];
+	        this.idleTimeoutMinutes = source["idleTimeoutMinutes"];
+	        this.dataDirectory = source["dataDirectory"];
+	        this.worktreeDirectory = source["worktreeDirectory"];
+	        this.logDirectory = source["logDirectory"];
+	        this.fontFamily = source["fontFamily"];
+	        this.fontSize = source["fontSize"];
+	        this.lineHeight = source["lineHeight"];
+	        this.cursorStyle = source["cursorStyle"];
+	        this.cursorBlink = source["cursorBlink"];
+	        this.scrollbackLines = source["scrollbackLines"];
+	        this.cliBinaryPath = source["cliBinaryPath"];
+	        this.extraCliArgs = source["extraCliArgs"];
+	        this.defaultModel = source["defaultModel"];
+	        this.envVariables = source["envVariables"];
 	    }
 	}
 	export class SessionResponse {

@@ -3,6 +3,7 @@ import type {
   Task,
   Session,
   Action,
+  Config,
   CreateRepoRequest,
   CreateTaskRequest,
   CreateSessionRequest,
@@ -149,4 +150,28 @@ const ACTION_CTRL = "actionController";
 
 export function getActions(sessionId: string): Promise<Action[]> {
   return callGo(PKG, ACTION_CTRL, "GetActions", sessionId);
+}
+
+// --- Config ---
+
+const CONFIG_CTRL = "configController";
+
+export function getConfig(): Promise<Config> {
+  return callGo(PKG, CONFIG_CTRL, "GetConfig");
+}
+
+export function saveConfig(config: Config): Promise<void> {
+  return callGo(PKG, CONFIG_CTRL, "SaveConfig", config);
+}
+
+export function resetDatabase(): Promise<void> {
+  return callGo(PKG, CONFIG_CTRL, "ResetDatabase");
+}
+
+export function clearSessionLogs(): Promise<void> {
+  return callGo(PKG, CONFIG_CTRL, "ClearSessionLogs");
+}
+
+export function browseConfigDirectory(): Promise<string> {
+  return callGo(PKG, CONFIG_CTRL, "BrowseDirectory");
 }

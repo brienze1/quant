@@ -18,6 +18,7 @@ import { NewSessionModal } from "./components/NewSessionModal";
 import { TabBar } from "./components/TabBar";
 import { MoveSessionModal } from "./components/MoveSessionModal";
 import { ConfirmModal } from "./components/ConfirmModal";
+import { Settings } from "./components/Settings";
 
 type ModalState =
   | { type: "none" }
@@ -27,7 +28,10 @@ type ModalState =
   | { type: "moveSession"; sessionId: string; repoId: string }
   | { type: "confirm"; message: string; onConfirm: () => void };
 
+type View = "dashboard" | "settings";
+
 function App() {
+  const [view, setView] = useState<View>("dashboard");
   const [repos, setRepos] = useState<Repo[]>([]);
   const [tasksByRepo, setTasksByRepo] = useState<Record<string, Task[]>>({});
   const [sessionsByRepo, setSessionsByRepo] = useState<Record<string, Session[]>>({});
@@ -488,6 +492,10 @@ function App() {
     ? findSession(modal.sessionId, sessionsByRepo, sessionsByTask)?.taskId ?? ""
     : "";
 
+  if (view === "settings") {
+    return <Settings repos={repos} onBack={() => setView("dashboard")} />;
+  }
+
   return (
     <div className="flex h-screen w-screen" style={{ backgroundColor: "#0A0A0A" }}>
       <Sidebar
@@ -519,6 +527,7 @@ function App() {
         onDoubleClickSession={handleDoubleClickSession}
         onDropSession={(sessionId, targetTaskId) => handleMoveSessionSelect(sessionId, targetTaskId)}
         onError={(msg) => setError(msg)}
+        onOpenSettings={() => setView("settings")}
       />
 
       <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "#0A0A0A" }}>

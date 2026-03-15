@@ -31,6 +31,7 @@ func Run(assets embed.FS) error {
 	repoCtrl := injector.RepoController()
 	taskCtrl := injector.TaskController()
 	actionCtrl := injector.ActionController()
+	configCtrl := injector.ConfigController()
 	processManager := injector.ProcessManager()
 
 	err = wails.Run(&options.App{
@@ -47,18 +48,21 @@ func Run(assets embed.FS) error {
 			repoCtrl.OnStartup(ctx)
 			taskCtrl.OnStartup(ctx)
 			actionCtrl.OnStartup(ctx)
+			configCtrl.OnStartup(ctx)
 		},
 		OnShutdown: func(ctx context.Context) {
 			sessionCtrl.OnShutdown(ctx)
 			repoCtrl.OnShutdown(ctx)
 			taskCtrl.OnShutdown(ctx)
 			actionCtrl.OnShutdown(ctx)
+			configCtrl.OnShutdown(ctx)
 		},
 		Bind: []interface{}{
 			sessionCtrl,
 			repoCtrl,
 			taskCtrl,
 			actionCtrl,
+			configCtrl,
 		},
 	})
 	if err != nil {
