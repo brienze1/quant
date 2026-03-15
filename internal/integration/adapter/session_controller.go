@@ -16,6 +16,8 @@ type SessionController interface {
 	ResumeSession(id string, rows int, cols int) error
 	StopSession(id string) error
 	DeleteSession(id string) error
+	ArchiveSession(id string) error
+	UnarchiveSession(id string) error
 	ListSessions() ([]dto.SessionResponse, error)
 	ListSessionsByRepo(repoID string) ([]dto.SessionResponse, error)
 	ListSessionsByTask(taskID string) ([]dto.SessionResponse, error)

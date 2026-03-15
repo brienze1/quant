@@ -214,6 +214,9 @@ function App() {
 
   // Compute display status for a session
   function getDisplayStatus(sessionId: string, baseStatus: Session["status"]): import("./components/StatusBadge").DisplayStatus {
+    // Check if session is archived
+    const session = findSession(sessionId, sessionsByRepo, sessionsByTask);
+    if (session?.archivedAt) return "archived";
     if (transitionStatus[sessionId]) return transitionStatus[sessionId];
     if (baseStatus === "running" && activeOutputIds.has(sessionId)) return "running";
     if (baseStatus === "running" && !activeOutputIds.has(sessionId)) return "waiting";
@@ -350,6 +353,60 @@ function App() {
     }
   }
 
+  async function handleArchiveSession(id: string) {
+    try {
+      setError(null);
+      await api.archiveSession(id);
+      // Remove from tabs if present
+      setOpenTabIds((prev) => prev.filter((t) => t !== id));
+      setActiveTabId((prev) => {
+        if (prev !== id) return prev;
+        const remaining = openTabIds.filter((t) => t !== id);
+        return remaining.length > 0 ? remaining[remaining.length - 1] : null;
+      });
+      if (selectedSessionId === id) setSelectedSessionId(null);
+      if (expandedSessionId === id) setExpandedSessionId(null);
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleUnarchiveSession(id: string) {
+    try {
+      setError(null);
+      await api.unarchiveSession(id);
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleArchiveTask(taskId: string) {
+    const sessions = sessionsByTask[taskId] ?? [];
+    // Remove open tabs for sessions in this task
+    for (const s of sessions) {
+      setOpenTabIds((prev) => prev.filter((id) => id !== s.id));
+    }
+    try {
+      setError(null);
+      await api.archiveTask(taskId);
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleUnarchiveTask(taskId: string) {
+    try {
+      setError(null);
+      await api.unarchiveTask(taskId);
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   async function handleRemoveRepo(repoId: string) {
     try {
       setError(null);
@@ -454,6 +511,10 @@ function App() {
         onRemoveRepo={handleRemoveRepo}
         onDeleteTask={handleDeleteTask}
         onDeleteSession={handleDelete}
+        onArchiveSession={handleArchiveSession}
+        onUnarchiveSession={handleUnarchiveSession}
+        onArchiveTask={handleArchiveTask}
+        onUnarchiveTask={handleUnarchiveTask}
         onMoveSession={handleMoveSession}
         onDoubleClickSession={handleDoubleClickSession}
         onDropSession={(sessionId, targetTaskId) => handleMoveSessionSelect(sessionId, targetTaskId)}
@@ -503,6 +564,7 @@ function App() {
             onClose={() => handleCloseTab(activeSession.id)}
             onStart={handleStart}
             onResume={handleResume}
+            onUnarchive={handleUnarchiveSession}
             displayStatus={getDisplayStatus(activeSession.id, activeSession.status)}
           />
         ) : (

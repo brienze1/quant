@@ -21,18 +21,25 @@ func NewSessionPersistence(db *sql.DB) adapter.SessionPersistence {
 	return &sessionPersistence{db: db}
 }
 
-// FindByID retrieves a session by its ID.
-func (p *sessionPersistence) FindByID(id string) (*entity.Session, error) {
-	query := `SELECT id, name, description, status, directory, worktree_path, branch_name,
-		claude_conv_id, pid, repo_id, task_id, skip_permissions, created_at, updated_at, last_active_at
-		FROM sessions WHERE id = ?`
+const sessionColumns = `id, name, description, status, directory, worktree_path, branch_name,
+		claude_conv_id, pid, repo_id, task_id, skip_permissions, created_at, updated_at, last_active_at, archived_at`
 
+func scanSessionRow(scanner interface{ Scan(...any) error }) (pdto.SessionRow, error) {
 	var row pdto.SessionRow
-	err := p.db.QueryRow(query, id).Scan(
+	err := scanner.Scan(
 		&row.ID, &row.Name, &row.Description, &row.Status, &row.Directory,
 		&row.WorktreePath, &row.BranchName, &row.ClaudeConvID, &row.PID,
 		&row.RepoID, &row.TaskID, &row.SkipPermissions, &row.CreatedAt, &row.UpdatedAt, &row.LastActiveAt,
+		&row.ArchivedAt,
 	)
+	return row, err
+}
+
+// FindByID retrieves a session by its ID.
+func (p *sessionPersistence) FindByID(id string) (*entity.Session, error) {
+	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE id = ?`
+
+	row, err := scanSessionRow(p.db.QueryRow(query, id))
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -47,9 +54,7 @@ func (p *sessionPersistence) FindByID(id string) (*entity.Session, error) {
 
 // FindAll retrieves all sessions.
 func (p *sessionPersistence) FindAll() ([]entity.Session, error) {
-	query := `SELECT id, name, description, status, directory, worktree_path, branch_name,
-		claude_conv_id, pid, repo_id, task_id, skip_permissions, created_at, updated_at, last_active_at
-		FROM sessions ORDER BY last_active_at DESC`
+	query := `SELECT ` + sessionColumns + ` FROM sessions ORDER BY last_active_at DESC`
 
 	rows, err := p.db.Query(query)
 	if err != nil {
@@ -59,12 +64,7 @@ func (p *sessionPersistence) FindAll() ([]entity.Session, error) {
 
 	var sessions []entity.Session
 	for rows.Next() {
-		var row pdto.SessionRow
-		err := rows.Scan(
-			&row.ID, &row.Name, &row.Description, &row.Status, &row.Directory,
-			&row.WorktreePath, &row.BranchName, &row.ClaudeConvID, &row.PID,
-			&row.RepoID, &row.TaskID, &row.SkipPermissions, &row.CreatedAt, &row.UpdatedAt, &row.LastActiveAt,
-		)
+		row, err := scanSessionRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session row: %w", err)
 		}
@@ -80,9 +80,7 @@ func (p *sessionPersistence) FindAll() ([]entity.Session, error) {
 
 // FindByRepoID retrieves all sessions for a given repository.
 func (p *sessionPersistence) FindByRepoID(repoID string) ([]entity.Session, error) {
-	query := `SELECT id, name, description, status, directory, worktree_path, branch_name,
-		claude_conv_id, pid, repo_id, task_id, skip_permissions, created_at, updated_at, last_active_at
-		FROM sessions WHERE repo_id = ? ORDER BY last_active_at DESC`
+	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE repo_id = ? ORDER BY last_active_at DESC`
 
 	rows, err := p.db.Query(query, repoID)
 	if err != nil {
@@ -92,12 +90,7 @@ func (p *sessionPersistence) FindByRepoID(repoID string) ([]entity.Session, erro
 
 	var sessions []entity.Session
 	for rows.Next() {
-		var row pdto.SessionRow
-		err := rows.Scan(
-			&row.ID, &row.Name, &row.Description, &row.Status, &row.Directory,
-			&row.WorktreePath, &row.BranchName, &row.ClaudeConvID, &row.PID,
-			&row.RepoID, &row.TaskID, &row.SkipPermissions, &row.CreatedAt, &row.UpdatedAt, &row.LastActiveAt,
-		)
+		row, err := scanSessionRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session row: %w", err)
 		}
@@ -113,9 +106,7 @@ func (p *sessionPersistence) FindByRepoID(repoID string) ([]entity.Session, erro
 
 // FindByTaskID retrieves all sessions for a given task.
 func (p *sessionPersistence) FindByTaskID(taskID string) ([]entity.Session, error) {
-	query := `SELECT id, name, description, status, directory, worktree_path, branch_name,
-		claude_conv_id, pid, repo_id, task_id, skip_permissions, created_at, updated_at, last_active_at
-		FROM sessions WHERE task_id = ? ORDER BY last_active_at DESC`
+	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE task_id = ? ORDER BY last_active_at DESC`
 
 	rows, err := p.db.Query(query, taskID)
 	if err != nil {
@@ -125,12 +116,7 @@ func (p *sessionPersistence) FindByTaskID(taskID string) ([]entity.Session, erro
 
 	var sessions []entity.Session
 	for rows.Next() {
-		var row pdto.SessionRow
-		err := rows.Scan(
-			&row.ID, &row.Name, &row.Description, &row.Status, &row.Directory,
-			&row.WorktreePath, &row.BranchName, &row.ClaudeConvID, &row.PID,
-			&row.RepoID, &row.TaskID, &row.SkipPermissions, &row.CreatedAt, &row.UpdatedAt, &row.LastActiveAt,
-		)
+		row, err := scanSessionRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session row: %w", err)
 		}
@@ -149,14 +135,14 @@ func (p *sessionPersistence) Save(session entity.Session) error {
 	row := pdto.SessionRowFromEntity(session)
 
 	query := `INSERT INTO sessions (id, name, description, status, directory, worktree_path,
-		branch_name, claude_conv_id, pid, repo_id, task_id, skip_permissions, created_at, updated_at, last_active_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		branch_name, claude_conv_id, pid, repo_id, task_id, skip_permissions, created_at, updated_at, last_active_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := p.db.Exec(query,
 		row.ID, row.Name, row.Description, row.Status, row.Directory,
 		row.WorktreePath, row.BranchName, row.ClaudeConvID, row.PID,
 		row.RepoID, row.TaskID, row.SkipPermissions,
-		row.CreatedAt, row.UpdatedAt, row.LastActiveAt,
+		row.CreatedAt, row.UpdatedAt, row.LastActiveAt, row.ArchivedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save session: %w", err)
@@ -214,13 +200,13 @@ func (p *sessionPersistence) Update(session entity.Session) error {
 	query := `UPDATE sessions SET name = ?, description = ?, status = ?, directory = ?,
 		worktree_path = ?, branch_name = ?, claude_conv_id = ?, pid = ?,
 		repo_id = ?, task_id = ?, skip_permissions = ?,
-		updated_at = ?, last_active_at = ? WHERE id = ?`
+		updated_at = ?, last_active_at = ?, archived_at = ? WHERE id = ?`
 
 	result, err := p.db.Exec(query,
 		row.Name, row.Description, row.Status, row.Directory,
 		row.WorktreePath, row.BranchName, row.ClaudeConvID, row.PID,
 		row.RepoID, row.TaskID, row.SkipPermissions,
-		row.UpdatedAt, row.LastActiveAt, row.ID,
+		row.UpdatedAt, row.LastActiveAt, row.ArchivedAt, row.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update session: %w", err)

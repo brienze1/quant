@@ -3,6 +3,8 @@
 import {dto} from '../models';
 import {context} from '../models';
 
+export function ArchiveTask(arg1:string):Promise<void>;
+
 export function CreateTask(arg1:dto.CreateTaskRequest):Promise<dto.TaskResponse>;
 
 export function DeleteTask(arg1:string):Promise<void>;
@@ -14,3 +16,5 @@ export function ListTasksByRepo(arg1:string):Promise<Array<dto.TaskResponse>>;
 export function OnShutdown(arg1:context.Context):Promise<void>;
 
 export function OnStartup(arg1:context.Context):Promise<void>;
+
+export function UnarchiveTask(arg1:string):Promise<void>;

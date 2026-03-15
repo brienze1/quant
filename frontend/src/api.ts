@@ -75,6 +75,14 @@ export function deleteTask(id: string): Promise<void> {
   return callGo(PKG, TASK_CTRL, "DeleteTask", id);
 }
 
+export function archiveTask(id: string): Promise<void> {
+  return callGo(PKG, TASK_CTRL, "ArchiveTask", id);
+}
+
+export function unarchiveTask(id: string): Promise<void> {
+  return callGo(PKG, TASK_CTRL, "UnarchiveTask", id);
+}
+
 // --- Sessions ---
 
 const SESSION_CTRL = "sessionController";
@@ -109,6 +117,14 @@ export function stopSession(id: string): Promise<void> {
 
 export function deleteSession(id: string): Promise<void> {
   return callGo(PKG, SESSION_CTRL, "DeleteSession", id);
+}
+
+export function archiveSession(id: string): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "ArchiveSession", id);
+}
+
+export function unarchiveSession(id: string): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "UnarchiveSession", id);
 }
 
 export function sendMessage(id: string, message: string): Promise<void> {

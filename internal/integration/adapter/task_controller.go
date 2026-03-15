@@ -15,4 +15,6 @@ type TaskController interface {
 	ListTasksByRepo(repoID string) ([]dto.TaskResponse, error)
 	GetTask(id string) (*dto.TaskResponse, error)
 	DeleteTask(id string) error
+	ArchiveTask(id string) error
+	UnarchiveTask(id string) error
 }

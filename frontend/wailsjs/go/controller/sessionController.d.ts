@@ -3,6 +3,8 @@
 import {dto} from '../models';
 import {context} from '../models';
 
+export function ArchiveSession(arg1:string):Promise<void>;
+
 export function CreateSession(arg1:dto.CreateSessionRequest):Promise<dto.SessionResponse>;
 
 export function DeleteSession(arg1:string):Promise<void>;
@@ -32,3 +34,5 @@ export function SendMessage(arg1:string,arg2:string):Promise<void>;
 export function StartSession(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function StopSession(arg1:string):Promise<void>;
+
+export function UnarchiveSession(arg1:string):Promise<void>;

@@ -31,10 +31,16 @@ type SessionResponse struct {
 	CreatedAt    string `json:"createdAt"`
 	UpdatedAt    string `json:"updatedAt"`
 	LastActiveAt string `json:"lastActiveAt"`
+	ArchivedAt   string `json:"archivedAt"`
 }
 
 // SessionResponseFromEntity converts a domain entity to a SessionResponse DTO.
 func SessionResponseFromEntity(session entity.Session) SessionResponse {
+	var archivedAt string
+	if session.ArchivedAt != nil {
+		archivedAt = session.ArchivedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+
 	return SessionResponse{
 		ID:           session.ID,
 		Name:         session.Name,
@@ -50,6 +56,7 @@ func SessionResponseFromEntity(session entity.Session) SessionResponse {
 		CreatedAt:    session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:    session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		LastActiveAt: session.LastActiveAt.Format("2006-01-02T15:04:05Z07:00"),
+		ArchivedAt:   archivedAt,
 	}
 }
 

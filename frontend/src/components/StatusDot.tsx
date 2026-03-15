@@ -10,6 +10,7 @@ const statusColors: Record<DisplayStatus, string> = {
   starting: "#A78BFA",   // purple
   resuming: "#A78BFA",   // purple
   stopping: "#F59E0B",   // amber
+  archived: "#6B7280",   // gray
 };
 
 const isAnimated = (s: DisplayStatus) =>

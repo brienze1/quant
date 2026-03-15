@@ -107,6 +107,7 @@ export namespace dto {
 	    createdAt: string;
 	    updatedAt: string;
 	    lastActiveAt: string;
+	    archivedAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionResponse(source);
@@ -128,6 +129,7 @@ export namespace dto {
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
 	        this.lastActiveAt = source["lastActiveAt"];
+	        this.archivedAt = source["archivedAt"];
 	    }
 	}
 	export class TaskResponse {
@@ -137,6 +139,7 @@ export namespace dto {
 	    name: string;
 	    createdAt: string;
 	    updatedAt: string;
+	    archivedAt: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new TaskResponse(source);
@@ -150,6 +153,7 @@ export namespace dto {
 	        this.name = source["name"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
+	        this.archivedAt = source["archivedAt"];
 	    }
 	}
 

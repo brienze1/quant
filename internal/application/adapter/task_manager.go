@@ -12,4 +12,6 @@ type TaskManager interface {
 	ListTasksByRepo(repoID string) ([]entity.Task, error)
 	GetTask(id string) (*entity.Task, error)
 	DeleteTask(id string) error
+	ArchiveTask(id string) error
+	UnarchiveTask(id string) error
 }

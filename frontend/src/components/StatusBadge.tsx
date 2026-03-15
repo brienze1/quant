@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "../types";
 
-export type DisplayStatus = Session["status"] | "starting" | "stopping" | "resuming" | "waiting";
+export type DisplayStatus = Session["status"] | "starting" | "stopping" | "resuming" | "waiting" | "archived";
 
 const statusColors: Record<DisplayStatus, string> = {
   running: "#10B981",    // green — only running is green
@@ -13,6 +13,7 @@ const statusColors: Record<DisplayStatus, string> = {
   starting: "#A78BFA",   // purple — transitional
   resuming: "#A78BFA",   // purple — transitional
   stopping: "#F59E0B",   // amber — transitional
+  archived: "#6B7280",   // gray — archived
 };
 
 const isAnimated = (s: DisplayStatus) =>

@@ -182,6 +182,46 @@ func (s *sessionManagerService) StopSession(id string) error {
 	return nil
 }
 
+// ArchiveSession soft-deletes a session by setting its archived_at timestamp.
+func (s *sessionManagerService) ArchiveSession(id string) error {
+	session, err := s.findSession.FindByID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+
+	if session == nil {
+		return fmt.Errorf("session not found: %s", id)
+	}
+
+	if session.Status == sessionstatus.Running {
+		_ = s.spawnProcess.Stop(id)
+		session.Status = sessionstatus.Paused
+	}
+
+	now := time.Now()
+	session.ArchivedAt = &now
+	session.UpdatedAt = now
+
+	return s.updateSession.Update(*session)
+}
+
+// UnarchiveSession restores a previously archived session.
+func (s *sessionManagerService) UnarchiveSession(id string) error {
+	session, err := s.findSession.FindByID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+
+	if session == nil {
+		return fmt.Errorf("session not found: %s", id)
+	}
+
+	session.ArchivedAt = nil
+	session.UpdatedAt = time.Now()
+
+	return s.updateSession.Update(*session)
+}
+
 // DeleteSession removes a session and stops any running process.
 func (s *sessionManagerService) DeleteSession(id string) error {
 	session, err := s.findSession.FindByID(id)

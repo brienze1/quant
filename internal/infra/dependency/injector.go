@@ -110,8 +110,10 @@ func (i *Injector) TaskManager() appAdapter.TaskManager {
 			tp,                  // FindTask
 			tp,                  // SaveTask
 			tp,                  // DeleteTask
+			tp,                  // UpdateTask
 			i.RepoPersistence(), // FindRepo
 			sp,                  // FindSession
+			sp,                  // UpdateSession
 			sp,                  // DeleteSession
 		)
 	}

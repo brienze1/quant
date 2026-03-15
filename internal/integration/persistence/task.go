@@ -21,14 +21,21 @@ func NewTaskPersistence(db *sql.DB) adapter.TaskPersistence {
 	return &taskPersistence{db: db}
 }
 
+const taskColumns = `id, repo_id, tag, name, created_at, updated_at, archived_at`
+
+func scanTaskRow(scanner interface{ Scan(...any) error }) (pdto.TaskRow, error) {
+	var row pdto.TaskRow
+	err := scanner.Scan(
+		&row.ID, &row.RepoID, &row.Tag, &row.Name, &row.CreatedAt, &row.UpdatedAt, &row.ArchivedAt,
+	)
+	return row, err
+}
+
 // FindTaskByID retrieves a task by its ID.
 func (p *taskPersistence) FindTaskByID(id string) (*entity.Task, error) {
-	query := `SELECT id, repo_id, tag, name, created_at, updated_at FROM tasks WHERE id = ?`
+	query := `SELECT ` + taskColumns + ` FROM tasks WHERE id = ?`
 
-	var row pdto.TaskRow
-	err := p.db.QueryRow(query, id).Scan(
-		&row.ID, &row.RepoID, &row.Tag, &row.Name, &row.CreatedAt, &row.UpdatedAt,
-	)
+	row, err := scanTaskRow(p.db.QueryRow(query, id))
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -43,7 +50,7 @@ func (p *taskPersistence) FindTaskByID(id string) (*entity.Task, error) {
 
 // FindTasksByRepoID retrieves all tasks for a given repository.
 func (p *taskPersistence) FindTasksByRepoID(repoID string) ([]entity.Task, error) {
-	query := `SELECT id, repo_id, tag, name, created_at, updated_at FROM tasks WHERE repo_id = ? ORDER BY created_at DESC`
+	query := `SELECT ` + taskColumns + ` FROM tasks WHERE repo_id = ? ORDER BY created_at DESC`
 
 	rows, err := p.db.Query(query, repoID)
 	if err != nil {
@@ -53,10 +60,7 @@ func (p *taskPersistence) FindTasksByRepoID(repoID string) ([]entity.Task, error
 
 	var tasks []entity.Task
 	for rows.Next() {
-		var row pdto.TaskRow
-		err := rows.Scan(
-			&row.ID, &row.RepoID, &row.Tag, &row.Name, &row.CreatedAt, &row.UpdatedAt,
-		)
+		row, err := scanTaskRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan task row: %w", err)
 		}
@@ -72,7 +76,7 @@ func (p *taskPersistence) FindTasksByRepoID(repoID string) ([]entity.Task, error
 
 // FindAllTasks retrieves all tasks.
 func (p *taskPersistence) FindAllTasks() ([]entity.Task, error) {
-	query := `SELECT id, repo_id, tag, name, created_at, updated_at FROM tasks ORDER BY created_at DESC`
+	query := `SELECT ` + taskColumns + ` FROM tasks ORDER BY created_at DESC`
 
 	rows, err := p.db.Query(query)
 	if err != nil {
@@ -82,10 +86,7 @@ func (p *taskPersistence) FindAllTasks() ([]entity.Task, error) {
 
 	var tasks []entity.Task
 	for rows.Next() {
-		var row pdto.TaskRow
-		err := rows.Scan(
-			&row.ID, &row.RepoID, &row.Tag, &row.Name, &row.CreatedAt, &row.UpdatedAt,
-		)
+		row, err := scanTaskRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan task row: %w", err)
 		}
@@ -103,9 +104,9 @@ func (p *taskPersistence) FindAllTasks() ([]entity.Task, error) {
 func (p *taskPersistence) SaveTask(task entity.Task) error {
 	row := pdto.TaskRowFromEntity(task)
 
-	query := `INSERT INTO tasks (id, repo_id, tag, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO tasks (id, repo_id, tag, name, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := p.db.Exec(query, row.ID, row.RepoID, row.Tag, row.Name, row.CreatedAt, row.UpdatedAt)
+	_, err := p.db.Exec(query, row.ID, row.RepoID, row.Tag, row.Name, row.CreatedAt, row.UpdatedAt, row.ArchivedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save task: %w", err)
 	}
@@ -138,9 +139,9 @@ func (p *taskPersistence) DeleteTask(id string) error {
 func (p *taskPersistence) UpdateTask(task entity.Task) error {
 	row := pdto.TaskRowFromEntity(task)
 
-	query := `UPDATE tasks SET repo_id = ?, tag = ?, name = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE tasks SET repo_id = ?, tag = ?, name = ?, updated_at = ?, archived_at = ? WHERE id = ?`
 
-	result, err := p.db.Exec(query, row.RepoID, row.Tag, row.Name, row.UpdatedAt, row.ID)
+	result, err := p.db.Exec(query, row.RepoID, row.Tag, row.Name, row.UpdatedAt, row.ArchivedAt, row.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update task: %w", err)
 	}

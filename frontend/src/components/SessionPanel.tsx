@@ -14,6 +14,7 @@ interface Props {
   onClose: () => void;
   onStart: (id: string, rows: number, cols: number) => void;
   onResume: (id: string, rows: number, cols: number) => void;
+  onUnarchive?: (id: string) => void;
   displayStatus: import("./StatusBadge").DisplayStatus;
 }
 
@@ -25,6 +26,7 @@ export function SessionPanel({
   onClose,
   onStart,
   onResume,
+  onUnarchive,
   displayStatus,
 }: Props) {
   const termContainerRef = useRef<HTMLDivElement>(null);
@@ -35,6 +37,8 @@ export function SessionPanel({
 
   // Track session ID changes to know when we need a fresh terminal.
   sessionIdRef.current = session.id;
+
+  const isArchived = displayStatus === "archived";
 
   const initTerminal = useCallback(() => {
     if (!termContainerRef.current) return;
@@ -49,14 +53,15 @@ export function SessionPanel({
     fitAddonRef.current = fitAddon;
 
     const term = new Terminal({
-      cursorBlink: true,
+      cursorBlink: !isArchived,
+      disableStdin: isArchived,
       fontFamily: "'JetBrains Mono', 'Menlo', 'Monaco', monospace",
       fontSize: 13,
       lineHeight: 1.2,
       theme: {
         background: "#0A0A0A",
         foreground: "#FAFAFA",
-        cursor: "#10B981",
+        cursor: isArchived ? "#0A0A0A" : "#10B981",
         selectionBackground: "rgba(16, 185, 129, 0.3)",
         black: "#0A0A0A",
         red: "#EF4444",
@@ -83,18 +88,21 @@ export function SessionPanel({
     fitAddon.fit();
     termRef.current = term;
 
-    // Send keystrokes to PTY via backend.
-    term.onData((data) => {
-      api.sendMessage(sessionIdRef.current, data).catch(() => {});
-    });
+    if (!isArchived) {
+      // Send keystrokes to PTY via backend.
+      term.onData((data) => {
+        api.sendMessage(sessionIdRef.current, data).catch(() => {});
+      });
 
-    // Notify backend of terminal resize.
-    term.onResize(({ rows, cols }) => {
-      api.resizeTerminal(sessionIdRef.current, rows, cols).catch(() => {});
-    });
+      // Notify backend of terminal resize.
+      term.onResize(({ rows, cols }) => {
+        api.resizeTerminal(sessionIdRef.current, rows, cols).catch(() => {});
+      });
+    }
 
     return term;
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isArchived]);
 
   // Initialize terminal and set up event listeners.
   useEffect(() => {
@@ -102,6 +110,26 @@ export function SessionPanel({
     if (!term) return;
 
     startedRef.current = false;
+
+    // Archived sessions: just replay saved output, no live events or auto-start.
+    if (isArchived) {
+      api
+        .getSessionOutput(session.id)
+        .then((output) => {
+          if (output && termRef.current) {
+            termRef.current.write(output);
+            termRef.current.write("\r\n\x1b[33m// archived session (read-only)\x1b[0m\r\n");
+          }
+        })
+        .catch(() => {});
+
+      return () => {
+        if (termRef.current) {
+          termRef.current.dispose();
+          termRef.current = null;
+        }
+      };
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
@@ -170,7 +198,7 @@ export function SessionPanel({
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id]);
+  }, [session.id, isArchived]);
 
   // Handle container resize via ResizeObserver.
   useEffect(() => {
@@ -246,13 +274,23 @@ export function SessionPanel({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {isPaused && (
-            <ActionBtn label="$ resume" onClick={handleResume} color="#10B981" />
+          {isArchived ? (
+            <>
+              {onUnarchive && (
+                <ActionBtn label="$ unarchive" onClick={() => onUnarchive(session.id)} color="#10B981" />
+              )}
+            </>
+          ) : (
+            <>
+              {isPaused && (
+                <ActionBtn label="$ resume" onClick={handleResume} color="#10B981" />
+              )}
+              {isRunning && (
+                <ActionBtn label="$ stop" onClick={() => onStop(session.id)} color="#F59E0B" />
+              )}
+              <ActionBtn label="$ delete" onClick={() => onDelete(session.id)} color="#EF4444" />
+            </>
           )}
-          {isRunning && (
-            <ActionBtn label="$ stop" onClick={() => onStop(session.id)} color="#F59E0B" />
-          )}
-          <ActionBtn label="$ delete" onClick={() => onDelete(session.id)} color="#EF4444" />
           <button
             onClick={onClose}
             className="ml-1 text-xs transition-colors"

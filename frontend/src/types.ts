@@ -13,6 +13,7 @@ export interface Task {
   name: string;
   createdAt: string;
   updatedAt: string;
+  archivedAt: string;
 }
 
 export interface Session {
@@ -30,6 +31,7 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
+  archivedAt: string;
 }
 
 export type ActionType =

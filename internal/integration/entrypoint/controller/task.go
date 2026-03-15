@@ -68,3 +68,13 @@ func (c *taskController) GetTask(id string) (*dto.TaskResponse, error) {
 func (c *taskController) DeleteTask(id string) error {
 	return c.taskManager.DeleteTask(id)
 }
+
+// ArchiveTask archives a task (soft delete).
+func (c *taskController) ArchiveTask(id string) error {
+	return c.taskManager.ArchiveTask(id)
+}
+
+// UnarchiveTask restores a previously archived task.
+func (c *taskController) UnarchiveTask(id string) error {
+	return c.taskManager.UnarchiveTask(id)
+}

@@ -17,8 +17,10 @@ type taskManagerService struct {
 	findTask      usecase.FindTask
 	saveTask      usecase.SaveTask
 	deleteTask    usecase.DeleteTask
+	updateTask    usecase.UpdateTask
 	findRepo      usecase.FindRepo
 	findSession   usecase.FindSession
+	updateSession usecase.UpdateSession
 	deleteSession usecase.DeleteSession
 }
 
@@ -27,16 +29,20 @@ func NewTaskManagerService(
 	findTask usecase.FindTask,
 	saveTask usecase.SaveTask,
 	deleteTask usecase.DeleteTask,
+	updateTask usecase.UpdateTask,
 	findRepo usecase.FindRepo,
 	findSession usecase.FindSession,
+	updateSession usecase.UpdateSession,
 	deleteSession usecase.DeleteSession,
 ) adapter.TaskManager {
 	return &taskManagerService{
 		findTask:      findTask,
 		saveTask:      saveTask,
 		deleteTask:    deleteTask,
+		updateTask:    updateTask,
 		findRepo:      findRepo,
 		findSession:   findSession,
+		updateSession: updateSession,
 		deleteSession: deleteSession,
 	}
 }
@@ -92,6 +98,74 @@ func (s *taskManagerService) GetTask(id string) (*entity.Task, error) {
 	}
 
 	return task, nil
+}
+
+// ArchiveTask soft-deletes a task and all its sessions.
+func (s *taskManagerService) ArchiveTask(id string) error {
+	task, err := s.findTask.FindTaskByID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find task: %w", err)
+	}
+
+	if task == nil {
+		return fmt.Errorf("task not found: %s", id)
+	}
+
+	now := time.Now()
+
+	// Archive all sessions belonging to this task.
+	sessions, err := s.findSession.FindByTaskID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find sessions for task: %w", err)
+	}
+
+	for _, session := range sessions {
+		if session.ArchivedAt == nil {
+			session.ArchivedAt = &now
+			session.UpdatedAt = now
+			if err := s.updateSession.Update(session); err != nil {
+				return fmt.Errorf("failed to archive session %s: %w", session.ID, err)
+			}
+		}
+	}
+
+	task.ArchivedAt = &now
+	task.UpdatedAt = now
+
+	return s.updateTask.UpdateTask(*task)
+}
+
+// UnarchiveTask restores a previously archived task and its sessions.
+func (s *taskManagerService) UnarchiveTask(id string) error {
+	task, err := s.findTask.FindTaskByID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find task: %w", err)
+	}
+
+	if task == nil {
+		return fmt.Errorf("task not found: %s", id)
+	}
+
+	// Unarchive all sessions belonging to this task.
+	sessions, err := s.findSession.FindByTaskID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find sessions for task: %w", err)
+	}
+
+	for _, session := range sessions {
+		if session.ArchivedAt != nil {
+			session.ArchivedAt = nil
+			session.UpdatedAt = time.Now()
+			if err := s.updateSession.Update(session); err != nil {
+				return fmt.Errorf("failed to unarchive session %s: %w", session.ID, err)
+			}
+		}
+	}
+
+	task.ArchivedAt = nil
+	task.UpdatedAt = time.Now()
+
+	return s.updateTask.UpdateTask(*task)
 }
 
 // DeleteTask removes a task and all its sessions by ID.

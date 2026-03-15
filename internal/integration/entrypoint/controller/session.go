@@ -64,6 +64,16 @@ func (c *sessionController) DeleteSession(id string) error {
 	return c.sessionManager.DeleteSession(id)
 }
 
+// ArchiveSession archives a session (soft delete).
+func (c *sessionController) ArchiveSession(id string) error {
+	return c.sessionManager.ArchiveSession(id)
+}
+
+// UnarchiveSession restores a previously archived session.
+func (c *sessionController) UnarchiveSession(id string) error {
+	return c.sessionManager.UnarchiveSession(id)
+}
+
 // ListSessions returns all sessions as response DTOs.
 func (c *sessionController) ListSessions() ([]dto.SessionResponse, error) {
 	sessions, err := c.sessionManager.ListSessions()

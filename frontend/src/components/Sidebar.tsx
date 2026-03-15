@@ -26,6 +26,10 @@ interface SidebarProps {
   onRemoveRepo: (repoId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onArchiveSession: (sessionId: string) => void;
+  onUnarchiveSession: (sessionId: string) => void;
+  onArchiveTask: (taskId: string) => void;
+  onUnarchiveTask: (taskId: string) => void;
   onMoveSession?: (sessionId: string, repoId: string) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
@@ -51,6 +55,10 @@ export function Sidebar({
   onRemoveRepo,
   onDeleteTask,
   onDeleteSession,
+  onArchiveSession,
+  onUnarchiveSession,
+  onArchiveTask,
+  onUnarchiveTask,
   onMoveSession,
   onDoubleClickSession,
   onDropSession,
@@ -61,6 +69,8 @@ export function Sidebar({
     y: number;
     items: MenuItem[];
   } | null>(null);
+
+  const [showArchived, setShowArchived] = useState(false);
 
   function openRepoContextMenu(e: React.MouseEvent, repo: Repo) {
     e.preventDefault();
@@ -122,37 +132,67 @@ export function Sidebar({
   function openTaskContextMenu(e: React.MouseEvent, task: Task) {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        { type: "label", text: "// task" },
-        {
-          type: "item",
-          icon: ">",
-          iconColor: "#10B981",
-          label: "+ session",
-          onClick: () => onCreateSession(task.repoId, task.id),
-        },
-        { type: "separator" },
-        {
-          type: "item",
-          icon: "$",
-          iconColor: "#6B7280",
-          label: "rename",
-          onClick: () => console.log("TODO: rename task", task.id),
-        },
-        { type: "separator" },
-        {
-          type: "item",
-          icon: "x",
-          iconColor: "#EF4444",
-          label: "delete",
-          labelColor: "#EF4444",
-          onClick: () => onDeleteTask(task.id),
-        },
-      ],
-    });
+
+    const isArchived = !!task.archivedAt;
+
+    const items: MenuItem[] = [
+      { type: "label", text: "// task" },
+    ];
+
+    if (!isArchived) {
+      items.push({
+        type: "item",
+        icon: ">",
+        iconColor: "#10B981",
+        label: "+ session",
+        onClick: () => onCreateSession(task.repoId, task.id),
+      });
+      items.push({ type: "separator" });
+      items.push({
+        type: "item",
+        icon: "$",
+        iconColor: "#6B7280",
+        label: "rename",
+        onClick: () => console.log("TODO: rename task", task.id),
+      });
+      items.push({ type: "separator" });
+      items.push({
+        type: "item",
+        icon: "~",
+        iconColor: "#F59E0B",
+        label: "archive",
+        labelColor: "#F59E0B",
+        onClick: () => onArchiveTask(task.id),
+      });
+      items.push({
+        type: "item",
+        icon: "x",
+        iconColor: "#EF4444",
+        label: "delete",
+        labelColor: "#EF4444",
+        onClick: () => onDeleteTask(task.id),
+      });
+    } else {
+      items.push({
+        type: "item",
+        icon: "~",
+        iconColor: "#10B981",
+        label: "unarchive",
+        labelColor: "#10B981",
+        onClick: () => onUnarchiveTask(task.id),
+      });
+      items.push({ type: "separator" });
+      items.push({
+        type: "item",
+        icon: "x",
+        iconColor: "#EF4444",
+        label: "delete",
+        labelColor: "#EF4444",
+        onClick: () => onDeleteTask(task.id),
+      });
+    }
+
+    setContextMenu({ x: e.clientX, y: e.clientY, items });
   }
 
   function openSessionContextMenu(e: React.MouseEvent, session: Session) {
@@ -160,62 +200,109 @@ export function Sidebar({
     e.stopPropagation();
 
     const displaySt = getDisplayStatus(session.id, session.status);
+    const isArchived = !!session.archivedAt;
+
     const items: MenuItem[] = [
       { type: "label", text: `// session [${displaySt}]` },
     ];
 
-    items.push({
-      type: "item",
-      icon: "$",
-      iconColor: "#6B7280",
-      label: "open in terminal",
-      onClick: () => {
-        const path = session.worktreePath || session.directory;
-        if (path) api.openInTerminal(path);
-      },
-    });
-    items.push({
-      type: "item",
-      icon: "$",
-      iconColor: "#6B7280",
-      label: "open in finder",
-      onClick: () => {
-        const path = session.worktreePath || session.directory;
-        if (path) api.openInFinder(path);
-      },
-    });
-    items.push({ type: "separator" });
-    items.push({
-      type: "item",
-      icon: "$",
-      iconColor: "#6B7280",
-      label: "rename",
-      onClick: () => console.log("TODO: rename session", session.id),
-    });
-
-    // Only show "move to task" if there are >= 2 tasks in the repo
-    const repoTasks = tasksByRepo[session.repoId] ?? [];
-    if (repoTasks.length >= 2 && onMoveSession) {
+    if (!isArchived) {
       items.push({
         type: "item",
         icon: "$",
         iconColor: "#6B7280",
-        label: "move to task",
-        onClick: () => onMoveSession(session.id, session.repoId),
+        label: "open in terminal",
+        onClick: () => {
+          const path = session.worktreePath || session.directory;
+          if (path) api.openInTerminal(path);
+        },
+      });
+      items.push({
+        type: "item",
+        icon: "$",
+        iconColor: "#6B7280",
+        label: "open in finder",
+        onClick: () => {
+          const path = session.worktreePath || session.directory;
+          if (path) api.openInFinder(path);
+        },
+      });
+      items.push({ type: "separator" });
+      items.push({
+        type: "item",
+        icon: "$",
+        iconColor: "#6B7280",
+        label: "rename",
+        onClick: () => console.log("TODO: rename session", session.id),
+      });
+
+      // Only show "move to task" if there are >= 2 tasks in the repo
+      const repoTasks = tasksByRepo[session.repoId] ?? [];
+      if (repoTasks.length >= 2 && onMoveSession) {
+        items.push({
+          type: "item",
+          icon: "$",
+          iconColor: "#6B7280",
+          label: "move to task",
+          onClick: () => onMoveSession(session.id, session.repoId),
+        });
+      }
+
+      items.push({ type: "separator" });
+      items.push({
+        type: "item",
+        icon: "~",
+        iconColor: "#F59E0B",
+        label: "archive",
+        labelColor: "#F59E0B",
+        onClick: () => onArchiveSession(session.id),
+      });
+      items.push({
+        type: "item",
+        icon: "x",
+        iconColor: "#EF4444",
+        label: "delete",
+        labelColor: "#EF4444",
+        onClick: () => onDeleteSession(session.id),
+      });
+    } else {
+      items.push({
+        type: "item",
+        icon: "~",
+        iconColor: "#10B981",
+        label: "unarchive",
+        labelColor: "#10B981",
+        onClick: () => onUnarchiveSession(session.id),
+      });
+      items.push({ type: "separator" });
+      items.push({
+        type: "item",
+        icon: "x",
+        iconColor: "#EF4444",
+        label: "delete",
+        labelColor: "#EF4444",
+        onClick: () => onDeleteSession(session.id),
       });
     }
 
-    items.push({ type: "separator" });
-    items.push({
-      type: "item",
-      icon: "x",
-      iconColor: "#EF4444",
-      label: "delete",
-      labelColor: "#EF4444",
-      onClick: () => onDeleteSession(session.id),
-    });
-
     setContextMenu({ x: e.clientX, y: e.clientY, items });
+  }
+
+  // Filter sessions based on archive state
+  function filterSessions(sessions: Session[]): Session[] {
+    return sessions.filter((s) => showArchived ? !!s.archivedAt : !s.archivedAt);
+  }
+
+  // Filter tasks: in active view, show non-archived tasks.
+  // In archived view, show archived tasks OR tasks that have archived sessions.
+  function filterTasks(tasks: Task[]): Task[] {
+    return tasks.filter((t) => {
+      if (!showArchived) return !t.archivedAt;
+      // In archived view: show if task is archived, or if it has any archived sessions
+      if (t.archivedAt) return true;
+      const taskSessions = sessionsByTask[t.id] ?? [];
+      return taskSessions.some((s) => !!s.archivedAt);
+    });
   }
 
   return (
@@ -249,13 +336,44 @@ export function Sidebar({
         </button>
       </div>
 
+      {/* archive toggle */}
+      <div
+        className="flex"
+        style={{ borderBottom: "1px solid #2a2a2a" }}
+      >
+        <button
+          onClick={() => setShowArchived(false)}
+          className="flex-1 flex items-center justify-center py-2 text-[10px] lowercase transition-colors"
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontWeight: showArchived ? "normal" : 500,
+            color: showArchived ? "#6B7280" : "#10B981",
+            borderBottom: showArchived ? "2px solid transparent" : "2px solid #10B981",
+          }}
+        >
+          active
+        </button>
+        <button
+          onClick={() => setShowArchived(true)}
+          className="flex-1 flex items-center justify-center py-2 text-[10px] lowercase transition-colors"
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontWeight: showArchived ? 500 : "normal",
+            color: showArchived ? "#10B981" : "#6B7280",
+            borderBottom: showArchived ? "2px solid #10B981" : "2px solid transparent",
+          }}
+        >
+          archived
+        </button>
+      </div>
+
       {/* tree nav */}
       <nav className="flex-1 overflow-y-auto py-1">
         {repos.map((repo, idx) => (
           <RepoNode
             key={repo.id}
             repo={repo}
-            tasks={tasksByRepo[repo.id] ?? []}
+            tasks={filterTasks(tasksByRepo[repo.id] ?? [])}
             sessionsByTask={sessionsByTask}
             actionsBySession={actionsBySession}
             getDisplayStatus={getDisplayStatus}
@@ -274,31 +392,35 @@ export function Sidebar({
             onDropSession={onDropSession}
             onError={onError}
             showSeparator={idx < repos.length - 1}
+            filterSessions={filterSessions}
+            showArchived={showArchived}
           />
         ))}
       </nav>
 
       {/* bottom bar */}
-      <div className="p-3" style={{ borderTop: "1px solid #2a2a2a" }}>
-        <button
-          onClick={() => {
-            if (repos.length > 0) {
-              onCreateSession(repos[0].id);
-            }
-          }}
-          className="w-full flex items-center justify-center gap-1 px-3 py-2 text-sm lowercase transition-colors"
-          style={{
-            backgroundColor: "#10B981",
-            color: "#0A0A0A",
-            fontFamily: "'JetBrains Mono', monospace",
-            fontWeight: 500,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#059669")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#10B981")}
-        >
-          $ new_session
-        </button>
-      </div>
+      {!showArchived && (
+        <div className="p-3" style={{ borderTop: "1px solid #2a2a2a" }}>
+          <button
+            onClick={() => {
+              if (repos.length > 0) {
+                onCreateSession(repos[0].id);
+              }
+            }}
+            className="w-full flex items-center justify-center gap-1 px-3 py-2 text-sm lowercase transition-colors"
+            style={{
+              backgroundColor: "#10B981",
+              color: "#0A0A0A",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontWeight: 500,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#059669")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#10B981")}
+          >
+            $ new_session
+          </button>
+        </div>
+      )}
 
       {/* context menu overlay */}
       {contextMenu && (
@@ -334,6 +456,8 @@ function RepoNode({
   onDropSession,
   onError,
   showSeparator,
+  filterSessions,
+  showArchived,
 }: {
   repo: Repo;
   tasks: Task[];
@@ -355,6 +479,8 @@ function RepoNode({
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   onError?: (msg: string) => void;
   showSeparator: boolean;
+  filterSessions: (sessions: Session[]) => Session[];
+  showArchived: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -399,7 +525,7 @@ function RepoNode({
             <TaskNode
               key={task.id}
               task={task}
-              sessions={sessionsByTask[task.id] ?? []}
+              sessions={filterSessions(sessionsByTask[task.id] ?? [])}
               actionsBySession={actionsBySession}
               getDisplayStatus={getDisplayStatus}
               openTabIds={openTabIds}
@@ -415,23 +541,26 @@ function RepoNode({
               onDropSession={onDropSession}
               onError={onError}
               repoId={repo.id}
+              showArchived={showArchived}
             />
           ))}
 
           {/* add task */}
-          <button
-            onClick={() => onCreateTask(repo.id)}
-            className="w-full flex items-center gap-1.5 py-1 text-[10px] transition-colors"
-            style={{
-              paddingLeft: "36px",
-              color: "#4B5563",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#10B981")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
-          >
-            + task
-          </button>
+          {!showArchived && (
+            <button
+              onClick={() => onCreateTask(repo.id)}
+              className="w-full flex items-center gap-1.5 py-1 text-[10px] transition-colors"
+              style={{
+                paddingLeft: "36px",
+                color: "#4B5563",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#10B981")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
+            >
+              + task
+            </button>
+          )}
         </div>
       )}
 
@@ -460,6 +589,7 @@ function TaskNode({
   onDropSession,
   onError,
   repoId,
+  showArchived,
 }: {
   task: Task;
   sessions: Session[];
@@ -478,6 +608,7 @@ function TaskNode({
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   onError?: (msg: string) => void;
   repoId: string;
+  showArchived: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -509,6 +640,8 @@ function TaskNode({
     if (onDropSession) onDropSession(sessionId, task.id);
   }
 
+  const isArchived = !!task.archivedAt;
+
   return (
     <div
       onDragOver={handleDragOver}
@@ -524,6 +657,7 @@ function TaskNode({
           fontFamily: "'JetBrains Mono', monospace",
           backgroundColor: isDragOver ? "#1F1F1F" : undefined,
           borderLeft: isDragOver ? "2px solid #10B981" : "2px solid transparent",
+          opacity: isArchived ? 0.6 : 1,
         }}
         onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = "#1F1F1F"; }}
         onMouseLeave={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = "transparent"; }}
@@ -561,19 +695,21 @@ function TaskNode({
               depth={2}
             />
           ))}
-          <button
-            onClick={() => onCreateSession(task.repoId, task.id)}
-            className="w-full flex items-center gap-1.5 py-1 text-[10px] transition-colors"
-            style={{
-              paddingLeft: "60px",
-              color: "#4B5563",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#6B7280")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
-          >
-            + session
-          </button>
+          {!showArchived && (
+            <button
+              onClick={() => onCreateSession(task.repoId, task.id)}
+              className="w-full flex items-center gap-1.5 py-1 text-[10px] transition-colors"
+              style={{
+                paddingLeft: "60px",
+                color: "#4B5563",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#6B7280")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
+            >
+              + session
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -611,12 +747,19 @@ function SessionNode({
   const isExpanded = expandedSessionId === session.id;
   const paddingLeft = 16 + depth * 16;
   const hasWorktree = !!session.worktreePath;
+  const isArchived = !!session.archivedAt;
 
   // Single click: select session + toggle action log expansion.
-  // If the tab is already open OR the session is running/waiting, switch to the tab.
+  // For archived sessions: always open a read-only tab.
+  // For active sessions: if the tab is already open OR the session is running/waiting, switch to the tab.
   function handleClick() {
     onSelectSession(session.id);
     onExpandSession(isExpanded ? null : session.id);
+
+    if (isArchived) {
+      onOpenTab(session.id);
+      return;
+    }
 
     if (isTabOpen) {
       onOpenTab(session.id);
@@ -636,6 +779,7 @@ function SessionNode({
 
   // Double click: always open tab. If idle, also triggers start. If paused, triggers resume.
   function handleDoubleClick() {
+    if (isArchived) return; // Archived sessions are opened via single click
     onOpenTab(session.id);
     if (onDoubleClickSession) {
       onDoubleClickSession(session.id);
@@ -643,6 +787,10 @@ function SessionNode({
   }
 
   function handleDragStart(e: React.DragEvent) {
+    if (isArchived) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.setData("sessionId", session.id);
     e.dataTransfer.setData("repoId", session.repoId);
     e.dataTransfer.setData("taskId", session.taskId);
@@ -652,7 +800,7 @@ function SessionNode({
   return (
     <div>
       <button
-        draggable
+        draggable={!isArchived}
         onDragStart={handleDragStart}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
@@ -662,6 +810,7 @@ function SessionNode({
           paddingLeft: `${paddingLeft}px`,
           backgroundColor: isActive ? "#1F1F1F" : "transparent",
           fontFamily: "'JetBrains Mono', monospace",
+          opacity: isArchived ? 0.6 : 1,
         }}
         onMouseEnter={(e) => {
           if (!isActive) e.currentTarget.style.backgroundColor = "#1F1F1F";

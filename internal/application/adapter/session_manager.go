@@ -13,6 +13,8 @@ type SessionManager interface {
 	ResumeSession(id string, rows int, cols int) error
 	StopSession(id string) error
 	DeleteSession(id string) error
+	ArchiveSession(id string) error
+	UnarchiveSession(id string) error
 	ListSessions() ([]entity.Session, error)
 	ListSessionsByRepo(repoID string) ([]entity.Session, error)
 	ListSessionsByTask(taskID string) ([]entity.Session, error)

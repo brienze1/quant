@@ -25,6 +25,7 @@ type SessionRow struct {
 	CreatedAt       string
 	UpdatedAt       string
 	LastActiveAt    string
+	ArchivedAt      sql.NullString
 }
 
 // ToEntity converts a SessionRow to a domain entity.
@@ -32,6 +33,12 @@ func (r SessionRow) ToEntity() entity.Session {
 	createdAt, _ := time.Parse(time.RFC3339, r.CreatedAt)
 	updatedAt, _ := time.Parse(time.RFC3339, r.UpdatedAt)
 	lastActiveAt, _ := time.Parse(time.RFC3339, r.LastActiveAt)
+
+	var archivedAt *time.Time
+	if r.ArchivedAt.Valid {
+		t, _ := time.Parse(time.RFC3339, r.ArchivedAt.String)
+		archivedAt = &t
+	}
 
 	return entity.Session{
 		ID:              r.ID,
@@ -49,11 +56,17 @@ func (r SessionRow) ToEntity() entity.Session {
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 		LastActiveAt:    lastActiveAt,
+		ArchivedAt:      archivedAt,
 	}
 }
 
 // SessionRowFromEntity converts a domain entity to a SessionRow.
 func SessionRowFromEntity(session entity.Session) SessionRow {
+	var archivedAt sql.NullString
+	if session.ArchivedAt != nil {
+		archivedAt = sql.NullString{String: session.ArchivedAt.Format(time.RFC3339), Valid: true}
+	}
+
 	return SessionRow{
 		ID:              session.ID,
 		Name:            session.Name,
@@ -70,6 +83,7 @@ func SessionRowFromEntity(session entity.Session) SessionRow {
 		CreatedAt:       session.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:       session.UpdatedAt.Format(time.RFC3339),
 		LastActiveAt:    session.LastActiveAt.Format(time.RFC3339),
+		ArchivedAt:      archivedAt,
 	}
 }
 
