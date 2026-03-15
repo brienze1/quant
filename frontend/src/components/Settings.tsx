@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Config, Repo } from "../types";
 import * as api from "../api";
 
@@ -186,6 +186,8 @@ function GeneralTab({ config, update }: TabProps) {
 function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
   const [newRepo, setNewRepo] = useState("");
   const [newBranch, setNewBranch] = useState("");
+  const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
+  const repoDropdownRef = useRef<HTMLDivElement>(null);
 
   function addOverride() {
     if (!newRepo.trim() || !newBranch.trim()) return;
@@ -234,11 +236,6 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
             />
           }
         />
-        <SettingRow
-          label="delete branch on session complete"
-          description="automatically remove worktree branch when session status is done"
-          right={<Toggle checked={config.deleteBranchOnDone} onChange={(v) => update("deleteBranchOnDone", v)} />}
-        />
       </Section>
 
       <Section title="per-repo overrides" description="override pull branch for specific repositories">
@@ -279,26 +276,43 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
         </div>
         {/* Add override row */}
         <div className="flex items-center gap-2 mt-3">
-          <select
-            value={newRepo}
-            onChange={(e) => setNewRepo(e.target.value)}
-            style={{
-              backgroundColor: "#0F0F0F",
-              border: "1px solid #2a2a2a",
-              color: newRepo ? "#FAFAFA" : "#4B5563",
-              fontSize: 11,
-              height: 32,
-              padding: "0 8px",
-              fontFamily: font,
-            }}
-          >
-            <option value="">select repo</option>
-            {repos
-              .filter((r) => !(r.name in config.branchOverrides))
-              .map((r) => (
-                <option key={r.id} value={r.name}>{r.name}</option>
-              ))}
-          </select>
+          <div ref={repoDropdownRef} style={{ position: "relative", width: 200 }}>
+            <button
+              onClick={() => setRepoDropdownOpen((prev) => !prev)}
+              style={{
+                width: 200,
+                height: 32,
+                backgroundColor: "#0F0F0F",
+                border: `1px solid ${repoDropdownOpen ? "#10B981" : "#2a2a2a"}`,
+                color: newRepo ? "#FAFAFA" : "#4B5563",
+                fontSize: 12,
+                fontFamily: font,
+                padding: "0 12px",
+                textAlign: "left",
+                cursor: "pointer",
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='none' stroke='%236B7280' stroke-width='1.5'/%3E%3C/svg%3E")`,
+                backgroundRepeat: "no-repeat",
+                backgroundPosition: "right 12px center",
+              }}
+            >
+              {newRepo || "select repo"}
+            </button>
+            {repoDropdownOpen && (
+              <DropdownMenu
+                anchorRef={repoDropdownRef}
+                onClose={() => setRepoDropdownOpen(false)}
+                items={repos
+                  .filter((r) => !(r.name in config.branchOverrides))
+                  .map((r) => ({
+                    label: r.name,
+                    onClick: () => {
+                      setNewRepo(r.name);
+                      setRepoDropdownOpen(false);
+                    },
+                  }))}
+              />
+            )}
+          </div>
           <TextInput value={newBranch} onChange={setNewBranch} width={160} placeholder="branch" />
           <button
             onClick={addOverride}
@@ -934,6 +948,86 @@ function BrowseButton({ onClick }: { onClick: () => void }) {
     >
       browse
     </button>
+  );
+}
+
+function DropdownMenu({
+  anchorRef,
+  onClose,
+  items,
+}: {
+  anchorRef: React.RefObject<HTMLDivElement | null>;
+  onClose: () => void;
+  items: { label: string; onClick: () => void }[];
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    function handleClick(e: MouseEvent) {
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        anchorRef.current && !anchorRef.current.contains(e.target as Node)
+      ) {
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handleClick);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClick);
+    };
+  }, [onClose, anchorRef]);
+
+  return (
+    <div
+      ref={menuRef}
+      style={{
+        position: "absolute",
+        top: 36,
+        left: 0,
+        zIndex: 50,
+        backgroundColor: "#0A0A0A",
+        border: "1px solid #2a2a2a",
+        minWidth: 180,
+        width: "100%",
+      }}
+    >
+      {items.length === 0 && (
+        <div
+          className="px-3 py-2"
+          style={{ color: "#4B5563", fontSize: 11, fontFamily: font }}
+        >
+          no repos available
+        </div>
+      )}
+      {items.map((item) => (
+        <button
+          key={item.label}
+          onClick={item.onClick}
+          className="w-full flex items-center text-left transition-colors"
+          style={{
+            height: 28,
+            padding: "0 12px",
+            gap: 8,
+            fontFamily: font,
+            fontSize: 11,
+            color: "#D1D5DB",
+            backgroundColor: "transparent",
+            border: "none",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1F1F1F")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+        >
+          <span style={{ color: "#10B981", flexShrink: 0 }}>~</span>
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 

@@ -3,6 +3,8 @@ package service
 
 import (
 	"fmt"
+	"log"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -24,6 +26,7 @@ type sessionManagerService struct {
 	spawnProcess   usecase.SpawnProcess
 	findRepo       usecase.FindRepo
 	manageWorktree usecase.ManageWorktree
+	loadConfig     usecase.LoadConfig
 }
 
 // NewSessionManagerService creates a new SessionManager service.
@@ -36,6 +39,7 @@ func NewSessionManagerService(
 	spawnProcess usecase.SpawnProcess,
 	findRepo usecase.FindRepo,
 	manageWorktree usecase.ManageWorktree,
+	loadConfig usecase.LoadConfig,
 ) adapter.SessionManager {
 	return &sessionManagerService{
 		findSession:    findSession,
@@ -45,11 +49,13 @@ func NewSessionManagerService(
 		spawnProcess:   spawnProcess,
 		findRepo:       findRepo,
 		manageWorktree: manageWorktree,
+		loadConfig:     loadConfig,
 	}
 }
 
 // CreateSession creates a new session with the given parameters.
 // The directory is resolved from the repo's path.
+// Config settings used: branchNamePattern, autoPull, defaultPullBranch, branchOverrides.
 func (s *sessionManagerService) CreateSession(name string, description string, sessionType string, repoID string, taskID string, useWorktree bool, skipPermissions bool) (*entity.Session, error) {
 	repo, err := s.findRepo.FindRepoByID(repoID)
 	if err != nil {
@@ -60,11 +66,31 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 		return nil, fmt.Errorf("repo not found: %s", repoID)
 	}
 
+	cfg, err := s.loadConfig.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Auto-pull latest changes before creating the session.
+	if cfg.AutoPull {
+		pullBranch := cfg.DefaultPullBranch
+		if override, ok := cfg.BranchOverrides[repo.Name]; ok && override != "" {
+			pullBranch = override
+		}
+
+		cmd := exec.Command("git", "pull", "origin", pullBranch)
+		cmd.Dir = repo.Path
+		if output, pullErr := cmd.CombinedOutput(); pullErr != nil {
+			log.Printf("auto-pull failed for repo %s (branch %s): %s: %s", repo.Name, pullBranch, pullErr, string(output))
+		}
+	}
+
 	directory := repo.Path
 	var worktreePath, branchName string
 
 	if useWorktree {
-		branch := "quant/" + strings.ReplaceAll(strings.ToLower(name), " ", "-")
+		sanitizedName := strings.ReplaceAll(strings.ToLower(name), " ", "-")
+		branch := strings.ReplaceAll(cfg.BranchNamePattern, "{session}", sanitizedName)
 		wt, wtErr := s.manageWorktree.Create(repo.Path, branch)
 		if wtErr != nil {
 			return nil, fmt.Errorf("failed to create worktree: %w", wtErr)

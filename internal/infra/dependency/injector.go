@@ -148,8 +148,9 @@ func (i *Injector) SessionManager() appAdapter.SessionManager {
 			sp, // DeleteSession
 			sp, // UpdateSession
 			i.ProcessManager(),
-			i.RepoPersistence(), // FindRepo
-			i.WorktreeManager(), // ManageWorktree
+			i.RepoPersistence(),   // FindRepo
+			i.WorktreeManager(),   // ManageWorktree
+			i.ConfigPersistence(), // LoadConfig
 		)
 	}
 	return i.sessionManager
