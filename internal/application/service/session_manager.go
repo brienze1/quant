@@ -78,10 +78,26 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 			pullBranch = override
 		}
 
-		cmd := exec.Command("git", "pull", "origin", pullBranch)
-		cmd.Dir = repo.Path
-		if output, pullErr := cmd.CombinedOutput(); pullErr != nil {
-			log.Printf("auto-pull failed for repo %s (branch %s): %s: %s", repo.Name, pullBranch, pullErr, string(output))
+		// Fetch latest from remote.
+		fetchCmd := exec.Command("git", "fetch", "origin")
+		fetchCmd.Dir = repo.Path
+		if output, fetchErr := fetchCmd.CombinedOutput(); fetchErr != nil {
+			log.Printf("auto-fetch failed for repo %s: %s: %s", repo.Name, fetchErr, string(output))
+		}
+
+		// Determine the current branch.
+		branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+		branchCmd.Dir = repo.Path
+		currentBranchBytes, branchErr := branchCmd.Output()
+		currentBranch := strings.TrimSpace(string(currentBranchBytes))
+
+		// Only merge if we're on the pull branch (avoids merge conflicts on unrelated branches).
+		if branchErr == nil && currentBranch == pullBranch {
+			mergeCmd := exec.Command("git", "merge", "origin/"+pullBranch)
+			mergeCmd.Dir = repo.Path
+			if output, mergeErr := mergeCmd.CombinedOutput(); mergeErr != nil {
+				log.Printf("auto-merge failed for repo %s (branch %s): %s: %s", repo.Name, pullBranch, mergeErr, string(output))
+			}
 		}
 	}
 
