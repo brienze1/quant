@@ -47,7 +47,7 @@ func Run(assets embed.FS) error {
 	processManager := injector.ProcessManager()
 
 	err = wails.Run(&options.App{
-		Title:  "quant",
+		Title:  ">_ quant",
 		Width:  1440,
 		Height: 900,
 		AssetServer: &assetserver.Options{

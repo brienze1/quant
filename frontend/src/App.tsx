@@ -671,7 +671,7 @@ function App() {
         onOpenSettings={() => setView("settings")}
       />
 
-      <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "#0A0A0A" }}>
+      <main className="flex-1 flex flex-col relative min-w-0 overflow-hidden" style={{ backgroundColor: "#0A0A0A" }}>
         {error && (
           <div
             className="absolute top-0 left-0 right-0 z-40 text-xs px-4 py-2 flex justify-between"

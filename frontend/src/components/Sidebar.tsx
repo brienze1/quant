@@ -519,7 +519,8 @@ export function Sidebar({
             className="text-sm font-bold lowercase"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}
           >
-            <span style={{ color: "#10B981" }}>{">"}</span>{" "}
+            <span style={{ color: "#10B981" }}>{">"}</span>
+            <span style={{ color: "#10B981" }}>{"_"}</span>{" "}
             <span style={{ color: "#FAFAFA" }}>quant</span>
           </h1>
           <div className="flex items-center gap-3">
