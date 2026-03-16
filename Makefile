@@ -34,3 +34,9 @@ dev:
 
 build:
 	wails build
+
+reinstall:
+	brew uninstall quant
+	brew untap brienze1/tap
+	brew tap brienze1/tap
+	brew install quant
