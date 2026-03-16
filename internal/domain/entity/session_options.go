@@ -11,4 +11,5 @@ type SessionOptions struct {
 	BranchNamePattern string
 	Model             string
 	ExtraCliArgs      string
+	DirectoryOverride string // If set, use this directory instead of repo path
 }

@@ -45,6 +45,7 @@ func (c *sessionController) CreateSession(request dto.CreateSessionRequest) (*dt
 		BranchNamePattern: request.BranchNamePattern,
 		Model:             request.Model,
 		ExtraCliArgs:      request.ExtraCliArgs,
+		DirectoryOverride: request.DirectoryOverride,
 	}
 	session, err := c.sessionManager.CreateSession(request.Name, request.Description, request.SessionType, request.RepoID, request.TaskID, opts)
 	if err != nil {

@@ -21,6 +21,7 @@ type CreateSessionRequest struct {
 	BranchNamePattern string `json:"branchNamePattern"`
 	Model             string `json:"model"`
 	ExtraCliArgs      string `json:"extraCliArgs"`
+	DirectoryOverride string `json:"directoryOverride"`
 }
 
 // SessionResponse represents the response payload for session data.

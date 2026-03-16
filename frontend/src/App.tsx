@@ -464,6 +464,36 @@ function App() {
     }
   }
 
+  async function handleQuickCreateSession(fromSession: Session) {
+    const oppositeType = fromSession.sessionType === "claude" ? "terminal" : "claude";
+    const name = `${oppositeType}-${fromSession.name}`;
+    const directory = fromSession.worktreePath || fromSession.directory;
+    const req: CreateSessionRequest = {
+      name,
+      description: "",
+      repoId: fromSession.repoId,
+      taskId: fromSession.taskId || undefined,
+      sessionType: oppositeType,
+      useWorktree: false,
+      skipPermissions: false,
+      autoPull: false,
+      pullBranch: "",
+      branchNamePattern: "",
+      model: "",
+      extraCliArgs: "",
+      directoryOverride: directory,
+    };
+    try {
+      setError(null);
+      const session = await api.createSession(req);
+      await fetchSessionsForRepo(fromSession.repoId);
+      if (fromSession.taskId) await fetchSessionsForTask(fromSession.taskId);
+      handleOpenTab(session.id);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   async function handleArchiveTask(taskId: string) {
     const sessions = sessionsByTask[taskId] ?? [];
     // Remove open tabs for sessions in this task
@@ -618,6 +648,7 @@ function App() {
         onDoubleClickSession={handleDoubleClickSession}
         onRenameSession={handleRenameSession}
         onDropSession={(sessionId, targetTaskId) => handleMoveSessionSelect(sessionId, targetTaskId)}
+        onQuickCreateSession={handleQuickCreateSession}
         onError={(msg) => setError(msg)}
         onOpenSettings={() => setView("settings")}
       />

@@ -75,6 +75,9 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 	}
 
 	directory := repo.Path
+	if opts.DirectoryOverride != "" {
+		directory = opts.DirectoryOverride
+	}
 	var worktreePath, branchName string
 
 	if opts.UseWorktree {

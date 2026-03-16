@@ -77,6 +77,7 @@ export interface CreateSessionRequest {
   branchNamePattern: string;
   model: string;
   extraCliArgs: string;
+  directoryOverride?: string;
 }
 
 export interface Config {

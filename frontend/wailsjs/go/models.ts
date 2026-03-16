@@ -113,6 +113,7 @@ export namespace dto {
 	    branchNamePattern: string;
 	    model: string;
 	    extraCliArgs: string;
+	    directoryOverride: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new CreateSessionRequest(source);
@@ -132,6 +133,7 @@ export namespace dto {
 	        this.branchNamePattern = source["branchNamePattern"];
 	        this.model = source["model"];
 	        this.extraCliArgs = source["extraCliArgs"];
+	        this.directoryOverride = source["directoryOverride"];
 	    }
 	}
 	export class CreateTaskRequest {

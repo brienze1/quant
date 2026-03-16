@@ -39,6 +39,7 @@ interface SidebarProps {
   onMoveSession?: (sessionId: string, repoId: string) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
+  onQuickCreateSession?: (session: Session) => void;
   onError?: (msg: string) => void;
   onOpenSettings?: () => void;
 }
@@ -70,6 +71,7 @@ export function Sidebar({
   onMoveSession,
   onDoubleClickSession,
   onDropSession,
+  onQuickCreateSession,
   onError,
   onOpenSettings,
 }: SidebarProps) {
@@ -247,11 +249,33 @@ export function Sidebar({
     ];
 
     if (!isArchived) {
+      // Quick-create opposite session type
+      if (onQuickCreateSession) {
+        if (session.sessionType === "claude") {
+          items.push({
+            type: "item",
+            icon: ">",
+            iconColor: "#A78BFA",
+            label: "open in terminal",
+            onClick: () => onQuickCreateSession(session),
+          });
+        } else {
+          items.push({
+            type: "item",
+            icon: ">",
+            iconColor: "#8B5CF6",
+            label: "open in claude",
+            onClick: () => onQuickCreateSession(session),
+          });
+        }
+        items.push({ type: "separator" });
+      }
+
       items.push({
         type: "item",
         icon: "$",
         iconColor: "#6B7280",
-        label: "open in terminal",
+        label: "open in system terminal",
         onClick: () => {
           const path = session.worktreePath || session.directory;
           if (path) api.openInTerminal(path);
