@@ -9,46 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  build-macos:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.26"
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-      - name: Build macOS app
-        run: |
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            wails build -platform darwin/arm64
-          else
-            wails build -platform darwin/amd64
-          fi
-
-      - name: Package macOS app
-        run: |
-          cd build/bin
-          zip -r quant-macos-${{ matrix.arch }}.zip quant.app
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: quant-macos-${{ matrix.arch }}
-          path: build/bin/quant-macos-${{ matrix.arch }}.zip
-
   build-windows:
     runs-on: windows-latest
     steps:
@@ -80,7 +40,7 @@ jobs:
           path: build/bin/quant-windows-amd64.zip
 
   release:
-    needs: [build-macos, build-windows]
+    needs: [build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,8 +55,6 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/quant-macos-amd64/quant-macos-amd64.zip
-            artifacts/quant-macos-arm64/quant-macos-arm64.zip
             artifacts/quant-windows-amd64/quant-windows-amd64.zip
 
   update-homebrew:
@@ -107,34 +65,21 @@ jobs:
         id: version
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Wait for release assets
-        run: sleep 10
-
-      - name: Download macOS ARM64 release
-        run: |
-          curl -L -o quant-macos-arm64.zip \
-            "https://github.com/brienze1/quant/releases/download/${{ steps.version.outputs.tag }}/quant-macos-arm64.zip"
-
-      - name: Download macOS AMD64 release
-        run: |
-          curl -L -o quant-macos-amd64.zip \
-            "https://github.com/brienze1/quant/releases/download/${{ steps.version.outputs.tag }}/quant-macos-amd64.zip"
-
-      - name: Calculate SHA256
+      - name: Download source tarball and compute SHA256
         id: sha
         run: |
-          echo "arm64=$(sha256sum quant-macos-arm64.zip | cut -d' ' -f1)" >> $GITHUB_OUTPUT
-          echo "amd64=$(sha256sum quant-macos-amd64.zip | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          TAG="${{ steps.version.outputs.tag }}"
+          curl -sL -o source.tar.gz "https://github.com/brienze1/quant/archive/refs/tags/${TAG}.tar.gz"
+          echo "sha256=$(sha256sum source.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
 
       - name: Update Homebrew tap
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           repository: brienze1/homebrew-tap
-          event-type: update-cask
+          event-type: update-formula
           client-payload: |
             {
               "version": "${{ steps.version.outputs.tag }}",
-              "sha256_arm64": "${{ steps.sha.outputs.arm64 }}",
-              "sha256_amd64": "${{ steps.sha.outputs.amd64 }}"
+              "sha256": "${{ steps.sha.outputs.sha256 }}"
             }
