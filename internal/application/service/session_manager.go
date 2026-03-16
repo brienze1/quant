@@ -380,6 +380,26 @@ func (s *sessionManagerService) RenameSession(id string, newName string) error {
 	return s.updateSession.Update(*session)
 }
 
+// CheckBranchExists checks if a git branch already exists in the given repo.
+func (s *sessionManagerService) CheckBranchExists(repoID string, branchName string) (bool, error) {
+	repo, err := s.findRepo.FindRepoByID(repoID)
+	if err != nil {
+		return false, fmt.Errorf("failed to find repo: %w", err)
+	}
+	if repo == nil {
+		return false, fmt.Errorf("repo not found: %s", repoID)
+	}
+
+	cmd := exec.Command("git", "branch", "--list", branchName)
+	cmd.Dir = repo.Path
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to check branch: %w", err)
+	}
+
+	return strings.TrimSpace(string(output)) != "", nil
+}
+
 // GetSessionOutput returns the persisted terminal output for a session.
 func (s *sessionManagerService) GetSessionOutput(id string) (string, error) {
 	data, err := s.spawnProcess.GetOutput(id)

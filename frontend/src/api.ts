@@ -152,6 +152,10 @@ export function renameSession(id: string, newName: string): Promise<void> {
   return callGo(PKG, SESSION_CTRL, "RenameSession", id, newName);
 }
 
+export function checkBranchExists(repoId: string, branchName: string): Promise<boolean> {
+  return callGo(PKG, SESSION_CTRL, "CheckBranchExists", repoId, branchName);
+}
+
 // --- Actions ---
 
 const ACTION_CTRL = "actionController";

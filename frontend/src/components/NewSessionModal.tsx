@@ -54,14 +54,15 @@ export function NewSessionModal({
     });
   }, []);
 
+  const [branchExistsWarning, setBranchExistsWarning] = useState(false);
+  const [checking, setChecking] = useState(false);
+
   const tasks = tasksByRepo[repoId] ?? [];
   const selectedRepo = repos.find((r) => r.id === repoId);
   const selectedTask = tasks.find((t) => t.id === taskId);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || !repoId || !taskId) return;
-    const req: CreateSessionRequest = {
+  function buildRequest(): CreateSessionRequest {
+    return {
       name: name.trim().toLowerCase(),
       description: description.trim().toLowerCase(),
       repoId,
@@ -75,7 +76,35 @@ export function NewSessionModal({
       model: sessionType === "claude" ? model : "",
       extraCliArgs: sessionType === "claude" ? extraCliArgs : "",
     };
-    onSubmit(req);
+  }
+
+  function resolveBranchName(): string {
+    const sanitizedName = name.trim().toLowerCase().replace(/\s+/g, "-");
+    return branchNamePattern.replace("{session}", sanitizedName);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !repoId || !taskId) return;
+
+    // If worktree enabled and not already confirmed, check if branch exists.
+    if (useWorktree && !branchExistsWarning) {
+      setChecking(true);
+      try {
+        const exists = await api.checkBranchExists(repoId, resolveBranchName());
+        if (exists) {
+          setBranchExistsWarning(true);
+          setChecking(false);
+          return;
+        }
+      } catch {
+        // If check fails, proceed with creation (backend will handle errors).
+      }
+      setChecking(false);
+    }
+
+    setBranchExistsWarning(false);
+    onSubmit(buildRequest());
   }
 
   const inputStyle: React.CSSProperties = {
@@ -172,7 +201,7 @@ export function NewSessionModal({
             <input
               autoFocus
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setBranchExistsWarning(false); }}
               placeholder={sessionType === "claude" ? "implement fix" : "deploy setup"}
               className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
               style={inputStyle}
@@ -238,7 +267,7 @@ export function NewSessionModal({
               {/* branch section */}
               <div className="flex flex-col gap-3">
                 <span style={{ color: "#10B981", fontSize: 10, fontWeight: 700 }}>branch</span>
-                <AdvancedInput label="branch pattern" description="template using {session} placeholder" value={branchNamePattern} onChange={setBranchNamePattern} />
+                <AdvancedInput label="branch pattern" description="template using {session} placeholder" value={branchNamePattern} onChange={(v) => { setBranchNamePattern(v); setBranchExistsWarning(false); }} />
               </div>
 
               {/* claude cli section — only for claude sessions */}
@@ -255,6 +284,48 @@ export function NewSessionModal({
             </>
           )}
 
+          {/* branch exists warning */}
+          {branchExistsWarning && (
+            <div
+              className="flex flex-col gap-3 p-3"
+              style={{
+                backgroundColor: "#1A1A0A",
+                border: "1px solid #92400E",
+              }}
+            >
+              <span style={{ color: "#F59E0B", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                branch "{resolveBranchName()}" already exists
+              </span>
+              <span style={{ color: "#6B7280", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                you can change the session name to create a new branch, or use the existing branch as is.
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setBranchExistsWarning(false)}
+                  className="px-3 py-1.5 text-[10px] lowercase transition-colors"
+                  style={{ color: "#6B7280", border: "1px solid #2a2a2a" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+                >
+                  change name
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setBranchExistsWarning(false); onSubmit(buildRequest()); }}
+                  className="px-3 py-1.5 text-[10px] lowercase transition-colors"
+                  style={{
+                    backgroundColor: "#F59E0B",
+                    color: "#0A0A0A",
+                    fontWeight: 500,
+                  }}
+                >
+                  use existing branch
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* actions */}
           <div className="flex items-center justify-end gap-3">
             <button
@@ -269,7 +340,7 @@ export function NewSessionModal({
             </button>
             <button
               type="submit"
-              disabled={!name.trim() || !repoId || !taskId}
+              disabled={!name.trim() || !repoId || !taskId || checking}
               className="px-4 py-2 text-xs lowercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 backgroundColor: "#10B981",
@@ -277,7 +348,7 @@ export function NewSessionModal({
                 fontWeight: 500,
               }}
             >
-              create
+              {checking ? "checking..." : "create"}
             </button>
           </div>
         </div>

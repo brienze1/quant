@@ -5,6 +5,8 @@ import {context} from '../models';
 
 export function ArchiveSession(arg1:string):Promise<void>;
 
+export function CheckBranchExists(arg1:string,arg2:string):Promise<boolean>;
+
 export function CreateSession(arg1:dto.CreateSessionRequest):Promise<dto.SessionResponse>;
 
 export function DeleteSession(arg1:string):Promise<void>;

@@ -27,4 +27,5 @@ type SessionController interface {
 	GetSessionOutput(id string) (string, error)
 	MoveSessionToTask(sessionID string, newTaskID string) error
 	RenameSession(id string, newName string) error
+	CheckBranchExists(repoID string, branchName string) (bool, error)
 }

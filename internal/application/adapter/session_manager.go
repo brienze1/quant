@@ -24,4 +24,5 @@ type SessionManager interface {
 	GetSessionOutput(id string) (string, error)
 	UpdateSessionTask(sessionID string, newTaskID string) error
 	RenameSession(id string, newName string) error
+	CheckBranchExists(repoID string, branchName string) (bool, error)
 }

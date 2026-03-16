@@ -145,6 +145,11 @@ func (c *sessionController) RenameSession(id string, newName string) error {
 	return c.sessionManager.RenameSession(id, newName)
 }
 
+// CheckBranchExists checks if a git branch already exists in the given repo.
+func (c *sessionController) CheckBranchExists(repoID string, branchName string) (bool, error) {
+	return c.sessionManager.CheckBranchExists(repoID, branchName)
+}
+
 // GetSessionOutput returns the persisted output for a session.
 func (c *sessionController) GetSessionOutput(id string) (string, error) {
 	return c.sessionManager.GetSessionOutput(id)

@@ -6,6 +6,10 @@ export function ArchiveSession(arg1) {
   return window['go']['controller']['sessionController']['ArchiveSession'](arg1);
 }
 
+export function CheckBranchExists(arg1, arg2) {
+  return window['go']['controller']['sessionController']['CheckBranchExists'](arg1, arg2);
+}
+
 export function CreateSession(arg1) {
   return window['go']['controller']['sessionController']['CreateSession'](arg1);
 }
