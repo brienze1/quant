@@ -35,6 +35,7 @@ interface SidebarProps {
   onUnarchiveSession: (sessionId: string) => void;
   onArchiveTask: (taskId: string) => void;
   onUnarchiveTask: (taskId: string) => void;
+  onRenameTask?: (taskId: string, currentTag: string, currentName: string) => void;
   onRenameSession?: (sessionId: string, currentName: string) => void;
   onMoveSession?: (sessionId: string, repoId: string) => void;
   onDoubleClickSession?: (id: string) => void;
@@ -67,6 +68,7 @@ export function Sidebar({
   onUnarchiveSession,
   onArchiveTask,
   onUnarchiveTask,
+  onRenameTask,
   onRenameSession,
   onMoveSession,
   onDoubleClickSession,
@@ -195,7 +197,7 @@ export function Sidebar({
         icon: "$",
         iconColor: "#6B7280",
         label: "rename",
-        onClick: () => console.log("TODO: rename task", task.id),
+        onClick: () => onRenameTask?.(task.id, task.tag, task.name),
       });
       items.push({ type: "separator" });
       items.push({

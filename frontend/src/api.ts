@@ -84,6 +84,10 @@ export function unarchiveTask(id: string): Promise<void> {
   return callGo(PKG, TASK_CTRL, "UnarchiveTask", id);
 }
 
+export function renameTask(id: string, newTag: string, newName: string): Promise<void> {
+  return callGo(PKG, TASK_CTRL, "RenameTask", id, newTag, newName);
+}
+
 // --- Sessions ---
 
 const SESSION_CTRL = "sessionController";

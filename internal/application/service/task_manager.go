@@ -168,6 +168,24 @@ func (s *taskManagerService) UnarchiveTask(id string) error {
 	return s.updateTask.UpdateTask(*task)
 }
 
+// RenameTask updates the tag and name of a task.
+func (s *taskManagerService) RenameTask(id string, newTag string, newName string) error {
+	task, err := s.findTask.FindTaskByID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find task: %w", err)
+	}
+
+	if task == nil {
+		return fmt.Errorf("task not found: %s", id)
+	}
+
+	task.Tag = newTag
+	task.Name = newName
+	task.UpdatedAt = time.Now()
+
+	return s.updateTask.UpdateTask(*task)
+}
+
 // DeleteTask removes a task and all its sessions by ID.
 func (s *taskManagerService) DeleteTask(id string) error {
 	task, err := s.findTask.FindTaskByID(id)

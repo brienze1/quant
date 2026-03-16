@@ -19,6 +19,7 @@ import { TabBar } from "./components/TabBar";
 import { MoveSessionModal } from "./components/MoveSessionModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { RenameModal } from "./components/RenameModal";
+import { RenameTaskModal } from "./components/RenameTaskModal";
 import { Settings } from "./components/Settings";
 
 type ModalState =
@@ -28,7 +29,8 @@ type ModalState =
   | { type: "newSession"; repoId: string; taskId?: string }
   | { type: "moveSession"; sessionId: string; repoId: string }
   | { type: "confirm"; message: string; onConfirm: () => void }
-  | { type: "renameSession"; sessionId: string; currentName: string };
+  | { type: "renameSession"; sessionId: string; currentName: string }
+  | { type: "renameTask"; taskId: string; currentTag: string; currentName: string };
 
 type View = "dashboard" | "settings";
 
@@ -565,6 +567,21 @@ function App() {
     handleOpenTab(id);
   }
 
+  function handleRenameTask(taskId: string, currentTag: string, currentName: string) {
+    setModal({ type: "renameTask", taskId, currentTag, currentName });
+  }
+
+  async function handleRenameTaskSubmit(taskId: string, newTag: string, newName: string) {
+    try {
+      setError(null);
+      await api.renameTask(taskId, newTag, newName);
+      setModal({ type: "none" });
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   function handleRenameSession(sessionId: string, currentName: string) {
     setModal({ type: "renameSession", sessionId, currentName });
   }
@@ -646,6 +663,7 @@ function App() {
         onUnarchiveTask={handleUnarchiveTask}
         onMoveSession={handleMoveSession}
         onDoubleClickSession={handleDoubleClickSession}
+        onRenameTask={handleRenameTask}
         onRenameSession={handleRenameSession}
         onDropSession={(sessionId, targetTaskId) => handleMoveSessionSelect(sessionId, targetTaskId)}
         onQuickCreateSession={handleQuickCreateSession}
@@ -745,6 +763,15 @@ function App() {
         <RenameModal
           currentName={modal.currentName}
           onSubmit={(newName) => handleRenameSessionSubmit(modal.sessionId, newName)}
+          onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+
+      {modal.type === "renameTask" && (
+        <RenameTaskModal
+          currentTag={modal.currentTag}
+          currentName={modal.currentName}
+          onSubmit={(newTag, newName) => handleRenameTaskSubmit(modal.taskId, newTag, newName)}
           onCancel={() => setModal({ type: "none" })}
         />
       )}

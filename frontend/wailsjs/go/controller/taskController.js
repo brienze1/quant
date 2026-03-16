@@ -30,6 +30,10 @@ export function OnStartup(arg1) {
   return window['go']['controller']['taskController']['OnStartup'](arg1);
 }
 
+export function RenameTask(arg1, arg2, arg3) {
+  return window['go']['controller']['taskController']['RenameTask'](arg1, arg2, arg3);
+}
+
 export function UnarchiveTask(arg1) {
   return window['go']['controller']['taskController']['UnarchiveTask'](arg1);
 }

@@ -17,4 +17,5 @@ type TaskController interface {
 	DeleteTask(id string) error
 	ArchiveTask(id string) error
 	UnarchiveTask(id string) error
+	RenameTask(id string, newTag string, newName string) error
 }

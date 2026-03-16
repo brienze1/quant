@@ -17,4 +17,6 @@ export function OnShutdown(arg1:context.Context):Promise<void>;
 
 export function OnStartup(arg1:context.Context):Promise<void>;
 
+export function RenameTask(arg1:string,arg2:string,arg3:string):Promise<void>;
+
 export function UnarchiveTask(arg1:string):Promise<void>;

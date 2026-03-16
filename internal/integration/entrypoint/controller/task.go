@@ -78,3 +78,8 @@ func (c *taskController) ArchiveTask(id string) error {
 func (c *taskController) UnarchiveTask(id string) error {
 	return c.taskManager.UnarchiveTask(id)
 }
+
+// RenameTask updates the tag and name of a task.
+func (c *taskController) RenameTask(id string, newTag string, newName string) error {
+	return c.taskManager.RenameTask(id, newTag, newName)
+}
