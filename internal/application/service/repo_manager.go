@@ -17,6 +17,7 @@ type repoManagerService struct {
 	findRepo   usecase.FindRepo
 	saveRepo   usecase.SaveRepo
 	deleteRepo usecase.DeleteRepo
+	updateRepo usecase.UpdateRepo
 }
 
 // NewRepoManagerService creates a new RepoManager service.
@@ -25,16 +26,37 @@ func NewRepoManagerService(
 	findRepo usecase.FindRepo,
 	saveRepo usecase.SaveRepo,
 	deleteRepo usecase.DeleteRepo,
+	updateRepo usecase.UpdateRepo,
 ) adapter.RepoManager {
 	return &repoManagerService{
 		findRepo:   findRepo,
 		saveRepo:   saveRepo,
 		deleteRepo: deleteRepo,
+		updateRepo: updateRepo,
 	}
 }
 
-// OpenRepo registers a new repository with the given name and path.
+// OpenRepo registers a new repository or reopens a previously closed one with the same path.
 func (s *repoManagerService) OpenRepo(name string, path string) (*entity.Repo, error) {
+	// Check if a repo with this path already exists (possibly closed).
+	existing, err := s.findRepo.FindRepoByPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing repo: %w", err)
+	}
+
+	if existing != nil {
+		// Reopen it (clears closed_at, updates name).
+		err = s.updateRepo.ReopenRepo(existing.ID, name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reopen repo: %w", err)
+		}
+		existing.Name = name
+		existing.ClosedAt = nil
+		now := time.Now()
+		existing.UpdatedAt = now
+		return existing, nil
+	}
+
 	now := time.Now()
 	repo := entity.Repo{
 		ID:        uuid.New().String(),
@@ -44,7 +66,7 @@ func (s *repoManagerService) OpenRepo(name string, path string) (*entity.Repo, e
 		UpdatedAt: now,
 	}
 
-	err := s.saveRepo.SaveRepo(repo)
+	err = s.saveRepo.SaveRepo(repo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save repo: %w", err)
 	}
@@ -52,7 +74,7 @@ func (s *repoManagerService) OpenRepo(name string, path string) (*entity.Repo, e
 	return &repo, nil
 }
 
-// ListRepos returns all registered repositories.
+// ListRepos returns all open (non-closed) repositories.
 func (s *repoManagerService) ListRepos() ([]entity.Repo, error) {
 	repos, err := s.findRepo.FindAllRepos()
 	if err != nil {
@@ -76,7 +98,9 @@ func (s *repoManagerService) GetRepo(id string) (*entity.Repo, error) {
 	return repo, nil
 }
 
-// RemoveRepo removes a repository registration by ID.
+// RemoveRepo soft-closes a repository by setting its closed_at timestamp.
+// The repo and all its tasks/sessions remain in the database and will be restored
+// if the same path is opened again.
 func (s *repoManagerService) RemoveRepo(id string) error {
 	repo, err := s.findRepo.FindRepoByID(id)
 	if err != nil {
@@ -89,7 +113,7 @@ func (s *repoManagerService) RemoveRepo(id string) error {
 
 	err = s.deleteRepo.DeleteRepo(id)
 	if err != nil {
-		return fmt.Errorf("failed to delete repo: %w", err)
+		return fmt.Errorf("failed to close repo: %w", err)
 	}
 
 	return nil

@@ -25,10 +25,11 @@ type claudeProcess struct {
 
 // processManager implements the adapter.ProcessManager interface using PTY.
 type processManager struct {
-	ctx       context.Context
-	mu        sync.RWMutex
-	processes map[string]*claudeProcess // keyed by sessionID
-	outputDir string                    // base dir for output files (~/.quant/sessions/)
+	ctx              context.Context
+	mu               sync.RWMutex
+	processes        map[string]*claudeProcess // keyed by sessionID
+	outputDir        string                    // base dir for output files (~/.quant/sessions/)
+	claudeBinaryPath string                    // resolved full path to claude binary
 }
 
 // NewProcessManager creates a new process manager for Claude CLI processes.
@@ -38,9 +39,59 @@ func NewProcessManager() adapter.ProcessManager {
 	_ = os.MkdirAll(outputDir, 0755)
 
 	return &processManager{
-		processes: make(map[string]*claudeProcess),
-		outputDir: outputDir,
+		processes:        make(map[string]*claudeProcess),
+		outputDir:        outputDir,
+		claudeBinaryPath: resolveClaudeBinary(),
 	}
+}
+
+// shellEnv returns the environment variables from the user's login shell.
+// This ensures spawned processes have the same PATH as if started from a terminal.
+func shellEnv() []string {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+
+	cmd := exec.Command(shell, "-l", "-c", "env")
+	output, err := cmd.Output()
+	if err != nil {
+		return os.Environ()
+	}
+
+	var env []string
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.Contains(line, "=") {
+			env = append(env, line)
+		}
+	}
+
+	if len(env) == 0 {
+		return os.Environ()
+	}
+
+	return env
+}
+
+// resolveClaudeBinary finds the full path to the claude binary using the user's login shell.
+// GUI apps on macOS don't inherit the user's shell PATH, so we use the login shell to resolve it.
+func resolveClaudeBinary() string {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+
+	// Ask the login shell for the full path to claude.
+	cmd := exec.Command(shell, "-l", "-c", "which claude")
+	output, err := cmd.Output()
+	if err == nil {
+		resolved := strings.TrimSpace(string(output))
+		if resolved != "" {
+			return resolved
+		}
+	}
+
+	return "claude"
 }
 
 // SetContext sets the Wails runtime context for emitting events.
@@ -89,11 +140,11 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 		if extraCliArgs != "" {
 			args = append(args, strings.Fields(extraCliArgs)...)
 		}
-		cmd = exec.Command("claude", args...)
+		cmd = exec.Command(m.claudeBinaryPath, args...)
 	}
 
 	cmd.Dir = directory
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = append(shellEnv(), "TERM=xterm-256color")
 
 	ptm, err := pty.Start(cmd)
 	if err != nil {

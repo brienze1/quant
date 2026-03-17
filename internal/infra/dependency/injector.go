@@ -103,6 +103,7 @@ func (i *Injector) RepoManager() appAdapter.RepoManager {
 			rp, // FindRepo
 			rp, // SaveRepo
 			rp, // DeleteRepo
+			rp, // UpdateRepo
 		)
 	}
 	return i.repoManager

@@ -164,9 +164,9 @@ export function Sidebar({
         {
           type: "item",
           icon: "x",
-          iconColor: "#EF4444",
-          label: "remove",
-          labelColor: "#EF4444",
+          iconColor: "#F59E0B",
+          label: "close",
+          labelColor: "#F59E0B",
           onClick: () => onRemoveRepo(repo.id),
         },
       ],
@@ -519,8 +519,7 @@ export function Sidebar({
             className="text-sm font-bold lowercase"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}
           >
-            <span style={{ color: "#10B981" }}>{">"}</span>
-            <span style={{ color: "#10B981" }}>{"_"}</span>{" "}
+            <span style={{ color: "#10B981" }}>{">"}</span>{" "}
             <span style={{ color: "#FAFAFA" }}>quant</span>
           </h1>
           <div className="flex items-center gap-3">

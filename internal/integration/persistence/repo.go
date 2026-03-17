@@ -4,6 +4,7 @@ package persistence
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"quant/internal/domain/entity"
 	"quant/internal/integration/adapter"
@@ -23,11 +24,11 @@ func NewRepoPersistence(db *sql.DB) adapter.RepoPersistence {
 
 // FindRepoByID retrieves a repo by its ID.
 func (p *repoPersistence) FindRepoByID(id string) (*entity.Repo, error) {
-	query := `SELECT id, name, path, created_at, updated_at FROM repos WHERE id = ?`
+	query := `SELECT id, name, path, created_at, updated_at, closed_at FROM repos WHERE id = ?`
 
 	var row pdto.RepoRow
 	err := p.db.QueryRow(query, id).Scan(
-		&row.ID, &row.Name, &row.Path, &row.CreatedAt, &row.UpdatedAt,
+		&row.ID, &row.Name, &row.Path, &row.CreatedAt, &row.UpdatedAt, &row.ClosedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -41,9 +42,29 @@ func (p *repoPersistence) FindRepoByID(id string) (*entity.Repo, error) {
 	return &repo, nil
 }
 
-// FindAllRepos retrieves all repos.
+// FindRepoByPath retrieves a repo by its filesystem path.
+func (p *repoPersistence) FindRepoByPath(path string) (*entity.Repo, error) {
+	query := `SELECT id, name, path, created_at, updated_at, closed_at FROM repos WHERE path = ?`
+
+	var row pdto.RepoRow
+	err := p.db.QueryRow(query, path).Scan(
+		&row.ID, &row.Name, &row.Path, &row.CreatedAt, &row.UpdatedAt, &row.ClosedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find repo by path: %w", err)
+	}
+
+	repo := row.ToEntity()
+	return &repo, nil
+}
+
+// FindAllRepos retrieves all open (non-closed) repos.
 func (p *repoPersistence) FindAllRepos() ([]entity.Repo, error) {
-	query := `SELECT id, name, path, created_at, updated_at FROM repos ORDER BY created_at DESC`
+	query := `SELECT id, name, path, created_at, updated_at, closed_at FROM repos WHERE closed_at IS NULL ORDER BY created_at DESC`
 
 	rows, err := p.db.Query(query)
 	if err != nil {
@@ -55,7 +76,7 @@ func (p *repoPersistence) FindAllRepos() ([]entity.Repo, error) {
 	for rows.Next() {
 		var row pdto.RepoRow
 		err := rows.Scan(
-			&row.ID, &row.Name, &row.Path, &row.CreatedAt, &row.UpdatedAt,
+			&row.ID, &row.Name, &row.Path, &row.CreatedAt, &row.UpdatedAt, &row.ClosedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan repo row: %w", err)
@@ -84,13 +105,14 @@ func (p *repoPersistence) SaveRepo(repo entity.Repo) error {
 	return nil
 }
 
-// DeleteRepo removes a repo by its ID.
+// DeleteRepo soft-closes a repo by setting its closed_at timestamp.
 func (p *repoPersistence) DeleteRepo(id string) error {
-	query := `DELETE FROM repos WHERE id = ?`
+	query := `UPDATE repos SET closed_at = ?, updated_at = ? WHERE id = ?`
 
-	result, err := p.db.Exec(query, id)
+	now := time.Now().Format(time.RFC3339)
+	result, err := p.db.Exec(query, now, now, id)
 	if err != nil {
-		return fmt.Errorf("failed to delete repo: %w", err)
+		return fmt.Errorf("failed to close repo: %w", err)
 	}
 
 	affected, err := result.RowsAffected()
@@ -100,6 +122,19 @@ func (p *repoPersistence) DeleteRepo(id string) error {
 
 	if affected == 0 {
 		return fmt.Errorf("repo not found: %s", id)
+	}
+
+	return nil
+}
+
+// ReopenRepo clears the closed_at timestamp to reopen a previously closed repo.
+func (p *repoPersistence) ReopenRepo(id string, name string) error {
+	query := `UPDATE repos SET closed_at = NULL, name = ?, updated_at = ? WHERE id = ?`
+
+	now := time.Now().Format(time.RFC3339)
+	_, err := p.db.Exec(query, name, now, id)
+	if err != nil {
+		return fmt.Errorf("failed to reopen repo: %w", err)
 	}
 
 	return nil

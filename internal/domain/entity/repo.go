@@ -12,4 +12,5 @@ type Repo struct {
 	Path      string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	ClosedAt  *time.Time
 }
