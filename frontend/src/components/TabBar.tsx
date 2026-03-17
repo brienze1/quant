@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { StatusDot } from "./StatusDot";
+import { ContextMenu } from "./ContextMenu";
 import type { DisplayStatus } from "./StatusBadge";
+import type { MenuItem } from "./ContextMenu";
 
 interface Tab {
   id: string;
@@ -13,6 +15,9 @@ interface TabBarProps {
   activeTabId: string | null;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
+  onCloseAllTabs: () => void;
+  onCloseTabsToLeft: (id: string) => void;
+  onCloseTabsToRight: (id: string) => void;
 }
 
 function ScrollButton({
@@ -51,10 +56,11 @@ function ScrollButton({
   );
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: TabBarProps) {
+export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllTabs, onCloseTabsToLeft, onCloseTabsToRight }: TabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -91,7 +97,43 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: TabBarPro
 
   if (tabs.length === 0) return null;
 
+  function openTabContextMenu(e: React.MouseEvent, tabId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, tabId });
+  }
+
+  function getContextMenuItems(tabId: string): MenuItem[] {
+    const idx = tabs.findIndex((t) => t.id === tabId);
+    return [
+      {
+        type: "item",
+        icon: "×",
+        iconColor: "#EF4444",
+        label: "close all tabs",
+        onClick: () => onCloseAllTabs(),
+      },
+      {
+        type: "item",
+        icon: "←",
+        iconColor: "#6B7280",
+        label: "close tabs to the left",
+        onClick: () => onCloseTabsToLeft(tabId),
+        ...(idx === 0 ? { labelColor: "#4B5563" } : {}),
+      },
+      {
+        type: "item",
+        icon: "→",
+        iconColor: "#6B7280",
+        label: "close tabs to the right",
+        onClick: () => onCloseTabsToRight(tabId),
+        ...(idx === tabs.length - 1 ? { labelColor: "#4B5563" } : {}),
+      },
+    ];
+  }
+
   return (
+    <>
     <div
       className="flex items-center shrink-0 min-w-0 overflow-hidden"
       style={{
@@ -129,6 +171,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: TabBarPro
                 maxWidth: 200,
               }}
               onClick={() => onSelectTab(tab.id)}
+              onContextMenu={(e) => openTabContextMenu(e, tab.id)}
               onMouseEnter={(e) => {
                 if (!isActive) e.currentTarget.style.backgroundColor = "#1F1F1F";
               }}
@@ -169,5 +212,15 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: TabBarPro
         visible={canScrollRight}
       />
     </div>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={getContextMenuItems(contextMenu.tabId)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+    </>
   );
 }

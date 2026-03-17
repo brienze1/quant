@@ -333,6 +333,31 @@ function App() {
     setSelectedSessionId(id);
   }
 
+  function handleCloseAllTabs() {
+    setOpenTabIds([]);
+    setActiveTabId(null);
+  }
+
+  function handleCloseTabsToLeft(id: string) {
+    const idx = openTabIds.indexOf(id);
+    if (idx <= 0) return;
+    const removed = openTabIds.slice(0, idx);
+    setOpenTabIds(openTabIds.slice(idx));
+    if (activeTabId && removed.includes(activeTabId)) {
+      setActiveTabId(id);
+    }
+  }
+
+  function handleCloseTabsToRight(id: string) {
+    const idx = openTabIds.indexOf(id);
+    if (idx === -1 || idx === openTabIds.length - 1) return;
+    const removed = openTabIds.slice(idx + 1);
+    setOpenTabIds(openTabIds.slice(0, idx + 1));
+    if (activeTabId && removed.includes(activeTabId)) {
+      setActiveTabId(id);
+    }
+  }
+
   // --- handlers ---
 
   async function handleOpenRepo(req: CreateRepoRequest) {
@@ -702,6 +727,9 @@ function App() {
             activeTabId={activeTabId}
             onSelectTab={handleSelectTab}
             onCloseTab={handleCloseTab}
+            onCloseAllTabs={handleCloseAllTabs}
+            onCloseTabsToLeft={handleCloseTabsToLeft}
+            onCloseTabsToRight={handleCloseTabsToRight}
           />
         )}
 
