@@ -116,7 +116,6 @@ export function NewSessionModal({
 
   const tabs: { key: SessionType; label: string }[] = [
     { key: "claude", label: "claude session" },
-    { key: "terminal", label: "terminal" },
   ];
 
   if (!configLoaded) {
