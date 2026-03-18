@@ -159,3 +159,34 @@ func (c *sessionController) GetSessionOutput(id string) (string, error) {
 func (c *sessionController) RunShortcut(sessionID string, command string) error {
 	return c.sessionManager.RunShortcut(sessionID, command)
 }
+
+// GitCommit runs `git commit -m <message>` in the session's working directory.
+func (c *sessionController) GitCommit(sessionID string, message string) error {
+	return c.sessionManager.GitCommit(sessionID, message)
+}
+
+// GitPull runs `git pull origin <branch>` in the session's working directory.
+func (c *sessionController) GitPull(sessionID string, branch string) error {
+	return c.sessionManager.GitPull(sessionID, branch)
+}
+
+// GitPush runs `git push` in the session's working directory.
+func (c *sessionController) GitPush(sessionID string) error {
+	return c.sessionManager.GitPush(sessionID)
+}
+
+// GetUnpushedCommits returns commits not yet pushed to the upstream branch.
+// Returns an empty slice when no upstream is configured.
+func (c *sessionController) GetUnpushedCommits(sessionID string) ([]string, error) {
+	return c.sessionManager.GetUnpushedCommits(sessionID)
+}
+
+// GetCurrentBranch returns the name of the current git branch in the session's working directory.
+func (c *sessionController) GetCurrentBranch(sessionID string) (string, error) {
+	return c.sessionManager.GetCurrentBranch(sessionID)
+}
+
+// ListBranches returns all local and remote git branches in the session's working directory.
+func (c *sessionController) ListBranches(sessionID string) ([]string, error) {
+	return c.sessionManager.ListBranches(sessionID)
+}

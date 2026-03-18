@@ -11,9 +11,21 @@ export function CreateSession(arg1:dto.CreateSessionRequest):Promise<dto.Session
 
 export function DeleteSession(arg1:string):Promise<void>;
 
+export function GetCurrentBranch(arg1:string):Promise<string>;
+
 export function GetSession(arg1:string):Promise<dto.SessionResponse>;
 
 export function GetSessionOutput(arg1:string):Promise<string>;
+
+export function GetUnpushedCommits(arg1:string):Promise<Array<string>>;
+
+export function GitCommit(arg1:string,arg2:string):Promise<void>;
+
+export function GitPull(arg1:string,arg2:string):Promise<void>;
+
+export function GitPush(arg1:string):Promise<void>;
+
+export function ListBranches(arg1:string):Promise<Array<string>>;
 
 export function ListSessions():Promise<Array<dto.SessionResponse>>;
 
@@ -32,6 +44,8 @@ export function RenameSession(arg1:string,arg2:string):Promise<void>;
 export function ResizeTerminal(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function ResumeSession(arg1:string,arg2:number,arg3:number):Promise<void>;
+
+export function RunShortcut(arg1:string,arg2:string):Promise<void>;
 
 export function SendMessage(arg1:string,arg2:string):Promise<void>;
 

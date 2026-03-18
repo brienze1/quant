@@ -3,27 +3,38 @@ import { useState, useEffect, useRef } from "react";
 interface Props {
   sessionName: string;
   commitMessagePrefix: string;
-  onSubmit: (message: string, pushAfter: boolean) => void;
+  onSubmit: (message: string, pushAfter: boolean) => Promise<void>;
   onCancel: () => void;
 }
 
 const font = "'JetBrains Mono', monospace";
 
 export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onCancel }: Props) {
-  const prefix = commitMessagePrefix.replace(/\{\{session\}\}/g, sessionName);
+  const prefix = commitMessagePrefix.replace(/\{session\}/g, sessionName);
   const [message, setMessage] = useState("");
   const [pushAfter, setPushAfter] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = message.trim();
     if (!trimmed && !prefix) return;
-    onSubmit(prefix + trimmed, pushAfter);
+    setError("");
+    setLoading(true);
+    try {
+      await onSubmit(prefix + trimmed, pushAfter);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg.replace(/^.*?: /, ""));
+    } finally {
+      setLoading(false);
+    }
   }
 
   const fullMessage = prefix + message;
@@ -78,18 +89,36 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
           </div>
         )}
 
-        <label
+        <div
           className="flex items-center gap-2 mb-5 cursor-pointer"
-          style={{ color: "#6B7280", fontSize: 11 }}
+          style={{ color: "#6B7280", fontSize: 11, fontFamily: font }}
+          onClick={() => setPushAfter((v) => !v)}
         >
-          <input
-            type="checkbox"
-            checked={pushAfter}
-            onChange={(e) => setPushAfter(e.target.checked)}
-            style={{ accentColor: "#10B981" }}
-          />
+          <div
+            style={{
+              width: 14,
+              height: 14,
+              backgroundColor: "#0A0A0A",
+              border: `1px solid ${pushAfter ? "#10B981" : "#2a2a2a"}`,
+              borderRadius: 2,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            {pushAfter && (
+              <span style={{ color: "#10B981", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>
+            )}
+          </div>
           push after commit
-        </label>
+        </div>
+
+        {error && (
+          <div className="mb-4 px-3 py-2 text-[10px]" style={{ backgroundColor: "#1F1F1F", border: "1px solid #EF4444", color: "#EF4444", fontFamily: font }}>
+            {error}
+          </div>
+        )}
 
         <div className="flex items-center justify-end gap-3">
           <button
@@ -104,15 +133,15 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
           </button>
           <button
             type="submit"
-            disabled={!fullMessage.trim()}
+            disabled={!fullMessage.trim() || loading}
             className="px-4 py-2 text-xs lowercase transition-colors"
             style={{
-              backgroundColor: fullMessage.trim() ? "#10B981" : "#1F1F1F",
-              color: fullMessage.trim() ? "#0A0A0A" : "#4B5563",
+              backgroundColor: fullMessage.trim() && !loading ? "#10B981" : "#1F1F1F",
+              color: fullMessage.trim() && !loading ? "#0A0A0A" : "#4B5563",
               fontWeight: 500,
             }}
           >
-            commit{pushAfter ? " & push" : ""}
+            {loading ? "..." : `commit${pushAfter ? " & push" : ""}`}
           </button>
         </div>
       </form>

@@ -16,11 +16,12 @@ type Config struct {
 	Shortcuts     []Shortcut `json:"shortcuts"`
 
 	// Git & Branches
-	AutoPull           bool              `json:"autoPull"`
-	DefaultPullBranch  string            `json:"defaultPullBranch"`
-	BranchNamePattern  string            `json:"branchNamePattern"`
-	DeleteBranchOnDone bool              `json:"deleteBranchOnDone"`
-	BranchOverrides    map[string]string `json:"branchOverrides"`
+	AutoPull            bool              `json:"autoPull"`
+	DefaultPullBranch   string            `json:"defaultPullBranch"`
+	BranchNamePattern   string            `json:"branchNamePattern"`
+	DeleteBranchOnDone  bool              `json:"deleteBranchOnDone"`
+	BranchOverrides     map[string]string `json:"branchOverrides"`
+	CommitMessagePrefix string            `json:"commitMessagePrefix"`
 
 	// Sessions
 	UseWorktreeDefault    bool `json:"useWorktreeDefault"`
@@ -61,11 +62,12 @@ func NewDefaultConfig() Config {
 		Shortcuts:     []Shortcut{},
 
 		// Git & Branches
-		AutoPull:           true,
-		DefaultPullBranch:  "main",
-		BranchNamePattern:  "quant/{session}",
-		DeleteBranchOnDone: false,
-		BranchOverrides:    make(map[string]string),
+		AutoPull:            true,
+		DefaultPullBranch:   "main",
+		BranchNamePattern:   "quant/{session}",
+		DeleteBranchOnDone:  false,
+		BranchOverrides:     make(map[string]string),
+		CommitMessagePrefix: "",
 
 		// Sessions
 		UseWorktreeDefault:    true,

@@ -96,6 +96,7 @@ export interface Config {
   autoPull: boolean;
   defaultPullBranch: string;
   branchNamePattern: string;
+  commitMessagePrefix: string;
   deleteBranchOnDone: boolean;
   branchOverrides: Record<string, string>;
 

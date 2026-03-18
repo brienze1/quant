@@ -438,3 +438,195 @@ func (s *sessionManagerService) GetSessionOutput(id string) (string, error) {
 	}
 	return string(data), nil
 }
+
+// GitCommit runs `git commit -m <message>` in the session's working directory.
+func (s *sessionManagerService) GitCommit(sessionID string, message string) error {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	dir := session.WorktreePath
+	if dir == "" {
+		dir = session.Directory
+	}
+
+	// Check if there is anything to commit
+	statusCmd := exec.Command("git", "status", "--porcelain")
+	statusCmd.Dir = dir
+	statusOut, err := statusCmd.Output()
+	if err != nil {
+		return fmt.Errorf("git status failed: %w", err)
+	}
+	if len(strings.TrimSpace(string(statusOut))) == 0 {
+		return fmt.Errorf("nothing to commit, working tree clean")
+	}
+
+	// Stage all changes
+	addCmd := exec.Command("git", "add", "-A")
+	addCmd.Dir = dir
+	if output, err := addCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add failed: %w: %s", err, string(output))
+	}
+
+	cmd := exec.Command("git", "commit", "-m", message)
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit failed: %w: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// GitPull runs `git pull origin <branch>` in the session's working directory.
+func (s *sessionManagerService) GitPull(sessionID string, branch string) error {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	dir := session.WorktreePath
+	if dir == "" {
+		dir = session.Directory
+	}
+
+	cmd := exec.Command("git", "pull", "origin", branch)
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git pull failed: %w: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// GitPush runs `git push` in the session's working directory.
+func (s *sessionManagerService) GitPush(sessionID string) error {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	dir := session.WorktreePath
+	if dir == "" {
+		dir = session.Directory
+	}
+
+	cmd := exec.Command("git", "push")
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git push failed: %w: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// GetUnpushedCommits returns commits on HEAD that have not been pushed to the upstream branch.
+// If no upstream is configured, an empty slice is returned without error.
+func (s *sessionManagerService) GetUnpushedCommits(sessionID string) ([]string, error) {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	dir := session.WorktreePath
+	if dir == "" {
+		dir = session.Directory
+	}
+
+	cmd := exec.Command("git", "log", "@{u}..HEAD", "--oneline")
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		// No upstream configured or other non-fatal git error — return empty slice.
+		return []string{}, nil
+	}
+
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return []string{}, nil
+	}
+
+	return strings.Split(trimmed, "\n"), nil
+}
+
+// GetCurrentBranch returns the name of the current git branch in the session's working directory.
+func (s *sessionManagerService) GetCurrentBranch(sessionID string) (string, error) {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return "", fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return "", fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	dir := session.WorktreePath
+	if dir == "" {
+		dir = session.Directory
+	}
+
+	cmd := exec.Command("git", "branch", "--show-current")
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+// ListBranches returns all local and remote git branches in the session's working directory.
+func (s *sessionManagerService) ListBranches(sessionID string) ([]string, error) {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	dir := session.WorktreePath
+	if dir == "" {
+		dir = session.Directory
+	}
+
+	cmd := exec.Command("git", "branch", "-a", "--format=%(refname:short)")
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		return []string{}, nil
+	}
+
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return []string{}, nil
+	}
+
+	raw := strings.Split(trimmed, "\n")
+	seen := make(map[string]bool)
+	var branches []string
+	for _, b := range raw {
+		b = strings.TrimSpace(b)
+		// Normalize remotes/origin/main -> main
+		if strings.HasPrefix(b, "origin/") {
+			b = strings.TrimPrefix(b, "origin/")
+		}
+		if b == "HEAD" || b == "" || seen[b] {
+			continue
+		}
+		seen[b] = true
+		branches = append(branches, b)
+	}
+	return branches, nil
+}

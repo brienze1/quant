@@ -18,12 +18,36 @@ export function DeleteSession(arg1) {
   return window['go']['controller']['sessionController']['DeleteSession'](arg1);
 }
 
+export function GetCurrentBranch(arg1) {
+  return window['go']['controller']['sessionController']['GetCurrentBranch'](arg1);
+}
+
 export function GetSession(arg1) {
   return window['go']['controller']['sessionController']['GetSession'](arg1);
 }
 
 export function GetSessionOutput(arg1) {
   return window['go']['controller']['sessionController']['GetSessionOutput'](arg1);
+}
+
+export function GetUnpushedCommits(arg1) {
+  return window['go']['controller']['sessionController']['GetUnpushedCommits'](arg1);
+}
+
+export function GitCommit(arg1, arg2) {
+  return window['go']['controller']['sessionController']['GitCommit'](arg1, arg2);
+}
+
+export function GitPull(arg1, arg2) {
+  return window['go']['controller']['sessionController']['GitPull'](arg1, arg2);
+}
+
+export function GitPush(arg1) {
+  return window['go']['controller']['sessionController']['GitPush'](arg1);
+}
+
+export function ListBranches(arg1) {
+  return window['go']['controller']['sessionController']['ListBranches'](arg1);
 }
 
 export function ListSessions() {
@@ -60,6 +84,10 @@ export function ResizeTerminal(arg1, arg2, arg3) {
 
 export function ResumeSession(arg1, arg2, arg3) {
   return window['go']['controller']['sessionController']['ResumeSession'](arg1, arg2, arg3);
+}
+
+export function RunShortcut(arg1, arg2) {
+  return window['go']['controller']['sessionController']['RunShortcut'](arg1, arg2);
 }
 
 export function SendMessage(arg1, arg2) {

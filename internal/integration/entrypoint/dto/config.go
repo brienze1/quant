@@ -5,19 +5,27 @@ import (
 	"quant/internal/domain/entity"
 )
 
+// ShortcutDTO represents a named shell command in config.
+type ShortcutDTO struct {
+	Name    string `json:"name"`
+	Command string `json:"command"`
+}
+
 // SaveConfigRequest represents the request payload for saving configuration.
 type SaveConfigRequest struct {
 	// General
-	StartOnLogin  bool `json:"startOnLogin"`
-	Notifications bool `json:"notifications"`
-	AutoUpdate    bool `json:"autoUpdate"`
+	StartOnLogin  bool          `json:"startOnLogin"`
+	Notifications bool          `json:"notifications"`
+	AutoUpdate    bool          `json:"autoUpdate"`
+	Shortcuts     []ShortcutDTO `json:"shortcuts"`
 
 	// Git & Branches
-	AutoPull           bool              `json:"autoPull"`
-	DefaultPullBranch  string            `json:"defaultPullBranch"`
-	BranchNamePattern  string            `json:"branchNamePattern"`
-	DeleteBranchOnDone bool              `json:"deleteBranchOnDone"`
-	BranchOverrides    map[string]string `json:"branchOverrides"`
+	AutoPull            bool              `json:"autoPull"`
+	DefaultPullBranch   string            `json:"defaultPullBranch"`
+	BranchNamePattern   string            `json:"branchNamePattern"`
+	DeleteBranchOnDone  bool              `json:"deleteBranchOnDone"`
+	BranchOverrides     map[string]string `json:"branchOverrides"`
+	CommitMessagePrefix string            `json:"commitMessagePrefix"`
 
 	// Sessions
 	UseWorktreeDefault    bool `json:"useWorktreeDefault"`
@@ -51,16 +59,18 @@ type SaveConfigRequest struct {
 // ConfigResponse represents the response payload for configuration data.
 type ConfigResponse struct {
 	// General
-	StartOnLogin  bool `json:"startOnLogin"`
-	Notifications bool `json:"notifications"`
-	AutoUpdate    bool `json:"autoUpdate"`
+	StartOnLogin  bool          `json:"startOnLogin"`
+	Notifications bool          `json:"notifications"`
+	AutoUpdate    bool          `json:"autoUpdate"`
+	Shortcuts     []ShortcutDTO `json:"shortcuts"`
 
 	// Git & Branches
-	AutoPull           bool              `json:"autoPull"`
-	DefaultPullBranch  string            `json:"defaultPullBranch"`
-	BranchNamePattern  string            `json:"branchNamePattern"`
-	DeleteBranchOnDone bool              `json:"deleteBranchOnDone"`
-	BranchOverrides    map[string]string `json:"branchOverrides"`
+	AutoPull            bool              `json:"autoPull"`
+	DefaultPullBranch   string            `json:"defaultPullBranch"`
+	BranchNamePattern   string            `json:"branchNamePattern"`
+	DeleteBranchOnDone  bool              `json:"deleteBranchOnDone"`
+	BranchOverrides     map[string]string `json:"branchOverrides"`
+	CommitMessagePrefix string            `json:"commitMessagePrefix"`
 
 	// Sessions
 	UseWorktreeDefault    bool `json:"useWorktreeDefault"`
@@ -93,15 +103,21 @@ type ConfigResponse struct {
 
 // ConfigResponseFromEntity converts a domain entity to a ConfigResponse DTO.
 func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
+	shortcuts := make([]ShortcutDTO, len(cfg.Shortcuts))
+	for i, s := range cfg.Shortcuts {
+		shortcuts[i] = ShortcutDTO{Name: s.Name, Command: s.Command}
+	}
 	return ConfigResponse{
 		StartOnLogin:          cfg.StartOnLogin,
 		Notifications:         cfg.Notifications,
 		AutoUpdate:            cfg.AutoUpdate,
+		Shortcuts:             shortcuts,
 		AutoPull:              cfg.AutoPull,
 		DefaultPullBranch:     cfg.DefaultPullBranch,
 		BranchNamePattern:     cfg.BranchNamePattern,
 		DeleteBranchOnDone:    cfg.DeleteBranchOnDone,
 		BranchOverrides:       cfg.BranchOverrides,
+		CommitMessagePrefix:   cfg.CommitMessagePrefix,
 		UseWorktreeDefault:    cfg.UseWorktreeDefault,
 		SkipPermissions:       cfg.SkipPermissions,
 		MaxConcurrentSessions: cfg.MaxConcurrentSessions,
@@ -146,15 +162,22 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		envVariables = make(map[string]string)
 	}
 
+	shortcuts := make([]entity.Shortcut, len(r.Shortcuts))
+	for i, s := range r.Shortcuts {
+		shortcuts[i] = entity.Shortcut{Name: s.Name, Command: s.Command}
+	}
+
 	return entity.Config{
 		StartOnLogin:          r.StartOnLogin,
 		Notifications:         r.Notifications,
 		AutoUpdate:            r.AutoUpdate,
+		Shortcuts:             shortcuts,
 		AutoPull:              r.AutoPull,
 		DefaultPullBranch:     r.DefaultPullBranch,
 		BranchNamePattern:     r.BranchNamePattern,
 		DeleteBranchOnDone:    r.DeleteBranchOnDone,
 		BranchOverrides:       branchOverrides,
+		CommitMessagePrefix:   r.CommitMessagePrefix,
 		UseWorktreeDefault:    r.UseWorktreeDefault,
 		SkipPermissions:       r.SkipPermissions,
 		MaxConcurrentSessions: r.MaxConcurrentSessions,

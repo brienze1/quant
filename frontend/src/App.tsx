@@ -4,10 +4,10 @@ import type {
   Task,
   Session,
   Action,
+  Shortcut,
   CreateRepoRequest,
   CreateTaskRequest,
   CreateSessionRequest,
-  Shortcut,
 } from "./types";
 import * as api from "./api";
 import { Sidebar } from "./components/Sidebar";
@@ -22,6 +22,9 @@ import { ConfirmModal } from "./components/ConfirmModal";
 import { RenameModal } from "./components/RenameModal";
 import { RenameTaskModal } from "./components/RenameTaskModal";
 import { Settings } from "./components/Settings";
+import { GitCommitModal } from "./components/GitCommitModal";
+import { GitPullModal } from "./components/GitPullModal";
+import { GitPushModal } from "./components/GitPushModal";
 
 type ModalState =
   | { type: "none" }
@@ -31,7 +34,10 @@ type ModalState =
   | { type: "moveSession"; sessionId: string; repoId: string }
   | { type: "confirm"; message: string; onConfirm: () => void }
   | { type: "renameSession"; sessionId: string; currentName: string }
-  | { type: "renameTask"; taskId: string; currentTag: string; currentName: string };
+  | { type: "renameTask"; taskId: string; currentTag: string; currentName: string }
+  | { type: "gitCommit"; sessionId: string; sessionName: string }
+  | { type: "gitPull"; sessionId: string; currentBranch: string }
+  | { type: "gitPush"; sessionId: string; currentBranch: string };
 
 type View = "dashboard" | "settings";
 
@@ -57,7 +63,7 @@ function App() {
   const [embeddedTerminalMap, setEmbeddedTerminalMap] = useState<Record<string, string>>({});
 
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
-
+  const [commitMessagePrefix, setCommitMessagePrefix] = useState("");
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ id: number; message: string }[]>([]);
@@ -138,8 +144,19 @@ function App() {
     }
   }, []);
 
+  const fetchShortcuts = useCallback(async () => {
+    try {
+      const cfg = await api.getConfig();
+      setShortcuts(cfg.shortcuts ?? []);
+      setCommitMessagePrefix(cfg.commitMessagePrefix ?? "");
+    } catch (err) {
+      console.error("failed to load shortcuts:", err);
+    }
+  }, []);
+
   // initial load
   const loadAll = useCallback(async () => {
+    fetchShortcuts();
     const repoList = await fetchRepos();
     for (const repo of repoList) {
       const tasks = await fetchTasksForRepo(repo.id);
@@ -148,16 +165,12 @@ function App() {
         await fetchSessionsForTask(task.id);
       }
     }
-  }, [fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
+  }, [fetchShortcuts, fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
 
   useEffect(() => {
     loadAll();
   }, [loadAll]);
 
-  // Reload shortcuts from config on startup and whenever user leaves settings.
-  useEffect(() => {
-    api.getConfig().then((cfg) => setShortcuts(cfg.shortcuts ?? [])).catch(console.error);
-  }, [view]);
 
   // poll sessions every 3s
   useEffect(() => {
@@ -670,6 +683,56 @@ function App() {
     }
   }
 
+  async function openGitCommitModal(sessionId: string, sessionName: string) {
+    setModal({ type: "gitCommit", sessionId, sessionName });
+  }
+
+  async function openGitPullModal(sessionId: string) {
+    try {
+      const branch = await api.getCurrentBranch(sessionId);
+      setModal({ type: "gitPull", sessionId, currentBranch: branch || "main" });
+    } catch {
+      setModal({ type: "gitPull", sessionId, currentBranch: "main" });
+    }
+  }
+
+  async function openGitPushModal(sessionId: string) {
+    try {
+      const branch = await api.getCurrentBranch(sessionId);
+      setModal({ type: "gitPush", sessionId, currentBranch: branch || "main" });
+    } catch {
+      setModal({ type: "gitPush", sessionId, currentBranch: "main" });
+    }
+  }
+
+  async function handleGitCommit(sessionId: string, message: string, pushAfter: boolean) {
+    await api.gitCommit(sessionId, message);
+    if (pushAfter) await api.gitPush(sessionId);
+    setModal({ type: "none" });
+  }
+
+  async function handleGitPull(sessionId: string, branch: string) {
+    try {
+      setError(null);
+      await api.gitPull(sessionId, branch);
+      setModal({ type: "none" });
+    } catch (err) {
+      setError(String(err));
+      setModal({ type: "none" });
+    }
+  }
+
+  async function handleGitPush(sessionId: string) {
+    try {
+      setError(null);
+      await api.gitPush(sessionId);
+      setModal({ type: "none" });
+    } catch (err) {
+      setError(String(err));
+      setModal({ type: "none" });
+    }
+  }
+
   // Filter out embedded terminal sessions from sidebar
   const embeddedIds = new Set(Object.values(embeddedTerminalMap));
   const filterEmbedded = (sessions: Session[]) =>
@@ -703,7 +766,7 @@ function App() {
     : "";
 
   if (view === "settings") {
-    return <Settings repos={repos} onBack={() => setView("dashboard")} />;
+    return <Settings repos={repos} onBack={() => { fetchShortcuts(); setView("dashboard"); }} />;
   }
 
   return (
@@ -741,6 +804,9 @@ function App() {
         onError={(msg) => setError(msg)}
         onOpenSettings={() => setView("settings")}
         shortcuts={shortcuts}
+        onGitCommit={openGitCommitModal}
+        onGitPull={openGitPullModal}
+        onGitPush={openGitPushModal}
       />
 
       <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "#0A0A0A" }}>
@@ -855,6 +921,33 @@ function App() {
           message={modal.message}
           confirmLabel="delete"
           onConfirm={modal.onConfirm}
+          onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+
+      {modal.type === "gitCommit" && (
+        <GitCommitModal
+          sessionName={modal.sessionName}
+          commitMessagePrefix={commitMessagePrefix}
+          onSubmit={(message, pushAfter) => handleGitCommit(modal.sessionId, message, pushAfter)}
+          onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+
+      {modal.type === "gitPull" && (
+        <GitPullModal
+          sessionId={modal.sessionId}
+          currentBranch={modal.currentBranch}
+          onSubmit={(branch) => handleGitPull(modal.sessionId, branch)}
+          onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+
+      {modal.type === "gitPush" && (
+        <GitPushModal
+          sessionId={modal.sessionId}
+          currentBranch={modal.currentBranch}
+          onSubmit={() => handleGitPush(modal.sessionId)}
           onCancel={() => setModal({ type: "none" })}
         />
       )}

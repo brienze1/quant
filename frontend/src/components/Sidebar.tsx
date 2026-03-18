@@ -42,7 +42,10 @@ interface SidebarProps {
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   onError?: (msg: string) => void;
   onOpenSettings?: () => void;
-  shortcuts?: Shortcut[];
+  shortcuts: Shortcut[];
+  onGitCommit: (sessionId: string, sessionName: string) => void;
+  onGitPull: (sessionId: string) => void;
+  onGitPush: (sessionId: string) => void;
 }
 
 function SidebarScrollArea({ children }: { children: React.ReactNode }) {
@@ -121,8 +124,12 @@ export function Sidebar({
   onDropSession,
   onError,
   onOpenSettings,
-  shortcuts = [],
+  shortcuts,
+  onGitCommit,
+  onGitPull,
+  onGitPush,
 }: SidebarProps) {
+
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -339,6 +346,45 @@ export function Sidebar({
       }
 
       items.push({ type: "separator" });
+      items.push({ type: "label", text: "// git" });
+      items.push({
+        type: "item",
+        icon: "$",
+        iconColor: "#6B7280",
+        label: "git commit",
+        onClick: () => onGitCommit(session.id, session.name),
+      });
+      items.push({
+        type: "item",
+        icon: "$",
+        iconColor: "#6B7280",
+        label: "git pull",
+        onClick: () => onGitPull(session.id),
+      });
+      items.push({
+        type: "item",
+        icon: "$",
+        iconColor: "#6B7280",
+        label: "git push",
+        onClick: () => onGitPush(session.id),
+      });
+
+      if (shortcuts.length > 0) {
+        items.push({ type: "separator" });
+        items.push({ type: "label", text: "// shortcuts" });
+        for (const sc of shortcuts) {
+          items.push({
+            type: "item",
+            icon: ">",
+            iconColor: "#10B981",
+            label: sc.name,
+            onClick: () => api.runShortcut(session.id, sc.command).catch(console.error),
+          });
+        }
+      }
+
+      items.push({ type: "separator" });
+      items.push({ type: "label", text: "// danger" });
       items.push({
         type: "item",
         icon: "~",
@@ -374,26 +420,6 @@ export function Sidebar({
         onClick: () => onDeleteSession(session.id),
       });
     }
-
-    setContextMenu({ x: e.clientX, y: e.clientY, items });
-  }
-
-  function openShortcutsMenu(e: React.MouseEvent, session: Session) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const items: MenuItem[] = [
-      { type: "label", text: "// shortcuts" },
-      ...shortcuts.map((sc) => ({
-        type: "item" as const,
-        icon: ">",
-        iconColor: "#10B981",
-        label: sc.name,
-        onClick: () => {
-          api.runShortcut(session.id, sc.command).catch(console.error);
-        },
-      })),
-    ];
 
     setContextMenu({ x: e.clientX, y: e.clientY, items });
   }
@@ -645,14 +671,12 @@ export function Sidebar({
               onRepoContextMenu={openRepoContextMenu}
               onTaskContextMenu={openTaskContextMenu}
               onSessionContextMenu={openSessionContextMenu}
-              onShowShortcutsMenu={openShortcutsMenu}
               onDoubleClickSession={onDoubleClickSession}
               onDropSession={onDropSession}
               onError={onError}
               showSeparator={idx < repos.length - 1}
               filterSessions={filterSessions}
               showArchived={showArchived}
-              shortcuts={shortcuts}
             />
           ))}
         </SidebarScrollArea>
@@ -761,14 +785,12 @@ function RepoNode({
   onRepoContextMenu,
   onTaskContextMenu,
   onSessionContextMenu,
-  onShowShortcutsMenu,
   onDoubleClickSession,
   onDropSession,
   onError,
   showSeparator,
   filterSessions,
   showArchived,
-  shortcuts,
 }: {
   repo: Repo;
   tasks: Task[];
@@ -786,14 +808,12 @@ function RepoNode({
   onRepoContextMenu: (e: React.MouseEvent, repo: Repo) => void;
   onTaskContextMenu: (e: React.MouseEvent, task: Task) => void;
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
-  onShowShortcutsMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   onError?: (msg: string) => void;
   showSeparator: boolean;
   filterSessions: (sessions: Session[]) => Session[];
   showArchived: boolean;
-  shortcuts: Shortcut[];
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -850,13 +870,11 @@ function RepoNode({
               onCreateSession={onCreateSession}
               onTaskContextMenu={onTaskContextMenu}
               onSessionContextMenu={onSessionContextMenu}
-              onShowShortcutsMenu={onShowShortcutsMenu}
               onDoubleClickSession={onDoubleClickSession}
               onDropSession={onDropSession}
               onError={onError}
               repoId={repo.id}
               showArchived={showArchived}
-              shortcuts={shortcuts}
             />
           ))}
 
@@ -900,13 +918,11 @@ function TaskNode({
   onCreateSession,
   onTaskContextMenu,
   onSessionContextMenu,
-  onShowShortcutsMenu,
   onDoubleClickSession,
   onDropSession,
   onError,
   repoId,
   showArchived,
-  shortcuts,
 }: {
   task: Task;
   sessions: Session[];
@@ -921,13 +937,11 @@ function TaskNode({
   onCreateSession: (repoId: string, taskId?: string) => void;
   onTaskContextMenu: (e: React.MouseEvent, task: Task) => void;
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
-  onShowShortcutsMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   onError?: (msg: string) => void;
   repoId: string;
   showArchived: boolean;
-  shortcuts: Shortcut[];
 }) {
   const [expanded, setExpanded] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -1010,9 +1024,7 @@ function TaskNode({
               onExpandSession={onExpandSession}
               onOpenTab={onOpenTab}
               onSessionContextMenu={onSessionContextMenu}
-              onShowShortcutsMenu={onShowShortcutsMenu}
               onDoubleClickSession={onDoubleClickSession}
-              shortcuts={shortcuts}
               depth={2}
             />
           ))}
@@ -1048,9 +1060,7 @@ function SessionNode({
   onExpandSession,
   onOpenTab,
   onSessionContextMenu,
-  onShowShortcutsMenu,
   onDoubleClickSession,
-  shortcuts,
   depth,
 }: {
   session: Session;
@@ -1063,9 +1073,7 @@ function SessionNode({
   onExpandSession: (id: string | null) => void;
   onOpenTab: (id: string) => void;
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
-  onShowShortcutsMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
-  shortcuts: Shortcut[];
   depth: number;
 }) {
   const isActive = activeSessionId === session.id;
@@ -1074,14 +1082,7 @@ function SessionNode({
   const hasWorktree = !!session.worktreePath;
   const isArchived = !!session.archivedAt;
 
-  // Single click: if shortcuts are configured, show the shortcuts menu.
-  // Otherwise: select session + toggle action log expansion.
-  function handleClick(e: React.MouseEvent) {
-    if (!isArchived && shortcuts.length > 0) {
-      onShowShortcutsMenu(e, session);
-      return;
-    }
-
+  function handleClick() {
     onSelectSession(session.id);
     onExpandSession(isExpanded ? null : session.id);
 

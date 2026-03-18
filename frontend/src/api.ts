@@ -160,6 +160,30 @@ export function runShortcut(sessionId: string, command: string): Promise<void> {
   return callGo(PKG, SESSION_CTRL, "RunShortcut", sessionId, command);
 }
 
+export function gitCommit(sessionId: string, message: string): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "GitCommit", sessionId, message);
+}
+
+export function gitPull(sessionId: string, branch: string): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "GitPull", sessionId, branch);
+}
+
+export function gitPush(sessionId: string): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "GitPush", sessionId);
+}
+
+export function getUnpushedCommits(sessionId: string): Promise<string[]> {
+  return callGo(PKG, SESSION_CTRL, "GetUnpushedCommits", sessionId);
+}
+
+export function getCurrentBranch(sessionId: string): Promise<string> {
+  return callGo(PKG, SESSION_CTRL, "GetCurrentBranch", sessionId);
+}
+
+export function listBranches(sessionId: string): Promise<string[]> {
+  return callGo(PKG, SESSION_CTRL, "ListBranches", sessionId);
+}
+
 // --- Actions ---
 
 const ACTION_CTRL = "actionController";

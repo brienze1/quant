@@ -26,4 +26,10 @@ type SessionManager interface {
 	RenameSession(id string, newName string) error
 	CheckBranchExists(repoID string, branchName string) (bool, error)
 	RunShortcut(sessionID string, command string) error
+	GitCommit(sessionID string, message string) error
+	GitPull(sessionID string, branch string) error
+	GitPush(sessionID string) error
+	GetUnpushedCommits(sessionID string) ([]string, error)
+	GetCurrentBranch(sessionID string) (string, error)
+	ListBranches(sessionID string) ([]string, error)
 }

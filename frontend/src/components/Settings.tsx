@@ -328,6 +328,21 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
         />
       </Section>
 
+      <Section title="commit message" description="prefix applied to all commit messages from the right-click git commit action">
+        <SettingRow
+          label="commit message prefix"
+          description="prefix template. use {session} as a placeholder for the session name"
+          right={
+            <TextInput
+              value={config.commitMessagePrefix}
+              onChange={(v) => update("commitMessagePrefix", v)}
+              width={280}
+              placeholder="e.g. feature/{session} - "
+            />
+          }
+        />
+      </Section>
+
       <Section title="per-repo overrides" description="override pull branch for specific repositories">
         <div style={{ border: "1px solid #2a2a2a" }}>
           {/* Table Header */}
