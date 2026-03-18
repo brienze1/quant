@@ -29,11 +29,12 @@ func NewWorktreeManager() adapter.WorktreeManager {
 }
 
 // Create creates a new git worktree with the given branch name.
-// The worktree is stored in ~/.quant/worktrees/<sanitized-branch-name>.
+// The worktree is stored in ~/.quant/worktrees/<repo>/<sanitized-branch-name>.
 func (m *worktreeManager) Create(repoDir string, branchName string) (usecase.WorktreeInfo, error) {
 	// Sanitize branch name for use as directory name.
+	repoName := filepath.Base(repoDir)
 	dirName := strings.ReplaceAll(branchName, "/", "-")
-	worktreePath := filepath.Join(m.baseDir, dirName)
+	worktreePath := filepath.Join(m.baseDir, repoName, dirName)
 
 	// Try creating with new branch first.
 	cmd := exec.Command("git", "worktree", "add", "-b", branchName, worktreePath)
