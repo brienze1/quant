@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import type { Repo, Task, Session, Action } from "../types";
 import { StatusDot } from "./StatusDot";
 import { StatusBadge } from "./StatusBadge";
@@ -42,6 +42,52 @@ interface SidebarProps {
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   onError?: (msg: string) => void;
   onOpenSettings?: () => void;
+}
+
+function SidebarScrollArea({ children }: { children: React.ReactNode }) {
+  const navRef = useRef<HTMLElement>(null);
+  const [thumb, setThumb] = useState({ height: 0, top: 0, show: false });
+
+  const updateThumb = useCallback(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const ratio = el.clientHeight / el.scrollHeight;
+    setThumb({
+      show: ratio < 1,
+      height: Math.max(ratio * el.clientHeight, 24),
+      top: (el.scrollTop / el.scrollHeight) * el.clientHeight,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(updateThumb);
+    ro.observe(el);
+    updateThumb();
+    return () => ro.disconnect();
+  }, [updateThumb]);
+
+  return (
+    <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+      {/* nav is 20px wider than container — native scrollbar clips off-screen */}
+      <nav
+        ref={navRef}
+        onScroll={updateThumb}
+        className="py-1"
+        style={{ height: "100%", overflowY: "scroll", width: "calc(100% + 20px)", paddingRight: "20px" }}
+      >
+        {children}
+      </nav>
+      {/* custom scrollbar: black track + white thumb */}
+      {thumb.show && (
+        <>
+          <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "#0A0A0A", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", right: 0, top: thumb.top, width: 4, height: thumb.height, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 2, pointerEvents: "none" }} />
+        </>
+      )}
+    </div>
+  );
 }
 
 export function Sidebar({
@@ -556,8 +602,8 @@ export function Sidebar({
           </button>
         </div>
 
-        {/* tree nav */}
-        <nav className="flex-1 overflow-y-auto py-1">
+        {/* tree nav with custom scrollbar */}
+        <SidebarScrollArea>
           {repos.map((repo, idx) => (
             <RepoNode
               key={repo.id}
@@ -585,7 +631,7 @@ export function Sidebar({
               showArchived={showArchived}
             />
           ))}
-        </nav>
+        </SidebarScrollArea>
 
         {/* bottom bar */}
         <div className="flex items-center gap-2 p-3" style={{ borderTop: "1px solid #2a2a2a" }}>

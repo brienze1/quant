@@ -1,15 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
-html, body, #root {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  overflow: hidden;
-  background-color: #0A0A0A;
-  color: #FAFAFA;
-  font-family: 'JetBrains Mono', monospace;
+@layer base {
+  html, body, #root {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background-color: #0A0A0A;
+    color: #FAFAFA;
+    font-family: 'JetBrains Mono', monospace;
+  }
 }
+
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }

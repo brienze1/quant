@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -25,7 +25,9 @@ export function TerminalPane({
   autoScroll,
   onAutoScrollChange,
 }: TerminalPaneProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const termContainerRef = useRef<HTMLDivElement>(null);
+  const thumbRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const startedRef = useRef(false);
@@ -85,6 +87,27 @@ export function TerminalPane({
     term.open(termContainerRef.current);
     fitAddon.fit();
     termRef.current = term;
+
+    // Hide native scrollbar: push xterm-viewport 20px wider so the scrollbar
+    // falls outside .xterm which has overflow:hidden — then overlay custom thumb
+    const updateThumb = () => {
+      const viewport = termContainerRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
+      const thumb = thumbRef.current;
+      if (!viewport || !thumb) return;
+      const ratio = viewport.clientHeight / viewport.scrollHeight;
+      if (ratio >= 1) { thumb.style.display = "none"; return; }
+      thumb.style.display = "block";
+      thumb.style.height = `${Math.max(ratio * viewport.clientHeight, 24)}px`;
+      thumb.style.top = `${(viewport.scrollTop / viewport.scrollHeight) * viewport.clientHeight}px`;
+    };
+    const viewport = termContainerRef.current.querySelector(".xterm-viewport") as HTMLElement | null;
+    if (viewport) {
+      viewport.style.width = "calc(100% + 20px)";
+      viewport.addEventListener("scroll", updateThumb);
+    }
+    term.onResize(updateThumb);
+    term.onLineFeed(updateThumb);
+    updateThumb();
 
     if (!isArchived) {
       term.onData((data) => {
@@ -244,10 +267,18 @@ export function TerminalPane({
   }, [session.id]);
 
   return (
-    <div
-      ref={termContainerRef}
-      className="flex-1 min-h-0 min-w-0"
-      style={{ padding: "4px 0 0 4px" }}
-    />
+    <div ref={wrapperRef} className="flex-1 min-h-0 min-w-0" style={{ position: "relative" }}>
+      <div
+        ref={termContainerRef}
+        style={{ position: "absolute", inset: 0, padding: "4px 0 0 4px" }}
+      />
+      {/* custom scrollbar track */}
+      <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "#0A0A0A", pointerEvents: "none" }} />
+      {/* custom scrollbar thumb */}
+      <div
+        ref={thumbRef}
+        style={{ position: "absolute", right: 0, top: 0, width: 4, height: 24, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 2, pointerEvents: "none", display: "none" }}
+      />
+    </div>
   );
 }
