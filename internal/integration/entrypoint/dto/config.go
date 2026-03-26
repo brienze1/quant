@@ -50,10 +50,11 @@ type SaveConfigRequest struct {
 	NewLineKey      string  `json:"newLineKey"`
 
 	// Claude CLI
-	CliBinaryPath string            `json:"cliBinaryPath"`
-	ExtraCliArgs  string            `json:"extraCliArgs"`
-	DefaultModel  string            `json:"defaultModel"`
-	EnvVariables  map[string]string `json:"envVariables"`
+	CliBinaryPath    string            `json:"cliBinaryPath"`
+	ExtraCliArgs     string            `json:"extraCliArgs"`
+	DefaultModel     string            `json:"defaultModel"`
+	EnvVariables     map[string]string `json:"envVariables"`
+	CommandOverrides map[string]string `json:"commandOverrides"`
 }
 
 // ConfigResponse represents the response payload for configuration data.
@@ -95,10 +96,11 @@ type ConfigResponse struct {
 	NewLineKey      string  `json:"newLineKey"`
 
 	// Claude CLI
-	CliBinaryPath string            `json:"cliBinaryPath"`
-	ExtraCliArgs  string            `json:"extraCliArgs"`
-	DefaultModel  string            `json:"defaultModel"`
-	EnvVariables  map[string]string `json:"envVariables"`
+	CliBinaryPath    string            `json:"cliBinaryPath"`
+	ExtraCliArgs     string            `json:"extraCliArgs"`
+	DefaultModel     string            `json:"defaultModel"`
+	EnvVariables     map[string]string `json:"envVariables"`
+	CommandOverrides map[string]string `json:"commandOverrides"`
 }
 
 // ConfigResponseFromEntity converts a domain entity to a ConfigResponse DTO.
@@ -138,6 +140,7 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		ExtraCliArgs:          cfg.ExtraCliArgs,
 		DefaultModel:          cfg.DefaultModel,
 		EnvVariables:          cfg.EnvVariables,
+		CommandOverrides:      cfg.CommandOverrides,
 	}
 }
 
@@ -160,6 +163,11 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 	envVariables := r.EnvVariables
 	if envVariables == nil {
 		envVariables = make(map[string]string)
+	}
+
+	commandOverrides := r.CommandOverrides
+	if commandOverrides == nil {
+		commandOverrides = make(map[string]string)
 	}
 
 	shortcuts := make([]entity.Shortcut, len(r.Shortcuts))
@@ -198,5 +206,6 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		ExtraCliArgs:          r.ExtraCliArgs,
 		DefaultModel:          r.DefaultModel,
 		EnvVariables:          envVariables,
+		CommandOverrides:      commandOverrides,
 	}
 }

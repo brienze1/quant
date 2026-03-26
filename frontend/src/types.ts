@@ -133,4 +133,5 @@ export interface Config {
   extraCliArgs: string;
   defaultModel: string;
   envVariables: Record<string, string>;
+  commandOverrides: Record<string, string>;
 }

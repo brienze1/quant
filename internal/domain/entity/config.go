@@ -46,10 +46,11 @@ type Config struct {
 	NewLineKey      string  `json:"newLineKey"`
 
 	// Claude CLI
-	CliBinaryPath string            `json:"cliBinaryPath"`
-	ExtraCliArgs  string            `json:"extraCliArgs"`
-	DefaultModel  string            `json:"defaultModel"`
-	EnvVariables  map[string]string `json:"envVariables"`
+	CliBinaryPath    string            `json:"cliBinaryPath"`
+	ExtraCliArgs     string            `json:"extraCliArgs"`
+	DefaultModel     string            `json:"defaultModel"`
+	EnvVariables     map[string]string `json:"envVariables"`
+	CommandOverrides map[string]string `json:"commandOverrides"`
 }
 
 // NewDefaultConfig returns a Config populated with sensible default values.
@@ -92,9 +93,10 @@ func NewDefaultConfig() Config {
 		NewLineKey:      "backslash+enter",
 
 		// Claude CLI
-		CliBinaryPath: "claude",
-		ExtraCliArgs:  "",
-		DefaultModel:  "cli default",
-		EnvVariables:  make(map[string]string),
+		CliBinaryPath:    "claude",
+		ExtraCliArgs:     "",
+		DefaultModel:     "cli default",
+		EnvVariables:     make(map[string]string),
+		CommandOverrides: make(map[string]string),
 	}
 }

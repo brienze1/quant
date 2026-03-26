@@ -80,9 +80,17 @@ func (i *Injector) SessionPersistence() intAdapter.SessionPersistence {
 }
 
 // ProcessManager returns the singleton ProcessManager instance.
+// On first creation it loads the saved config so CliBinaryPath and CommandOverrides
+// are applied immediately, before any session is started.
 func (i *Injector) ProcessManager() intAdapter.ProcessManager {
 	if i.processManager == nil {
-		i.processManager = process.NewProcessManager()
+		pm := process.NewProcessManager()
+		// Apply CLI binary config from persisted settings so the correct command is
+		// used from the very first session, not just after the user opens Settings.
+		if cfg, err := i.ConfigPersistence().LoadConfig(); err == nil && cfg != nil {
+			pm.UpdateCliBinaryConfig(cfg.CliBinaryPath, cfg.CommandOverrides)
+		}
+		i.processManager = pm
 	}
 	return i.processManager
 }
@@ -219,6 +227,7 @@ func (i *Injector) ConfigManager() appAdapter.ConfigManager {
 			loginitem.NewManager(),    // SetLoginItem
 			notification.NewManager(), // SendNotification
 			keybindings.NewManager(),  // SetNewLineKey
+			i.ProcessManager(),        // UpdateCliBinaryConfig
 		)
 	}
 	return i.configManager

@@ -690,6 +690,25 @@ function TerminalTab({ config, update }: TabProps) {
 }
 
 function ClaudeTab({ config, update }: TabProps) {
+  const [newPath, setNewPath] = useState("");
+  const [newCommand, setNewCommand] = useState("");
+
+  const commandOverrides = config.commandOverrides ?? {};
+
+  function addCommandOverride() {
+    if (!newPath.trim() || !newCommand.trim()) return;
+    const updated = { ...commandOverrides, [newPath.trim()]: newCommand.trim() };
+    update("commandOverrides", updated);
+    setNewPath("");
+    setNewCommand("");
+  }
+
+  function removeCommandOverride(path: string) {
+    const updated = { ...commandOverrides };
+    delete updated[path];
+    update("commandOverrides", updated);
+  }
+
   return (
     <>
       <Section title="claude cli" description="configure the claude code cli binary and arguments">
@@ -728,6 +747,55 @@ function ClaudeTab({ config, update }: TabProps) {
             />
           }
         />
+      </Section>
+
+      <Section title="per-path command overrides" description="use a different claude command for sessions whose path contains the given substring">
+        <div style={{ border: "1px solid #2a2a2a" }}>
+          {/* Table Header */}
+          <div className="flex" style={{ backgroundColor: "#1F1F1F", height: 32, borderBottom: "1px solid #2a2a2a" }}>
+            <div className="flex-1 flex items-center px-3" style={{ color: "#6B7280", fontSize: 10, fontWeight: 700 }}>
+              path contains
+            </div>
+            <div className="flex-1 flex items-center px-3" style={{ color: "#6B7280", fontSize: 10, fontWeight: 700 }}>
+              command
+            </div>
+            <div className="flex items-center justify-center" style={{ width: 80, color: "#6B7280", fontSize: 10 }} />
+          </div>
+          {/* Rows */}
+          {Object.entries(commandOverrides).map(([path, cmd]) => (
+            <div
+              key={path}
+              className="flex"
+              style={{ height: 36, borderBottom: "1px solid #2a2a2a" }}
+            >
+              <div className="flex-1 flex items-center px-3" style={{ color: "#FAFAFA", fontSize: 11 }}>
+                {path}
+              </div>
+              <div className="flex-1 flex items-center px-3" style={{ color: "#10B981", fontSize: 11 }}>
+                {cmd}
+              </div>
+              <div className="flex items-center justify-center" style={{ width: 80 }}>
+                <button
+                  onClick={() => removeCommandOverride(path)}
+                  style={{ color: "#EF4444", fontSize: 11, fontWeight: 700 }}
+                >
+                  x
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Add override row */}
+        <div className="flex items-center gap-2 mt-3">
+          <TextInput value={newPath} onChange={setNewPath} width={200} placeholder="e.g. /work/projects/" />
+          <TextInput value={newCommand} onChange={setNewCommand} width={160} placeholder="e.g. claude-bl" />
+          <button
+            onClick={addCommandOverride}
+            style={{ color: "#10B981", fontSize: 11 }}
+          >
+            + add override
+          </button>
+        </div>
       </Section>
     </>
   );

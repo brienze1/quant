@@ -10,5 +10,6 @@ import (
 // Integration process implementations must implement this interface.
 type ProcessManager interface {
 	usecase.SpawnProcess
+	usecase.UpdateCliBinaryConfig
 	SetContext(ctx context.Context)
 }

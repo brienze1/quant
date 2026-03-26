@@ -29,7 +29,8 @@ type processManager struct {
 	mu               sync.RWMutex
 	processes        map[string]*claudeProcess // keyed by sessionID
 	outputDir        string                    // base dir for output files (~/.quant/sessions/)
-	claudeBinaryPath string                    // resolved full path to claude binary
+	claudeBinaryPath string                    // command name or path for the default claude binary
+	commandOverrides map[string]string         // path substring -> resolved binary path
 }
 
 // NewProcessManager creates a new process manager for Claude CLI processes.
@@ -41,7 +42,7 @@ func NewProcessManager() adapter.ProcessManager {
 	return &processManager{
 		processes:        make(map[string]*claudeProcess),
 		outputDir:        outputDir,
-		claudeBinaryPath: resolveClaudeBinary(),
+		commandOverrides: make(map[string]string),
 	}
 }
 
@@ -73,22 +74,63 @@ func shellEnv() []string {
 	return env
 }
 
-// resolveClaudeBinary finds the full path to the claude binary using the user's login shell.
-// GUI apps on macOS don't inherit the user's shell PATH, so we use the login shell to resolve it.
-func resolveClaudeBinary() string {
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/zsh"
+// rcFileForShell returns the interactive startup file that should be sourced for
+// the given shell so that aliases and functions defined there are available.
+func rcFileForShell(shell string) string {
+	switch filepath.Base(shell) {
+	case "zsh":
+		return "~/.zshrc"
+	case "bash":
+		return "~/.bashrc"
+	default:
+		return ""
+	}
+}
+
+// shellQuote wraps a string in single quotes, escaping any embedded single quotes.
+// This is safe to use when building a command string for `sh -c`.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// UpdateCliBinaryConfig stores the CLI command name and path-based overrides used when
+// spawning new sessions. Commands are passed to the shell via eval, so aliases, functions,
+// and PATH entries from ~/.zshrc are all resolved at runtime without pre-resolving here.
+func (m *processManager) UpdateCliBinaryConfig(cliBinaryPath string, commandOverrides map[string]string) {
+	overrides := make(map[string]string, len(commandOverrides))
+	for pattern, cmd := range commandOverrides {
+		overrides[pattern] = cmd
 	}
 
-	// Ask the login shell for the full path to claude.
-	cmd := exec.Command(shell, "-l", "-c", "which claude")
-	output, err := cmd.Output()
-	if err == nil {
-		resolved := strings.TrimSpace(string(output))
-		if resolved != "" {
-			return resolved
+	m.mu.Lock()
+	m.claudeBinaryPath = cliBinaryPath
+	m.commandOverrides = overrides
+	m.mu.Unlock()
+}
+
+// getClaudeBinary returns the binary to use for a session.
+// It checks overrides against the original repo path first (so worktree sessions still match),
+// then falls back to checking the working directory, then the configured default.
+func (m *processManager) getClaudeBinary(directory string, repoPath string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for pattern, cmd := range m.commandOverrides {
+		if pattern == "" {
+			continue
 		}
+		// Prefer matching against the original repo path so that worktree sessions
+		// (whose working directory is ~/.quant/worktrees/...) still match correctly.
+		if repoPath != "" && strings.Contains(repoPath, pattern) {
+			return cmd
+		}
+		if strings.Contains(directory, pattern) {
+			return cmd
+		}
+	}
+
+	if m.claudeBinaryPath != "" {
+		return m.claudeBinaryPath
 	}
 
 	return "claude"
@@ -106,7 +148,7 @@ func (m *processManager) outputPath(sessionID string) string {
 
 // Spawn starts a process in a PTY and streams output to the frontend.
 // For "claude" sessions it launches the Claude CLI; for "terminal" sessions it launches a shell.
-func (m *processManager) Spawn(sessionID string, sessionType string, directory string, conversationID string, skipPermissions bool, model string, extraCliArgs string, rows uint16, cols uint16) (int, error) {
+func (m *processManager) Spawn(sessionID string, sessionType string, directory string, repoPath string, conversationID string, skipPermissions bool, model string, extraCliArgs string, rows uint16, cols uint16) (int, error) {
 	// Stop any existing process for this session.
 	m.mu.RLock()
 	_, exists := m.processes[sessionID]
@@ -140,7 +182,35 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 		if extraCliArgs != "" {
 			args = append(args, strings.Fields(extraCliArgs)...)
 		}
-		cmd = exec.Command(m.claudeBinaryPath, args...)
+
+		// Build the full command string and run it via a login shell.
+		// We explicitly source the user's interactive shell config (~/.zshrc or ~/.bashrc)
+		// so that aliases and shell functions (e.g. `alias claude-bl='...'`) are available.
+		// Relying on `-i` is not sufficient: zsh checks whether stdin is a TTY *before*
+		// the PTY is attached, so it may run non-interactively and skip ~/.zshrc entirely.
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "/bin/zsh"
+		}
+		parts := make([]string, 0, len(args)+1)
+		parts = append(parts, shellQuote(m.getClaudeBinary(directory, repoPath)))
+		for _, a := range args {
+			parts = append(parts, shellQuote(a))
+		}
+		// Source the interactive shell config so aliases/functions are defined,
+		// then use eval to re-parse the command. This is necessary because zsh
+		// expands aliases at parse time: in `zsh -c ". ~/.zshrc; alias-cmd"`,
+		// the whole string is parsed before .zshrc runs, so the alias is not
+		// yet known. eval re-parses after .zshrc has already executed, so the
+		// alias is found.
+		rcFile := rcFileForShell(shell)
+		var shellCmd string
+		if rcFile != "" {
+			shellCmd = fmt.Sprintf("[ -f %s ] && . %s 2>/dev/null; eval %s", rcFile, rcFile, strings.Join(parts, " "))
+		} else {
+			shellCmd = fmt.Sprintf("eval %s", strings.Join(parts, " "))
+		}
+		cmd = exec.Command(shell, "-l", "-c", shellCmd)
 	}
 
 	cmd.Dir = directory
@@ -246,7 +316,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 			_ = os.Truncate(m.outputPath(sessionID), 0)
 
 			// Respawn fresh with --session-id.
-			newPid, err := m.Spawn(sessionID, sessionType, directory, "", skipPermissions, model, extraCliArgs, rows, cols)
+			newPid, err := m.Spawn(sessionID, sessionType, directory, repoPath, "", skipPermissions, model, extraCliArgs, rows, cols)
 			if err == nil && m.ctx != nil {
 				// Notify frontend of the new PID via a restart event.
 				wailsRuntime.EventsEmit(m.ctx, "session:restarted", map[string]interface{}{

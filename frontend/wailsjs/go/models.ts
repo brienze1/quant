@@ -65,6 +65,7 @@ export namespace dto {
 	    extraCliArgs: string;
 	    defaultModel: string;
 	    envVariables: Record<string, string>;
+	    commandOverrides: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConfigResponse(source);
@@ -102,6 +103,7 @@ export namespace dto {
 	        this.extraCliArgs = source["extraCliArgs"];
 	        this.defaultModel = source["defaultModel"];
 	        this.envVariables = source["envVariables"];
+	        this.commandOverrides = source["commandOverrides"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -255,6 +257,7 @@ export namespace dto {
 	    extraCliArgs: string;
 	    defaultModel: string;
 	    envVariables: Record<string, string>;
+	    commandOverrides: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new SaveConfigRequest(source);
@@ -292,6 +295,7 @@ export namespace dto {
 	        this.extraCliArgs = source["extraCliArgs"];
 	        this.defaultModel = source["defaultModel"];
 	        this.envVariables = source["envVariables"];
+	        this.commandOverrides = source["commandOverrides"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

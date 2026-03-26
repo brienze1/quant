@@ -11,14 +11,15 @@ import (
 
 // configManagerService implements the adapter.ConfigManager interface.
 type configManagerService struct {
-	loadConfig       usecase.LoadConfig
-	saveConfig       usecase.SaveConfig
-	resetDatabase    usecase.ResetDatabase
-	clearSessionLogs usecase.ClearSessionLogs
-	getDatabasePath  usecase.GetDatabasePath
-	setLoginItem     usecase.SetLoginItem
-	sendNotification usecase.SendNotification
-	setNewLineKey    usecase.SetNewLineKey
+	loadConfig            usecase.LoadConfig
+	saveConfig            usecase.SaveConfig
+	resetDatabase         usecase.ResetDatabase
+	clearSessionLogs      usecase.ClearSessionLogs
+	getDatabasePath       usecase.GetDatabasePath
+	setLoginItem          usecase.SetLoginItem
+	sendNotification      usecase.SendNotification
+	setNewLineKey         usecase.SetNewLineKey
+	updateCliBinaryConfig usecase.UpdateCliBinaryConfig
 }
 
 // NewConfigManagerService creates a new ConfigManager service.
@@ -32,16 +33,18 @@ func NewConfigManagerService(
 	setLoginItem usecase.SetLoginItem,
 	sendNotification usecase.SendNotification,
 	setNewLineKey usecase.SetNewLineKey,
+	updateCliBinaryConfig usecase.UpdateCliBinaryConfig,
 ) adapter.ConfigManager {
 	return &configManagerService{
-		loadConfig:       loadConfig,
-		saveConfig:       saveConfig,
-		resetDatabase:    resetDatabase,
-		clearSessionLogs: clearSessionLogs,
-		getDatabasePath:  getDatabasePath,
-		setLoginItem:     setLoginItem,
-		sendNotification: sendNotification,
-		setNewLineKey:    setNewLineKey,
+		loadConfig:            loadConfig,
+		saveConfig:            saveConfig,
+		resetDatabase:         resetDatabase,
+		clearSessionLogs:      clearSessionLogs,
+		getDatabasePath:       getDatabasePath,
+		setLoginItem:          setLoginItem,
+		sendNotification:      sendNotification,
+		setNewLineKey:         setNewLineKey,
+		updateCliBinaryConfig: updateCliBinaryConfig,
 	}
 }
 
@@ -69,6 +72,8 @@ func (s *configManagerService) SaveConfig(cfg *entity.Config) error {
 	if err := s.setNewLineKey.SetNewLineKey(cfg.NewLineKey); err != nil {
 		return fmt.Errorf("failed to set new line key: %w", err)
 	}
+
+	s.updateCliBinaryConfig.UpdateCliBinaryConfig(cfg.CliBinaryPath, cfg.CommandOverrides)
 
 	return nil
 }

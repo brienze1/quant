@@ -121,6 +121,20 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 	return &session, nil
 }
 
+// repoPathForSession returns the original repo path for a session.
+// When using worktrees the session's Directory is the worktree path, so we look up
+// the repo to get its root path, which is what command overrides should match against.
+func (s *sessionManagerService) repoPathForSession(session *entity.Session) string {
+	if session.RepoID == "" {
+		return session.Directory
+	}
+	repo, err := s.findRepo.FindRepoByID(session.RepoID)
+	if err != nil || repo == nil {
+		return session.Directory
+	}
+	return repo.Path
+}
+
 // StartSession spawns claude in a PTY for an idle session.
 func (s *sessionManagerService) StartSession(id string, rows int, cols int) error {
 	session, err := s.findSession.FindByID(id)
@@ -132,7 +146,8 @@ func (s *sessionManagerService) StartSession(id string, rows int, cols int) erro
 		return fmt.Errorf("session not found: %s", id)
 	}
 
-	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols))
+	repoPath := s.repoPathForSession(session)
+	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols))
 	if err != nil {
 		_ = s.updateSession.UpdateStatus(id, sessionstatus.Error)
 		return fmt.Errorf("failed to spawn process: %w", err)
@@ -166,7 +181,8 @@ func (s *sessionManagerService) ResumeSession(id string, rows int, cols int) err
 		return fmt.Errorf("session not found: %s", id)
 	}
 
-	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols))
+	repoPath := s.repoPathForSession(session)
+	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols))
 	if err != nil {
 		_ = s.updateSession.UpdateStatus(id, sessionstatus.Error)
 		return fmt.Errorf("failed to resume process: %w", err)
