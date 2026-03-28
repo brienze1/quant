@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -74,30 +75,39 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 3. create_job
 	mcpServer.AddTool(
 		mcp.NewTool("create_job",
-			mcp.WithDescription("Create a new automated job. Jobs can run Claude sessions or bash scripts, on a schedule or triggered by other jobs."),
-			mcp.WithString("name", mcp.Required(), mcp.Description("Unique name for the job (e.g. deploy-monitor, code-review-bot)")),
-			mcp.WithString("description", mcp.Description("Brief description of what the job does")),
-			mcp.WithString("type", mcp.Required(), mcp.Description("Job type: 'claude' for Claude CLI sessions, 'bash' for shell scripts")),
-			mcp.WithString("workingDirectory", mcp.Description("Working directory where the job runs (supports ~ for home dir)")),
+			mcp.WithDescription(`Create a new automated job in Quant. Jobs can be:
+- 'claude' type: runs a Claude CLI session with a prompt (use for code reviews, analysis, complex tasks)
+- 'bash' type: runs a shell script (use for health checks, deployments, notifications)
+
+Jobs run autonomously with permissions bypassed. After creating, use update_job to wire trigger chains (onSuccess/onFailure arrays with target job IDs).
+
+Trigger chains: when a job finishes, it can trigger other jobs based on the outcome. Use onSuccess/onFailure to build pipelines like: health-check → deploy (on success) → notify (on deploy success), health-check → incident-report (on failure).
+
+For claude jobs, after execution a second evaluation prompt runs to determine success/failure and extract structured metadata that gets passed to triggered jobs, saving tokens vs passing raw output.`),
+			mcp.WithString("name", mcp.Required(), mcp.Description("Unique job name (e.g. health-check, deploy-staging, code-review-bot)")),
+			mcp.WithString("description", mcp.Description("What the job does — shown in the canvas UI")),
+			mcp.WithString("type", mcp.Required(), mcp.Description("'claude' for Claude CLI sessions, 'bash' for shell scripts")),
+			mcp.WithString("workingDirectory", mcp.Description("Working directory (supports ~/path). Leave empty for home dir")),
 			// Schedule
-			mcp.WithBoolean("scheduleEnabled", mcp.Description("Enable scheduled execution. When false, job runs only manually or via triggers")),
-			mcp.WithString("scheduleType", mcp.Description("Schedule type: 'recurring' (repeats) or 'one_time' (runs once then disables)")),
-			mcp.WithString("cronExpression", mcp.Description("Cron expression for scheduling (e.g. '*/30 * * * *' for every 30 min)")),
-			mcp.WithNumber("scheduleInterval", mcp.Description("Schedule interval in minutes (alternative to cron expression)")),
-			mcp.WithNumber("timeoutSeconds", mcp.Description("Maximum execution time in seconds before the job is killed (default: 1800)")),
-			// Claude session config
-			mcp.WithString("prompt", mcp.Description("The main task prompt sent to Claude (for claude-type jobs)")),
-			mcp.WithBoolean("allowBypass", mcp.Description("Run with --dangerously-skip-permissions flag")),
-			mcp.WithBoolean("autonomousMode", mcp.Description("Run autonomously without stopping for user input")),
-			mcp.WithNumber("maxRetries", mcp.Description("Number of retry attempts on failure (Claude jobs only, retries include previous output as context)")),
-			mcp.WithString("model", mcp.Description("Claude model to use (e.g. 'sonnet', 'opus'). Leave empty for CLI default")),
-			mcp.WithString("claudeCommand", mcp.Description("Claude CLI command or alias (e.g. 'claude', 'claude-bl'). Supports shell aliases")),
-			mcp.WithString("successPrompt", mcp.Description("Criteria for evaluating success (max 300 chars). After execution, Claude evaluates the output against this. Optional")),
-			mcp.WithString("failurePrompt", mcp.Description("Criteria for evaluating failure (max 300 chars). After execution, Claude evaluates the output against this. Optional")),
-			mcp.WithString("metadataPrompt", mcp.Description("What metadata to extract from output for triggered jobs (max 500 chars). If empty, Claude decides what's relevant")),
-			// Bash script config
-			mcp.WithString("interpreter", mcp.Description("Script interpreter for bash jobs (e.g. '/bin/bash', '/bin/zsh', 'python3')")),
-			mcp.WithString("scriptContent", mcp.Description("Shell script content for bash jobs. Exit 0 = success, non-zero = failure")),
+			mcp.WithBoolean("scheduleEnabled", mcp.Description("Enable scheduled execution. False = manual/trigger only")),
+			mcp.WithString("scheduleType", mcp.Description("'recurring' (repeats on interval/cron) or 'one_time' (runs once then auto-disables)")),
+			mcp.WithString("cronExpression", mcp.Description("Cron expression (e.g. '0 9 * * 1-5' for weekdays 9am). Alternative to scheduleInterval")),
+			mcp.WithNumber("scheduleInterval", mcp.Description("Repeat interval in minutes (e.g. 30 for every 30min). Alternative to cronExpression")),
+			mcp.WithNumber("timeoutSeconds", mcp.Description("Max execution time in seconds (default: 1800). Job is killed after this")),
+			// Claude config
+			mcp.WithString("prompt", mcp.Description("Main task prompt for claude jobs. Be specific about what to do and what tools to use")),
+			mcp.WithNumber("maxRetries", mcp.Description("Retry count on failure (claude only). Each retry includes previous output as context")),
+			mcp.WithString("model", mcp.Description("Claude model (e.g. 'claude-sonnet-4-6'). Empty = CLI default")),
+			mcp.WithString("claudeCommand", mcp.Description("Claude CLI command/alias (e.g. 'claude', 'claude-bl'). Supports shell aliases from ~/.zshrc")),
+			mcp.WithString("successPrompt", mcp.Description("How to evaluate success (max 300 chars). E.g. 'All tests passed and PR was approved'. Optional")),
+			mcp.WithString("failurePrompt", mcp.Description("How to evaluate failure (max 300 chars). E.g. 'Tests failed or errors occurred'. Optional")),
+			mcp.WithString("metadataPrompt", mcp.Description("What structured data to extract for triggered jobs (max 500 chars). E.g. 'Extract PR URLs, test counts, error details'. Saves tokens vs raw output")),
+			// Bash config
+			mcp.WithString("interpreter", mcp.Description("Shell for bash jobs: '/bin/bash', '/bin/zsh', 'python3'")),
+			mcp.WithString("scriptContent", mcp.Description("Script content for bash jobs. Exit 0 = success (fires onSuccess triggers), non-zero = failure (fires onFailure triggers)")),
+			// Triggers
+			mcp.WithString("onSuccess", mcp.Description("JSON array of job IDs to trigger on success. E.g. '[\"job-id-1\",\"job-id-2\"]'. Use list_jobs to get IDs")),
+			mcp.WithString("onFailure", mcp.Description("JSON array of job IDs to trigger on failure. E.g. '[\"job-id-1\"]'. Use list_jobs to get IDs")),
 		),
 		s.handleCreateJob,
 	)
@@ -105,28 +115,34 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 4. update_job
 	mcpServer.AddTool(
 		mcp.NewTool("update_job",
-			mcp.WithDescription("Update an existing job's configuration. All fields are optional — only provided fields are updated."),
-			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to update")),
+			mcp.WithDescription(`Update a job's configuration. Only provided fields are changed. Also use this to wire trigger chains by setting onSuccess/onFailure with arrays of target job IDs.
+
+Common workflows:
+- Wire triggers: update_job(id, onSuccess=["target-job-id"])
+- Change prompt: update_job(id, prompt="new prompt")
+- Enable schedule: update_job(id, scheduleEnabled=true, scheduleInterval=30)
+- Add evaluation: update_job(id, successPrompt="...", failurePrompt="...")`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to update (get from list_jobs)")),
 			mcp.WithString("name", mcp.Description("Job name")),
-			mcp.WithString("description", mcp.Description("Brief description of what the job does")),
-			mcp.WithString("type", mcp.Description("Job type: 'claude' or 'bash'")),
-			mcp.WithString("workingDirectory", mcp.Description("Working directory where the job runs")),
-			mcp.WithBoolean("scheduleEnabled", mcp.Description("Enable/disable scheduled execution")),
-			mcp.WithString("scheduleType", mcp.Description("Schedule type: 'recurring' or 'one_time'")),
-			mcp.WithString("cronExpression", mcp.Description("Cron expression for scheduling")),
-			mcp.WithNumber("scheduleInterval", mcp.Description("Schedule interval in minutes")),
-			mcp.WithNumber("timeoutSeconds", mcp.Description("Maximum execution time in seconds")),
-			mcp.WithString("prompt", mcp.Description("Main task prompt for Claude jobs")),
-			mcp.WithBoolean("allowBypass", mcp.Description("Run with --dangerously-skip-permissions")),
-			mcp.WithBoolean("autonomousMode", mcp.Description("Run autonomously without user input")),
-			mcp.WithNumber("maxRetries", mcp.Description("Retry attempts on failure")),
-			mcp.WithString("model", mcp.Description("Claude model to use")),
-			mcp.WithString("claudeCommand", mcp.Description("Claude CLI command or alias")),
+			mcp.WithString("description", mcp.Description("Job description")),
+			mcp.WithString("type", mcp.Description("'claude' or 'bash'")),
+			mcp.WithString("workingDirectory", mcp.Description("Working directory")),
+			mcp.WithBoolean("scheduleEnabled", mcp.Description("Enable/disable schedule")),
+			mcp.WithString("scheduleType", mcp.Description("'recurring' or 'one_time'")),
+			mcp.WithString("cronExpression", mcp.Description("Cron expression")),
+			mcp.WithNumber("scheduleInterval", mcp.Description("Interval in minutes")),
+			mcp.WithNumber("timeoutSeconds", mcp.Description("Timeout in seconds")),
+			mcp.WithString("prompt", mcp.Description("Task prompt (claude jobs)")),
+			mcp.WithNumber("maxRetries", mcp.Description("Retry count (claude jobs)")),
+			mcp.WithString("model", mcp.Description("Claude model")),
+			mcp.WithString("claudeCommand", mcp.Description("Claude CLI command/alias")),
 			mcp.WithString("successPrompt", mcp.Description("Success evaluation criteria (max 300 chars)")),
 			mcp.WithString("failurePrompt", mcp.Description("Failure evaluation criteria (max 300 chars)")),
-			mcp.WithString("metadataPrompt", mcp.Description("Metadata extraction instructions for triggered jobs (max 500 chars)")),
-			mcp.WithString("interpreter", mcp.Description("Script interpreter for bash jobs")),
-			mcp.WithString("scriptContent", mcp.Description("Script content for bash jobs")),
+			mcp.WithString("metadataPrompt", mcp.Description("Metadata extraction instructions (max 500 chars)")),
+			mcp.WithString("interpreter", mcp.Description("Script interpreter (bash jobs)")),
+			mcp.WithString("scriptContent", mcp.Description("Script content (bash jobs)")),
+			mcp.WithString("onSuccess", mcp.Description("JSON array of job IDs to trigger on success. E.g. '[\"id1\",\"id2\"]'. Replaces existing triggers")),
+			mcp.WithString("onFailure", mcp.Description("JSON array of job IDs to trigger on failure. E.g. '[\"id1\"]'. Replaces existing triggers")),
 		),
 		s.handleUpdateJob,
 	)
@@ -134,8 +150,8 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 5. delete_job
 	mcpServer.AddTool(
 		mcp.NewTool("delete_job",
-			mcp.WithDescription("Delete a job by ID"),
-			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID")),
+			mcp.WithDescription("Delete a job and all its trigger chains and run history. This is irreversible."),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to delete (get from list_jobs)")),
 		),
 		s.handleDeleteJob,
 	)
@@ -143,8 +159,8 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 6. run_job
 	mcpServer.AddTool(
 		mcp.NewTool("run_job",
-			mcp.WithDescription("Run a job immediately"),
-			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to run")),
+			mcp.WithDescription("Trigger a job to run immediately. Returns the run object with a run ID. The job executes asynchronously — use list_runs or get_run to check status. If the job has trigger chains, downstream jobs will fire automatically when this run completes."),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to run (get from list_jobs)")),
 		),
 		s.handleRunJob,
 	)
@@ -152,8 +168,8 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 7. get_run
 	mcpServer.AddTool(
 		mcp.NewTool("get_run",
-			mcp.WithDescription("Get a job run by ID"),
-			mcp.WithString("runId", mcp.Required(), mcp.Description("Run ID")),
+			mcp.WithDescription("Get details of a specific job run including status (pending/running/success/failed/cancelled), duration, tokens used, and result. Use after run_job to check if execution completed."),
+			mcp.WithString("runId", mcp.Required(), mcp.Description("Run ID (returned by run_job or list_runs)")),
 		),
 		s.handleGetRun,
 	)
@@ -161,8 +177,8 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 8. list_runs
 	mcpServer.AddTool(
 		mcp.NewTool("list_runs",
-			mcp.WithDescription("List all runs for a job"),
-			mcp.WithString("jobId", mcp.Required(), mcp.Description("Job ID")),
+			mcp.WithDescription("List all runs for a job, sorted by most recent first. Shows run ID, status, duration, tokens used, and whether it was triggered by another job. Use to check job history and find specific run IDs."),
+			mcp.WithString("jobId", mcp.Required(), mcp.Description("Job ID (get from list_jobs)")),
 		),
 		s.handleListRuns,
 	)
@@ -170,8 +186,8 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 9. get_run_output
 	mcpServer.AddTool(
 		mcp.NewTool("get_run_output",
-			mcp.WithDescription("Get the output of a job run"),
-			mcp.WithString("runId", mcp.Required(), mcp.Description("Run ID")),
+			mcp.WithDescription("Get the full output/logs of a job run. For claude jobs this includes the Claude session output. For bash jobs this includes stdout/stderr. Also includes evaluation results and extracted metadata if configured."),
+			mcp.WithString("runId", mcp.Required(), mcp.Description("Run ID (from list_runs or run_job)")),
 		),
 		s.handleGetRunOutput,
 	)
@@ -179,7 +195,7 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 10. cancel_run
 	mcpServer.AddTool(
 		mcp.NewTool("cancel_run",
-			mcp.WithDescription("Cancel a running job"),
+			mcp.WithDescription("Cancel a currently running job. Kills the process immediately. The run status is set to 'cancelled' and no triggers are fired."),
 			mcp.WithString("runId", mcp.Required(), mcp.Description("Run ID to cancel")),
 		),
 		s.handleCancelRun,
@@ -232,8 +248,8 @@ func (s *QuantMCPServer) handleCreateJob(_ context.Context, request mcp.CallTool
 		ScheduleInterval: intArg(args, "scheduleInterval"),
 		TimeoutSeconds:   intArg(args, "timeoutSeconds"),
 		Prompt:           stringArg(args, "prompt"),
-		AllowBypass:      boolArg(args, "allowBypass"),
-		AutonomousMode:   boolArg(args, "autonomousMode"),
+		AllowBypass:      true,
+		AutonomousMode:   true,
 		MaxRetries:       intArg(args, "maxRetries"),
 		Model:            stringArg(args, "model"),
 		ClaudeCommand:    stringArg(args, "claudeCommand"),
@@ -330,8 +346,22 @@ func (s *QuantMCPServer) handleUpdateJob(_ context.Context, request mcp.CallTool
 		existing.ScriptContent = v.(string)
 	}
 
+	// Only update triggers if explicitly provided — nil means "don't change"
 	onSuccess := stringSliceArg(args, "onSuccess")
 	onFailure := stringSliceArg(args, "onFailure")
+
+	// If neither provided, preserve existing triggers
+	if onSuccess == nil && onFailure == nil {
+		existingSuccess, existingFailure, _, _ := s.jobManager.GetTriggersForJob(id)
+		onSuccess = make([]string, len(existingSuccess))
+		for i, t := range existingSuccess {
+			onSuccess[i] = t.TargetJobID
+		}
+		onFailure = make([]string, len(existingFailure))
+		for i, t := range existingFailure {
+			onFailure[i] = t.TargetJobID
+		}
+	}
 
 	updated, err := s.jobManager.UpdateJob(*existing, onSuccess, onFailure)
 	if err != nil {
@@ -558,15 +588,28 @@ func stringSliceArg(args map[string]any, key string) []string {
 	if !ok || v == nil {
 		return nil
 	}
-	arr, ok := v.([]any)
-	if !ok {
-		return nil
+
+	// Handle []any (from native JSON arrays)
+	if arr, ok := v.([]any); ok {
+		result := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
 	}
-	result := make([]string, 0, len(arr))
-	for _, item := range arr {
-		if s, ok := item.(string); ok {
-			result = append(result, s)
+
+	// Handle string (JSON-encoded array from MCP string field)
+	if s, ok := v.(string); ok && s != "" {
+		s = strings.TrimSpace(s)
+		if strings.HasPrefix(s, "[") {
+			var result []string
+			if err := json.Unmarshal([]byte(s), &result); err == nil {
+				return result
+			}
 		}
 	}
-	return result
+
+	return nil
 }

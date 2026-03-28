@@ -27,8 +27,8 @@ function buildDefaultForm(): CreateJobRequest {
     scheduleInterval: 60,
     timeoutSeconds: 300,
     prompt: "",
-    allowBypass: false,
-    autonomousMode: false,
+    allowBypass: true,
+    autonomousMode: true,
     maxRetries: 0,
     model: "claude-sonnet-4-6",
     overrideRepoCommand: "",
@@ -469,40 +469,6 @@ export function CreateJobModal({ jobs, editJob, onSubmit, onCancel }: Props) {
           {/* TAB: Session (claude) */}
           {activeTab === "session" && form.type === "claude" && (
             <>
-              {/* allow bypass */}
-              <div className="flex items-center justify-between">
-                <span
-                  style={{
-                    color: "#FAFAFA",
-                    fontSize: 11,
-                    fontFamily: "'JetBrains Mono', monospace",
-                  }}
-                >
-                  allow bypass
-                </span>
-                <ToggleSwitch
-                  checked={form.allowBypass}
-                  onChange={(v) => update("allowBypass", v)}
-                />
-              </div>
-
-              {/* autonomous mode */}
-              <div className="flex items-center justify-between">
-                <span
-                  style={{
-                    color: "#FAFAFA",
-                    fontSize: 11,
-                    fontFamily: "'JetBrains Mono', monospace",
-                  }}
-                >
-                  autonomous mode
-                </span>
-                <ToggleSwitch
-                  checked={form.autonomousMode}
-                  onChange={(v) => update("autonomousMode", v)}
-                />
-              </div>
-
               {/* max retries */}
               <div className="flex items-center justify-between">
                 <span

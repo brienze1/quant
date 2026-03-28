@@ -583,47 +583,47 @@ type jobEvaluation struct {
 func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string, run *entity.JobRun) (*jobEvaluation, error) {
 	var evalPrompt strings.Builder
 
-	evalPrompt.WriteString("You just completed a task. Here is your output:\n")
-	evalPrompt.WriteString("```\n")
+	// System instruction — be extremely directive to avoid hallucination
+	evalPrompt.WriteString("SYSTEM: You are a job result evaluator. You MUST respond with ONLY a raw JSON object. No markdown, no code blocks, no explanations, no text before or after the JSON. Just the JSON object itself.\n\n")
+
+	evalPrompt.WriteString("TASK OUTPUT:\n")
 	if len(taskOutput) > 3000 {
 		evalPrompt.WriteString(taskOutput[len(taskOutput)-3000:])
 	} else {
 		evalPrompt.WriteString(taskOutput)
 	}
-	evalPrompt.WriteString("\n```\n\n")
+	evalPrompt.WriteString("\n\nEND OF TASK OUTPUT.\n\n")
 
 	// Build evaluation criteria
 	hasSuccess := job.SuccessPrompt != ""
 	hasFailure := job.FailurePrompt != ""
 
-	if hasSuccess || hasFailure {
-		evalPrompt.WriteString("Evaluate the result based on these criteria:\n")
-		if hasSuccess {
-			evalPrompt.WriteString(fmt.Sprintf("SUCCESS criteria: %s\n", job.SuccessPrompt))
-		}
-		if hasFailure {
-			evalPrompt.WriteString(fmt.Sprintf("FAILURE criteria: %s\n", job.FailurePrompt))
-		}
-		if hasSuccess && !hasFailure {
-			evalPrompt.WriteString("If the output does NOT match the success criteria, the result is \"failure\".\n")
-		} else if !hasSuccess && hasFailure {
-			evalPrompt.WriteString("If the output does NOT match the failure criteria, the result is \"success\".\n")
-		}
+	evalPrompt.WriteString("EVALUATION RULES:\n")
+	if hasSuccess && hasFailure {
+		evalPrompt.WriteString(fmt.Sprintf("- Set result to \"success\" if: %s\n", job.SuccessPrompt))
+		evalPrompt.WriteString(fmt.Sprintf("- Set result to \"failure\" if: %s\n", job.FailurePrompt))
+		evalPrompt.WriteString("- If neither criteria clearly matches, default to \"success\".\n")
+	} else if hasSuccess {
+		evalPrompt.WriteString(fmt.Sprintf("- Set result to \"success\" if: %s\n", job.SuccessPrompt))
+		evalPrompt.WriteString("- Set result to \"failure\" if the success criteria is NOT met.\n")
+	} else if hasFailure {
+		evalPrompt.WriteString(fmt.Sprintf("- Set result to \"failure\" if: %s\n", job.FailurePrompt))
+		evalPrompt.WriteString("- Set result to \"success\" if the failure criteria is NOT met.\n")
 	} else {
-		evalPrompt.WriteString("The result is \"success\" (no specific criteria were defined).\n")
+		evalPrompt.WriteString("- No evaluation criteria defined. Set result to \"success\".\n")
 	}
 
 	// Metadata instructions
+	evalPrompt.WriteString("\nMETADATA EXTRACTION:\n")
 	if job.MetadataPrompt != "" {
-		evalPrompt.WriteString(fmt.Sprintf("\nExtract the following metadata from the output: %s\n", job.MetadataPrompt))
+		evalPrompt.WriteString(fmt.Sprintf("Extract these fields into the metadata object: %s\n", job.MetadataPrompt))
 	} else {
-		evalPrompt.WriteString("\nExtract any relevant metadata from the output that would be useful context for downstream jobs.\n")
+		evalPrompt.WriteString("Extract a brief summary and any key data points into the metadata object.\n")
 	}
+	evalPrompt.WriteString("Use simple string/number/boolean values. Use snake_case keys. Keep it concise.\n")
 
-	evalPrompt.WriteString("\nRespond with ONLY a JSON object in this exact format, no other text:\n")
-	evalPrompt.WriteString("```json\n")
-	evalPrompt.WriteString("{\"result\": \"success\" or \"failure\", \"metadata\": { ... }}\n")
-	evalPrompt.WriteString("```\n")
+	evalPrompt.WriteString("\nRESPOND WITH ONLY THIS JSON (no other text):\n")
+	evalPrompt.WriteString("{\"result\":\"success\",\"metadata\":{\"key\":\"value\"}}\n")
 
 	claudeCmd := job.ClaudeCommand
 	if claudeCmd == "" {
@@ -680,18 +680,30 @@ func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string
 	}
 
 	// Parse JSON from response — look for {...} in the output
-	output := stdout.String()
+	output := strings.TrimSpace(stdout.String())
 	var eval jobEvaluation
 	eval.Metadata = make(map[string]interface{})
 
-	// Try to find JSON in the response
-	jsonStart := strings.Index(output, "{")
-	jsonEnd := strings.LastIndex(output, "}")
+	// Strip markdown code blocks if Claude wrapped the response
+	cleaned := output
+	if idx := strings.Index(cleaned, "```json"); idx >= 0 {
+		cleaned = cleaned[idx+7:]
+	} else if idx := strings.Index(cleaned, "```"); idx >= 0 {
+		cleaned = cleaned[idx+3:]
+	}
+	if idx := strings.LastIndex(cleaned, "```"); idx >= 0 {
+		cleaned = cleaned[:idx]
+	}
+	cleaned = strings.TrimSpace(cleaned)
+
+	// Find the JSON object in the cleaned output
+	jsonStart := strings.Index(cleaned, "{")
+	jsonEnd := strings.LastIndex(cleaned, "}")
 	if jsonStart >= 0 && jsonEnd > jsonStart {
-		jsonStr := output[jsonStart : jsonEnd+1]
+		jsonStr := cleaned[jsonStart : jsonEnd+1]
 		if err := json.Unmarshal([]byte(jsonStr), &eval); err != nil {
-			// Fallback: no criteria = success
 			eval.Result = "success"
+			eval.Metadata["parse_error"] = err.Error()
 			eval.Metadata["raw_eval"] = output
 		}
 	} else {
@@ -699,8 +711,8 @@ func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string
 		eval.Metadata["raw_eval"] = output
 	}
 
-	// Validate result value
-	if eval.Result != "success" && eval.Result != "failure" {
+	// Validate result value — anything other than "failure" is treated as success
+	if eval.Result != "failure" {
 		eval.Result = "success"
 	}
 	if eval.Metadata == nil {
@@ -709,7 +721,8 @@ func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string
 
 	// Log the evaluation
 	if logFile, err := os.OpenFile(runLogPath(run.ID), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-		_, _ = logFile.WriteString(fmt.Sprintf("\n\n--- evaluation ---\nresult: %s\nmetadata: %v\n", eval.Result, eval.Metadata))
+		metaJSON, _ := json.MarshalIndent(eval.Metadata, "", "  ")
+		_, _ = logFile.WriteString(fmt.Sprintf("\n\n--- evaluation ---\nresult: %s\nmetadata:\n%s\n", eval.Result, string(metaJSON)))
 		_ = logFile.Close()
 	}
 

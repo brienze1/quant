@@ -791,8 +791,6 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
           ? <>
             {renderSection("session", <>
               {renderKeyValue("model", selectedJob.model)}
-              {renderKeyValue("allow_bypass", selectedJob.allowBypass)}
-              {renderKeyValue("autonomous_mode", selectedJob.autonomousMode)}
               {renderKeyValue("max_retries", selectedJob.maxRetries)}
               {renderKeyValue("override_repo_command", selectedJob.overrideRepoCommand)}
               {renderKeyValue("claude_command", selectedJob.claudeCommand)}
