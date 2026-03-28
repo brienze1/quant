@@ -258,6 +258,13 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 		run.DurationMs += duration.Milliseconds()
 
 		if execErr != nil {
+			// Check if the run was cancelled while executing
+			currentRun, _ := s.findJobRun.FindJobRunByID(run.ID)
+			if currentRun != nil && currentRun.Status == jobrunstatus.Cancelled {
+				// Already cancelled — don't overwrite status, don't retry
+				return
+			}
+
 			// Execution error (timeout, crash) — retry
 			lastOutput = result
 			lastErr = execErr
@@ -313,7 +320,12 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 		return
 	}
 
-	// All attempts exhausted
+	// All attempts exhausted — check if cancelled before setting failed
+	currentRun, _ := s.findJobRun.FindJobRunByID(run.ID)
+	if currentRun != nil && currentRun.Status == jobrunstatus.Cancelled {
+		return
+	}
+
 	now := time.Now()
 	run.Status = jobrunstatus.Failed
 	run.ErrorMessage = lastErr.Error()

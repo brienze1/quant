@@ -212,6 +212,23 @@ Common workflows:
 		),
 		s.handleCancelRun,
 	)
+
+	// 11. get_triggers
+	mcpServer.AddTool(
+		mcp.NewTool("get_triggers",
+			mcp.WithDescription("Get the full trigger graph showing how all jobs are connected. Returns each job with its onSuccess and onFailure targets, plus which jobs trigger it. Use this to understand the pipeline topology before wiring new connections."),
+		),
+		s.handleGetTriggers,
+	)
+
+	// 12. get_pipeline_status
+	mcpServer.AddTool(
+		mcp.NewTool("get_pipeline_status",
+			mcp.WithDescription("Given a run ID, trace the full chain of triggered runs downstream. Shows the cascade: which jobs were triggered, their statuses, durations, and token usage. Use after run_job to see the full pipeline execution result without manually checking each job."),
+			mcp.WithString("runId", mcp.Required(), mcp.Description("The initial run ID to trace from (returned by run_job)")),
+		),
+		s.handleGetPipelineStatus,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +485,141 @@ func (s *QuantMCPServer) handleCancelRun(_ context.Context, request mcp.CallTool
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf("Run %s cancelled successfully", runID)), nil
+}
+
+func (s *QuantMCPServer) handleGetTriggers(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	jobs, err := s.jobManager.ListJobs()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	type triggerInfo struct {
+		JobID       string   `json:"job_id"`
+		JobName     string   `json:"job_name"`
+		OnSuccess   []string `json:"on_success"`
+		OnFailure   []string `json:"on_failure"`
+		TriggeredBy []string `json:"triggered_by"`
+	}
+
+	// Build name lookup
+	nameMap := make(map[string]string)
+	for _, j := range jobs {
+		nameMap[j.ID] = j.Name
+	}
+
+	var result []triggerInfo
+	for _, j := range jobs {
+		onSuccess, onFailure, triggeredBy, err := s.jobManager.GetTriggersForJob(j.ID)
+		if err != nil {
+			continue
+		}
+
+		info := triggerInfo{
+			JobID:   j.ID,
+			JobName: j.Name,
+		}
+		for _, t := range onSuccess {
+			name := nameMap[t.TargetJobID]
+			if name == "" {
+				name = t.TargetJobID
+			}
+			info.OnSuccess = append(info.OnSuccess, name)
+		}
+		for _, t := range onFailure {
+			name := nameMap[t.TargetJobID]
+			if name == "" {
+				name = t.TargetJobID
+			}
+			info.OnFailure = append(info.OnFailure, name)
+		}
+		for _, t := range triggeredBy {
+			name := nameMap[t.SourceJobID]
+			if name == "" {
+				name = t.SourceJobID
+			}
+			info.TriggeredBy = append(info.TriggeredBy, name)
+		}
+
+		// Only include jobs that have any trigger connections
+		if len(info.OnSuccess) > 0 || len(info.OnFailure) > 0 || len(info.TriggeredBy) > 0 {
+			result = append(result, info)
+		}
+	}
+
+	return marshalResult(result)
+}
+
+func (s *QuantMCPServer) handleGetPipelineStatus(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	runID, err := requiredString(request, "runId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Build name lookup
+	jobs, _ := s.jobManager.ListJobs()
+	nameMap := make(map[string]string)
+	for _, j := range jobs {
+		nameMap[j.ID] = j.Name
+	}
+
+	type pipelineStep struct {
+		RunID       string `json:"run_id"`
+		JobName     string `json:"job_name"`
+		Status      string `json:"status"`
+		DurationMs  int64  `json:"duration_ms"`
+		TokensUsed  int    `json:"tokens_used"`
+		TriggeredBy string `json:"triggered_by_run"`
+		Error       string `json:"error,omitempty"`
+	}
+
+	var steps []pipelineStep
+	visited := make(map[string]bool)
+
+	// BFS from the initial run, following triggered_by references
+	queue := []string{runID}
+	for len(queue) > 0 {
+		currentID := queue[0]
+		queue = queue[1:]
+
+		if visited[currentID] {
+			continue
+		}
+		visited[currentID] = true
+
+		run, err := s.jobManager.GetRun(currentID)
+		if err != nil {
+			continue
+		}
+
+		step := pipelineStep{
+			RunID:       run.ID,
+			JobName:     nameMap[run.JobID],
+			Status:      run.Status,
+			DurationMs:  run.DurationMs,
+			TokensUsed:  run.TokensUsed,
+			TriggeredBy: run.TriggeredBy,
+			Error:       run.ErrorMessage,
+		}
+		if step.JobName == "" {
+			step.JobName = run.JobID
+		}
+		steps = append(steps, step)
+
+		// Find runs that were triggered by this run
+		for _, j := range jobs {
+			runs, err := s.jobManager.ListRunsByJob(j.ID)
+			if err != nil {
+				continue
+			}
+			for _, r := range runs {
+				if r.TriggeredBy == currentID && !visited[r.ID] {
+					queue = append(queue, r.ID)
+				}
+			}
+		}
+	}
+
+	return marshalResult(steps)
 }
 
 // ---------------------------------------------------------------------------
