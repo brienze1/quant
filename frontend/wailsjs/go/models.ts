@@ -141,6 +141,8 @@ export namespace dto {
 	    model: string;
 	    overrideRepoCommand: string;
 	    claudeCommand: string;
+	    successPrompt: string;
+	    failurePrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -169,6 +171,8 @@ export namespace dto {
 	        this.model = source["model"];
 	        this.overrideRepoCommand = source["overrideRepoCommand"];
 	        this.claudeCommand = source["claudeCommand"];
+	        this.successPrompt = source["successPrompt"];
+	        this.failurePrompt = source["failurePrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
@@ -290,6 +294,9 @@ export namespace dto {
 	    model: string;
 	    overrideRepoCommand: string;
 	    claudeCommand: string;
+	    successPrompt: string;
+	    failurePrompt: string;
+	    metadataPrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -322,6 +329,9 @@ export namespace dto {
 	        this.model = source["model"];
 	        this.overrideRepoCommand = source["overrideRepoCommand"];
 	        this.claudeCommand = source["claudeCommand"];
+	        this.successPrompt = source["successPrompt"];
+	        this.failurePrompt = source["failurePrompt"];
+	        this.metadataPrompt = source["metadataPrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
@@ -578,6 +588,9 @@ export namespace dto {
 	    model: string;
 	    overrideRepoCommand: string;
 	    claudeCommand: string;
+	    successPrompt: string;
+	    failurePrompt: string;
+	    metadataPrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -607,6 +620,9 @@ export namespace dto {
 	        this.model = source["model"];
 	        this.overrideRepoCommand = source["overrideRepoCommand"];
 	        this.claudeCommand = source["claudeCommand"];
+	        this.successPrompt = source["successPrompt"];
+	        this.failurePrompt = source["failurePrompt"];
+	        this.metadataPrompt = source["metadataPrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];

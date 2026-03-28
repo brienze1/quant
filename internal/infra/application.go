@@ -4,8 +4,11 @@ package infra
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -16,6 +19,80 @@ import (
 	quantmcp "quant/internal/integration/mcp"
 	"quant/internal/integration/persistence"
 )
+
+// injectQuantMCP adds the Quant MCP server to ~/.claude/settings.json so Claude sessions
+// inside Quant automatically have access to job management tools.
+func injectQuantMCP() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+
+	// Read existing settings
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		// No settings file — create one with just the MCP config
+		data = []byte("{}")
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return
+	}
+
+	// Add or update mcpServers.quant
+	mcpServers, ok := settings["mcpServers"].(map[string]interface{})
+	if !ok {
+		mcpServers = make(map[string]interface{})
+	}
+	mcpServers["quant"] = map[string]interface{}{
+		"url": "http://localhost:52945/mcp",
+	}
+	settings["mcpServers"] = mcpServers
+
+	// Write back
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(settingsPath, out, 0644)
+}
+
+// removeQuantMCP removes the Quant MCP server from ~/.claude/settings.json on shutdown.
+func removeQuantMCP() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return
+	}
+
+	mcpServers, ok := settings["mcpServers"].(map[string]interface{})
+	if ok {
+		delete(mcpServers, "quant")
+		if len(mcpServers) == 0 {
+			delete(settings, "mcpServers")
+		} else {
+			settings["mcpServers"] = mcpServers
+		}
+	}
+
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(settingsPath, out, 0644)
+}
 
 // Run bootstraps and starts the Wails application with all dependencies wired.
 func Run(assets embed.FS) error {
@@ -59,6 +136,9 @@ func Run(assets embed.FS) error {
 		}
 	}()
 
+	// Inject Quant MCP into Claude settings so sessions auto-discover it.
+	injectQuantMCP()
+
 	// Start job scheduler for recurring/one-time scheduled jobs.
 	jobScheduler := injector.JobScheduler()
 	jobScheduler.Start()
@@ -89,6 +169,7 @@ func Run(assets embed.FS) error {
 			jobCtrl.OnShutdown(ctx)
 			jobScheduler.Stop()
 			_ = mcpServer.Stop()
+			removeQuantMCP()
 		},
 		Bind: []interface{}{
 			sessionCtrl,
