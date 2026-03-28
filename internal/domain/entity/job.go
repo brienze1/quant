@@ -29,6 +29,9 @@ type Job struct {
 	Model               string
 	OverrideRepoCommand string
 	ClaudeCommand       string
+	SuccessPrompt       string // optional, max 300 chars — describes what success looks like
+	FailurePrompt       string // optional, max 300 chars — describes what failure looks like
+	MetadataPrompt      string // optional — describes what metadata to extract for triggered jobs
 
 	// Bash script configuration
 	Interpreter   string

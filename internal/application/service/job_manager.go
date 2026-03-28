@@ -257,25 +257,60 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 		duration := time.Since(start)
 		run.DurationMs += duration.Milliseconds()
 
-		if execErr == nil {
-			// Success — finalize and fire triggers
+		if execErr != nil {
+			// Execution error (timeout, crash) — retry
+			lastOutput = result
+			lastErr = execErr
+			if attempt < maxAttempts {
+				time.Sleep(3 * time.Second)
+			}
+			continue
+		}
+
+		// Execution completed — run evaluation to determine success/failure + extract metadata
+		if job.Type == jobtype.Claude {
+			eval, evalErr := s.evaluateJobResult(job, result, run)
+			if evalErr != nil {
+				// Evaluation failed — treat as success with raw result
+				eval = &jobEvaluation{Result: "success", Metadata: map[string]interface{}{}}
+			}
+
 			now := time.Now()
-			run.Status = jobrunstatus.Success
 			run.Result = result
 			run.FinishedAt = &now
+
+			if eval.Result == "failure" {
+				run.Status = jobrunstatus.Failed
+				run.ErrorMessage = "task evaluated as failure"
+				// On failure, retry if attempts remain
+				if attempt < maxAttempts {
+					lastOutput = result
+					lastErr = fmt.Errorf("task evaluated as failure")
+					time.Sleep(3 * time.Second)
+					continue
+				}
+			} else {
+				run.Status = jobrunstatus.Success
+			}
+
+			// Store metadata as JSON in the result for triggered jobs to use
+			if metaJSON, err := json.Marshal(eval.Metadata); err == nil {
+				run.Result = result + "\n\n--- metadata ---\n" + string(metaJSON)
+			}
+
 			_ = s.saveJobRun.UpdateJobRun(*run)
 			s.fireTriggers(job.ID, run)
 			return
 		}
 
-		// Failed this attempt
-		lastOutput = result
-		lastErr = execErr
-
-		if attempt < maxAttempts {
-			// Brief pause before retry
-			time.Sleep(3 * time.Second)
-		}
+		// Bash jobs — no evaluation, just success
+		now := time.Now()
+		run.Status = jobrunstatus.Success
+		run.Result = result
+		run.FinishedAt = &now
+		_ = s.saveJobRun.UpdateJobRun(*run)
+		s.fireTriggers(job.ID, run)
+		return
 	}
 
 	// All attempts exhausted
@@ -537,6 +572,150 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 	return result, execErr
 }
 
+// jobEvaluation is the structured result from the evaluation prompt.
+type jobEvaluation struct {
+	Result   string                 `json:"result"`   // "success" or "failure"
+	Metadata map[string]interface{} `json:"metadata"` // structured context for triggered jobs
+}
+
+// evaluateJobResult runs a follow-up Claude prompt to determine success/failure and extract metadata.
+// This runs after the main task completes, using a fresh Claude call with the task output as context.
+func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string, run *entity.JobRun) (*jobEvaluation, error) {
+	var evalPrompt strings.Builder
+
+	evalPrompt.WriteString("You just completed a task. Here is your output:\n")
+	evalPrompt.WriteString("```\n")
+	if len(taskOutput) > 3000 {
+		evalPrompt.WriteString(taskOutput[len(taskOutput)-3000:])
+	} else {
+		evalPrompt.WriteString(taskOutput)
+	}
+	evalPrompt.WriteString("\n```\n\n")
+
+	// Build evaluation criteria
+	hasSuccess := job.SuccessPrompt != ""
+	hasFailure := job.FailurePrompt != ""
+
+	if hasSuccess || hasFailure {
+		evalPrompt.WriteString("Evaluate the result based on these criteria:\n")
+		if hasSuccess {
+			evalPrompt.WriteString(fmt.Sprintf("SUCCESS criteria: %s\n", job.SuccessPrompt))
+		}
+		if hasFailure {
+			evalPrompt.WriteString(fmt.Sprintf("FAILURE criteria: %s\n", job.FailurePrompt))
+		}
+		if hasSuccess && !hasFailure {
+			evalPrompt.WriteString("If the output does NOT match the success criteria, the result is \"failure\".\n")
+		} else if !hasSuccess && hasFailure {
+			evalPrompt.WriteString("If the output does NOT match the failure criteria, the result is \"success\".\n")
+		}
+	} else {
+		evalPrompt.WriteString("The result is \"success\" (no specific criteria were defined).\n")
+	}
+
+	// Metadata instructions
+	if job.MetadataPrompt != "" {
+		evalPrompt.WriteString(fmt.Sprintf("\nExtract the following metadata from the output: %s\n", job.MetadataPrompt))
+	} else {
+		evalPrompt.WriteString("\nExtract any relevant metadata from the output that would be useful context for downstream jobs.\n")
+	}
+
+	evalPrompt.WriteString("\nRespond with ONLY a JSON object in this exact format, no other text:\n")
+	evalPrompt.WriteString("```json\n")
+	evalPrompt.WriteString("{\"result\": \"success\" or \"failure\", \"metadata\": { ... }}\n")
+	evalPrompt.WriteString("```\n")
+
+	claudeCmd := job.ClaudeCommand
+	if claudeCmd == "" {
+		claudeCmd = "claude"
+	}
+
+	// Run a simple -p call (no streaming needed, this is a quick eval)
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+	home, _ := os.UserHomeDir()
+	var rcFile string
+	switch filepath.Base(shell) {
+	case "zsh":
+		rcFile = filepath.Join(home, ".zshrc")
+	case "bash":
+		rcFile = filepath.Join(home, ".bashrc")
+	}
+
+	args := []string{claudeCmd, "'-p'", "'-'"}
+	if job.Model != "" && job.Model != "cli default" {
+		args = append(args, shellQuote("--model"), shellQuote(job.Model))
+	}
+	cmdStr := strings.Join(args, " ")
+
+	var fullCmd string
+	if rcFile != "" {
+		fullCmd = fmt.Sprintf("[ -f '%s' ] && . '%s' 2>/dev/null; eval %s", rcFile, rcFile, cmdStr)
+	} else {
+		fullCmd = fmt.Sprintf("eval %s", cmdStr)
+	}
+
+	cmd := exec.Command(shell, "-l", "-c", fullCmd)
+	cmd.Dir = expandPath(job.WorkingDirectory)
+	cmd.Env = append(shellEnv(), "TERM=dumb")
+	cmd.Stdin = strings.NewReader(evalPrompt.String())
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &bytes.Buffer{}
+
+	// Short timeout for evaluation (30 seconds)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Run() }()
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		return &jobEvaluation{Result: "success", Metadata: map[string]interface{}{"error": "evaluation timed out"}}, nil
+	}
+
+	// Parse JSON from response — look for {...} in the output
+	output := stdout.String()
+	var eval jobEvaluation
+	eval.Metadata = make(map[string]interface{})
+
+	// Try to find JSON in the response
+	jsonStart := strings.Index(output, "{")
+	jsonEnd := strings.LastIndex(output, "}")
+	if jsonStart >= 0 && jsonEnd > jsonStart {
+		jsonStr := output[jsonStart : jsonEnd+1]
+		if err := json.Unmarshal([]byte(jsonStr), &eval); err != nil {
+			// Fallback: no criteria = success
+			eval.Result = "success"
+			eval.Metadata["raw_eval"] = output
+		}
+	} else {
+		eval.Result = "success"
+		eval.Metadata["raw_eval"] = output
+	}
+
+	// Validate result value
+	if eval.Result != "success" && eval.Result != "failure" {
+		eval.Result = "success"
+	}
+	if eval.Metadata == nil {
+		eval.Metadata = make(map[string]interface{})
+	}
+
+	// Log the evaluation
+	if logFile, err := os.OpenFile(runLogPath(run.ID), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+		_, _ = logFile.WriteString(fmt.Sprintf("\n\n--- evaluation ---\nresult: %s\nmetadata: %v\n", eval.Result, eval.Metadata))
+		_ = logFile.Close()
+	}
+
+	return &eval, nil
+}
+
 // executeBashJob runs a bash script and captures its output.
 func (s *jobManagerService) executeBashJob(job *entity.Job, run *entity.JobRun) (string, error) {
 	interpreter := job.Interpreter
@@ -646,21 +825,36 @@ func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun) {
 		sourceJobName = sourceJob.Name
 	}
 
-	// Read source run output (truncated) for context
+	// Extract metadata from the run result (if present)
 	sourceOutput := run.Result
+	metadataSection := ""
+	if idx := strings.Index(sourceOutput, "\n\n--- metadata ---\n"); idx >= 0 {
+		metadataSection = sourceOutput[idx+len("\n\n--- metadata ---\n"):]
+		sourceOutput = sourceOutput[:idx]
+	}
 	if len(sourceOutput) > 3000 {
 		sourceOutput = sourceOutput[len(sourceOutput)-3000:]
 	}
 
 	for _, trigger := range triggers {
 		if trigger.TriggerOn == triggerOn {
-			// Build trigger context
-			ctx := fmt.Sprintf(
-				"## Trigger context\n"+
-					"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
-					"\n### Output from \"%s\":\n```\n%s\n```\n",
-				triggerOn, sourceJobName, run.ID, sourceJobName, sourceOutput,
-			)
+			// Build trigger context — prefer structured metadata over raw output
+			var ctx string
+			if metadataSection != "" {
+				ctx = fmt.Sprintf(
+					"## Trigger context\n"+
+						"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
+						"\n### Structured metadata from \"%s\":\n```json\n%s\n```\n",
+					triggerOn, sourceJobName, run.ID, sourceJobName, metadataSection,
+				)
+			} else {
+				ctx = fmt.Sprintf(
+					"## Trigger context\n"+
+						"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
+						"\n### Output from \"%s\":\n```\n%s\n```\n",
+					triggerOn, sourceJobName, run.ID, sourceJobName, sourceOutput,
+				)
+			}
 
 			// Store context for the new run to pick up
 			newRun, err := s.RunJob(trigger.TargetJobID, run.ID)

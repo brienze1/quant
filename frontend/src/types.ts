@@ -104,6 +104,9 @@ export interface Job {
   model: string;
   overrideRepoCommand: string;
   claudeCommand: string;
+  successPrompt: string;
+  failurePrompt: string;
+  metadataPrompt: string;
   interpreter: string;
   scriptContent: string;
   envVariables: Record<string, string>;
@@ -136,6 +139,9 @@ export interface CreateJobRequest {
   model: string;
   overrideRepoCommand: string;
   claudeCommand: string;
+  successPrompt: string;
+  failurePrompt: string;
+  metadataPrompt: string;
   interpreter: string;
   scriptContent: string;
   envVariables: Record<string, string>;

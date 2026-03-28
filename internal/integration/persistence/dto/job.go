@@ -29,6 +29,9 @@ type JobRow struct {
 	Model               string
 	OverrideRepoCommand string
 	ClaudeCommand       string
+	SuccessPrompt       string
+	FailurePrompt       string
+	MetadataPrompt      string
 	Interpreter         string
 	ScriptContent       string
 	EnvVariables        string // JSON
@@ -78,6 +81,9 @@ func (r JobRow) ToEntity() entity.Job {
 		Model:               r.Model,
 		OverrideRepoCommand: r.OverrideRepoCommand,
 		ClaudeCommand:       r.ClaudeCommand,
+		SuccessPrompt:       r.SuccessPrompt,
+		FailurePrompt:       r.FailurePrompt,
+		MetadataPrompt:      r.MetadataPrompt,
 		Interpreter:         r.Interpreter,
 		ScriptContent:       r.ScriptContent,
 		EnvVariables:        envVars,
@@ -136,6 +142,8 @@ func JobRowFromEntity(job entity.Job) JobRow {
 		Model:               job.Model,
 		OverrideRepoCommand: job.OverrideRepoCommand,
 		ClaudeCommand:       job.ClaudeCommand,
+		SuccessPrompt:       job.SuccessPrompt,
+		FailurePrompt:       job.FailurePrompt,
 		Interpreter:         job.Interpreter,
 		ScriptContent:       job.ScriptContent,
 		EnvVariables:        string(envJSON),

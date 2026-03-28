@@ -200,6 +200,9 @@ func runMigrations(db *sql.DB) error {
 		`ALTER TABLE sessions ADD COLUMN model TEXT`,
 		`ALTER TABLE sessions ADD COLUMN extra_cli_args TEXT`,
 		`ALTER TABLE repos ADD COLUMN closed_at TEXT`,
+		`ALTER TABLE jobs ADD COLUMN success_prompt TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE jobs ADD COLUMN failure_prompt TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE jobs ADD COLUMN metadata_prompt TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alterStatements {
 		// Ignore errors from ALTER TABLE since the column may already exist.

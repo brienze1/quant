@@ -6,7 +6,7 @@ const MODEL_OPTIONS = ["cli default", "claude-sonnet-4-6", "claude-opus-4-6", "c
 const INTERPRETER_OPTIONS = ["/bin/bash", "/bin/sh", "/bin/zsh", "python3"];
 const SCHEDULE_UNIT_OPTIONS = ["minutes", "hours", "days"];
 
-type TabKey = "general" | "schedule" | "triggers" | "session" | "script";
+type TabKey = "general" | "schedule" | "session" | "script";
 
 interface Props {
   jobs: Job[];
@@ -33,6 +33,9 @@ function buildDefaultForm(): CreateJobRequest {
     model: "claude-sonnet-4-6",
     overrideRepoCommand: "",
     claudeCommand: "",
+    successPrompt: "",
+    failurePrompt: "",
+    metadataPrompt: "",
     interpreter: "/bin/bash",
     scriptContent: "",
     envVariables: {},
@@ -59,6 +62,9 @@ function jobToForm(job: Job): CreateJobRequest {
     model: job.model,
     overrideRepoCommand: job.overrideRepoCommand,
     claudeCommand: job.claudeCommand,
+    successPrompt: job.successPrompt,
+    failurePrompt: job.failurePrompt,
+    metadataPrompt: job.metadataPrompt,
     interpreter: job.interpreter,
     scriptContent: job.scriptContent,
     envVariables: job.envVariables ?? {},
@@ -132,7 +138,6 @@ export function CreateJobModal({ jobs, editJob, onSubmit, onCancel }: Props) {
   const tabs: { key: TabKey; label: string }[] = [
     { key: "general", label: "general" },
     { key: "schedule", label: "schedule" },
-    { key: "triggers", label: "triggers" },
     { key: form.type === "claude" ? "session" : "script", label: form.type === "claude" ? "session" : "script" },
   ];
 
@@ -461,192 +466,9 @@ export function CreateJobModal({ jobs, editJob, onSubmit, onCancel }: Props) {
             </>
           )}
 
-          {/* TAB: Triggers */}
-          {activeTab === "triggers" && (
-            <>
-              {/* on success */}
-              <div>
-                <span style={labelStyle}>on success</span>
-                <TriggerList
-                  items={form.onSuccess}
-                  jobs={jobs}
-                  onRemove={(id) =>
-                    update(
-                      "onSuccess",
-                      form.onSuccess.filter((x) => x !== id)
-                    )
-                  }
-                />
-                <div ref={successRef} style={{ position: "relative", marginTop: 4 }}>
-                  <button
-                    type="button"
-                    onClick={() => setSuccessDropdownOpen(!successDropdownOpen)}
-                    style={{
-                      fontSize: 10,
-                      color: "#10B981",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontFamily: "'JetBrains Mono', monospace",
-                      padding: "4px 0",
-                    }}
-                  >
-                    + add
-                  </button>
-                  {successDropdownOpen && (
-                    <JobDropdown
-                      availableJobs={availableJobsForSuccess}
-                      onSelect={(id) => {
-                        update("onSuccess", [...form.onSuccess, id]);
-                        setSuccessDropdownOpen(false);
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* on failure */}
-              <div>
-                <span style={labelStyle}>on failure</span>
-                <TriggerList
-                  items={form.onFailure}
-                  jobs={jobs}
-                  onRemove={(id) =>
-                    update(
-                      "onFailure",
-                      form.onFailure.filter((x) => x !== id)
-                    )
-                  }
-                />
-                <div ref={failureRef} style={{ position: "relative", marginTop: 4 }}>
-                  <button
-                    type="button"
-                    onClick={() => setFailureDropdownOpen(!failureDropdownOpen)}
-                    style={{
-                      fontSize: 10,
-                      color: "#10B981",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontFamily: "'JetBrains Mono', monospace",
-                      padding: "4px 0",
-                    }}
-                  >
-                    + add
-                  </button>
-                  {failureDropdownOpen && (
-                    <JobDropdown
-                      availableJobs={availableJobsForFailure}
-                      onSelect={(id) => {
-                        update("onFailure", [...form.onFailure, id]);
-                        setFailureDropdownOpen(false);
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* triggered by */}
-              {isEdit && triggeredByRefs.length > 0 && (
-                <div>
-                  <span style={labelStyle}>triggered by</span>
-                  <div
-                    style={{
-                      border: "1px solid #2a2a2a",
-                      backgroundColor: "#0A0A0A",
-                      maxHeight: 120,
-                      overflowY: "auto",
-                    }}
-                  >
-                    {triggeredByRefs.map((ref, i) => {
-                      const sourceJob = jobs.find((j) => j.id === ref.jobId);
-                      const label = sourceJob ? sourceJob.name : ref.jobId.slice(0, 8);
-                      const tagColor = ref.triggerOn === "success" ? "#10B981" : "#EF4444";
-                      return (
-                        <div
-                          key={i}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: "6px 10px",
-                            borderBottom: i < triggeredByRefs.length - 1 ? "1px solid #1F1F1F" : "none",
-                            fontFamily: "'JetBrains Mono', monospace",
-                            fontSize: 11,
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ color: tagColor, fontSize: 9 }}>
-                              {ref.triggerOn}
-                            </span>
-                            <span style={{ color: "#FAFAFA" }}>{label}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // Remove this trigger from the source job's onSuccess/onFailure
-                              const sourceJob = jobs.find((j) => j.id === ref.jobId);
-                              if (!sourceJob || !editJob) return;
-                              const field = ref.triggerOn === "success" ? "onSuccess" : "onFailure";
-                              const updatedTriggers = (sourceJob[field] as string[]).filter(
-                                (id) => id !== editJob.id
-                              );
-                              // We can't update the source job from here, so we'll
-                              // remove it from the local display and the parent will handle it
-                              const newRefs = triggeredByRefs.filter((_, idx) => idx !== i);
-                              if (editJob) {
-                                editJob.triggeredBy = newRefs;
-                              }
-                              // Force re-render
-                              update("name", form.name);
-                            }}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              color: "#6B7280",
-                              cursor: "pointer",
-                              fontSize: 11,
-                              fontFamily: "'JetBrains Mono', monospace",
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = "#EF4444")}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
           {/* TAB: Session (claude) */}
           {activeTab === "session" && form.type === "claude" && (
             <>
-              {/* prompt */}
-              <div>
-                <span style={labelStyle}>prompt</span>
-                <textarea
-                  value={form.prompt}
-                  onChange={(e) => update("prompt", e.target.value)}
-                  placeholder="describe what the job should do..."
-                  className="w-full px-3 py-2 focus:outline-none"
-                  style={{
-                    ...inputStyle,
-                    height: 140,
-                    resize: "vertical",
-                  }}
-                  onFocus={(e) =>
-                    (e.currentTarget.style.borderColor = "#10B981")
-                  }
-                  onBlur={(e) =>
-                    (e.currentTarget.style.borderColor = "#2a2a2a")
-                  }
-                />
-              </div>
-
               {/* allow bypass */}
               <div className="flex items-center justify-between">
                 <span
@@ -772,6 +594,64 @@ export function CreateJobModal({ jobs, editJob, onSubmit, onCancel }: Props) {
                     (e.currentTarget.style.borderColor = "#2a2a2a")
                   }
                 />
+              </div>
+
+              {/* prompts group */}
+              <div style={{ borderTop: "1px solid #2a2a2a", paddingTop: 12, marginTop: 4, display: "flex", flexDirection: "column", gap: 12 }}>
+                <span style={{ color: "#4B5563", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
+                  # prompts
+                </span>
+
+                <div>
+                  <span style={labelStyle}>task prompt</span>
+                  <textarea
+                    value={form.prompt}
+                    onChange={(e) => update("prompt", e.target.value)}
+                    placeholder="describe what the job should do..."
+                    style={{ ...inputStyle, width: "100%", height: 120, resize: "vertical", padding: "8px 12px", boxSizing: "border-box" as const }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                  />
+                </div>
+
+                <div>
+                  <span style={labelStyle}>success criteria <span style={{ color: "#4B5563" }}>(optional, max 300 chars)</span></span>
+                  <textarea
+                    placeholder="e.g. PRs were reviewed and feedback was posted successfully"
+                    maxLength={300}
+                    value={form.successPrompt}
+                    onChange={(e) => update("successPrompt", e.target.value)}
+                    style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                  />
+                </div>
+
+                <div>
+                  <span style={labelStyle}>failure criteria <span style={{ color: "#4B5563" }}>(optional, max 300 chars)</span></span>
+                  <textarea
+                    placeholder="e.g. no PRs found to review, or API errors occurred"
+                    maxLength={300}
+                    value={form.failurePrompt}
+                    onChange={(e) => update("failurePrompt", e.target.value)}
+                    style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                  />
+                </div>
+
+                <div>
+                  <span style={labelStyle}>metadata to extract <span style={{ color: "#4B5563" }}>(optional)</span></span>
+                  <textarea
+                    placeholder="e.g. extract PR URLs, review counts, and error details to pass to triggered jobs"
+                    maxLength={500}
+                    value={form.metadataPrompt}
+                    onChange={(e) => update("metadataPrompt", e.target.value)}
+                    style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                  />
+                </div>
               </div>
             </>
           )}

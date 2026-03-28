@@ -23,6 +23,8 @@ type CreateJobRequest struct {
 	Model               string            `json:"model"`
 	OverrideRepoCommand string            `json:"overrideRepoCommand"`
 	ClaudeCommand       string            `json:"claudeCommand"`
+	SuccessPrompt       string            `json:"successPrompt"`
+	FailurePrompt       string            `json:"failurePrompt"`
 	Interpreter         string            `json:"interpreter"`
 	ScriptContent       string            `json:"scriptContent"`
 	EnvVariables        map[string]string `json:"envVariables"`
@@ -49,6 +51,9 @@ type UpdateJobRequest struct {
 	Model               string            `json:"model"`
 	OverrideRepoCommand string            `json:"overrideRepoCommand"`
 	ClaudeCommand       string            `json:"claudeCommand"`
+	SuccessPrompt       string            `json:"successPrompt"`
+	FailurePrompt       string            `json:"failurePrompt"`
+	MetadataPrompt      string            `json:"metadataPrompt"`
 	Interpreter         string            `json:"interpreter"`
 	ScriptContent       string            `json:"scriptContent"`
 	EnvVariables        map[string]string `json:"envVariables"`
@@ -75,6 +80,9 @@ type JobResponse struct {
 	Model               string            `json:"model"`
 	OverrideRepoCommand string            `json:"overrideRepoCommand"`
 	ClaudeCommand       string            `json:"claudeCommand"`
+	SuccessPrompt       string            `json:"successPrompt"`
+	FailurePrompt       string            `json:"failurePrompt"`
+	MetadataPrompt      string            `json:"metadataPrompt"`
 	Interpreter         string            `json:"interpreter"`
 	ScriptContent       string            `json:"scriptContent"`
 	EnvVariables        map[string]string `json:"envVariables"`
@@ -141,6 +149,9 @@ func JobResponseFromEntity(job entity.Job, onSuccess []entity.JobTrigger, onFail
 		Model:               job.Model,
 		OverrideRepoCommand: job.OverrideRepoCommand,
 		ClaudeCommand:       job.ClaudeCommand,
+		SuccessPrompt:       job.SuccessPrompt,
+		FailurePrompt:       job.FailurePrompt,
+		MetadataPrompt:      job.MetadataPrompt,
 		Interpreter:         job.Interpreter,
 		ScriptContent:       job.ScriptContent,
 		EnvVariables:        job.EnvVariables,
