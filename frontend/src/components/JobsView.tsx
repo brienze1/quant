@@ -513,7 +513,8 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
           }).catch((err) => console.error("failed to delete trigger:", err));
         }
       }
-      if (e.key === " " && !canvasModalJobId) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (e.key === " " && !canvasModalJobId && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
         e.preventDefault();
         setSpaceDown(true);
       }
