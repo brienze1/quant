@@ -711,13 +711,13 @@ func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string
 	cmd.Stdout = &stdout
 	cmd.Stderr = &bytes.Buffer{}
 
-	// Short timeout for evaluation (30 seconds)
+	// Timeout for evaluation (5 minutes — needs time for session boot + metadata extraction)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Run() }()
 
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(300 * time.Second):
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
