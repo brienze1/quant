@@ -144,6 +144,7 @@ func JobRowFromEntity(job entity.Job) JobRow {
 		ClaudeCommand:       job.ClaudeCommand,
 		SuccessPrompt:       job.SuccessPrompt,
 		FailurePrompt:       job.FailurePrompt,
+		MetadataPrompt:      job.MetadataPrompt,
 		Interpreter:         job.Interpreter,
 		ScriptContent:       job.ScriptContent,
 		EnvVariables:        string(envJSON),
