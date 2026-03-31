@@ -368,6 +368,7 @@ export namespace dto {
 	    status: string;
 	    triggeredBy: string;
 	    sessionId: string;
+	    modelUsed: string;
 	    durationMs: number;
 	    tokensUsed: number;
 	    result: string;
@@ -386,6 +387,7 @@ export namespace dto {
 	        this.status = source["status"];
 	        this.triggeredBy = source["triggeredBy"];
 	        this.sessionId = source["sessionId"];
+	        this.modelUsed = source["modelUsed"];
 	        this.durationMs = source["durationMs"];
 	        this.tokensUsed = source["tokensUsed"];
 	        this.result = source["result"];

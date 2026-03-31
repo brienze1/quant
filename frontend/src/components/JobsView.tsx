@@ -98,64 +98,106 @@ function autoLayout(jobs: Job[]): NodePositions {
   const positions: NodePositions = {};
   if (jobs.length === 0) return positions;
 
-  // Build adjacency
-  const outgoing = new Map<string, string[]>();
-  const allTargets = new Set<string>();
-  for (const job of jobs) {
-    const targets = [...(job.onSuccess ?? []), ...(job.onFailure ?? [])];
-    outgoing.set(job.id, targets);
-    for (const t of targets) allTargets.add(t);
-  }
-
-  // Find roots (not targeted by anyone)
   const jobIds = new Set(jobs.map((j) => j.id));
-  const roots = jobs.filter((j) => !allTargets.has(j.id));
-  if (roots.length === 0) roots.push(jobs[0]);
 
-  // BFS to assign depth (cycle-safe: only enqueue each node once)
-  const depth = new Map<string, number>();
-  const visited = new Set<string>();
-  const queue: string[] = [];
-  for (const r of roots) {
-    depth.set(r.id, 0);
-    visited.add(r.id);
-    queue.push(r.id);
-  }
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    const d = depth.get(id)!;
-    const targets = outgoing.get(id) ?? [];
+  // Build bidirectional adjacency (ignore edges to non-existent jobs)
+  const outgoing = new Map<string, string[]>();
+  const incoming = new Map<string, string[]>();
+  for (const job of jobs) {
+    const targets = [...(job.onSuccess ?? []), ...(job.onFailure ?? [])].filter((t) => jobIds.has(t));
+    outgoing.set(job.id, targets);
+    if (!incoming.has(job.id)) incoming.set(job.id, []);
     for (const t of targets) {
-      if (!jobIds.has(t)) continue;
-      if (!visited.has(t)) {
-        visited.add(t);
-        depth.set(t, d + 1);
-        queue.push(t);
-      }
+      if (!incoming.has(t)) incoming.set(t, []);
+      incoming.get(t)!.push(job.id);
     }
   }
 
-  // Assign depth 0 to any unreachable jobs
+  // Find connected components (undirected) so each pipeline is laid out independently
+  const componentOf = new Map<string, number>();
+  let componentCount = 0;
   for (const job of jobs) {
-    if (!depth.has(job.id)) depth.set(job.id, 0);
+    if (componentOf.has(job.id)) continue;
+    const cid = componentCount++;
+    const stack = [job.id];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (componentOf.has(id)) continue;
+      componentOf.set(id, cid);
+      for (const t of outgoing.get(id) ?? []) if (!componentOf.has(t)) stack.push(t);
+      for (const t of incoming.get(id) ?? []) if (!componentOf.has(t)) stack.push(t);
+    }
   }
 
-  // Group by depth
-  const levels = new Map<number, string[]>();
-  for (const [id, d] of depth.entries()) {
-    if (!levels.has(d)) levels.set(d, []);
-    levels.get(d)!.push(id);
+  // Group jobs by component
+  const components: Job[][] = Array.from({ length: componentCount }, () => []);
+  for (const job of jobs) {
+    components[componentOf.get(job.id)!].push(job);
   }
+
+  // Sort components: largest first (main pipelines at the top)
+  components.sort((a, b) => b.length - a.length);
 
   const hSpacing = 300;
-  const vSpacing = 120;
+  const vSpacing = 140;
+  const componentGap = 80;
   const startX = 100;
-  const startY = 100;
+  let currentY = 100;
 
-  for (const [d, ids] of levels.entries()) {
-    for (let i = 0; i < ids.length; i++) {
-      positions[ids[i]] = { x: startX + d * hSpacing, y: startY + i * vSpacing };
+  for (const component of components) {
+    const compIds = new Set(component.map((j) => j.id));
+
+    // Find roots within this component (no incoming edges from within the component)
+    const roots = component.filter((j) => {
+      const inc = incoming.get(j.id) ?? [];
+      return inc.filter((i) => compIds.has(i)).length === 0;
+    });
+    if (roots.length === 0) roots.push(component[0]);
+
+    // BFS to assign depth (cycle-safe)
+    const depth = new Map<string, number>();
+    const visited = new Set<string>();
+    const queue: string[] = [];
+    for (const r of roots) {
+      depth.set(r.id, 0);
+      visited.add(r.id);
+      queue.push(r.id);
     }
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      const d = depth.get(id)!;
+      for (const t of outgoing.get(id) ?? []) {
+        if (!compIds.has(t)) continue;
+        if (!visited.has(t)) {
+          visited.add(t);
+          depth.set(t, d + 1);
+          queue.push(t);
+        }
+      }
+    }
+    // Unreachable nodes within this component get depth 0
+    for (const job of component) {
+      if (!depth.has(job.id)) depth.set(job.id, 0);
+    }
+
+    // Group by depth level
+    const levels = new Map<number, string[]>();
+    for (const [id, d] of depth.entries()) {
+      if (!levels.has(d)) levels.set(d, []);
+      levels.get(d)!.push(id);
+    }
+
+    // Position nodes: left-to-right by depth, top-to-bottom within each level
+    let maxRows = 0;
+    for (const [d, ids] of levels.entries()) {
+      maxRows = Math.max(maxRows, ids.length);
+      for (let i = 0; i < ids.length; i++) {
+        positions[ids[i]] = { x: startX + d * hSpacing, y: currentY + i * vSpacing };
+      }
+    }
+
+    // Advance Y for the next component
+    currentY += maxRows * vSpacing + componentGap;
   }
 
   return positions;
