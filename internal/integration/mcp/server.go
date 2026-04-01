@@ -64,7 +64,17 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 1. list_jobs
 	mcpServer.AddTool(
 		mcp.NewTool("list_jobs",
-			mcp.WithDescription("List all configured jobs"),
+			mcp.WithDescription(`List all configured jobs with their full configuration.
+
+Each job may have an agentId linking to an agent persona. When a job runs, the agent's configuration (role, goal, boundaries, skills) is injected as a system prompt into the Claude CLI session. The agent also provides env vars and a fallback model. Use get_agent(agentId) to see the full agent config.
+
+Key fields in the response:
+- agentId: UUID of the assigned agent (empty = no agent). The agent defines WHO executes the job (persona, rules, skills). Use get_agent to see details.
+- agentName/agentRole: inline summary of the assigned agent (empty if no agent)
+- claudeCommand: which Claude CLI binary/alias to invoke (e.g. 'claude', 'claude-bl')
+- prompt: the task instructions sent to Claude (what to do)
+- successPrompt/failurePrompt: evaluation criteria run after the main task to determine success/failure
+- metadataPrompt: instructions for extracting structured data passed to triggered downstream jobs`),
 		),
 		s.handleListJobs,
 	)
@@ -72,7 +82,7 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 2. get_job
 	mcpServer.AddTool(
 		mcp.NewTool("get_job",
-			mcp.WithDescription("Get a job by ID"),
+			mcp.WithDescription("Get a job by ID with full configuration. If the job has an agentId, the response includes agentName and agentRole inline. Use get_agent(agentId) for the full agent config (boundaries, skills, env vars)."),
 			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID")),
 		),
 		s.handleGetJob,
@@ -351,7 +361,9 @@ func (s *QuantMCPServer) handleListJobs(_ context.Context, _ mcp.CallToolRequest
 
 	result := make([]map[string]any, 0, len(jobs))
 	for i := range jobs {
-		result = append(result, jobToMap(&jobs[i]))
+		m := jobToMap(&jobs[i])
+		s.enrichJobWithAgent(m, jobs[i].AgentID)
+		result = append(result, m)
 	}
 
 	return marshalResult(result)
@@ -368,7 +380,9 @@ func (s *QuantMCPServer) handleGetJob(_ context.Context, request mcp.CallToolReq
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	return marshalResult(jobToMap(job))
+	m := jobToMap(job)
+	s.enrichJobWithAgent(m, job.AgentID)
+	return marshalResult(m)
 }
 
 func (s *QuantMCPServer) handleCreateJob(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -954,6 +968,19 @@ func (s *QuantMCPServer) handleGetAgentSystemPrompt(_ context.Context, request m
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// enrichJobWithAgent adds agentName and agentRole to a job map when an agent is assigned.
+func (s *QuantMCPServer) enrichJobWithAgent(m map[string]any, agentID string) {
+	if agentID == "" || s.agentManager == nil {
+		return
+	}
+	agent, err := s.agentManager.GetAgent(agentID)
+	if err != nil || agent == nil {
+		return
+	}
+	m["agentName"] = agent.Name
+	m["agentRole"] = agent.Role
+}
 
 func jobToMap(job *entity.Job) map[string]any {
 	if job == nil {
