@@ -6,11 +6,14 @@ import type {
   Action,
   Shortcut,
   Job,
+  Agent,
   CreateRepoRequest,
   CreateTaskRequest,
   CreateSessionRequest,
   CreateJobRequest,
   UpdateJobRequest,
+  CreateAgentRequest,
+  UpdateAgentRequest,
 } from "./types";
 import * as api from "./api";
 import { Sidebar } from "./components/Sidebar";
@@ -31,6 +34,8 @@ import { GitPullModal } from "./components/GitPullModal";
 import { GitPushModal } from "./components/GitPushModal";
 import { JobsView } from "./components/JobsView";
 import { CreateJobModal } from "./components/CreateJobModal";
+import AgentsView from "./components/AgentsView";
+import { CreateAgentModal } from "./components/CreateAgentModal";
 
 type ModalState =
   | { type: "none" }
@@ -45,9 +50,11 @@ type ModalState =
   | { type: "gitPull"; sessionId: string; currentBranch: string }
   | { type: "gitPush"; sessionId: string; currentBranch: string }
   | { type: "createJob" }
-  | { type: "editJob"; job: Job };
+  | { type: "editJob"; job: Job }
+  | { type: "createAgent" }
+  | { type: "editAgent"; agent: Agent };
 
-type View = "dashboard" | "settings" | "diff" | "jobs";
+type View = "dashboard" | "settings" | "diff" | "jobs" | "agents";
 
 function App() {
   const [view, setView] = useState<View>("dashboard");
@@ -73,6 +80,7 @@ function App() {
   const [terminalPaneOpenMap, setTerminalPaneOpenMap] = useState<Record<string, boolean>>({});
 
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [diffSession, setDiffSession] = useState<{ id: string; name: string } | null>(null);
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
   const [commitMessagePrefix, setCommitMessagePrefix] = useState("");
@@ -188,10 +196,20 @@ function App() {
     }
   }, []);
 
+  const fetchAgents = useCallback(async () => {
+    try {
+      const list = await api.listAgents();
+      setAgents(list ?? []);
+    } catch (err) {
+      console.error("failed to list agents:", err);
+    }
+  }, []);
+
   // initial load
   const loadAll = useCallback(async () => {
     fetchShortcuts();
     fetchJobs();
+    fetchAgents();
     const repoList = await fetchRepos();
     for (const repo of repoList) {
       const tasks = await fetchTasksForRepo(repo.id);
@@ -200,7 +218,7 @@ function App() {
         await fetchSessionsForTask(task.id);
       }
     }
-  }, [fetchShortcuts, fetchJobs, fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
+  }, [fetchShortcuts, fetchJobs, fetchAgents, fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
 
   useEffect(() => {
     loadAll();
@@ -864,6 +882,22 @@ function App() {
             <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
           </svg>
         </button>
+        <button
+          onClick={() => { fetchAgents(); setView("agents"); }}
+          style={{
+            width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
+            background: "none", border: "none", cursor: "pointer",
+            color: currentView === "agents" ? "#FAFAFA" : "#6B7280",
+            borderRight: currentView === "agents" ? "2px solid #10B981" : "2px solid transparent",
+          }}
+          onMouseEnter={(e) => { if (currentView !== "agents") e.currentTarget.style.color = "#FAFAFA"; }}
+          onMouseLeave={(e) => { if (currentView !== "agents") e.currentTarget.style.color = "#6B7280"; }}
+          title="agents"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />
+          </svg>
+        </button>
       </div>
     </div>
   );
@@ -901,6 +935,32 @@ function App() {
           onCancel={() => setModal({ type: "none" })}
         />
       )}
+      {modal.type === "createAgent" && (
+        <CreateAgentModal
+          onSubmit={async (req) => {
+            await api.createAgent(req as CreateAgentRequest);
+            setModal({ type: "none" });
+            fetchAgents();
+          }}
+          onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+      {modal.type === "editAgent" && (
+        <CreateAgentModal
+          agent={modal.agent}
+          onSubmit={async (req) => {
+            await api.updateAgent(req as UpdateAgentRequest);
+            setModal({ type: "none" });
+            fetchAgents();
+          }}
+          onDelete={async (id) => {
+            await api.deleteAgent(id);
+            setModal({ type: "none" });
+            fetchAgents();
+          }}
+          onCancel={() => setModal({ type: "none" })}
+        />
+      )}
     </>
   );
 
@@ -916,6 +976,25 @@ function App() {
           onCreateJob={() => setModal({ type: "createJob" })}
           onEditJob={(job) => setModal({ type: "editJob", job })}
           onRefreshJobs={fetchJobs}
+        />
+        {renderIconStrip()}
+        {renderModals()}
+      </div>
+    );
+  }
+
+  if (view === "agents") {
+    return (
+      <div className="flex h-screen w-screen" style={{ backgroundColor: "#0A0A0A" }}>
+        <AgentsView
+          agents={agents}
+          onCreateAgent={() => setModal({ type: "createAgent" })}
+          onEditAgent={(agent: Agent) => setModal({ type: "editAgent", agent })}
+          onDeleteAgent={async (id: string) => {
+            await api.deleteAgent(id);
+            fetchAgents();
+          }}
+          onRefreshAgents={fetchAgents}
         />
         {renderIconStrip()}
         {renderModals()}

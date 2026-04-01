@@ -23,7 +23,7 @@ func NewJobPersistence(db *sql.DB) adapter.JobPersistence {
 
 const jobColumns = `id, name, description, type, working_directory, schedule_enabled, schedule_type, cron_expression,
 		schedule_interval, schedule_start_time, timeout_seconds, prompt, allow_bypass, autonomous_mode,
-		max_retries, model, override_repo_command, claude_command, success_prompt, failure_prompt, metadata_prompt,
+		max_retries, model, override_repo_command, claude_command, agent_id, success_prompt, failure_prompt, metadata_prompt,
 		interpreter, script_content, env_variables, created_at, updated_at, last_run_at`
 
 const jobTriggerColumns = `id, source_job_id, target_job_id, trigger_on`
@@ -39,7 +39,7 @@ func scanJobRow(scanner interface{ Scan(...any) error }) (pdto.JobRow, error) {
 		&row.ScheduleInterval, &row.ScheduleStartTime, &row.TimeoutSeconds,
 		&row.Prompt, &row.AllowBypass, &row.AutonomousMode,
 		&row.MaxRetries, &row.Model, &row.OverrideRepoCommand, &row.ClaudeCommand,
-		&row.SuccessPrompt, &row.FailurePrompt, &row.MetadataPrompt,
+		&row.AgentID, &row.SuccessPrompt, &row.FailurePrompt, &row.MetadataPrompt,
 		&row.Interpreter, &row.ScriptContent, &row.EnvVariables,
 		&row.CreatedAt, &row.UpdatedAt, &row.LastRunAt,
 	)
@@ -139,9 +139,10 @@ func (p *jobPersistence) SaveJob(job entity.Job) error {
 
 	query := `INSERT INTO jobs (id, name, description, type, working_directory, schedule_enabled, schedule_type,
 		cron_expression, schedule_interval, schedule_start_time, timeout_seconds, prompt, allow_bypass,
-		autonomous_mode, max_retries, model, override_repo_command, claude_command, success_prompt, failure_prompt, metadata_prompt,
+		autonomous_mode, max_retries, model, override_repo_command, claude_command, agent_id,
+		success_prompt, failure_prompt, metadata_prompt,
 		interpreter, script_content, env_variables, created_at, updated_at, last_run_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := p.db.Exec(query,
 		row.ID, row.Name, row.Description, row.Type, row.WorkingDirectory,
@@ -149,7 +150,7 @@ func (p *jobPersistence) SaveJob(job entity.Job) error {
 		row.ScheduleInterval, row.ScheduleStartTime, row.TimeoutSeconds,
 		row.Prompt, row.AllowBypass, row.AutonomousMode,
 		row.MaxRetries, row.Model, row.OverrideRepoCommand, row.ClaudeCommand,
-		row.SuccessPrompt, row.FailurePrompt, row.MetadataPrompt,
+		row.AgentID, row.SuccessPrompt, row.FailurePrompt, row.MetadataPrompt,
 		row.Interpreter, row.ScriptContent, row.EnvVariables,
 		row.CreatedAt, row.UpdatedAt, row.LastRunAt,
 	)
@@ -168,7 +169,7 @@ func (p *jobPersistence) UpdateJob(job entity.Job) error {
 		schedule_enabled = ?, schedule_type = ?, cron_expression = ?, schedule_interval = ?,
 		schedule_start_time = ?, timeout_seconds = ?, prompt = ?, allow_bypass = ?,
 		autonomous_mode = ?, max_retries = ?, model = ?, override_repo_command = ?,
-		claude_command = ?, success_prompt = ?, failure_prompt = ?, metadata_prompt = ?,
+		claude_command = ?, agent_id = ?, success_prompt = ?, failure_prompt = ?, metadata_prompt = ?,
 		interpreter = ?, script_content = ?, env_variables = ?,
 		updated_at = ?, last_run_at = ? WHERE id = ?`
 
@@ -177,7 +178,7 @@ func (p *jobPersistence) UpdateJob(job entity.Job) error {
 		row.ScheduleEnabled, row.ScheduleType, row.CronExpression, row.ScheduleInterval,
 		row.ScheduleStartTime, row.TimeoutSeconds, row.Prompt, row.AllowBypass,
 		row.AutonomousMode, row.MaxRetries, row.Model, row.OverrideRepoCommand,
-		row.ClaudeCommand, row.SuccessPrompt, row.FailurePrompt, row.MetadataPrompt,
+		row.ClaudeCommand, row.AgentID, row.SuccessPrompt, row.FailurePrompt, row.MetadataPrompt,
 		row.Interpreter, row.ScriptContent, row.EnvVariables,
 		row.UpdatedAt, row.LastRunAt, row.ID,
 	)

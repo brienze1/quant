@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ type jobManagerService struct {
 	saveJobTrigger usecase.SaveJobTrigger
 	findJobRun     usecase.FindJobRun
 	saveJobRun     usecase.SaveJobRun
+	findAgent      usecase.FindAgent
 
 	mu           sync.RWMutex
 	runningProcs map[string]*os.Process // runID -> process
@@ -49,6 +51,7 @@ func NewJobManagerService(
 	saveJobTrigger usecase.SaveJobTrigger,
 	findJobRun usecase.FindJobRun,
 	saveJobRun usecase.SaveJobRun,
+	findAgent usecase.FindAgent,
 ) adapter.JobManager {
 	return &jobManagerService{
 		findJob:        findJob,
@@ -59,6 +62,7 @@ func NewJobManagerService(
 		saveJobTrigger: saveJobTrigger,
 		findJobRun:     findJobRun,
 		saveJobRun:     saveJobRun,
+		findAgent:      findAgent,
 		runningProcs:   make(map[string]*os.Process),
 		triggerCtx:     make(map[string]string),
 	}
@@ -417,6 +421,21 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 		cliArgs = append(cliArgs, "--model", job.Model)
 	}
 
+	// If job has an agent, build system prompt and inject agent configuration
+	if job.AgentID != "" && s.findAgent != nil {
+		agent, agentErr := s.findAgent.FindAgentByID(job.AgentID)
+		if agentErr == nil && agent != nil {
+			systemPrompt := buildAgentSystemPrompt(agent)
+			if systemPrompt != "" {
+				cliArgs = append(cliArgs, "--system-prompt", systemPrompt)
+			}
+			// Use agent's model as fallback if job doesn't specify one
+			if (job.Model == "" || job.Model == "cli default") && agent.Model != "" {
+				cliArgs = append(cliArgs, "--model", agent.Model)
+			}
+		}
+	}
+
 	dir := expandPath(job.WorkingDirectory)
 
 	shell := os.Getenv("SHELL")
@@ -454,6 +473,20 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 	cmd := exec.Command(shell, "-l", "-c", fullCmd)
 	cmd.Dir = dir
 	cmd.Env = append(shellEnv(), "TERM=dumb")
+
+	// Inject agent env vars into subprocess
+	if job.AgentID != "" && s.findAgent != nil {
+		if agent, err := s.findAgent.FindAgentByID(job.AgentID); err == nil && agent != nil {
+			for k, v := range agent.EnvVariables {
+				cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+			}
+		}
+	}
+	// Inject job-level env vars
+	for k, v := range job.EnvVariables {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	cmd.Stdin = strings.NewReader(prompt)
 
 	// Prepare log file for streaming human-readable output
@@ -1190,4 +1223,47 @@ func (s *jobManagerService) createTriggers(sourceJobID string, onSuccess []strin
 	}
 
 	return nil
+}
+
+// buildAgentSystemPrompt constructs a system prompt from the agent's configuration.
+// Uses XML tags for structured sections following Anthropic's prompting best practices.
+func buildAgentSystemPrompt(agent *entity.Agent) string {
+	var sb strings.Builder
+
+	if agent.Role != "" {
+		sb.WriteString("<role>\n")
+		sb.WriteString(agent.Role)
+		sb.WriteString("\n</role>\n\n")
+	}
+
+	if agent.Goal != "" {
+		sb.WriteString("<goal>\n")
+		sb.WriteString(agent.Goal)
+		sb.WriteString("\n</goal>\n\n")
+	}
+
+	if len(agent.Boundaries) > 0 {
+		sb.WriteString("<boundaries>\nYou MUST follow these rules at all times:\n")
+		for _, b := range agent.Boundaries {
+			sb.WriteString("- ")
+			sb.WriteString(b)
+			sb.WriteString("\n")
+		}
+		sb.WriteString("</boundaries>\n\n")
+	}
+
+	enabledSkills := []string{}
+	for name, enabled := range agent.Skills {
+		if enabled {
+			enabledSkills = append(enabledSkills, name)
+		}
+	}
+	if len(enabledSkills) > 0 {
+		sort.Strings(enabledSkills)
+		sb.WriteString("<skills>\nYou have access to these skills: ")
+		sb.WriteString(strings.Join(enabledSkills, ", "))
+		sb.WriteString("\n</skills>\n")
+	}
+
+	return sb.String()
 }

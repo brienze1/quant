@@ -20,6 +20,9 @@ import (
 type Injector struct {
 	db *sql.DB
 
+	agentPersistence   intAdapter.AgentPersistence
+	agentManager       appAdapter.AgentManager
+	agentController    intAdapter.AgentController
 	jobPersistence     intAdapter.JobPersistence
 	jobManager         appAdapter.JobManager
 	jobController      intAdapter.JobController
@@ -245,6 +248,36 @@ func (i *Injector) ConfigController() intAdapter.ConfigController {
 	return i.configController
 }
 
+// AgentPersistence returns the singleton AgentPersistence instance.
+func (i *Injector) AgentPersistence() intAdapter.AgentPersistence {
+	if i.agentPersistence == nil {
+		i.agentPersistence = persistence.NewAgentPersistence(i.db)
+	}
+	return i.agentPersistence
+}
+
+// AgentManager returns the singleton AgentManager service instance.
+func (i *Injector) AgentManager() appAdapter.AgentManager {
+	if i.agentManager == nil {
+		ap := i.AgentPersistence()
+		i.agentManager = service.NewAgentManagerService(
+			ap, // FindAgent
+			ap, // SaveAgent
+			ap, // UpdateAgent
+			ap, // DeleteAgent
+		)
+	}
+	return i.agentManager
+}
+
+// AgentController returns the singleton AgentController instance.
+func (i *Injector) AgentController() intAdapter.AgentController {
+	if i.agentController == nil {
+		i.agentController = controller.NewAgentController(i.AgentManager())
+	}
+	return i.agentController
+}
+
 // JobPersistence returns the singleton JobPersistence instance.
 func (i *Injector) JobPersistence() intAdapter.JobPersistence {
 	if i.jobPersistence == nil {
@@ -257,6 +290,7 @@ func (i *Injector) JobPersistence() intAdapter.JobPersistence {
 func (i *Injector) JobManager() appAdapter.JobManager {
 	if i.jobManager == nil {
 		jp := i.JobPersistence()
+		ap := i.AgentPersistence()
 		i.jobManager = service.NewJobManagerService(
 			jp, // FindJob
 			jp, // SaveJob
@@ -266,6 +300,7 @@ func (i *Injector) JobManager() appAdapter.JobManager {
 			jp, // SaveJobTrigger
 			jp, // FindJobRun
 			jp, // SaveJobRun
+			ap, // FindAgent (for system prompt building)
 		)
 	}
 	return i.jobManager

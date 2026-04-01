@@ -23,6 +23,7 @@ type CreateJobRequest struct {
 	Model               string            `json:"model"`
 	OverrideRepoCommand string            `json:"overrideRepoCommand"`
 	ClaudeCommand       string            `json:"claudeCommand"`
+	AgentID             string            `json:"agentId"`
 	SuccessPrompt       string            `json:"successPrompt"`
 	FailurePrompt       string            `json:"failurePrompt"`
 	MetadataPrompt      string            `json:"metadataPrompt"`
@@ -52,6 +53,7 @@ type UpdateJobRequest struct {
 	Model               string            `json:"model"`
 	OverrideRepoCommand string            `json:"overrideRepoCommand"`
 	ClaudeCommand       string            `json:"claudeCommand"`
+	AgentID             string            `json:"agentId"`
 	SuccessPrompt       string            `json:"successPrompt"`
 	FailurePrompt       string            `json:"failurePrompt"`
 	MetadataPrompt      string            `json:"metadataPrompt"`
@@ -81,6 +83,7 @@ type JobResponse struct {
 	Model               string            `json:"model"`
 	OverrideRepoCommand string            `json:"overrideRepoCommand"`
 	ClaudeCommand       string            `json:"claudeCommand"`
+	AgentID             string            `json:"agentId"`
 	SuccessPrompt       string            `json:"successPrompt"`
 	FailurePrompt       string            `json:"failurePrompt"`
 	MetadataPrompt      string            `json:"metadataPrompt"`
@@ -151,6 +154,7 @@ func JobResponseFromEntity(job entity.Job, onSuccess []entity.JobTrigger, onFail
 		Model:               job.Model,
 		OverrideRepoCommand: job.OverrideRepoCommand,
 		ClaudeCommand:       job.ClaudeCommand,
+		AgentID:             job.AgentID,
 		SuccessPrompt:       job.SuccessPrompt,
 		FailurePrompt:       job.FailurePrompt,
 		MetadataPrompt:      job.MetadataPrompt,

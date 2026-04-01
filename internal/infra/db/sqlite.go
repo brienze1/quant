@@ -188,6 +188,28 @@ func runMigrations(db *sql.DB) error {
 		return fmt.Errorf("failed to create job_runs table: %w", err)
 	}
 
+	agentsTable := `
+	CREATE TABLE IF NOT EXISTS agents (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		color TEXT NOT NULL DEFAULT '#10B981',
+		role TEXT NOT NULL DEFAULT '',
+		goal TEXT NOT NULL DEFAULT '',
+		model TEXT NOT NULL DEFAULT '',
+		autonomous_mode INTEGER NOT NULL DEFAULT 1,
+		mcp_servers TEXT NOT NULL DEFAULT '{}',
+		env_variables TEXT NOT NULL DEFAULT '{}',
+		boundaries TEXT NOT NULL DEFAULT '[]',
+		skills TEXT NOT NULL DEFAULT '{}',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`
+
+	_, err = db.Exec(agentsTable)
+	if err != nil {
+		return fmt.Errorf("failed to create agents table: %w", err)
+	}
+
 	// Idempotent ALTER TABLE statements for schema evolution.
 	alterStatements := []string{
 		`ALTER TABLE jobs ADD COLUMN last_run_at TEXT`,
@@ -204,6 +226,7 @@ func runMigrations(db *sql.DB) error {
 		`ALTER TABLE jobs ADD COLUMN failure_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE jobs ADD COLUMN metadata_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE job_runs ADD COLUMN model_used TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE jobs ADD COLUMN agent_id TEXT REFERENCES agents(id)`,
 	}
 	for _, stmt := range alterStatements {
 		// Ignore errors from ALTER TABLE since the column may already exist.

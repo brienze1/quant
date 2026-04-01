@@ -29,6 +29,7 @@ type JobRow struct {
 	Model               string
 	OverrideRepoCommand string
 	ClaudeCommand       string
+	AgentID             sql.NullString
 	SuccessPrompt       string
 	FailurePrompt       string
 	MetadataPrompt      string
@@ -81,6 +82,7 @@ func (r JobRow) ToEntity() entity.Job {
 		Model:               r.Model,
 		OverrideRepoCommand: r.OverrideRepoCommand,
 		ClaudeCommand:       r.ClaudeCommand,
+		AgentID:             r.AgentID.String,
 		SuccessPrompt:       r.SuccessPrompt,
 		FailurePrompt:       r.FailurePrompt,
 		MetadataPrompt:      r.MetadataPrompt,
@@ -142,6 +144,7 @@ func JobRowFromEntity(job entity.Job) JobRow {
 		Model:               job.Model,
 		OverrideRepoCommand: job.OverrideRepoCommand,
 		ClaudeCommand:       job.ClaudeCommand,
+		AgentID:             sql.NullString{String: job.AgentID, Valid: job.AgentID != ""},
 		SuccessPrompt:       job.SuccessPrompt,
 		FailurePrompt:       job.FailurePrompt,
 		MetadataPrompt:      job.MetadataPrompt,

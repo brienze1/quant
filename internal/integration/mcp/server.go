@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,17 +19,18 @@ import (
 	"quant/internal/domain/entity"
 )
 
-// QuantMCPServer wraps an MCP server that exposes job management tools.
+// QuantMCPServer wraps an MCP server that exposes job and agent management tools.
 type QuantMCPServer struct {
-	jobManager appAdapter.JobManager
-	httpServer *http.Server
+	jobManager   appAdapter.JobManager
+	agentManager appAdapter.AgentManager
+	httpServer   *http.Server
 }
 
-// NewQuantMCPServer creates a new MCP server with all job management tools registered.
-func NewQuantMCPServer(jobManager appAdapter.JobManager) *QuantMCPServer {
+// NewQuantMCPServer creates a new MCP server with all job and agent management tools registered.
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
-	s := &QuantMCPServer{jobManager: jobManager}
+	s := &QuantMCPServer{jobManager: jobManager, agentManager: agentManager}
 
 	s.registerTools(mcpServer)
 
@@ -111,6 +114,7 @@ Workflow for building pipelines:
 			mcp.WithNumber("maxRetries", mcp.Description("Retry count on failure (claude only). Each retry includes previous output as context")),
 			mcp.WithString("model", mcp.Description("Claude model (e.g. 'claude-sonnet-4-6'). Empty = CLI default")),
 			mcp.WithString("claudeCommand", mcp.Description("Claude CLI command/alias (e.g. 'claude', 'claude-bl'). Supports shell aliases from ~/.zshrc")),
+			mcp.WithString("agentId", mcp.Description("Agent ID to use for this job. The agent's role, goal, boundaries, and skills are injected as a system prompt. Use list_agents to get IDs")),
 			mcp.WithString("successPrompt", mcp.Description("How to evaluate success (max 300 chars). E.g. 'All tests passed and PR was approved'. Optional")),
 			mcp.WithString("failurePrompt", mcp.Description("How to evaluate failure (max 300 chars). E.g. 'Tests failed or errors occurred'. Optional")),
 			mcp.WithString("metadataPrompt", mcp.Description("What structured data to extract for triggered jobs (max 500 chars). E.g. 'Extract PR URLs, test counts, error details'. Saves tokens vs raw output")),
@@ -148,6 +152,7 @@ Common workflows:
 			mcp.WithNumber("maxRetries", mcp.Description("Retry count (claude jobs)")),
 			mcp.WithString("model", mcp.Description("Claude model")),
 			mcp.WithString("claudeCommand", mcp.Description("Claude CLI command/alias")),
+			mcp.WithString("agentId", mcp.Description("Agent ID. Use list_agents to get IDs. Set to empty string to unassign")),
 			mcp.WithString("successPrompt", mcp.Description("Success evaluation criteria (max 300 chars)")),
 			mcp.WithString("failurePrompt", mcp.Description("Failure evaluation criteria (max 300 chars)")),
 			mcp.WithString("metadataPrompt", mcp.Description("Metadata extraction instructions (max 500 chars)")),
@@ -221,6 +226,109 @@ Common workflows:
 		s.handleGetTriggers,
 	)
 
+	// -----------------------------------------------------------------------
+	// Agent tools
+	// -----------------------------------------------------------------------
+
+	// 13. list_agents
+	mcpServer.AddTool(
+		mcp.NewTool("list_agents",
+			mcp.WithDescription("List all configured agents. Agents define identity (role, goal), access (MCP servers, env vars), boundaries (anti-prompt rules), and skills for Claude jobs. Assign an agent to a job to give it a persona and behavioral constraints."),
+		),
+		s.handleListAgents,
+	)
+
+	// 14. get_agent
+	mcpServer.AddTool(
+		mcp.NewTool("get_agent",
+			mcp.WithDescription("Get an agent by ID. Returns full configuration including role, goal, boundaries, skills, MCP access, and env vars."),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Agent ID")),
+		),
+		s.handleGetAgent,
+	)
+
+	// 15. create_agent
+	mcpServer.AddTool(
+		mcp.NewTool("create_agent",
+			mcp.WithDescription(`Create a new agent persona for Claude jobs. Agents are task-specific — create many small focused agents, not monoliths.
+
+An agent's config is injected as a system prompt when a job runs:
+- role: who the agent is (identity, tone) — max 200 chars, be dense
+- goal: success criteria — max 200 chars
+- boundaries: hard rules the agent must never violate (e.g. "never push to main")
+- skills: which Claude skills the agent can use (from ~/.claude/skills/)
+- mcpServers: which MCP servers the agent can access
+- envVariables: private secrets only this agent knows (e.g. API tokens)
+- autonomousMode: true (default) = agent executes without stopping to ask
+
+After creating, assign to a job with update_job(id, agentId="...").`),
+			mcp.WithString("name", mcp.Required(), mcp.Description("Agent name (e.g. 'code_reviewer', 'devops_engineer')")),
+			mcp.WithString("color", mcp.Description("Hex color for UI (e.g. '#10B981'). Default: green")),
+			mcp.WithString("role", mcp.Description("Who is this agent? Identity and tone. Max 500 chars. Be semantically dense")),
+			mcp.WithString("goal", mcp.Description("What does this agent achieve? Success criteria. Max 500 chars")),
+			mcp.WithString("model", mcp.Description("Claude model (e.g. 'claude-opus-4-6'). Used as fallback when job doesn't specify")),
+			mcp.WithBoolean("autonomousMode", mcp.Description("Execute without stopping to ask. Default: true")),
+			mcp.WithString("boundaries", mcp.Description("JSON array of anti-prompt rules. E.g. '[\"never push to main\",\"never delete databases\"]'")),
+			mcp.WithString("skills", mcp.Description("JSON object of skill toggles. E.g. '{\"architecture\":true,\"bdd-testing\":true}'. Use list_available_skills to see options")),
+			mcp.WithString("mcpServers", mcp.Description("JSON object of MCP server toggles. E.g. '{\"dbhub\":true,\"linear\":false}'. Use list_available_mcp_servers to see options")),
+			mcp.WithString("envVariables", mcp.Description("JSON object of env vars. E.g. '{\"GITHUB_TOKEN\":\"ghp_xxx\"}'")),
+		),
+		s.handleCreateAgent,
+	)
+
+	// 16. update_agent
+	mcpServer.AddTool(
+		mcp.NewTool("update_agent",
+			mcp.WithDescription("Update an agent's configuration. Only provided fields are changed."),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Agent ID to update")),
+			mcp.WithString("name", mcp.Description("Agent name")),
+			mcp.WithString("color", mcp.Description("Hex color for UI")),
+			mcp.WithString("role", mcp.Description("Role description (max 200 chars)")),
+			mcp.WithString("goal", mcp.Description("Goal description (max 200 chars)")),
+			mcp.WithString("model", mcp.Description("Claude model")),
+			mcp.WithBoolean("autonomousMode", mcp.Description("Execute without stopping")),
+			mcp.WithString("boundaries", mcp.Description("JSON array of anti-prompt rules. Replaces existing")),
+			mcp.WithString("skills", mcp.Description("JSON object of skill toggles. Replaces existing")),
+			mcp.WithString("mcpServers", mcp.Description("JSON object of MCP server toggles. Replaces existing")),
+			mcp.WithString("envVariables", mcp.Description("JSON object of env vars. Replaces existing")),
+		),
+		s.handleUpdateAgent,
+	)
+
+	// 17. delete_agent
+	mcpServer.AddTool(
+		mcp.NewTool("delete_agent",
+			mcp.WithDescription("Delete an agent. Jobs using this agent will have their agentId cleared. This is irreversible."),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Agent ID to delete")),
+		),
+		s.handleDeleteAgent,
+	)
+
+	// 18. list_available_skills
+	mcpServer.AddTool(
+		mcp.NewTool("list_available_skills",
+			mcp.WithDescription("List all Claude skills available in ~/.claude/skills/. Returns skill names that can be used in agent skill toggles. Skills are architecture patterns, testing guidelines, coding conventions, etc."),
+		),
+		s.handleListAvailableSkills,
+	)
+
+	// 19. list_available_mcp_servers
+	mcpServer.AddTool(
+		mcp.NewTool("list_available_mcp_servers",
+			mcp.WithDescription("List all MCP servers configured in ~/.mcp.json. Returns server names that can be used in agent MCP server toggles."),
+		),
+		s.handleListAvailableMcpServers,
+	)
+
+	// 20. get_agent_system_prompt
+	mcpServer.AddTool(
+		mcp.NewTool("get_agent_system_prompt",
+			mcp.WithDescription("Preview the system prompt that would be injected for a given agent. Useful for debugging agent behavior before running a job."),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Agent ID")),
+		),
+		s.handleGetAgentSystemPrompt,
+	)
+
 	// 12. get_pipeline_status
 	mcpServer.AddTool(
 		mcp.NewTool("get_pipeline_status",
@@ -282,6 +390,7 @@ func (s *QuantMCPServer) handleCreateJob(_ context.Context, request mcp.CallTool
 		MaxRetries:       intArg(args, "maxRetries"),
 		Model:            stringArg(args, "model"),
 		ClaudeCommand:    stringArg(args, "claudeCommand"),
+		AgentID:          stringArg(args, "agentId"),
 		SuccessPrompt:    stringArg(args, "successPrompt"),
 		FailurePrompt:    stringArg(args, "failurePrompt"),
 		MetadataPrompt:   stringArg(args, "metadataPrompt"),
@@ -358,6 +467,9 @@ func (s *QuantMCPServer) handleUpdateJob(_ context.Context, request mcp.CallTool
 	}
 	if v, ok := args["claudeCommand"]; ok {
 		existing.ClaudeCommand = v.(string)
+	}
+	if v, ok := args["agentId"]; ok {
+		existing.AgentID, _ = v.(string)
 	}
 	if v, ok := args["successPrompt"]; ok {
 		existing.SuccessPrompt = v.(string)
@@ -623,6 +735,223 @@ func (s *QuantMCPServer) handleGetPipelineStatus(_ context.Context, request mcp.
 }
 
 // ---------------------------------------------------------------------------
+// Agent handlers
+// ---------------------------------------------------------------------------
+
+func (s *QuantMCPServer) handleListAgents(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	agents, err := s.agentManager.ListAgents()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result := make([]map[string]any, 0, len(agents))
+	for i := range agents {
+		result = append(result, agentToMap(&agents[i]))
+	}
+
+	return marshalResult(result)
+}
+
+func (s *QuantMCPServer) handleGetAgent(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	agent, err := s.agentManager.GetAgent(id)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if agent == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("agent not found: %s", id)), nil
+	}
+
+	return marshalResult(agentToMap(agent))
+}
+
+func (s *QuantMCPServer) handleCreateAgent(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+
+	agent := entity.Agent{
+		Name:           stringArg(args, "name"),
+		Color:          stringArg(args, "color"),
+		Role:           stringArg(args, "role"),
+		Goal:           stringArg(args, "goal"),
+		Model:          stringArg(args, "model"),
+		AutonomousMode: true,
+	}
+
+	if v, ok := args["autonomousMode"]; ok {
+		agent.AutonomousMode, _ = v.(bool)
+	}
+
+	agent.Boundaries = stringSliceArg(args, "boundaries")
+	if agent.Boundaries == nil {
+		agent.Boundaries = []string{}
+	}
+
+	agent.Skills = mapBoolArg(args, "skills")
+	agent.McpServers = mapBoolArg(args, "mcpServers")
+	agent.EnvVariables = mapStringArg(args, "envVariables")
+
+	created, err := s.agentManager.CreateAgent(agent)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(agentToMap(created))
+}
+
+func (s *QuantMCPServer) handleUpdateAgent(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	existing, err := s.agentManager.GetAgent(id)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if existing == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("agent not found: %s", id)), nil
+	}
+
+	if v, ok := args["name"]; ok {
+		existing.Name, _ = v.(string)
+	}
+	if v, ok := args["color"]; ok {
+		existing.Color, _ = v.(string)
+	}
+	if v, ok := args["role"]; ok {
+		existing.Role, _ = v.(string)
+	}
+	if v, ok := args["goal"]; ok {
+		existing.Goal, _ = v.(string)
+	}
+	if v, ok := args["model"]; ok {
+		existing.Model, _ = v.(string)
+	}
+	if v, ok := args["autonomousMode"]; ok {
+		existing.AutonomousMode, _ = v.(bool)
+	}
+	if _, ok := args["boundaries"]; ok {
+		existing.Boundaries = stringSliceArg(args, "boundaries")
+		if existing.Boundaries == nil {
+			existing.Boundaries = []string{}
+		}
+	}
+	if _, ok := args["skills"]; ok {
+		existing.Skills = mapBoolArg(args, "skills")
+	}
+	if _, ok := args["mcpServers"]; ok {
+		existing.McpServers = mapBoolArg(args, "mcpServers")
+	}
+	if _, ok := args["envVariables"]; ok {
+		existing.EnvVariables = mapStringArg(args, "envVariables")
+	}
+
+	updated, err := s.agentManager.UpdateAgent(*existing)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(agentToMap(updated))
+}
+
+func (s *QuantMCPServer) handleDeleteAgent(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.agentManager.DeleteAgent(id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Agent %s deleted successfully", id)), nil
+}
+
+func (s *QuantMCPServer) handleListAvailableSkills(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	skillsDir := filepath.Join(home, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return marshalResult([]string{})
+	}
+
+	var skills []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			skillFile := filepath.Join(skillsDir, name, "SKILL.md")
+			if _, err := os.Stat(skillFile); err == nil {
+				skills = append(skills, name)
+			}
+			continue
+		}
+		if strings.HasSuffix(name, ".md") {
+			skills = append(skills, strings.TrimSuffix(name, ".md"))
+		}
+	}
+
+	return marshalResult(skills)
+}
+
+func (s *QuantMCPServer) handleListAvailableMcpServers(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	mcpPath := filepath.Join(home, ".mcp.json")
+	data, err := os.ReadFile(mcpPath)
+	if err != nil {
+		return marshalResult([]string{})
+	}
+
+	var config map[string]interface{}
+	if json.Unmarshal(data, &config) != nil {
+		return marshalResult([]string{})
+	}
+
+	servers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		return marshalResult([]string{})
+	}
+
+	names := make([]string, 0, len(servers))
+	for name := range servers {
+		names = append(names, name)
+	}
+
+	return marshalResult(names)
+}
+
+func (s *QuantMCPServer) handleGetAgentSystemPrompt(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	prompt, err := s.agentManager.BuildSystemPrompt(id)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if prompt == "" {
+		return mcp.NewToolResultText("(empty system prompt — agent has no role, goal, boundaries, or skills configured)"), nil
+	}
+
+	return mcp.NewToolResultText(prompt), nil
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -647,6 +976,7 @@ func jobToMap(job *entity.Job) map[string]any {
 		"maxRetries":       job.MaxRetries,
 		"model":            job.Model,
 		"claudeCommand":    job.ClaudeCommand,
+		"agentId":          job.AgentID,
 		"successPrompt":    job.SuccessPrompt,
 		"failurePrompt":    job.FailurePrompt,
 		"metadataPrompt":   job.MetadataPrompt,
@@ -746,6 +1076,73 @@ func toInt(v any) int {
 	default:
 		return 0
 	}
+}
+
+func agentToMap(agent *entity.Agent) map[string]any {
+	if agent == nil {
+		return nil
+	}
+	return map[string]any{
+		"id":             agent.ID,
+		"name":           agent.Name,
+		"color":          agent.Color,
+		"role":           agent.Role,
+		"goal":           agent.Goal,
+		"model":          agent.Model,
+		"autonomousMode": agent.AutonomousMode,
+		"mcpServers":     agent.McpServers,
+		"envVariables":   agent.EnvVariables,
+		"boundaries":     agent.Boundaries,
+		"skills":         agent.Skills,
+		"createdAt":      agent.CreatedAt,
+		"updatedAt":      agent.UpdatedAt,
+	}
+}
+
+func mapBoolArg(args map[string]any, key string) map[string]bool {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return nil
+	}
+	// Native JSON object
+	if m, ok := v.(map[string]any); ok {
+		result := make(map[string]bool, len(m))
+		for k, val := range m {
+			result[k], _ = val.(bool)
+		}
+		return result
+	}
+	// JSON string
+	if s, ok := v.(string); ok && s != "" {
+		var result map[string]bool
+		if json.Unmarshal([]byte(s), &result) == nil {
+			return result
+		}
+	}
+	return nil
+}
+
+func mapStringArg(args map[string]any, key string) map[string]string {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return nil
+	}
+	// Native JSON object
+	if m, ok := v.(map[string]any); ok {
+		result := make(map[string]string, len(m))
+		for k, val := range m {
+			result[k], _ = val.(string)
+		}
+		return result
+	}
+	// JSON string
+	if s, ok := v.(string); ok && s != "" {
+		var result map[string]string
+		if json.Unmarshal([]byte(s), &result) == nil {
+			return result
+		}
+	}
+	return nil
 }
 
 func stringSliceArg(args map[string]any, key string) []string {

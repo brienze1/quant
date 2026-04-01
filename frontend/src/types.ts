@@ -104,6 +104,7 @@ export interface Job {
   model: string;
   overrideRepoCommand: string;
   claudeCommand: string;
+  agentId?: string;
   successPrompt: string;
   failurePrompt: string;
   metadataPrompt: string;
@@ -139,6 +140,7 @@ export interface CreateJobRequest {
   model: string;
   overrideRepoCommand: string;
   claudeCommand: string;
+  agentId?: string;
   successPrompt: string;
   failurePrompt: string;
   metadataPrompt: string;
@@ -222,4 +224,44 @@ export interface Config {
   defaultModel: string;
   envVariables: Record<string, string>;
   commandOverrides: Record<string, string>;
+}
+
+// --- Agents ---
+
+export interface Agent {
+  id: string;
+  name: string;
+  color: string;
+  role: string;
+  goal: string;
+  model: string;
+  autonomousMode: boolean;
+  mcpServers: Record<string, boolean>;
+  envVariables: Record<string, string>;
+  boundaries: string[];
+  skills: Record<string, boolean>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAgentRequest {
+  name: string;
+  color: string;
+  role: string;
+  goal: string;
+  model: string;
+  autonomousMode: boolean;
+  mcpServers: Record<string, boolean>;
+  envVariables: Record<string, string>;
+  boundaries: string[];
+  skills: Record<string, boolean>;
+}
+
+export interface UpdateAgentRequest extends CreateAgentRequest {
+  id: string;
+}
+
+export interface SkillInfo {
+  name: string;
+  filePath: string;
 }

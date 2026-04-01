@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import type { Job, JobType, CreateJobRequest, UpdateJobRequest, ScheduleType } from "../types";
+import type { Job, JobType, CreateJobRequest, UpdateJobRequest, ScheduleType, Agent } from "../types";
 import * as api from "../api";
 
 const MODEL_OPTIONS = ["cli default", "claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001"];
@@ -33,6 +33,7 @@ function buildDefaultForm(): CreateJobRequest {
     model: "claude-sonnet-4-6",
     overrideRepoCommand: "",
     claudeCommand: "",
+    agentId: "",
     successPrompt: "",
     failurePrompt: "",
     metadataPrompt: "",
@@ -62,6 +63,7 @@ function jobToForm(job: Job): CreateJobRequest {
     model: job.model,
     overrideRepoCommand: job.overrideRepoCommand,
     claudeCommand: job.claudeCommand,
+    agentId: job.agentId ?? "",
     successPrompt: job.successPrompt,
     failurePrompt: job.failurePrompt,
     metadataPrompt: job.metadataPrompt,
@@ -86,6 +88,13 @@ export function CreateJobModal({ jobs, editJob, onSubmit, onCancel }: Props) {
   const [failureDropdownOpen, setFailureDropdownOpen] = useState(false);
   const successRef = useRef<HTMLDivElement>(null);
   const failureRef = useRef<HTMLDivElement>(null);
+
+  // Agents list for dropdown
+  const [agents, setAgents] = useState<Agent[]>([]);
+
+  useEffect(() => {
+    api.listAgents().then((list) => setAgents(list ?? [])).catch(() => {});
+  }, []);
 
   // Env variable inputs
   const [newEnvKey, setNewEnvKey] = useState("");
@@ -517,6 +526,26 @@ export function CreateJobModal({ jobs, editJob, onSubmit, onCancel }: Props) {
                 />
               </div>
 
+              {/* agent */}
+              <div className="flex items-center justify-between">
+                <span
+                  style={{
+                    color: "#FAFAFA",
+                    fontSize: 11,
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                >
+                  agent
+                </span>
+                <MiniSelect
+                  value={form.agentId || "none"}
+                  options={["none", ...agents.map((a) => a.id)]}
+                  labels={["none", ...agents.map((a) => a.name)]}
+                  onChange={(v) => update("agentId", v === "none" ? "" : v)}
+                  width={200}
+                />
+              </div>
+
               {/* override repo command */}
               <div className="flex items-center justify-between">
                 <span
@@ -877,14 +906,18 @@ function ToggleSwitch({
 function MiniSelect({
   value,
   options,
+  labels,
   onChange,
   width,
 }: {
   value: string;
   options: string[];
+  labels?: string[];
   onChange: (v: string) => void;
   width: number;
 }) {
+  const getLabel = (opt: string, idx?: number) =>
+    labels && idx !== undefined && idx < labels.length ? labels[idx] : opt;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -921,7 +954,7 @@ function MiniSelect({
           backgroundPosition: "right 12px center",
         }}
       >
-        {value}
+        {getLabel(value, options.indexOf(value))}
       </button>
       {open && (
         <div
@@ -935,7 +968,7 @@ function MiniSelect({
             width: "100%",
           }}
         >
-          {options.map((opt) => (
+          {options.map((opt, idx) => (
             <button
               key={opt}
               type="button"
@@ -965,7 +998,7 @@ function MiniSelect({
               }}
             >
               <span style={{ color: "#10B981", flexShrink: 0 }}>~</span>
-              <span>{opt}</span>
+              <span>{getLabel(opt, idx)}</span>
             </button>
           ))}
         </div>

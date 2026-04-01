@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Job, JobRun, UpdateJobRequest } from "../types";
+import type { Job, JobRun, UpdateJobRequest, Agent } from "../types";
 import * as api from "../api";
 
 type JobTab = "settings" | "history";
@@ -225,6 +225,12 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
   const [selectedRunTab, setSelectedRunTab] = useState<RunTab>("session");
   const [runOutput, setRunOutput] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const agentName = (id?: string) => {
+    if (!id) return null;
+    const a = agents.find((a) => a.id === id);
+    return a ? a.name : null;
+  };
 
   // Canvas state
   const [nodePositions, setNodePositions] = useState<NodePositions>(() => {
@@ -392,6 +398,11 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
     }, 10000);
     return () => clearInterval(interval);
   }, [onRefreshJobs]);
+
+  // Fetch agents list for display on job cards
+  useEffect(() => {
+    api.listAgents().then((list) => setAgents(list ?? [])).catch(() => {});
+  }, []);
 
   // Poll for running jobs on the canvas and detect trigger firings
   const prevRunningRef = useRef<Set<string>>(new Set());
@@ -851,6 +862,7 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
         {selectedJob.type === "claude"
           ? <>
             {renderSection("session", <>
+              {renderKeyValue("agent", agentName(selectedJob.agentId) || "none")}
               {renderKeyValue("model", selectedJob.model)}
               {renderKeyValue("max_retries", selectedJob.maxRetries)}
               {renderKeyValue("override_repo_command", selectedJob.overrideRepoCommand)}
@@ -1670,7 +1682,7 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
                 </div>
                 {/* Second line */}
                 <div style={{ marginTop: 4, color: "#4B5563", fontSize: 9, fontFamily: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {job.type} &middot; {scheduleInfo}
+                  {job.type}{agentName(job.agentId) ? <span style={{ color: "#10B981" }}> &middot; {agentName(job.agentId)}</span> : null} &middot; {scheduleInfo}
                 </div>
               </div>
             );

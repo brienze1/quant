@@ -20,6 +20,42 @@ export namespace dto {
 	        this.timestamp = source["timestamp"];
 	    }
 	}
+	export class AgentResponse {
+	    id: string;
+	    name: string;
+	    color: string;
+	    role: string;
+	    goal: string;
+	    model: string;
+	    autonomousMode: boolean;
+	    mcpServers: Record<string, boolean>;
+	    envVariables: Record<string, string>;
+	    boundaries: string[];
+	    skills: Record<string, boolean>;
+	    createdAt: string;
+	    updatedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AgentResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.color = source["color"];
+	        this.role = source["role"];
+	        this.goal = source["goal"];
+	        this.model = source["model"];
+	        this.autonomousMode = source["autonomousMode"];
+	        this.mcpServers = source["mcpServers"];
+	        this.envVariables = source["envVariables"];
+	        this.boundaries = source["boundaries"];
+	        this.skills = source["skills"];
+	        this.createdAt = source["createdAt"];
+	        this.updatedAt = source["updatedAt"];
+	    }
+	}
 	export class ShortcutDTO {
 	    name: string;
 	    command: string;
@@ -124,6 +160,36 @@ export namespace dto {
 		    return a;
 		}
 	}
+	export class CreateAgentRequest {
+	    name: string;
+	    color: string;
+	    role: string;
+	    goal: string;
+	    model: string;
+	    autonomousMode: boolean;
+	    mcpServers: Record<string, boolean>;
+	    envVariables: Record<string, string>;
+	    boundaries: string[];
+	    skills: Record<string, boolean>;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateAgentRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.color = source["color"];
+	        this.role = source["role"];
+	        this.goal = source["goal"];
+	        this.model = source["model"];
+	        this.autonomousMode = source["autonomousMode"];
+	        this.mcpServers = source["mcpServers"];
+	        this.envVariables = source["envVariables"];
+	        this.boundaries = source["boundaries"];
+	        this.skills = source["skills"];
+	    }
+	}
 	export class CreateJobRequest {
 	    name: string;
 	    description: string;
@@ -141,6 +207,7 @@ export namespace dto {
 	    model: string;
 	    overrideRepoCommand: string;
 	    claudeCommand: string;
+	    agentId: string;
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
@@ -172,6 +239,7 @@ export namespace dto {
 	        this.model = source["model"];
 	        this.overrideRepoCommand = source["overrideRepoCommand"];
 	        this.claudeCommand = source["claudeCommand"];
+	        this.agentId = source["agentId"];
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];
@@ -296,6 +364,7 @@ export namespace dto {
 	    model: string;
 	    overrideRepoCommand: string;
 	    claudeCommand: string;
+	    agentId: string;
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
@@ -331,6 +400,7 @@ export namespace dto {
 	        this.model = source["model"];
 	        this.overrideRepoCommand = source["overrideRepoCommand"];
 	        this.claudeCommand = source["claudeCommand"];
+	        this.agentId = source["agentId"];
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];
@@ -549,6 +619,20 @@ export namespace dto {
 	    }
 	}
 	
+	export class SkillInfo {
+	    name: string;
+	    filePath: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SkillInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.filePath = source["filePath"];
+	    }
+	}
 	export class TaskResponse {
 	    id: string;
 	    repoId: string;
@@ -574,6 +658,38 @@ export namespace dto {
 	    }
 	}
 	
+	export class UpdateAgentRequest {
+	    id: string;
+	    name: string;
+	    color: string;
+	    role: string;
+	    goal: string;
+	    model: string;
+	    autonomousMode: boolean;
+	    mcpServers: Record<string, boolean>;
+	    envVariables: Record<string, string>;
+	    boundaries: string[];
+	    skills: Record<string, boolean>;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateAgentRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.color = source["color"];
+	        this.role = source["role"];
+	        this.goal = source["goal"];
+	        this.model = source["model"];
+	        this.autonomousMode = source["autonomousMode"];
+	        this.mcpServers = source["mcpServers"];
+	        this.envVariables = source["envVariables"];
+	        this.boundaries = source["boundaries"];
+	        this.skills = source["skills"];
+	    }
+	}
 	export class UpdateJobRequest {
 	    id: string;
 	    name: string;
@@ -592,6 +708,7 @@ export namespace dto {
 	    model: string;
 	    overrideRepoCommand: string;
 	    claudeCommand: string;
+	    agentId: string;
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
@@ -624,6 +741,7 @@ export namespace dto {
 	        this.model = source["model"];
 	        this.overrideRepoCommand = source["overrideRepoCommand"];
 	        this.claudeCommand = source["claudeCommand"];
+	        this.agentId = source["agentId"];
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];

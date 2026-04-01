@@ -7,11 +7,15 @@ import type {
   DiffFile,
   Job,
   JobRun,
+  Agent,
+  SkillInfo,
   CreateRepoRequest,
   CreateTaskRequest,
   CreateSessionRequest,
   CreateJobRequest,
   UpdateJobRequest,
+  CreateAgentRequest,
+  UpdateAgentRequest,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -287,4 +291,36 @@ export function listRunsByJob(jobId: string): Promise<JobRun[]> {
 
 export function getRunOutput(runId: string): Promise<string> {
   return callGo(PKG, JOB_CTRL, "GetRunOutput", runId);
+}
+
+// --- Agents ---
+
+const AGENT_CTRL = "agentController";
+
+export function createAgent(req: CreateAgentRequest): Promise<Agent> {
+  return callGo(PKG, AGENT_CTRL, "CreateAgent", req);
+}
+
+export function updateAgent(req: UpdateAgentRequest): Promise<Agent> {
+  return callGo(PKG, AGENT_CTRL, "UpdateAgent", req);
+}
+
+export function deleteAgent(id: string): Promise<void> {
+  return callGo(PKG, AGENT_CTRL, "DeleteAgent", id);
+}
+
+export function getAgent(id: string): Promise<Agent> {
+  return callGo(PKG, AGENT_CTRL, "GetAgent", id);
+}
+
+export function listAgents(): Promise<Agent[]> {
+  return callGo(PKG, AGENT_CTRL, "ListAgents");
+}
+
+export function listAvailableSkills(): Promise<SkillInfo[]> {
+  return callGo(PKG, AGENT_CTRL, "ListAvailableSkills");
+}
+
+export function listAvailableMcpServers(): Promise<string[]> {
+  return callGo(PKG, AGENT_CTRL, "ListAvailableMcpServers");
 }
