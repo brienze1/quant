@@ -328,6 +328,7 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
   const [selectedRunTab, setSelectedRunTab] = useState<RunTab>("session");
   const [runOutput, setRunOutput] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [parentRunInfo, setParentRunInfo] = useState<{ jobName: string; result: string; metadata: string } | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const agentName = (id?: string) => {
     if (!id) return null;
@@ -550,6 +551,32 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
       fetchOutput(selectedRunId);
     }
   }, [selectedRunId, selectedRunTab, fetchOutput]);
+
+  // Fetch parent run info when a triggered run is selected
+  useEffect(() => {
+    if (!selectedRun || !selectedRun.triggeredBy) {
+      setParentRunInfo(null);
+      return;
+    }
+    (async () => {
+      try {
+        const parentRun = await api.getRun(selectedRun.triggeredBy);
+        const parentJob = jobs.find((j) => j.id === parentRun.jobId);
+        const parentJobName = parentJob?.name || parentRun.jobId.slice(0, 8);
+        let metadata = "";
+        let result = parentRun.result || "";
+        const metaSep = "\n\n--- metadata ---\n";
+        const metaIdx = result.indexOf(metaSep);
+        if (metaIdx >= 0) {
+          metadata = result.slice(metaIdx + metaSep.length);
+          result = result.slice(0, metaIdx);
+        }
+        setParentRunInfo({ jobName: parentJobName, result, metadata });
+      } catch {
+        setParentRunInfo(null);
+      }
+    })();
+  }, [selectedRun?.id, selectedRun?.triggeredBy, jobs]);
 
   // Poll for updates when a running run is selected
   useEffect(() => {
@@ -1292,12 +1319,10 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
                               <span style={{ color: "#10B981" }}>{agentName(selectedJob.agentId) || selectedJob.agentId.slice(0, 8)}</span>
                             </>}
                           </div>
-                          {selectedRun.triggeredBy && selectedRun.triggeredBy !== "manual" && (
+                          {selectedRun.triggeredBy && parentRunInfo && (
                             <div style={{ display: "flex", gap: 8, fontSize: 10, fontFamily: font }}>
                               <span style={{ color: "#6B7280" }}>triggered_by</span>
-                              <span style={{ color: "#9CA3AF" }}>
-                                {jobs.find((j) => j.id === selectedRun.triggeredBy)?.name || selectedRun.triggeredBy.slice(0, 8)}
-                              </span>
+                              <span style={{ color: "#9CA3AF" }}>{parentRunInfo.jobName}</span>
                             </div>
                           )}
                           {selectedJob.type === "claude" && selectedJob.prompt && (
@@ -1313,6 +1338,22 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
                               <span style={{ color: "#6B7280" }}>script </span>
                               <span style={{ color: "#9CA3AF", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                                 {selectedJob.scriptContent.length > 300 ? selectedJob.scriptContent.slice(0, 300) + "..." : selectedJob.scriptContent}
+                              </span>
+                            </div>
+                          )}
+                          {parentRunInfo?.metadata && (
+                            <div style={{ fontSize: 10, fontFamily: font, marginTop: 2 }}>
+                              <span style={{ color: "#6B7280" }}>received_metadata </span>
+                              <span style={{ color: "#10B981", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                {parentRunInfo.metadata.length > 500 ? parentRunInfo.metadata.slice(0, 500) + "..." : parentRunInfo.metadata}
+                              </span>
+                            </div>
+                          )}
+                          {parentRunInfo && !parentRunInfo.metadata && parentRunInfo.result && (
+                            <div style={{ fontSize: 10, fontFamily: font, marginTop: 2 }}>
+                              <span style={{ color: "#6B7280" }}>received_output </span>
+                              <span style={{ color: "#9CA3AF", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                {parentRunInfo.result.length > 500 ? parentRunInfo.result.slice(parentRunInfo.result.length - 500) + "..." : parentRunInfo.result}
                               </span>
                             </div>
                           )}
@@ -1341,13 +1382,47 @@ export function JobsView({ jobs, onCreateJob, onEditJob, onRefreshJobs }: Props)
                   {renderSection("execution", <>
                     {renderKeyValue("run_id", selectedRun.id)}
                     {renderKeyValue("status", selectedRun.status)}
-                    {renderKeyValue("triggered_by", selectedRun.triggeredBy || "manual")}
+                    {renderKeyValue("triggered_by", parentRunInfo ? parentRunInfo.jobName : selectedRun.triggeredBy || "manual")}
                     {renderKeyValue("started", selectedRun.startedAt ? new Date(selectedRun.startedAt).toLocaleString() : "---")}
                     {selectedRun.finishedAt && renderKeyValue("finished", new Date(selectedRun.finishedAt).toLocaleString())}
                     {renderKeyValue("duration", formatDuration(selectedRun.durationMs))}
                     {selectedRun.modelUsed && renderKeyValue("model", selectedRun.modelUsed)}
                     {selectedRun.tokensUsed > 0 && renderKeyValue("tokens_used", selectedRun.tokensUsed.toLocaleString())}
                   </>)}
+
+                  {selectedJob && renderSection("input", <>
+                    {renderKeyValue("type", selectedJob.type)}
+                    {selectedJob.agentId && renderKeyValue("agent", agentName(selectedJob.agentId) || selectedJob.agentId.slice(0, 8))}
+                    {selectedJob.model && renderKeyValue("model", selectedJob.model)}
+                    {selectedJob.type === "claude" && selectedJob.prompt && renderKeyValue("prompt", selectedJob.prompt)}
+                    {selectedJob.type === "bash" && selectedJob.scriptContent && renderKeyValue("script", selectedJob.scriptContent)}
+                    {selectedJob.claudeCommand && renderKeyValue("claude_command", selectedJob.claudeCommand)}
+                    {selectedJob.overrideRepoCommand && renderKeyValue("repo_command", selectedJob.overrideRepoCommand)}
+                  </>)}
+
+                  {parentRunInfo?.metadata && renderSection("received_metadata",
+                    <pre style={{ color: "#10B981", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                      {parentRunInfo.metadata}
+                    </pre>
+                  )}
+
+                  {parentRunInfo && !parentRunInfo.metadata && parentRunInfo.result && renderSection("received_output",
+                    <pre style={{ color: "#9CA3AF", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                      {parentRunInfo.result.length > 1000 ? "..." + parentRunInfo.result.slice(parentRunInfo.result.length - 1000) : parentRunInfo.result}
+                    </pre>
+                  )}
+
+                  {(() => {
+                    const result = selectedRun.result || "";
+                    const metaSep = "\n\n--- metadata ---\n";
+                    const metaIdx = result.indexOf(metaSep);
+                    const metadata = metaIdx >= 0 ? result.slice(metaIdx + metaSep.length) : "";
+                    return metadata ? renderSection("output_metadata",
+                      <pre style={{ color: "#10B981", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                        {metadata}
+                      </pre>
+                    ) : null;
+                  })()}
 
                   {selectedRun.sessionId && renderSection("triggered_sessions",
                     <div style={{ fontSize: 11, fontFamily: font }}>
