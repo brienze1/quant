@@ -644,6 +644,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   // Animate wave on selected edge with smooth amplitude transitions
   const selectedEdgeRef = useRef(selectedEdge);
   selectedEdgeRef.current = selectedEdge;
+  const jobsRef = useRef(jobs);
+  jobsRef.current = jobs;
   const edgeDeleteHoverRef = useRef(edgeDeleteHover);
   edgeDeleteHoverRef.current = edgeDeleteHover;
 
@@ -819,9 +821,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         setCanvasModalJobId(null);
         setSelectedEdge(null);
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedEdge && !canvasModalJobId) {
-        // Delete the selected edge
-        const sourceJob = jobs.find((j) => j.id === selectedEdge.sourceId);
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedEdgeRef.current && !canvasModalJobId) {
+        // Delete the selected edge (use refs to avoid stale closures)
+        const edge = selectedEdgeRef.current;
+        const sourceJob = jobsRef.current.find((j) => j.id === edge.sourceId);
         if (sourceJob) {
           api.updateJob({
             id: sourceJob.id,
@@ -841,17 +844,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             model: sourceJob.model,
             overrideRepoCommand: sourceJob.overrideRepoCommand,
             claudeCommand: sourceJob.claudeCommand,
+            agentId: sourceJob.agentId,
             successPrompt: sourceJob.successPrompt,
             failurePrompt: sourceJob.failurePrompt,
             metadataPrompt: sourceJob.metadataPrompt,
             interpreter: sourceJob.interpreter,
             scriptContent: sourceJob.scriptContent,
             envVariables: sourceJob.envVariables,
-            onSuccess: selectedEdge.type === "success"
-              ? sourceJob.onSuccess.filter((id) => id !== selectedEdge.targetId)
+            workspaceId: sourceJob.workspaceId,
+            onSuccess: edge.type === "success"
+              ? sourceJob.onSuccess.filter((id) => id !== edge.targetId)
               : sourceJob.onSuccess,
-            onFailure: selectedEdge.type === "failure"
-              ? sourceJob.onFailure.filter((id) => id !== selectedEdge.targetId)
+            onFailure: edge.type === "failure"
+              ? sourceJob.onFailure.filter((id) => id !== edge.targetId)
               : sourceJob.onFailure,
           }).then(() => {
             setSelectedEdge(null);
