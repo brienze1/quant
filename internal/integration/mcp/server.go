@@ -19,18 +19,29 @@ import (
 	"quant/internal/domain/entity"
 )
 
-// QuantMCPServer wraps an MCP server that exposes job and agent management tools.
+// QuantMCPServer wraps an MCP server that exposes job, agent, session, workspace, and repo management tools.
 type QuantMCPServer struct {
-	jobManager   appAdapter.JobManager
-	agentManager appAdapter.AgentManager
-	httpServer   *http.Server
+	jobManager       appAdapter.JobManager
+	agentManager     appAdapter.AgentManager
+	sessionManager   appAdapter.SessionManager
+	workspaceManager appAdapter.WorkspaceManager
+	repoManager      appAdapter.RepoManager
+	jobGroupManager  appAdapter.JobGroupManager
+	httpServer       *http.Server
 }
 
-// NewQuantMCPServer creates a new MCP server with all job and agent management tools registered.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager) *QuantMCPServer {
+// NewQuantMCPServer creates a new MCP server with all management tools registered.
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
-	s := &QuantMCPServer{jobManager: jobManager, agentManager: agentManager}
+	s := &QuantMCPServer{
+		jobManager:       jobManager,
+		agentManager:     agentManager,
+		sessionManager:   sessionManager,
+		workspaceManager: workspaceManager,
+		repoManager:      repoManager,
+		jobGroupManager:  jobGroupManager,
+	}
 
 	s.registerTools(mcpServer)
 
@@ -533,6 +544,226 @@ Returns the full system prompt text, or a message indicating the prompt is empty
 			mcp.WithString("id", mcp.Required(), mcp.Description("Agent ID (get from list_agents)")),
 		),
 		s.handleGetAgentSystemPrompt,
+	)
+
+	// -----------------------------------------------------------------------
+	// Session tools
+	// -----------------------------------------------------------------------
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_sessions",
+			mcp.WithDescription(`List all sessions. Returns an array of session objects with id, name, status, sessionType, repoId, workspaceId, directory, and timestamps.
+
+Use this to discover session IDs before calling get_session, start_session, stop_session, etc.`),
+		),
+		s.handleListSessions,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("get_session",
+			mcp.WithDescription(`Get a session by ID. Returns the full session object including status, directory, branch, PID, and all metadata.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID (get from list_sessions)")),
+		),
+		s.handleGetSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("create_session",
+			mcp.WithDescription(`Create a new session. Sessions can be:
+- 'claude' type: a Claude CLI interactive session
+- 'terminal' type: a plain terminal session
+
+Returns the created session object with generated ID. The session starts in 'idle' status — use start_session to begin execution.`),
+			mcp.WithString("name", mcp.Required(), mcp.Description("Session name (e.g. 'review-pr-123', 'debug-auth')")),
+			mcp.WithString("description", mcp.Description("What this session is for")),
+			mcp.WithString("sessionType", mcp.Required(), mcp.Description("'claude' or 'terminal'")),
+			mcp.WithString("repoId", mcp.Description("Repository ID to associate with this session (get from list_repos)")),
+			mcp.WithString("taskId", mcp.Description("Task ID to associate with this session")),
+			mcp.WithString("workspaceId", mcp.Description("Workspace ID to assign the session to")),
+			mcp.WithBoolean("useWorktree", mcp.Description("Create a git worktree for this session. Default: false")),
+			mcp.WithBoolean("skipPermissions", mcp.Description("Skip permission prompts (--dangerously-skip-permissions). Default: false")),
+			mcp.WithString("model", mcp.Description("Claude model for claude sessions (e.g. 'claude-sonnet-4-6')")),
+		),
+		s.handleCreateSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("start_session",
+			mcp.WithDescription(`Start an idle session. The session must be in 'idle' status. Transitions the session to 'running'.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID to start (get from list_sessions)")),
+		),
+		s.handleStartSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("stop_session",
+			mcp.WithDescription(`Stop a running session. Terminates the session process. The session can be resumed later with resume_session.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID to stop")),
+		),
+		s.handleStopSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("resume_session",
+			mcp.WithDescription(`Resume a paused session. Restarts the session process and replays saved terminal output.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID to resume")),
+		),
+		s.handleResumeSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("delete_session",
+			mcp.WithDescription(`Delete a session permanently. Stops the process if running, removes worktree if applicable. This is irreversible.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID to delete")),
+		),
+		s.handleDeleteSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("send_message",
+			mcp.WithDescription(`Send a message to a running session. The message is written to the session's terminal stdin. For claude sessions, this sends text to the Claude CLI.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID (must be running)")),
+			mcp.WithString("message", mcp.Required(), mcp.Description("Message text to send to the session")),
+		),
+		s.handleSendMessage,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("get_session_output",
+			mcp.WithDescription(`Get the raw terminal output of a session. Returns the full terminal buffer text. Use to inspect what the session has produced so far.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID")),
+		),
+		s.handleGetSessionOutput,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("archive_session",
+			mcp.WithDescription(`Archive a session. Archived sessions are hidden from the default list but can be unarchived later.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID to archive")),
+		),
+		s.handleArchiveSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("rename_session",
+			mcp.WithDescription(`Rename a session. Updates the session's display name.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID to rename")),
+			mcp.WithString("newName", mcp.Required(), mcp.Description("New name for the session")),
+		),
+		s.handleRenameSession,
+	)
+
+	// -----------------------------------------------------------------------
+	// Workspace tools
+	// -----------------------------------------------------------------------
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_workspaces",
+			mcp.WithDescription(`List all workspaces. Returns an array of workspace objects with id, name, and timestamps. Workspaces are visual groupings for organizing sessions, jobs, and agents.`),
+		),
+		s.handleListWorkspaces,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("create_workspace",
+			mcp.WithDescription(`Create a new workspace. Returns the created workspace object with generated ID.`),
+			mcp.WithString("name", mcp.Required(), mcp.Description("Workspace name (e.g. 'backend', 'frontend', 'devops')")),
+		),
+		s.handleCreateWorkspace,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("delete_workspace",
+			mcp.WithDescription(`Delete a workspace permanently. Sessions and jobs in this workspace are not deleted but will become unassigned.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Workspace ID to delete (get from list_workspaces)")),
+		),
+		s.handleDeleteWorkspace,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("move_job_to_workspace",
+			mcp.WithDescription(`Move a job to a different workspace. Updates the job's workspaceId. Use an empty workspaceId to unassign.`),
+			mcp.WithString("jobId", mcp.Required(), mcp.Description("Job ID to move (get from list_jobs)")),
+			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Target workspace ID (get from list_workspaces). Use empty string to unassign")),
+		),
+		s.handleMoveJobToWorkspace,
+	)
+
+	// -----------------------------------------------------------------------
+	// Repo tools
+	// -----------------------------------------------------------------------
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_repos",
+			mcp.WithDescription(`List all repositories for a workspace. Returns an array of repo objects with id, name, path, workspaceId, and timestamps.`),
+			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Workspace ID (get from list_workspaces)")),
+		),
+		s.handleListRepos,
+	)
+
+	// --- Job Group tools ---
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_job_groups",
+			mcp.WithDescription(`List all job groups for a workspace. Groups visually organize jobs on the canvas. Returns id, name, jobIds array, workspaceId.`),
+			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Workspace ID")),
+		),
+		s.handleListJobGroups,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("create_job_group",
+			mcp.WithDescription(`Create a new job group with the given jobs. Groups appear as visual containers on the job canvas.`),
+			mcp.WithString("name", mcp.Required(), mcp.Description("Group name")),
+			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Workspace ID")),
+			mcp.WithString("jobIds", mcp.Required(), mcp.Description("JSON array of job IDs to include. E.g. '[\"job-id-1\",\"job-id-2\"]'")),
+		),
+		s.handleCreateJobGroup,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("update_job_group",
+			mcp.WithDescription(`Update a job group — rename it or change which jobs belong to it.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Job group ID")),
+			mcp.WithString("name", mcp.Description("New name (leave empty to keep current)")),
+			mcp.WithString("jobIds", mcp.Description("JSON array of job IDs (replaces all current members). E.g. '[\"job-id-1\",\"job-id-2\"]'")),
+		),
+		s.handleUpdateJobGroup,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("delete_job_group",
+			mcp.WithDescription(`Delete a job group. Jobs are NOT deleted — they just become ungrouped.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Job group ID")),
+		),
+		s.handleDeleteJobGroup,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("add_jobs_to_group",
+			mcp.WithDescription(`Add one or more jobs to an existing group without removing current members.`),
+			mcp.WithString("groupId", mcp.Required(), mcp.Description("Job group ID")),
+			mcp.WithString("jobIds", mcp.Required(), mcp.Description("JSON array of job IDs to add")),
+		),
+		s.handleAddJobsToGroup,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("remove_jobs_from_group",
+			mcp.WithDescription(`Remove one or more jobs from a group. The jobs are not deleted, just ungrouped.`),
+			mcp.WithString("groupId", mcp.Required(), mcp.Description("Job group ID")),
+			mcp.WithString("jobIds", mcp.Required(), mcp.Description("JSON array of job IDs to remove")),
+		),
+		s.handleRemoveJobsFromGroup,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("move_group_to_workspace",
+			mcp.WithDescription(`Move a job group and all its member jobs to a different workspace.`),
+			mcp.WithString("groupId", mcp.Required(), mcp.Description("Job group ID")),
+			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Target workspace ID")),
+		),
+		s.handleMoveGroupToWorkspace,
 	)
 
 	// 12. get_pipeline_status
@@ -1213,6 +1444,509 @@ func (s *QuantMCPServer) handleGetAgentSystemPrompt(_ context.Context, request m
 }
 
 // ---------------------------------------------------------------------------
+// Session handlers
+// ---------------------------------------------------------------------------
+
+func (s *QuantMCPServer) handleListSessions(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessions, err := s.sessionManager.ListSessions()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result := make([]map[string]any, 0, len(sessions))
+	for i := range sessions {
+		result = append(result, sessionToMap(&sessions[i]))
+	}
+
+	return marshalResult(result)
+}
+
+func (s *QuantMCPServer) handleGetSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	session, err := s.sessionManager.GetSession(id)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(sessionToMap(session))
+}
+
+func (s *QuantMCPServer) handleCreateSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	name, err := requiredString(request, "name")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	sessionType, err := requiredString(request, "sessionType")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := request.GetArguments()
+	description := stringArg(args, "description")
+	repoID := stringArg(args, "repoId")
+	taskID := stringArg(args, "taskId")
+
+	opts := entity.SessionOptions{
+		UseWorktree:     boolArg(args, "useWorktree"),
+		SkipPermissions: boolArg(args, "skipPermissions"),
+		Model:           stringArg(args, "model"),
+		WorkspaceID:     stringArg(args, "workspaceId"),
+		NoFlicker:       true,
+	}
+
+	session, err := s.sessionManager.CreateSession(name, description, sessionType, repoID, taskID, opts)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(sessionToMap(session))
+}
+
+func (s *QuantMCPServer) handleStartSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.sessionManager.StartSession(id, 40, 120); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Session %s started successfully", id)), nil
+}
+
+func (s *QuantMCPServer) handleStopSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.sessionManager.StopSession(id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Session %s stopped successfully", id)), nil
+}
+
+func (s *QuantMCPServer) handleResumeSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.sessionManager.ResumeSession(id, 40, 120); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Session %s resumed successfully", id)), nil
+}
+
+func (s *QuantMCPServer) handleDeleteSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.sessionManager.DeleteSession(id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Session %s deleted successfully", id)), nil
+}
+
+func (s *QuantMCPServer) handleSendMessage(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	message, err := requiredString(request, "message")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.sessionManager.SendMessage(id, message); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Message sent to session %s", id)), nil
+}
+
+func (s *QuantMCPServer) handleGetSessionOutput(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	output, err := s.sessionManager.GetSessionOutput(id)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(output), nil
+}
+
+func (s *QuantMCPServer) handleArchiveSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.sessionManager.ArchiveSession(id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Session %s archived successfully", id)), nil
+}
+
+func (s *QuantMCPServer) handleRenameSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	newName, err := requiredString(request, "newName")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.sessionManager.RenameSession(id, newName); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Session %s renamed to '%s'", id, newName)), nil
+}
+
+// ---------------------------------------------------------------------------
+// Workspace handlers
+// ---------------------------------------------------------------------------
+
+func (s *QuantMCPServer) handleListWorkspaces(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	workspaces, err := s.workspaceManager.ListWorkspaces()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result := make([]map[string]any, 0, len(workspaces))
+	for i := range workspaces {
+		result = append(result, workspaceToMap(&workspaces[i]))
+	}
+
+	return marshalResult(result)
+}
+
+func (s *QuantMCPServer) handleCreateWorkspace(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	name, err := requiredString(request, "name")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	workspace, err := s.workspaceManager.CreateWorkspace(entity.Workspace{Name: name})
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(workspaceToMap(workspace))
+}
+
+func (s *QuantMCPServer) handleDeleteWorkspace(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.workspaceManager.DeleteWorkspace(id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Workspace %s deleted successfully", id)), nil
+}
+
+func (s *QuantMCPServer) handleMoveJobToWorkspace(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	jobID, err := requiredString(request, "jobId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	workspaceID, err := requiredString(request, "workspaceId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	job, err := s.jobManager.GetJob(jobID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	job.WorkspaceID = workspaceID
+
+	// Preserve existing triggers
+	existingSuccess, existingFailure, _, _ := s.jobManager.GetTriggersForJob(jobID)
+	onSuccess := make([]string, len(existingSuccess))
+	for i, t := range existingSuccess {
+		onSuccess[i] = t.TargetJobID
+	}
+	onFailure := make([]string, len(existingFailure))
+	for i, t := range existingFailure {
+		onFailure[i] = t.TargetJobID
+	}
+
+	updated, err := s.jobManager.UpdateJob(*job, onSuccess, onFailure)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(jobToMap(updated))
+}
+
+// ---------------------------------------------------------------------------
+// Repo handlers
+// ---------------------------------------------------------------------------
+
+func (s *QuantMCPServer) handleListRepos(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	workspaceID, err := requiredString(request, "workspaceId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	repos, err := s.repoManager.ListReposByWorkspace(workspaceID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result := make([]map[string]any, 0, len(repos))
+	for i := range repos {
+		result = append(result, repoToMap(&repos[i]))
+	}
+
+	return marshalResult(result)
+}
+
+// ---------------------------------------------------------------------------
+// Job Group handlers
+// ---------------------------------------------------------------------------
+
+func (s *QuantMCPServer) handleListJobGroups(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	workspaceID, err := requiredString(request, "workspaceId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	groups, err := s.jobGroupManager.ListJobGroupsByWorkspace(workspaceID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	result := make([]map[string]any, 0, len(groups))
+	for i := range groups {
+		result = append(result, jobGroupToMap(&groups[i]))
+	}
+	return marshalResult(result)
+}
+
+func (s *QuantMCPServer) handleCreateJobGroup(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	name, err := requiredString(request, "name")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	workspaceID, err := requiredString(request, "workspaceId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	jobIDs := stringSliceArg(request.GetArguments(), "jobIds")
+
+	group := entity.JobGroup{
+		Name:        name,
+		WorkspaceID: workspaceID,
+		JobIDs:      jobIDs,
+	}
+	created, err := s.jobGroupManager.CreateJobGroup(group)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return marshalResult(jobGroupToMap(created))
+}
+
+func (s *QuantMCPServer) handleUpdateJobGroup(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	existing, err := s.jobGroupManager.GetJobGroup(id)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if existing == nil {
+		return mcp.NewToolResultError("job group not found: " + id), nil
+	}
+
+	name := stringArg(request.GetArguments(), "name")
+	if name != "" {
+		existing.Name = name
+	}
+	jobIDs := stringSliceArg(request.GetArguments(), "jobIds")
+	if jobIDs != nil {
+		existing.JobIDs = jobIDs
+	}
+
+	updated, err := s.jobGroupManager.UpdateJobGroup(*existing)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return marshalResult(jobGroupToMap(updated))
+}
+
+func (s *QuantMCPServer) handleDeleteJobGroup(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if err := s.jobGroupManager.DeleteJobGroup(id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText("deleted"), nil
+}
+
+func (s *QuantMCPServer) handleAddJobsToGroup(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	groupID, err := requiredString(request, "groupId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	newJobIDs := stringSliceArg(request.GetArguments(), "jobIds")
+	if len(newJobIDs) == 0 {
+		return mcp.NewToolResultError("jobIds is required"), nil
+	}
+
+	existing, err := s.jobGroupManager.GetJobGroup(groupID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if existing == nil {
+		return mcp.NewToolResultError("job group not found: " + groupID), nil
+	}
+
+	// Merge — add new IDs not already present
+	idSet := make(map[string]bool, len(existing.JobIDs))
+	for _, id := range existing.JobIDs {
+		idSet[id] = true
+	}
+	for _, id := range newJobIDs {
+		if !idSet[id] {
+			existing.JobIDs = append(existing.JobIDs, id)
+		}
+	}
+
+	updated, err := s.jobGroupManager.UpdateJobGroup(*existing)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return marshalResult(jobGroupToMap(updated))
+}
+
+func (s *QuantMCPServer) handleRemoveJobsFromGroup(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	groupID, err := requiredString(request, "groupId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	removeIDs := stringSliceArg(request.GetArguments(), "jobIds")
+	if len(removeIDs) == 0 {
+		return mcp.NewToolResultError("jobIds is required"), nil
+	}
+
+	existing, err := s.jobGroupManager.GetJobGroup(groupID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if existing == nil {
+		return mcp.NewToolResultError("job group not found: " + groupID), nil
+	}
+
+	removeSet := make(map[string]bool, len(removeIDs))
+	for _, id := range removeIDs {
+		removeSet[id] = true
+	}
+	filtered := make([]string, 0, len(existing.JobIDs))
+	for _, id := range existing.JobIDs {
+		if !removeSet[id] {
+			filtered = append(filtered, id)
+		}
+	}
+	existing.JobIDs = filtered
+
+	updated, err := s.jobGroupManager.UpdateJobGroup(*existing)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return marshalResult(jobGroupToMap(updated))
+}
+
+func (s *QuantMCPServer) handleMoveGroupToWorkspace(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	groupID, err := requiredString(request, "groupId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	workspaceID, err := requiredString(request, "workspaceId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Fetch the group
+	existing, err := s.jobGroupManager.GetJobGroup(groupID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if existing == nil {
+		return mcp.NewToolResultError("job group not found: " + groupID), nil
+	}
+
+	// Move the group itself
+	existing.WorkspaceID = workspaceID
+	if _, err := s.jobGroupManager.UpdateJobGroup(*existing); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Move all member jobs to the same workspace
+	for _, jobID := range existing.JobIDs {
+		job, jobErr := s.jobManager.GetJob(jobID)
+		if jobErr != nil || job == nil {
+			continue
+		}
+		job.WorkspaceID = workspaceID
+		onSuccess, onFailure, _, _ := s.jobManager.GetTriggersForJob(jobID)
+		successIDs := make([]string, len(onSuccess))
+		for i, t := range onSuccess {
+			successIDs[i] = t.TargetJobID
+		}
+		failureIDs := make([]string, len(onFailure))
+		for i, t := range onFailure {
+			failureIDs[i] = t.TargetJobID
+		}
+		_, _ = s.jobManager.UpdateJob(*job, successIDs, failureIDs)
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("moved group '%s' and %d jobs to workspace %s", existing.Name, len(existing.JobIDs), workspaceID)), nil
+}
+
+func jobGroupToMap(g *entity.JobGroup) map[string]any {
+	jobIDs := g.JobIDs
+	if jobIDs == nil {
+		jobIDs = []string{}
+	}
+	return map[string]any{
+		"id":          g.ID,
+		"name":        g.Name,
+		"jobIds":      jobIDs,
+		"workspaceId": g.WorkspaceID,
+		"createdAt":   g.CreatedAt.Format(time.RFC3339),
+		"updatedAt":   g.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -1234,31 +1968,31 @@ func jobToMap(job *entity.Job) map[string]any {
 		return nil
 	}
 	m := map[string]any{
-		"id":               job.ID,
-		"name":             job.Name,
-		"description":      job.Description,
-		"type":             job.Type,
-		"workingDirectory": job.WorkingDirectory,
-		"scheduleEnabled":  job.ScheduleEnabled,
-		"scheduleType":     job.ScheduleType,
-		"cronExpression":   job.CronExpression,
-		"scheduleInterval": job.ScheduleInterval,
-		"timeoutSeconds":   job.TimeoutSeconds,
-		"prompt":           job.Prompt,
-		"allowBypass":      job.AllowBypass,
-		"autonomousMode":   job.AutonomousMode,
-		"maxRetries":       job.MaxRetries,
-		"model":            job.Model,
-		"claudeCommand":        job.ClaudeCommand,
-		"agentId":              job.AgentID,
-		"overrideRepoCommand":  job.OverrideRepoCommand,
-		"successPrompt":        job.SuccessPrompt,
-		"failurePrompt":    job.FailurePrompt,
-		"metadataPrompt":   job.MetadataPrompt,
-		"interpreter":      job.Interpreter,
-		"scriptContent":    job.ScriptContent,
-		"createdAt":        job.CreatedAt,
-		"updatedAt":        job.UpdatedAt,
+		"id":                  job.ID,
+		"name":                job.Name,
+		"description":         job.Description,
+		"type":                job.Type,
+		"workingDirectory":    job.WorkingDirectory,
+		"scheduleEnabled":     job.ScheduleEnabled,
+		"scheduleType":        job.ScheduleType,
+		"cronExpression":      job.CronExpression,
+		"scheduleInterval":    job.ScheduleInterval,
+		"timeoutSeconds":      job.TimeoutSeconds,
+		"prompt":              job.Prompt,
+		"allowBypass":         job.AllowBypass,
+		"autonomousMode":      job.AutonomousMode,
+		"maxRetries":          job.MaxRetries,
+		"model":               job.Model,
+		"claudeCommand":       job.ClaudeCommand,
+		"agentId":             job.AgentID,
+		"overrideRepoCommand": job.OverrideRepoCommand,
+		"successPrompt":       job.SuccessPrompt,
+		"failurePrompt":       job.FailurePrompt,
+		"metadataPrompt":      job.MetadataPrompt,
+		"interpreter":         job.Interpreter,
+		"scriptContent":       job.ScriptContent,
+		"createdAt":           job.CreatedAt,
+		"updatedAt":           job.UpdatedAt,
 	}
 	if job.ScheduleStartTime != nil {
 		m["scheduleStartTime"] = *job.ScheduleStartTime
@@ -1372,6 +2106,63 @@ func agentToMap(agent *entity.Agent) map[string]any {
 		"createdAt":      agent.CreatedAt,
 		"updatedAt":      agent.UpdatedAt,
 	}
+}
+
+func sessionToMap(session *entity.Session) map[string]any {
+	if session == nil {
+		return nil
+	}
+	m := map[string]any{
+		"id":           session.ID,
+		"name":         session.Name,
+		"description":  session.Description,
+		"sessionType":  session.SessionType,
+		"status":       session.Status,
+		"directory":    session.Directory,
+		"worktreePath": session.WorktreePath,
+		"branchName":   session.BranchName,
+		"repoId":       session.RepoID,
+		"taskId":       session.TaskID,
+		"workspaceId":  session.WorkspaceID,
+		"model":        session.Model,
+		"createdAt":    session.CreatedAt,
+		"updatedAt":    session.UpdatedAt,
+		"lastActiveAt": session.LastActiveAt,
+	}
+	if session.ArchivedAt != nil {
+		m["archivedAt"] = *session.ArchivedAt
+	}
+	return m
+}
+
+func workspaceToMap(workspace *entity.Workspace) map[string]any {
+	if workspace == nil {
+		return nil
+	}
+	return map[string]any{
+		"id":        workspace.ID,
+		"name":      workspace.Name,
+		"createdAt": workspace.CreatedAt,
+		"updatedAt": workspace.UpdatedAt,
+	}
+}
+
+func repoToMap(repo *entity.Repo) map[string]any {
+	if repo == nil {
+		return nil
+	}
+	m := map[string]any{
+		"id":          repo.ID,
+		"name":        repo.Name,
+		"path":        repo.Path,
+		"workspaceId": repo.WorkspaceID,
+		"createdAt":   repo.CreatedAt,
+		"updatedAt":   repo.UpdatedAt,
+	}
+	if repo.ClosedAt != nil {
+		m["closedAt"] = *repo.ClosedAt
+	}
+	return m
 }
 
 func mapBoolArg(args map[string]any, key string) map[string]bool {
