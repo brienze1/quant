@@ -2844,6 +2844,32 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   </span>
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</span>
                   <span style={{ color: "#4B5563", fontSize: 9 }}>{groupJobs.length}</span>
+                  <span
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        await api.deleteJobGroup(group.id);
+                        onRefreshJobGroups();
+                      } catch (err) {
+                        console.error("failed to delete group:", err);
+                      }
+                    }}
+                    style={{
+                      color: "#4B5563",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      opacity: hoveredGroupId === group.id ? 1 : 0,
+                      transition: "opacity 0.15s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "#EF4444"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "#4B5563"; }}
+                    title="Delete group"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </span>
                 </div>
                 {isExpanded && groupJobs.map((job) => (
                   <div
