@@ -546,6 +546,20 @@ func (s *sessionManagerService) UpdateSessionTask(sessionID string, newTaskID st
 	return s.updateSession.Update(*session)
 }
 
+// UpdateSessionWorkspace moves a session to a different workspace.
+func (s *sessionManagerService) UpdateSessionWorkspace(id string, workspaceID string) error {
+	session, err := s.findSession.FindByID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", id)
+	}
+	session.WorkspaceID = workspaceID
+	session.UpdatedAt = time.Now()
+	return s.updateSession.Update(*session)
+}
+
 // RenameSession updates the name of a session.
 func (s *sessionManagerService) RenameSession(id string, newName string) error {
 	session, err := s.findSession.FindByID(id)

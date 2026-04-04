@@ -1777,17 +1777,11 @@ func (s *QuantMCPServer) handleMoveSessionToWorkspace(_ context.Context, request
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	session, err := s.sessionManager.GetSession(sessionID)
-	if err != nil {
+	if err := s.sessionManager.UpdateSessionWorkspace(sessionID, workspaceID); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	session.WorkspaceID = workspaceID
-	// UpdateSession is done via the update session use case — but we only have
-	// RenameSession and MoveSessionToTask on the manager. We need to use a lower-level approach.
-	// For now, rename to itself to trigger an update that includes the workspace change.
-	// Actually, let's just return an error — we need to add a proper method.
-	return mcp.NewToolResultError("move_session_to_workspace: not yet implemented — sessions are tied to repos which are workspace-scoped"), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Session %s moved to workspace %s", sessionID, workspaceID)), nil
 }
 
 func (s *QuantMCPServer) handleMoveAgentToWorkspace(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
