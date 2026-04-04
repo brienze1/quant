@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -20,27 +21,108 @@ import (
 	"quant/internal/integration/persistence"
 )
 
-// injectQuantMCP adds the Quant MCP server to ~/.mcp.json so Claude sessions
-// automatically have access to job management tools.
+// discoverClaudeConfigDirs finds all Claude config directories.
+// Looks for ~/.claude and ~/.claude-* directories that contain settings.local.json
+// (or could contain one — we create it if missing).
+func discoverClaudeConfigDirs() []string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	var dirs []string
+
+	// Always include the default
+	dirs = append(dirs, filepath.Join(homeDir, ".claude"))
+
+	// Scan for ~/.claude-* directories (e.g. ~/.claude-bl, ~/.claude-sec, ~/.claude-bh)
+	entries, err := os.ReadDir(homeDir)
+	if err != nil {
+		return dirs
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() && strings.HasPrefix(name, ".claude-") {
+			dirs = append(dirs, filepath.Join(homeDir, name))
+		}
+	}
+
+	return dirs
+}
+
+// enableQuantInSettingsLocal adds "quant" to enabledMcpjsonServers in a settings.local.json file.
+func enableQuantInSettingsLocal(settingsPath string) {
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		data = []byte("{}")
+	}
+	var settings map[string]interface{}
+	if json.Unmarshal(data, &settings) != nil {
+		settings = make(map[string]interface{})
+	}
+
+	enabled, _ := settings["enabledMcpjsonServers"].([]interface{})
+	for _, v := range enabled {
+		if v == "quant" {
+			return // already enabled
+		}
+	}
+	enabled = append(enabled, "quant")
+	settings["enabledMcpjsonServers"] = enabled
+
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(settingsPath, out, 0644)
+}
+
+// disableQuantInSettingsLocal removes "quant" from enabledMcpjsonServers in a settings.local.json file.
+func disableQuantInSettingsLocal(settingsPath string) {
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return
+	}
+	var settings map[string]interface{}
+	if json.Unmarshal(data, &settings) != nil {
+		return
+	}
+
+	enabled, ok := settings["enabledMcpjsonServers"].([]interface{})
+	if !ok {
+		return
+	}
+	var filtered []interface{}
+	for _, v := range enabled {
+		if v != "quant" {
+			filtered = append(filtered, v)
+		}
+	}
+	settings["enabledMcpjsonServers"] = filtered
+
+	out, _ := json.MarshalIndent(settings, "", "  ")
+	_ = os.WriteFile(settingsPath, out, 0644)
+}
+
+// injectQuantMCP registers the Quant MCP server so all Claude accounts can discover it.
+// 1. Adds the "quant" server entry to ~/.mcp.json (the global server registry).
+// 2. Enables it in every detected Claude config dir's settings.local.json.
 func injectQuantMCP() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return
 	}
-	mcpPath := filepath.Join(homeDir, ".mcp.json")
 
-	// Read existing config
+	// 1. Add quant to ~/.mcp.json (only the quant entry — don't touch anything else)
+	mcpPath := filepath.Join(homeDir, ".mcp.json")
 	data, err := os.ReadFile(mcpPath)
 	if err != nil {
 		data = []byte("{}")
 	}
-
 	var config map[string]interface{}
-	if err := json.Unmarshal(data, &config); err != nil {
-		return
+	if json.Unmarshal(data, &config) != nil {
+		config = make(map[string]interface{})
 	}
-
-	// Add quant to mcpServers
 	mcpServers, ok := config["mcpServers"].(map[string]interface{})
 	if !ok {
 		mcpServers = make(map[string]interface{})
@@ -50,92 +132,50 @@ func injectQuantMCP() {
 		"url":  "http://localhost:52945/mcp",
 	}
 	config["mcpServers"] = mcpServers
-
 	out, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return
 	}
 	_ = os.WriteFile(mcpPath, out, 0644)
 
-	// Also enable in ~/.claude/settings.local.json
-	localSettingsPath := filepath.Join(homeDir, ".claude", "settings.local.json")
-	localData, err := os.ReadFile(localSettingsPath)
-	if err != nil {
-		localData = []byte("{}")
-	}
-	var localSettings map[string]interface{}
-	if err := json.Unmarshal(localData, &localSettings); err != nil {
-		return
-	}
-	enabled, _ := localSettings["enabledMcpjsonServers"].([]interface{})
-	found := false
-	for _, v := range enabled {
-		if v == "quant" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		enabled = append(enabled, "quant")
-		localSettings["enabledMcpjsonServers"] = enabled
-		localOut, err := json.MarshalIndent(localSettings, "", "  ")
-		if err != nil {
-			return
-		}
-		_ = os.WriteFile(localSettingsPath, localOut, 0644)
+	// 2. Enable quant in every Claude config dir's settings.local.json
+	for _, dir := range discoverClaudeConfigDirs() {
+		enableQuantInSettingsLocal(filepath.Join(dir, "settings.local.json"))
 	}
 }
 
-// removeQuantMCP removes the Quant MCP server from ~/.mcp.json on shutdown.
+// removeQuantMCP removes the Quant MCP server on shutdown.
+// 1. Removes the "quant" entry from ~/.mcp.json.
+// 2. Removes it from every detected Claude config dir's settings.local.json.
 func removeQuantMCP() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return
 	}
-	mcpPath := filepath.Join(homeDir, ".mcp.json")
 
+	// 1. Remove quant from ~/.mcp.json
+	mcpPath := filepath.Join(homeDir, ".mcp.json")
 	data, err := os.ReadFile(mcpPath)
 	if err != nil {
 		return
 	}
-
 	var config map[string]interface{}
-	if err := json.Unmarshal(data, &config); err != nil {
+	if json.Unmarshal(data, &config) != nil {
 		return
 	}
-
-	mcpServers, ok := config["mcpServers"].(map[string]interface{})
-	if ok {
+	if mcpServers, ok := config["mcpServers"].(map[string]interface{}); ok {
 		delete(mcpServers, "quant")
 		config["mcpServers"] = mcpServers
 	}
-
 	out, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return
 	}
 	_ = os.WriteFile(mcpPath, out, 0644)
 
-	// Also remove from enabledMcpjsonServers in settings.local.json
-	localSettingsPath := filepath.Join(homeDir, ".claude", "settings.local.json")
-	localData, localErr := os.ReadFile(localSettingsPath)
-	if localErr != nil {
-		return
-	}
-	var localSettings map[string]interface{}
-	if json.Unmarshal(localData, &localSettings) != nil {
-		return
-	}
-	if enabled, ok := localSettings["enabledMcpjsonServers"].([]interface{}); ok {
-		var filtered []interface{}
-		for _, v := range enabled {
-			if v != "quant" {
-				filtered = append(filtered, v)
-			}
-		}
-		localSettings["enabledMcpjsonServers"] = filtered
-		localOut, _ := json.MarshalIndent(localSettings, "", "  ")
-		_ = os.WriteFile(localSettingsPath, localOut, 0644)
+	// 2. Remove from every Claude config dir's settings.local.json
+	for _, dir := range discoverClaudeConfigDirs() {
+		disableQuantInSettingsLocal(filepath.Join(dir, "settings.local.json"))
 	}
 }
 
