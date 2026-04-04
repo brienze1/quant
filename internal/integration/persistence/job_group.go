@@ -124,8 +124,8 @@ func (p *jobGroupPersistence) UpdateJobGroup(group entity.JobGroup) error {
 	row := pdto.JobGroupRowFromEntity(group)
 
 	result, err := p.db.Exec(
-		`UPDATE job_groups SET name = ?, updated_at = ? WHERE id = ?`,
-		row.Name, row.UpdatedAt, row.ID,
+		`UPDATE job_groups SET name = ?, workspace_id = ?, updated_at = ? WHERE id = ?`,
+		row.Name, row.WorkspaceID, row.UpdatedAt, row.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update job group: %w", err)

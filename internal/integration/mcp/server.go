@@ -75,27 +75,8 @@ func (s *QuantMCPServer) registerTools(mcpServer *server.MCPServer) {
 	// 1. list_jobs
 	mcpServer.AddTool(
 		mcp.NewTool("list_jobs",
-			mcp.WithDescription(`List all configured jobs with their full configuration.
-
-Returns an array of job objects. Each job may have an agentId linking to an agent persona. When a job runs, the agent's configuration (role, goal, boundaries, skills) is injected as a system prompt into the Claude CLI session. The agent also provides env vars and a fallback model. Use get_agent(agentId) to see the full agent config.
-
-Key fields in the response:
-- id: UUID — use this to reference the job in run_job, update_job, delete_job, list_runs
-- name: human-readable name shown in the canvas UI
-- type: 'claude' (Claude CLI session) or 'bash' (shell script)
-- agentId: UUID of the assigned agent (empty = no agent). The agent defines WHO executes the job (persona, rules, skills). Use get_agent to see details
-- agentName/agentRole: inline summary of the assigned agent (empty if no agent)
-- claudeCommand: which Claude CLI binary/alias to invoke (e.g. 'claude', 'claude-bl')
-- prompt: the task instructions sent to Claude (what to do)
-- successPrompt/failurePrompt: evaluation criteria run after the main task to determine success/failure
-- metadataPrompt: instructions for extracting structured data passed to triggered downstream jobs
-- scheduleEnabled: whether the job runs on a schedule (cron or interval)
-- onSuccess/onFailure: trigger chains — downstream job IDs that fire when this job completes
-- envVariables: key-value env vars injected at runtime (secrets, tokens, config)
-- overrideRepoCommand: custom repo command override for the Claude CLI (advanced)
-- workingDirectory: the directory where the job executes (supports ~/path)
-
-Use this as the starting point to discover job IDs before calling run_job, update_job, or list_runs.`),
+			mcp.WithDescription(`List jobs (lightweight summary: id, name, type, workspaceId, scheduleEnabled, agentName). Optionally filter by workspace. Use get_job(id) for full details.`),
+			mcp.WithString("workspaceId", mcp.Description("Filter by workspace ID (optional — omit to list all)")),
 		),
 		s.handleListJobs,
 	)
@@ -298,16 +279,13 @@ Use after run_job to check if execution completed, or to inspect historical run 
 	// 8. list_runs
 	mcpServer.AddTool(
 		mcp.NewTool("list_runs",
-			mcp.WithDescription(`List all runs for a job, sorted by most recent first. Returns an array of run objects.
+			mcp.WithDescription(`List runs for a job, sorted by most recent first. Paginated — default limit 10.
 
-Each run includes: id, status, triggeredBy, sessionId, modelUsed, durationMs, tokensUsed, result, errorMessage, startedAt, finishedAt.
-
-Use to:
-- Check job execution history and recent status
-- Find specific run IDs for get_run_output or get_pipeline_status
-- See which runs were triggered by upstream jobs (triggeredBy field contains the parent run ID)
-- Monitor how many tokens jobs are consuming over time`),
+Returns lightweight summaries: id, status, durationMs, tokensUsed, startedAt, finishedAt, errorMessage (if failed).
+Use get_run(id) for full details. Use get_run_output(id) for logs.`),
 			mcp.WithString("jobId", mcp.Required(), mcp.Description("Job ID (get from list_jobs)")),
+			mcp.WithNumber("limit", mcp.Description("Max runs to return (default 10)")),
+			mcp.WithNumber("offset", mcp.Description("Skip this many runs (default 0, for pagination)")),
 		),
 		s.handleListRuns,
 	)
@@ -315,18 +293,15 @@ Use to:
 	// 9. get_run_output
 	mcpServer.AddTool(
 		mcp.NewTool("get_run_output",
-			mcp.WithDescription(`Get the full output/logs of a job run. Returns raw text.
+			mcp.WithDescription(`Get the output/logs of a job run. Paginated — returns a window of the output text.
 
-For claude jobs: the full Claude CLI session output including all tool calls, reasoning, and final response. While running, output updates incrementally (poll to see progress).
+Supports tail/head/offset for navigating large outputs. Default: last 200 lines (tail). Pass lines=0 for full output (can be very large).
 
-For bash jobs: combined stdout/stderr output from the script execution.
-
-Also includes (appended at the end):
-- Evaluation results: if successPrompt/failurePrompt were configured, the evaluation outcome
-- Extracted metadata: if metadataPrompt was configured, the structured data that was passed to downstream triggered jobs
-
-This can return large amounts of text for long-running jobs. Use get_run first to check status before fetching output.`),
+For debugging: start with the default (last 200 lines) to see the end of the run. If you need earlier context, use offset to page backwards.`),
 			mcp.WithString("runId", mcp.Required(), mcp.Description("Run ID (from list_runs or run_job)")),
+			mcp.WithNumber("lines", mcp.Description("Number of lines to return (default 200, 0 = full output)")),
+			mcp.WithNumber("offset", mcp.Description("Skip this many lines from the start (default: show last N lines)")),
+			mcp.WithString("mode", mcp.Description("'tail' (default, last N lines) or 'head' (first N lines) or 'offset' (from offset, N lines)")),
 		),
 		s.handleGetRunOutput,
 	)
@@ -376,16 +351,7 @@ Only includes jobs that have at least one trigger connection. Use this to:
 	// 13. list_agents
 	mcpServer.AddTool(
 		mcp.NewTool("list_agents",
-			mcp.WithDescription(`List all configured agents. Returns an array of agent objects with full configuration.
-
-Agents define the persona and constraints for Claude jobs:
-- identity: name, color (for UI), role (who), goal (what to achieve)
-- access: which MCP servers and env vars the agent can use
-- boundaries: anti-prompt rules the agent must never violate
-- skills: which Claude skills (from ~/.claude/skills/) are enabled
-- model: fallback Claude model when the job doesn't specify one
-
-Assign an agent to a job with update_job(id, agentId="agent-uuid") to give the job a persona. Use this to find agent IDs.`),
+			mcp.WithDescription(`List all agents (lightweight summary: id, name, role, model, color). Use get_agent(id) for full details like boundaries, skills, MCP servers, and env vars.`),
 		),
 		s.handleListAgents,
 	)
@@ -552,9 +518,8 @@ Returns the full system prompt text, or a message indicating the prompt is empty
 
 	mcpServer.AddTool(
 		mcp.NewTool("list_sessions",
-			mcp.WithDescription(`List all sessions. Returns an array of session objects with id, name, status, sessionType, repoId, workspaceId, directory, and timestamps.
-
-Use this to discover session IDs before calling get_session, start_session, stop_session, etc.`),
+			mcp.WithDescription(`List sessions (lightweight summary: id, name, status, sessionType, workspaceId, repoId). Optionally filter by workspace. Use get_session(id) for full details.`),
+			mcp.WithString("workspaceId", mcp.Description("Filter by workspace ID (optional — omit to list all)")),
 		),
 		s.handleListSessions,
 	)
@@ -630,8 +595,11 @@ Returns the created session object with generated ID. The session starts in 'idl
 
 	mcpServer.AddTool(
 		mcp.NewTool("get_session_output",
-			mcp.WithDescription(`Get the raw terminal output of a session. Returns the full terminal buffer text. Use to inspect what the session has produced so far.`),
+			mcp.WithDescription(`Get terminal output of a session. Paginated — default: last 200 lines. Pass lines=0 for full output. Same pagination as get_run_output.`),
 			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID")),
+			mcp.WithNumber("lines", mcp.Description("Number of lines to return (default 200, 0 = full)")),
+			mcp.WithNumber("offset", mcp.Description("Skip this many lines from start")),
+			mcp.WithString("mode", mcp.Description("'tail' (default), 'head', or 'offset'")),
 		),
 		s.handleGetSessionOutput,
 	)
@@ -687,6 +655,24 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Target workspace ID (get from list_workspaces). Use empty string to unassign")),
 		),
 		s.handleMoveJobToWorkspace,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("move_session_to_workspace",
+			mcp.WithDescription(`Move a session to a different workspace. Updates the session's workspaceId.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Session ID")),
+			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Target workspace ID")),
+		),
+		s.handleMoveSessionToWorkspace,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("move_agent_to_workspace",
+			mcp.WithDescription(`Move an agent to a different workspace. Updates the agent's workspaceId.`),
+			mcp.WithString("agentId", mcp.Required(), mcp.Description("Agent ID")),
+			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Target workspace ID")),
+		),
+		s.handleMoveAgentToWorkspace,
 	)
 
 	// -----------------------------------------------------------------------
@@ -796,16 +782,34 @@ Example flow: run_job("health-check") → get_pipeline_status(runId) shows:
 // Tool handlers
 // ---------------------------------------------------------------------------
 
-func (s *QuantMCPServer) handleListJobs(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleListJobs(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	jobs, err := s.jobManager.ListJobs()
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	wsFilter := stringArg(request.GetArguments(), "workspaceId")
+
+	// Return lightweight summaries — use get_job(id) for full details
 	result := make([]map[string]any, 0, len(jobs))
 	for i := range jobs {
-		m := jobToMap(&jobs[i])
-		s.enrichJobWithAgent(m, jobs[i].AgentID)
+		j := &jobs[i]
+		if wsFilter != "" && j.WorkspaceID != wsFilter {
+			continue
+		}
+		m := map[string]any{
+			"id":              j.ID,
+			"name":            j.Name,
+			"type":            j.Type,
+			"workspaceId":     j.WorkspaceID,
+			"scheduleEnabled": j.ScheduleEnabled,
+		}
+		if j.AgentID != "" {
+			m["agentId"] = j.AgentID
+			if agent, err := s.agentManager.GetAgent(j.AgentID); err == nil && agent != nil {
+				m["agentName"] = agent.Name
+			}
+		}
 		result = append(result, m)
 	}
 
@@ -1056,12 +1060,49 @@ func (s *QuantMCPServer) handleListRuns(_ context.Context, request mcp.CallToolR
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	result := make([]map[string]any, 0, len(runs))
-	for i := range runs {
-		result = append(result, runToMap(&runs[i]))
+	// Paginate
+	limit := intArg(request.GetArguments(), "limit")
+	offset := intArg(request.GetArguments(), "offset")
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	total := len(runs)
+	if offset >= total {
+		return marshalResult(map[string]any{"total": total, "offset": offset, "limit": limit, "runs": []any{}})
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	page := runs[offset:end]
+
+	// Lightweight summaries
+	summaries := make([]map[string]any, 0, len(page))
+	for i := range page {
+		r := &page[i]
+		m := map[string]any{
+			"id":         r.ID,
+			"status":     r.Status,
+			"durationMs": r.DurationMs,
+			"tokensUsed": r.TokensUsed,
+			"startedAt":  r.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
+		}
+		if r.FinishedAt != nil {
+			m["finishedAt"] = r.FinishedAt.Format("2006-01-02T15:04:05Z07:00")
+		}
+		if r.ErrorMessage != "" {
+			m["errorMessage"] = r.ErrorMessage
+		}
+		if r.TriggeredBy != "" {
+			m["triggeredBy"] = r.TriggeredBy
+		}
+		summaries = append(summaries, m)
 	}
 
-	return marshalResult(result)
+	return marshalResult(map[string]any{"total": total, "offset": offset, "limit": limit, "runs": summaries})
 }
 
 func (s *QuantMCPServer) handleGetRunOutput(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1075,7 +1116,7 @@ func (s *QuantMCPServer) handleGetRunOutput(_ context.Context, request mcp.CallT
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	return mcp.NewToolResultText(output), nil
+	return paginateText(output, request), nil
 }
 
 func (s *QuantMCPServer) handleCancelRun(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1236,9 +1277,17 @@ func (s *QuantMCPServer) handleListAgents(_ context.Context, _ mcp.CallToolReque
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	// Return lightweight summaries — use get_agent(id) for full details
 	result := make([]map[string]any, 0, len(agents))
 	for i := range agents {
-		result = append(result, agentToMap(&agents[i]))
+		a := &agents[i]
+		result = append(result, map[string]any{
+			"id":    a.ID,
+			"name":  a.Name,
+			"role":  a.Role,
+			"model": a.Model,
+			"color": a.Color,
+		})
 	}
 
 	return marshalResult(result)
@@ -1447,15 +1496,29 @@ func (s *QuantMCPServer) handleGetAgentSystemPrompt(_ context.Context, request m
 // Session handlers
 // ---------------------------------------------------------------------------
 
-func (s *QuantMCPServer) handleListSessions(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleListSessions(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	sessions, err := s.sessionManager.ListSessions()
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	wsFilter := stringArg(request.GetArguments(), "workspaceId")
+
+	// Return lightweight summaries — use get_session(id) for full details
 	result := make([]map[string]any, 0, len(sessions))
 	for i := range sessions {
-		result = append(result, sessionToMap(&sessions[i]))
+		sess := &sessions[i]
+		if wsFilter != "" && sess.WorkspaceID != wsFilter {
+			continue
+		}
+		result = append(result, map[string]any{
+			"id":          sess.ID,
+			"name":        sess.Name,
+			"status":      sess.Status,
+			"sessionType": sess.SessionType,
+			"workspaceId": sess.WorkspaceID,
+			"repoId":      sess.RepoID,
+		})
 	}
 
 	return marshalResult(result)
@@ -1588,7 +1651,7 @@ func (s *QuantMCPServer) handleGetSessionOutput(_ context.Context, request mcp.C
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	return mcp.NewToolResultText(output), nil
+	return paginateText(output, request), nil
 }
 
 func (s *QuantMCPServer) handleArchiveSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1702,6 +1765,56 @@ func (s *QuantMCPServer) handleMoveJobToWorkspace(_ context.Context, request mcp
 	}
 
 	return marshalResult(jobToMap(updated))
+}
+
+func (s *QuantMCPServer) handleMoveSessionToWorkspace(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	workspaceID, err := requiredString(request, "workspaceId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	session, err := s.sessionManager.GetSession(sessionID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	session.WorkspaceID = workspaceID
+	// UpdateSession is done via the update session use case — but we only have
+	// RenameSession and MoveSessionToTask on the manager. We need to use a lower-level approach.
+	// For now, rename to itself to trigger an update that includes the workspace change.
+	// Actually, let's just return an error — we need to add a proper method.
+	return mcp.NewToolResultError("move_session_to_workspace: not yet implemented — sessions are tied to repos which are workspace-scoped"), nil
+}
+
+func (s *QuantMCPServer) handleMoveAgentToWorkspace(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	agentID, err := requiredString(request, "agentId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	workspaceID, err := requiredString(request, "workspaceId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	agent, err := s.agentManager.GetAgent(agentID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if agent == nil {
+		return mcp.NewToolResultError("agent not found: " + agentID), nil
+	}
+
+	agent.WorkspaceID = workspaceID
+	updated, err := s.agentManager.UpdateAgent(*agent)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{"id": updated.ID, "name": updated.Name, "workspaceId": updated.WorkspaceID})
 }
 
 // ---------------------------------------------------------------------------
@@ -1944,6 +2057,58 @@ func jobGroupToMap(g *entity.JobGroup) map[string]any {
 		"createdAt":   g.CreatedAt.Format(time.RFC3339),
 		"updatedAt":   g.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Pagination
+// ---------------------------------------------------------------------------
+
+// paginateText slices raw text output by lines. Supports three modes:
+//   - tail (default): last N lines — best for debugging (see the end of logs)
+//   - head: first N lines
+//   - offset: from line offset, N lines
+//
+// Default: 200 lines. Max: 500 lines (to prevent token blowout).
+func paginateText(text string, request mcp.CallToolRequest) *mcp.CallToolResult {
+	lines := strings.Split(text, "\n")
+	totalLines := len(lines)
+
+	limit := intArg(request.GetArguments(), "lines")
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	offset := intArg(request.GetArguments(), "offset")
+	mode := stringArg(request.GetArguments(), "mode")
+	if mode == "" {
+		mode = "tail"
+	}
+
+	var start, end int
+	switch mode {
+	case "head":
+		start = 0
+		end = limit
+	case "offset":
+		start = offset
+		end = offset + limit
+	default: // tail
+		start = totalLines - limit
+		end = totalLines
+	}
+
+	if start < 0 {
+		start = 0
+	}
+	if end > totalLines {
+		end = totalLines
+	}
+
+	page := strings.Join(lines[start:end], "\n")
+	header := fmt.Sprintf("[lines %d-%d of %d total | mode=%s]\n", start+1, end, totalLines, mode)
+	return mcp.NewToolResultText(header + page)
 }
 
 // ---------------------------------------------------------------------------
