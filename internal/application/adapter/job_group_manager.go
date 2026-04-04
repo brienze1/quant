@@ -8,5 +8,6 @@ type JobGroupManager interface {
 	CreateJobGroup(group entity.JobGroup) (*entity.JobGroup, error)
 	UpdateJobGroup(group entity.JobGroup) (*entity.JobGroup, error)
 	DeleteJobGroup(id string) error
+	GetJobGroup(id string) (*entity.JobGroup, error)
 	ListJobGroupsByWorkspace(workspaceID string) ([]entity.JobGroup, error)
 }

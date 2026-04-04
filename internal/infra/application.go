@@ -177,7 +177,7 @@ func Run(assets embed.FS) error {
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
-	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager())
+	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager())
 	go func() {
 		if err := mcpServer.Start(); err != nil {
 			fmt.Printf("MCP server error: %v\n", err)

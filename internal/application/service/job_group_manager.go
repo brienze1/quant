@@ -74,6 +74,11 @@ func (s *jobGroupManagerService) DeleteJobGroup(id string) error {
 	return s.deleteJobGroup.DeleteJobGroup(id)
 }
 
+// GetJobGroup retrieves a job group by ID.
+func (s *jobGroupManagerService) GetJobGroup(id string) (*entity.JobGroup, error) {
+	return s.findJobGroup.FindJobGroupByID(id)
+}
+
 // ListJobGroupsByWorkspace retrieves all job groups for a workspace.
 func (s *jobGroupManagerService) ListJobGroupsByWorkspace(workspaceID string) ([]entity.JobGroup, error) {
 	return s.findJobGroup.FindJobGroupsByWorkspace(workspaceID)
