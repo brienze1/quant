@@ -310,17 +310,23 @@ function autoLayout(jobs: Job[]): NodePositions {
   return positions;
 }
 
-function loadPositions(): NodePositions {
+function positionsKey(workspaceId: string) {
+  return `${CANVAS_POSITIONS_KEY}-${workspaceId}`;
+}
+
+function loadPositions(workspaceId: string): NodePositions {
   try {
-    const raw = localStorage.getItem(CANVAS_POSITIONS_KEY);
+    // Try workspace-specific first, fall back to legacy global key
+    const raw = localStorage.getItem(positionsKey(workspaceId))
+      || localStorage.getItem(CANVAS_POSITIONS_KEY);
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
   return {};
 }
 
-function savePositions(positions: NodePositions) {
+function savePositions(positions: NodePositions, workspaceId: string) {
   try {
-    localStorage.setItem(CANVAS_POSITIONS_KEY, JSON.stringify(positions));
+    localStorage.setItem(positionsKey(workspaceId), JSON.stringify(positions));
   } catch { /* ignore */ }
 }
 
@@ -353,13 +359,15 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   // Groups sidebar state
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
+  const [sidebarDragJobId, setSidebarDragJobId] = useState<string | null>(null);
+  const [sidebarDropTarget, setSidebarDropTarget] = useState<string | null>(null);
 
   // Animation ref for animated pan/zoom
   const animFrameRef = useRef<number>(0);
 
   // Canvas state
   const [nodePositions, setNodePositions] = useState<NodePositions>(() => {
-    const saved = loadPositions();
+    const saved = loadPositions(activeWorkspaceId);
     return Object.keys(saved).length > 0 ? saved : {};
   });
   const [zoom, setZoom] = useState(1);
@@ -370,7 +378,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const [canvasModalTab, setCanvasModalTab] = useState<JobTab>("settings");
   const [connectingMode, setConnectingMode] = useState<{ type: "success" | "failure"; sourceId?: string } | null>(null);
   const [triggerDropdownOpen, setTriggerDropdownOpen] = useState(false);
-  const [groupsSidebarWidth, setGroupsSidebarWidth] = useState(200);
+  const [groupsSidebarWidth, setGroupsSidebarWidth] = useState(() => {
+    try { return parseInt(localStorage.getItem("quant-groups-sidebar-width") || "200", 10); } catch { return 200; }
+  });
   const [resizingSidebar, setResizingSidebar] = useState(false);
 
   // Sidebar resize drag
@@ -380,7 +390,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       const newWidth = Math.max(140, Math.min(400, e.clientX));
       setGroupsSidebarWidth(newWidth);
     };
-    const handleUp = () => setResizingSidebar(false);
+    const handleUp = () => {
+      setResizingSidebar(false);
+      try { localStorage.setItem("quant-groups-sidebar-width", String(groupsSidebarWidth)); } catch {}
+    };
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
     return () => {
@@ -546,14 +559,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     if (jobs.length === 0) return;
     initializedRef.current = true;
 
-    const saved = loadPositions();
+    const saved = loadPositions(activeWorkspaceId);
     const hasAllPositions = jobs.every((j) => saved[j.id]);
     if (hasAllPositions) {
       setNodePositions(saved);
     } else {
       const layout = autoLayout(jobs);
       setNodePositions(layout);
-      savePositions(layout);
+      savePositions(layout, activeWorkspaceId);
     }
   }, [jobs]);
 
@@ -956,7 +969,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         setIsDraggingNode(false);
         setDragging(null);
         setNodePositions((prev) => {
-          savePositions(prev);
+          savePositions(prev, activeWorkspaceId);
           return prev;
         });
       }
@@ -1048,7 +1061,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   function handleAutoLayout() {
     const layout = autoLayout(jobs);
     setNodePositions(layout);
-    savePositions(layout);
+    savePositions(layout, activeWorkspaceId);
   }
 
   function handleFitView() {
@@ -2830,12 +2843,39 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     cursor: "pointer",
                     color: hoveredGroupId === group.id ? "#FAFAFA" : "#9CA3AF",
                     fontSize: 11,
-                    transition: "color 0.15s",
+                    transition: "color 0.15s, background-color 0.15s",
+                    backgroundColor: sidebarDropTarget === group.id ? "#1a2a1a" : "transparent",
+                    borderRadius: 4,
                   }}
                   onMouseEnter={() => setHoveredGroupId(group.id)}
                   onMouseLeave={() => setHoveredGroupId(null)}
                   onClick={() => {
                     focusOnGroup(group);
+                  }}
+                  onDragOver={(e) => { e.preventDefault(); setSidebarDropTarget(group.id); }}
+                  onDragLeave={() => setSidebarDropTarget(null)}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    setSidebarDropTarget(null);
+                    if (!sidebarDragJobId) return;
+                    const jobId = sidebarDragJobId;
+                    setSidebarDragJobId(null);
+                    // Remove from any current group
+                    for (const g of jobGroups) {
+                      if (g.jobIds.includes(jobId) && g.id !== group.id) {
+                        const remaining = g.jobIds.filter((id) => id !== jobId);
+                        if (remaining.length === 0) {
+                          await api.deleteJobGroup(g.id);
+                        } else {
+                          await api.updateJobGroup({ id: g.id, name: g.name, jobIds: remaining });
+                        }
+                      }
+                    }
+                    // Add to target group if not already there
+                    if (!group.jobIds.includes(jobId)) {
+                      await api.updateJobGroup({ id: group.id, name: group.name, jobIds: [...group.jobIds, jobId] });
+                    }
+                    onRefreshJobGroups();
                   }}
                 >
                   <span
@@ -2883,15 +2923,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 {isExpanded && groupJobs.map((job) => (
                   <div
                     key={job.id}
+                    draggable
+                    onDragStart={() => setSidebarDragJobId(job.id)}
+                    onDragEnd={() => { setSidebarDragJobId(null); setSidebarDropTarget(null); }}
                     style={{
                       padding: "4px 14px 4px 30px",
-                      cursor: "pointer",
+                      cursor: "grab",
                       color: hoveredNodeId === job.id ? "#FAFAFA" : runningJobIds.has(job.id) ? "#FAFAFA" : "#6B7280",
                       fontSize: 10,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                       transition: "color 0.15s",
+                      opacity: sidebarDragJobId === job.id ? 0.4 : 1,
                     }}
                     onMouseEnter={() => setHoveredNodeId(job.id)}
                     onMouseLeave={() => setHoveredNodeId(null)}
@@ -2904,44 +2948,70 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             );
           })}
 
-          {/* Ungrouped section */}
-          {ungroupedJobs.length > 0 && (
-            <div>
-              <div style={{ height: 1, backgroundColor: "#2a2a2a", margin: "4px 14px" }} />
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "6px 14px",
-                  cursor: "pointer",
-                  color: "#6B7280",
-                  fontSize: 11,
-                }}
-                onClick={() => {
-                  setExpandedGroups((prev) => {
-                    const next = new Set(prev);
-                    if (next.has("__ungrouped__")) next.delete("__ungrouped__"); else next.add("__ungrouped__");
-                    return next;
-                  });
-                }}
+          {/* Ungrouped section — always visible */}
+          <div>
+            <div style={{ height: 1, backgroundColor: "#2a2a2a", margin: "4px 14px" }} />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 14px",
+                cursor: "pointer",
+                color: "#6B7280",
+                fontSize: 11,
+                transition: "background-color 0.15s",
+                backgroundColor: sidebarDropTarget === "__ungrouped__" ? "#1a2a1a" : "transparent",
+                borderRadius: 4,
+              }}
+              onClick={() => {
+                setExpandedGroups((prev) => {
+                  const next = new Set(prev);
+                  if (next.has("__ungrouped__")) next.delete("__ungrouped__"); else next.add("__ungrouped__");
+                  return next;
+                });
+              }}
+              onDragOver={(e) => { e.preventDefault(); setSidebarDropTarget("__ungrouped__"); }}
+              onDragLeave={() => setSidebarDropTarget(null)}
+              onDrop={async (e) => {
+                e.preventDefault();
+                setSidebarDropTarget(null);
+                if (!sidebarDragJobId) return;
+                const jobId = sidebarDragJobId;
+                setSidebarDragJobId(null);
+                // Remove from any current group
+                for (const g of jobGroups) {
+                  if (g.jobIds.includes(jobId)) {
+                    const remaining = g.jobIds.filter((id) => id !== jobId);
+                    if (remaining.length === 0) {
+                      await api.deleteJobGroup(g.id);
+                    } else {
+                      await api.updateJobGroup({ id: g.id, name: g.name, jobIds: remaining });
+                    }
+                  }
+                }
+                onRefreshJobGroups();
+              }}
+            >
+              <span
+                style={{ fontSize: 8, display: "inline-block", transform: expandedGroups.has("__ungrouped__") ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", width: 10, textAlign: "center" }}
               >
-                <span
-                  style={{ fontSize: 8, display: "inline-block", transform: expandedGroups.has("__ungrouped__") ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", width: 10, textAlign: "center" }}
-                >
-                  &#9654;
-                </span>
-                <span style={{ flex: 1 }}>ungrouped</span>
-                <span style={{ color: "#4B5563", fontSize: 9 }}>{ungroupedJobs.length}</span>
-              </div>
-              {expandedGroups.has("__ungrouped__") && ungroupedJobs.map((job) => (
-                <div
-                  key={job.id}
-                  style={{
-                    padding: "4px 14px 4px 30px",
-                    cursor: "pointer",
-                    color: hoveredNodeId === job.id ? "#FAFAFA" : runningJobIds.has(job.id) ? "#FAFAFA" : "#6B7280",
-                    fontSize: 10,
+                &#9654;
+              </span>
+              <span style={{ flex: 1 }}>ungrouped</span>
+              <span style={{ color: "#4B5563", fontSize: 9 }}>{ungroupedJobs.length}</span>
+            </div>
+            {expandedGroups.has("__ungrouped__") && ungroupedJobs.map((job) => (
+              <div
+                key={job.id}
+                draggable
+                onDragStart={() => setSidebarDragJobId(job.id)}
+                onDragEnd={() => { setSidebarDragJobId(null); setSidebarDropTarget(null); }}
+                style={{
+                  padding: "4px 14px 4px 30px",
+                  cursor: "grab",
+                  color: hoveredNodeId === job.id ? "#FAFAFA" : runningJobIds.has(job.id) ? "#FAFAFA" : "#6B7280",
+                  fontSize: 10,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -2955,7 +3025,6 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 </div>
               ))}
             </div>
-          )}
         </div>
       </div>
       {/* Resize handle */}
