@@ -108,9 +108,9 @@ export function NewSessionModal({
   }
 
   const inputStyle: React.CSSProperties = {
-    backgroundColor: "#0A0A0A",
-    border: "1px solid #2a2a2a",
-    color: "#FAFAFA",
+    backgroundColor: "var(--q-bg)",
+    border: "1px solid var(--q-border)",
+    color: "var(--q-fg)",
     fontFamily: "'JetBrains Mono', monospace",
   };
 
@@ -120,34 +120,34 @@ export function NewSessionModal({
 
   if (!configLoaded) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
-        <span style={{ color: "#6B7280", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>loading...</span>
+      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
+        <span style={{ color: "var(--q-fg-secondary)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>loading...</span>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-md max-h-[90vh] flex flex-col"
         style={{
-          backgroundColor: "#0A0A0A",
-          border: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
           fontFamily: "'JetBrains Mono', monospace",
         }}
       >
         {/* title */}
         <div className="px-8 pt-8 shrink-0">
-          <h2 className="text-sm font-bold lowercase" style={{ color: "#FAFAFA" }}>
-            <span style={{ color: "#10B981" }}>{">"}</span> new_session
+          <h2 className="text-sm font-bold lowercase" style={{ color: "var(--q-fg)" }}>
+            <span style={{ color: "var(--q-accent)" }}>{">"}</span> new_session
           </h2>
         </div>
 
         {/* tabs */}
         <div
           className="flex px-8 mt-4 shrink-0"
-          style={{ borderBottom: "1px solid #2a2a2a" }}
+          style={{ borderBottom: "1px solid var(--q-border)" }}
         >
           {tabs.map((tab) => (
             <button
@@ -156,9 +156,9 @@ export function NewSessionModal({
               onClick={() => setSessionType(tab.key)}
               className="px-4 py-2 text-[11px] lowercase transition-colors"
               style={{
-                color: sessionType === tab.key ? "#10B981" : "#6B7280",
+                color: sessionType === tab.key ? "var(--q-accent)" : "var(--q-fg-secondary)",
                 fontWeight: sessionType === tab.key ? 500 : "normal",
-                borderBottom: sessionType === tab.key ? "2px solid #10B981" : "2px solid transparent",
+                borderBottom: sessionType === tab.key ? "2px solid var(--q-accent)" : "2px solid transparent",
                 fontFamily: "'JetBrains Mono', monospace",
                 marginBottom: -1,
               }}
@@ -172,7 +172,7 @@ export function NewSessionModal({
         <div className="px-8 pt-4 pb-8 flex flex-col gap-4 overflow-y-auto">
           {/* repo dropdown */}
           <div>
-            <span className="text-[10px] lowercase block mb-1" style={{ color: "#6B7280" }}>repo</span>
+            <span className="text-[10px] lowercase block mb-1" style={{ color: "var(--q-fg-secondary)" }}>repo</span>
             <CustomSelect
               value={repoId}
               onChange={(v) => { setRepoId(v); setTaskId(""); }}
@@ -184,7 +184,7 @@ export function NewSessionModal({
 
           {/* task dropdown */}
           <div>
-            <span className="text-[10px] lowercase block mb-1" style={{ color: "#6B7280" }}>task</span>
+            <span className="text-[10px] lowercase block mb-1" style={{ color: "var(--q-fg-secondary)" }}>task</span>
             <CustomSelect
               value={taskId}
               onChange={setTaskId}
@@ -196,7 +196,7 @@ export function NewSessionModal({
 
           {/* name */}
           <label className="block">
-            <span className="text-[10px] lowercase" style={{ color: "#6B7280" }}>name</span>
+            <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>name</span>
             <input
               autoFocus
               value={name}
@@ -204,22 +204,22 @@ export function NewSessionModal({
               placeholder={sessionType === "claude" ? "implement fix" : "deploy setup"}
               className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
               style={inputStyle}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
             />
           </label>
 
           {/* description */}
           <label className="block">
-            <span className="text-[10px] lowercase" style={{ color: "#6B7280" }}>description</span>
+            <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>description</span>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="what is this session for?"
               className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
               style={inputStyle}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
             />
           </label>
 
@@ -230,10 +230,10 @@ export function NewSessionModal({
             className="flex items-center gap-2"
             style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
           >
-            <span style={{ color: "#10B981", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+            <span style={{ color: "var(--q-accent)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
               {advancedOpen ? "v" : ">"}
             </span>
-            <span style={{ color: "#10B981", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+            <span style={{ color: "var(--q-accent)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
               advanced options
             </span>
           </button>
@@ -241,40 +241,40 @@ export function NewSessionModal({
           {/* advanced options content */}
           {advancedOpen && (
             <>
-              <div style={{ height: 1, backgroundColor: "#2a2a2a" }} />
+              <div style={{ height: 1, backgroundColor: "var(--q-border)" }} />
 
               {/* session section */}
               <div className="flex flex-col gap-3">
-                <span style={{ color: "#10B981", fontSize: 10, fontWeight: 700 }}>session</span>
+                <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>session</span>
                 <AdvancedToggle label="use worktree" description="create isolated git worktree" checked={useWorktree} onChange={setUseWorktree} />
                 {sessionType === "claude" && (
                   <AdvancedToggle label="skip permissions" description="pass --dangerously-skip-permissions" checked={skipPermissions} onChange={setSkipPermissions} />
                 )}
               </div>
 
-              <div style={{ height: 1, backgroundColor: "#1F1F1F" }} />
+              <div style={{ height: 1, backgroundColor: "var(--q-bg-hover)" }} />
 
               {/* git section */}
               <div className="flex flex-col gap-3">
-                <span style={{ color: "#10B981", fontSize: 10, fontWeight: 700 }}>git</span>
+                <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>git</span>
                 <AdvancedToggle label="auto pull" description="pull before starting session" checked={autoPull} onChange={setAutoPull} />
                 <AdvancedInput label="pull branch" description="branch to pull from remote" value={pullBranch} onChange={setPullBranch} />
               </div>
 
-              <div style={{ height: 1, backgroundColor: "#1F1F1F" }} />
+              <div style={{ height: 1, backgroundColor: "var(--q-bg-hover)" }} />
 
               {/* branch section */}
               <div className="flex flex-col gap-3">
-                <span style={{ color: "#10B981", fontSize: 10, fontWeight: 700 }}>branch</span>
+                <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>branch</span>
                 <AdvancedInput label="branch pattern" description="template using {session} placeholder" value={branchNamePattern} onChange={(v) => { setBranchNamePattern(v); setBranchExistsWarning(false); }} />
               </div>
 
               {/* claude cli section — only for claude sessions */}
               {sessionType === "claude" && (
                 <>
-                  <div style={{ height: 1, backgroundColor: "#1F1F1F" }} />
+                  <div style={{ height: 1, backgroundColor: "var(--q-bg-hover)" }} />
                   <div className="flex flex-col gap-3">
-                    <span style={{ color: "#10B981", fontSize: 10, fontWeight: 700 }}>claude cli</span>
+                    <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>claude cli</span>
                     <AdvancedSelect label="model" description="override default model" value={model} options={MODEL_OPTIONS} onChange={setModel} />
                     <AdvancedInput label="extra cli args" description="additional flags for this session" value={extraCliArgs} onChange={setExtraCliArgs} placeholder="--verbose" />
                   </div>
@@ -288,14 +288,14 @@ export function NewSessionModal({
             <div
               className="flex flex-col gap-3 p-3"
               style={{
-                backgroundColor: "#1A1A0A",
-                border: "1px solid #92400E",
+                backgroundColor: "var(--q-warning-bg)",
+                border: "1px solid var(--q-warning-border)",
               }}
             >
-              <span style={{ color: "#F59E0B", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+              <span style={{ color: "var(--q-warning)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
                 branch "{resolveBranchName()}" already exists
               </span>
-              <span style={{ color: "#6B7280", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+              <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                 you can change the session name to create a new branch, or use the existing branch as is.
               </span>
               <div className="flex items-center gap-3">
@@ -303,9 +303,9 @@ export function NewSessionModal({
                   type="button"
                   onClick={() => setBranchExistsWarning(false)}
                   className="px-3 py-1.5 text-[10px] lowercase transition-colors"
-                  style={{ color: "#6B7280", border: "1px solid #2a2a2a" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+                  style={{ color: "var(--q-fg-secondary)", border: "1px solid var(--q-border)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
                 >
                   change name
                 </button>
@@ -314,8 +314,8 @@ export function NewSessionModal({
                   onClick={() => { setBranchExistsWarning(false); onSubmit(buildRequest()); }}
                   className="px-3 py-1.5 text-[10px] lowercase transition-colors"
                   style={{
-                    backgroundColor: "#F59E0B",
-                    color: "#0A0A0A",
+                    backgroundColor: "var(--q-warning)",
+                    color: "var(--q-bg)",
                     fontWeight: 500,
                   }}
                 >
@@ -331,9 +331,9 @@ export function NewSessionModal({
               type="button"
               onClick={onCancel}
               className="px-4 py-2 text-xs lowercase transition-colors"
-              style={{ color: "#6B7280" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+              style={{ color: "var(--q-fg-secondary)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
             >
               cancel
             </button>
@@ -342,8 +342,8 @@ export function NewSessionModal({
               disabled={!name.trim() || !repoId || !taskId || checking}
               className="px-4 py-2 text-xs lowercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
-                backgroundColor: "#10B981",
-                color: "#0A0A0A",
+                backgroundColor: "var(--q-accent)",
+                color: "var(--q-bg)",
                 fontWeight: 500,
               }}
             >
@@ -367,8 +367,8 @@ function AdvancedToggle({ label, description, checked, onChange }: {
   return (
     <div className="flex items-center justify-between">
       <div className="flex flex-col" style={{ gap: 2 }}>
-        <span style={{ color: "#FAFAFA", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
-        <span style={{ color: "#4B5563", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
+        <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
+        <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
       </div>
       <button
         type="button"
@@ -377,11 +377,11 @@ function AdvancedToggle({ label, description, checked, onChange }: {
         style={{
           width: 14,
           height: 14,
-          backgroundColor: "#0A0A0A",
-          border: `1px solid ${checked ? "#10B981" : "#2a2a2a"}`,
+          backgroundColor: "var(--q-bg)",
+          border: `1px solid ${checked ? "var(--q-accent)" : "var(--q-border)"}`,
         }}
       >
-        {checked && <span style={{ color: "#10B981", fontSize: 10, lineHeight: 1 }}>x</span>}
+        {checked && <span style={{ color: "var(--q-accent)", fontSize: 10, lineHeight: 1 }}>x</span>}
       </button>
     </div>
   );
@@ -400,8 +400,8 @@ function AdvancedInput({ label, description, value, onChange, placeholder }: {
   return (
     <div className="flex items-center justify-between">
       <div className="flex flex-col" style={{ gap: 2 }}>
-        <span style={{ color: "#FAFAFA", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
-        <span style={{ color: "#4B5563", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
+        <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
+        <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
       </div>
       <input
         value={local}
@@ -413,14 +413,14 @@ function AdvancedInput({ label, description, value, onChange, placeholder }: {
         style={{
           width: 140,
           height: 32,
-          backgroundColor: "#0F0F0F",
-          border: "1px solid #2a2a2a",
-          color: "#FAFAFA",
+          backgroundColor: "var(--q-bg-input)",
+          border: "1px solid var(--q-border)",
+          color: "var(--q-fg)",
           fontSize: 11,
           fontFamily: "'JetBrains Mono', monospace",
         }}
-        onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-        onBlurCapture={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+        onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
       />
     </div>
   );
@@ -451,8 +451,8 @@ function AdvancedSelect({ label, description, value, options, onChange }: {
   return (
     <div className="flex items-center justify-between">
       <div className="flex flex-col" style={{ gap: 2 }}>
-        <span style={{ color: "#FAFAFA", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
-        <span style={{ color: "#4B5563", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
+        <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
+        <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
       </div>
       <div ref={wrapRef} style={{ position: "relative", width: 160 }}>
         <button
@@ -461,9 +461,9 @@ function AdvancedSelect({ label, description, value, options, onChange }: {
           style={{
             width: 160,
             height: 32,
-            backgroundColor: "#0F0F0F",
-            border: `1px solid ${open ? "#10B981" : "#2a2a2a"}`,
-            color: "#FAFAFA",
+            backgroundColor: "var(--q-bg-input)",
+            border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
+            color: "var(--q-fg)",
             fontSize: 11,
             fontFamily: "'JetBrains Mono', monospace",
             padding: "0 12px",
@@ -483,8 +483,8 @@ function AdvancedSelect({ label, description, value, options, onChange }: {
               top: 36,
               left: 0,
               zIndex: 50,
-              backgroundColor: "#0A0A0A",
-              border: "1px solid #2a2a2a",
+              backgroundColor: "var(--q-bg)",
+              border: "1px solid var(--q-border)",
               width: "100%",
             }}
           >
@@ -500,19 +500,19 @@ function AdvancedSelect({ label, description, value, options, onChange }: {
                   gap: 8,
                   fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 11,
-                  color: opt === value ? "#10B981" : "#D1D5DB",
-                  backgroundColor: opt === value ? "#1F1F1F" : "transparent",
+                  color: opt === value ? "var(--q-accent)" : "var(--q-fg-dimmed)",
+                  backgroundColor: opt === value ? "var(--q-bg-hover)" : "transparent",
                   border: "none",
                   cursor: "pointer",
                 }}
                 onMouseEnter={(e) => {
-                  if (opt !== value) e.currentTarget.style.backgroundColor = "#1F1F1F";
+                  if (opt !== value) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
                 }}
                 onMouseLeave={(e) => {
                   if (opt !== value) e.currentTarget.style.backgroundColor = "transparent";
                 }}
               >
-                <span style={{ color: "#10B981", flexShrink: 0 }}>~</span>
+                <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
                 <span>{opt}</span>
               </button>
             ))}
@@ -557,29 +557,29 @@ function CustomSelect({
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-3 py-2 text-xs text-left"
         style={{
-          backgroundColor: "#0A0A0A",
-          border: `1px solid ${open ? "#10B981" : "#2a2a2a"}`,
-          color: value ? "#FAFAFA" : "#4B5563",
+          backgroundColor: "var(--q-bg)",
+          border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
+          color: value ? "var(--q-fg)" : "var(--q-fg-muted)",
           fontFamily: "'JetBrains Mono', monospace",
         }}
       >
         <span className="overflow-hidden whitespace-nowrap" style={{ textOverflow: "ellipsis" }}>
           {displayValue || placeholder}
         </span>
-        <span style={{ color: "#6B7280", fontSize: 10 }}>v</span>
+        <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>v</span>
       </button>
       {open && (
         <div
           className="absolute z-10 w-full mt-1 max-h-40 overflow-y-auto"
           style={{
-            backgroundColor: "#0A0A0A",
-            border: "1px solid #2a2a2a",
+            backgroundColor: "var(--q-bg)",
+            border: "1px solid var(--q-border)",
           }}
         >
           {options.length === 0 && (
             <div
               className="px-3 py-2 text-xs"
-              style={{ color: "#4B5563", fontFamily: "'JetBrains Mono', monospace" }}
+              style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
             >
               // none available
             </div>
@@ -591,12 +591,12 @@ function CustomSelect({
               onClick={() => { onChange(opt.value); setOpen(false); }}
               className="w-full text-left px-3 py-2 text-xs transition-colors"
               style={{
-                color: opt.value === value ? "#10B981" : "#FAFAFA",
-                backgroundColor: opt.value === value ? "#1F1F1F" : "transparent",
+                color: opt.value === value ? "var(--q-accent)" : "var(--q-fg)",
+                backgroundColor: opt.value === value ? "var(--q-bg-hover)" : "transparent",
                 fontFamily: "'JetBrains Mono', monospace",
               }}
               onMouseEnter={(e) => {
-                if (opt.value !== value) e.currentTarget.style.backgroundColor = "#1F1F1F";
+                if (opt.value !== value) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
               }}
               onMouseLeave={(e) => {
                 if (opt.value !== value) e.currentTarget.style.backgroundColor = "transparent";

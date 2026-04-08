@@ -150,13 +150,13 @@ export function SessionPanel({
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: "#0A0A0A" }}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: "var(--q-bg)" }}>
       {/* Action bar */}
       <div
         className="flex items-center justify-between px-5 shrink-0"
         style={{
-          backgroundColor: "#0A0A0A",
-          borderBottom: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          borderBottom: "1px solid var(--q-border)",
           fontFamily: "'JetBrains Mono', monospace",
           height: 32,
         }}
@@ -166,7 +166,7 @@ export function SessionPanel({
           <StatusDot status={displayStatus} />
           <span
             className="text-xs font-bold overflow-hidden whitespace-nowrap"
-            style={{ color: "#FAFAFA", textOverflow: "ellipsis" }}
+            style={{ color: "var(--q-fg)", textOverflow: "ellipsis" }}
           >
             {session.name}
           </span>
@@ -174,9 +174,9 @@ export function SessionPanel({
             <span
               className="shrink-0 text-[9px] px-1.5 py-0.5"
               style={{
-                color: "#10B981",
-                border: "1px solid #2a2a2a",
-                backgroundColor: "#1F1F1F",
+                color: "var(--q-accent)",
+                border: "1px solid var(--q-border)",
+                backgroundColor: "var(--q-bg-hover)",
               }}
             >
               # {task.tag}
@@ -186,9 +186,9 @@ export function SessionPanel({
             <span
               className="shrink-0 text-[9px] px-1.5 py-0.5"
               style={{
-                color: "#10B981",
-                border: "1px solid #2a2a2a",
-                backgroundColor: "#1F1F1F",
+                color: "var(--q-accent)",
+                border: "1px solid var(--q-border)",
+                backgroundColor: "var(--q-bg-hover)",
               }}
             >
               wt {session.branchName}
@@ -201,7 +201,7 @@ export function SessionPanel({
 
           {/* Unarchive button */}
           {isArchived && onUnarchive && (
-            <ActionBtn label="$ unarchive" onClick={() => onUnarchive(session.id)} color="#10B981" />
+            <ActionBtn label="$ unarchive" onClick={() => onUnarchive(session.id)} color="var(--q-accent)" />
           )}
 
           {/* Terminal button */}
@@ -211,15 +211,15 @@ export function SessionPanel({
               className="flex items-center gap-1 px-2 py-1 text-[11px]"
               style={{
                 fontFamily: "'JetBrains Mono', monospace",
-                color: splitState.open ? "#0A0A0A" : "#06B6D4",
-                backgroundColor: splitState.open ? "#06B6D4" : "#1F1F1F",
-                border: `1px solid ${splitState.open ? "#06B6D4" : "#2a2a2a"}`,
+                color: splitState.open ? "var(--q-bg)" : "var(--q-cyan)",
+                backgroundColor: splitState.open ? "var(--q-cyan)" : "var(--q-bg-hover)",
+                border: `1px solid ${splitState.open ? "var(--q-cyan)" : "var(--q-border)"}`,
               }}
               onMouseEnter={(e) => {
-                if (!splitState.open) e.currentTarget.style.backgroundColor = "#2a2a2a";
+                if (!splitState.open) e.currentTarget.style.backgroundColor = "var(--q-border)";
               }}
               onMouseLeave={(e) => {
-                if (!splitState.open) e.currentTarget.style.backgroundColor = "#1F1F1F";
+                if (!splitState.open) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
               }}
             >
               <span style={{ fontWeight: 700 }}>$</span>
@@ -252,10 +252,10 @@ export function SessionPanel({
                 style={{
                   width: 20,
                   height: 20,
-                  color: menuOpen ? "#FAFAFA" : "#6B7280",
+                  color: menuOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
                 }}
-                onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.color = "#FAFAFA"; }}
-                onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.color = "#6B7280"; }}
+                onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
+                onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="4" y1="6" x2="20" y2="6" />
@@ -285,7 +285,7 @@ export function SessionPanel({
             {splitState.open && (
               <PaneHeader
                 label={session.sessionType === "claude" ? "claude" : "terminal"}
-                dotColor={session.sessionType === "claude" ? "#10B981" : "#06B6D4"}
+                dotColor={session.sessionType === "claude" ? "var(--q-accent)" : "var(--q-cyan)"}
               />
             )}
             <TerminalPane
@@ -304,7 +304,7 @@ export function SessionPanel({
             <>
               <PaneHeader
                 label="terminal"
-                dotColor="#06B6D4"
+                dotColor="var(--q-cyan)"
                 onClose={handleCloseTerminal}
               />
               <TerminalPane
@@ -406,19 +406,19 @@ function SplitContainer({
             alignItems: "center",
             justifyContent: "center",
             cursor: isH ? "row-resize" : "col-resize",
-            borderTop: isH ? "1px solid #2a2a2a" : undefined,
-            borderBottom: isH ? "1px solid #2a2a2a" : undefined,
-            borderLeft: !isH ? "1px solid #2a2a2a" : undefined,
-            borderRight: !isH ? "1px solid #2a2a2a" : undefined,
+            borderTop: isH ? "1px solid var(--q-border)" : undefined,
+            borderBottom: isH ? "1px solid var(--q-border)" : undefined,
+            borderLeft: !isH ? "1px solid var(--q-border)" : undefined,
+            borderRight: !isH ? "1px solid var(--q-border)" : undefined,
             zIndex: 1,
           }}
           onMouseEnter={(e) => {
             const grip = e.currentTarget.querySelector("[data-grip]") as HTMLElement;
-            if (grip) grip.style.backgroundColor = "#10B981";
+            if (grip) grip.style.backgroundColor = "var(--q-accent)";
           }}
           onMouseLeave={(e) => {
             const grip = e.currentTarget.querySelector("[data-grip]") as HTMLElement;
-            if (grip) grip.style.backgroundColor = "#4B5563";
+            if (grip) grip.style.backgroundColor = "var(--q-fg-muted)";
           }}
         >
           <div
@@ -426,7 +426,7 @@ function SplitContainer({
             style={{
               width: isH ? 32 : 2,
               height: isH ? 2 : 32,
-              backgroundColor: "#4B5563",
+              backgroundColor: "var(--q-fg-muted)",
               borderRadius: 1,
             }}
           />
@@ -457,8 +457,8 @@ function PaneHeader({
       className="flex items-center justify-between px-4 shrink-0"
       style={{
         height: 24,
-        backgroundColor: "#0F0F0F",
-        borderBottom: "1px solid #2a2a2a",
+        backgroundColor: "var(--q-bg-input)",
+        borderBottom: "1px solid var(--q-border)",
         fontFamily: "'JetBrains Mono', monospace",
       }}
     >
@@ -471,15 +471,15 @@ function PaneHeader({
             backgroundColor: dotColor,
           }}
         />
-        <span style={{ fontSize: 10, color: "#6B7280" }}>{label}</span>
+        <span style={{ fontSize: 10, color: "var(--q-fg-secondary)" }}>{label}</span>
       </div>
       {onClose && (
         <button
           onClick={onClose}
           className="text-[9px] transition-colors"
-          style={{ color: "#4B5563", fontFamily: "'JetBrains Mono', monospace" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
+          style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
         >
           [x]
         </button>
@@ -497,8 +497,8 @@ function LayoutIcon({
   active: boolean;
   onClick: () => void;
 }) {
-  const borderColor = active ? "#10B981" : "#2a2a2a";
-  const fillColor = active ? "#10B981" : "#6B7280";
+  const borderColor = active ? "var(--q-accent)" : "var(--q-border)";
+  const fillColor = active ? "var(--q-accent)" : "var(--q-fg-secondary)";
   const isHorizontal = type === "horizontal";
 
   return (
@@ -507,7 +507,7 @@ function LayoutIcon({
       style={{
         width: 20,
         height: 16,
-        backgroundColor: "#1F1F1F",
+        backgroundColor: "var(--q-bg-hover)",
         border: `1px solid ${borderColor}`,
         padding: 2,
         display: "flex",
@@ -553,8 +553,8 @@ function HamburgerMenu({
         right: 0,
         marginTop: 4,
         width: 160,
-        backgroundColor: "#141414",
-        border: "1px solid #2a2a2a",
+        backgroundColor: "var(--q-bg-menu)",
+        border: "1px solid var(--q-border)",
         padding: "4px 0",
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 11,
@@ -564,10 +564,10 @@ function HamburgerMenu({
     >
       {isRunning && onRestart && (
         <MenuItemRow onClick={onRestart}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--q-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
           </svg>
-          <span style={{ color: "#FAFAFA" }}>restart</span>
+          <span style={{ color: "var(--q-fg)" }}>restart</span>
         </MenuItemRow>
       )}
     </div>
@@ -594,7 +594,7 @@ function MenuItemRow({
         cursor: "pointer",
         textAlign: "left",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1F1F1F")}
+      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
     >
       {children}
@@ -619,7 +619,7 @@ function ActionBtn({
         color,
         fontFamily: "'JetBrains Mono', monospace",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1F1F1F")}
+      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
     >
       {label}

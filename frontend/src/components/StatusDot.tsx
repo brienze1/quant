@@ -1,16 +1,16 @@
 import type { DisplayStatus } from "./StatusBadge";
 
 const statusColors: Record<DisplayStatus, string> = {
-  running: "#10B981",    // green
-  waiting: "#06B6D4",    // cyan
-  idle: "#6B7280",       // gray
-  paused: "#6B7280",     // gray
-  done: "#06B6D4",       // cyan
-  error: "#EF4444",      // red
-  starting: "#A78BFA",   // purple
-  resuming: "#A78BFA",   // purple
-  stopping: "#F59E0B",   // amber
-  archived: "#6B7280",   // gray
+  running: "var(--q-accent)",    // green
+  waiting: "var(--q-cyan)",    // cyan
+  idle: "var(--q-fg-secondary)",       // gray
+  paused: "var(--q-fg-secondary)",     // gray
+  done: "var(--q-cyan)",       // cyan
+  error: "var(--q-error)",      // red
+  starting: "var(--q-purple)",   // purple
+  resuming: "var(--q-purple)",   // purple
+  stopping: "var(--q-warning)",   // amber
+  archived: "var(--q-fg-secondary)",   // gray
 };
 
 const isAnimated = (s: DisplayStatus) =>

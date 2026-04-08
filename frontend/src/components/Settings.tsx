@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Config, Repo, Shortcut } from "../types";
 import * as api from "../api";
+import { ThemeSettings } from "./ThemeSettings";
 
-type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "quanti";
+type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "quanti" | "themes";
 
 const NAV_ITEMS: { key: SettingsTab; label: string; icon: string }[] = [
   { key: "general", label: "general", icon: "settings" },
+  { key: "themes", label: "themes", icon: "palette" },
   { key: "git", label: "git & branches", icon: "git-branch" },
   { key: "sessions", label: "sessions", icon: "terminal" },
   { key: "storage", label: "storage & data", icon: "hard-drive" },
@@ -65,32 +67,32 @@ export function Settings({ repos, onBack }: Props) {
 
   if (!config) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center" style={{ backgroundColor: "#0A0A0A", fontFamily: font }}>
-        <span style={{ color: "#6B7280", fontSize: 12 }}>loading settings...</span>
+      <div className="flex h-screen w-screen items-center justify-center" style={{ backgroundColor: "var(--q-bg)", fontFamily: font }}>
+        <span style={{ color: "var(--q-fg-secondary)", fontSize: 12 }}>loading settings...</span>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen w-screen" style={{ backgroundColor: "#0A0A0A", fontFamily: font }}>
+    <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", fontFamily: font }}>
       {/* Settings Sidebar */}
       <div
         className="flex flex-col h-full"
-        style={{ width: 240, borderRight: "1px solid #2a2a2a", backgroundColor: "#0A0A0A" }}
+        style={{ width: 240, borderRight: "1px solid var(--q-border)", backgroundColor: "var(--q-bg)" }}
       >
         {/* Header */}
         <button
           onClick={onBack}
           className="flex items-center gap-2 px-5 text-left transition-colors"
-          style={{ height: 48, borderBottom: "1px solid #2a2a2a" }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1F1F1F")}
+          style={{ height: 48, borderBottom: "1px solid var(--q-border)" }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--q-fg-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
-          <span style={{ color: "#FAFAFA", fontSize: 14, fontWeight: 700 }}>settings</span>
+          <span style={{ color: "var(--q-fg)", fontSize: 14, fontWeight: 700 }}>settings</span>
         </button>
 
         {/* Nav Items */}
@@ -104,18 +106,18 @@ export function Settings({ repos, onBack }: Props) {
                 className="flex items-center gap-2 px-5 text-left transition-colors"
                 style={{
                   height: 32,
-                  backgroundColor: active ? "#1F1F1F" : "transparent",
-                  color: active ? "#FAFAFA" : "#6B7280",
+                  backgroundColor: active ? "var(--q-bg-hover)" : "transparent",
+                  color: active ? "var(--q-fg)" : "var(--q-fg-secondary)",
                   fontSize: 12,
                 }}
                 onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.backgroundColor = "#1F1F1F";
+                  if (!active) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
                 }}
                 onMouseLeave={(e) => {
                   if (!active) e.currentTarget.style.backgroundColor = "transparent";
                 }}
               >
-                <span style={{ color: active ? "#10B981" : "#6B7280", fontSize: 14 }}>
+                <span style={{ color: active ? "var(--q-accent)" : "var(--q-fg-secondary)", fontSize: 14 }}>
                   {navIcon(item.icon)}
                 </span>
                 {item.label}
@@ -130,13 +132,13 @@ export function Settings({ repos, onBack }: Props) {
         {/* Content Header */}
         <div
           className="flex items-center px-8 shrink-0"
-          style={{ height: 48, borderBottom: "1px solid #2a2a2a" }}
+          style={{ height: 48, borderBottom: "1px solid var(--q-border)" }}
         >
-          <span style={{ color: "#FAFAFA", fontSize: 16, fontWeight: 700 }}>
+          <span style={{ color: "var(--q-fg)", fontSize: 16, fontWeight: 700 }}>
             {NAV_ITEMS.find((n) => n.key === tab)?.label}
           </span>
           {saving && (
-            <span className="ml-3" style={{ color: "#10B981", fontSize: 10 }}>saving...</span>
+            <span className="ml-3" style={{ color: "var(--q-accent)", fontSize: 10 }}>saving...</span>
           )}
         </div>
 
@@ -144,16 +146,17 @@ export function Settings({ repos, onBack }: Props) {
         {error && (
           <div
             className="flex items-center justify-between px-8 py-2 text-xs shrink-0"
-            style={{ backgroundColor: "rgba(239,68,68,0.15)", color: "#EF4444", borderBottom: "1px solid #2a2a2a" }}
+            style={{ backgroundColor: "var(--q-error-bg)", color: "var(--q-error)", borderBottom: "1px solid var(--q-border)" }}
           >
             <span>// error: {error}</span>
-            <button onClick={() => setError(null)} style={{ color: "#EF4444" }}>[x]</button>
+            <button onClick={() => setError(null)} style={{ color: "var(--q-error)" }}>[x]</button>
           </div>
         )}
 
         {/* Scroll Content */}
         <div className="flex-1 overflow-y-auto p-8" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
           {tab === "general" && <GeneralTab config={config} update={update} />}
+          {tab === "themes" && <ThemeSettings />}
           {tab === "git" && <GitTab config={config} update={update} repos={repos} />}
           {tab === "sessions" && <SessionsTab config={config} update={update} />}
           {tab === "storage" && <StorageTab config={config} update={update} onError={setError} onReload={loadConfig} />}
@@ -209,12 +212,12 @@ function GeneralTab({ config, update }: TabProps) {
         {shortcuts.map((sc, i) => (
           <div key={i} className="flex items-center justify-between">
             <div className="flex flex-col" style={{ gap: 2 }}>
-              <span style={{ color: "#FAFAFA", fontSize: 12 }}>{sc.name}</span>
-              <span style={{ color: "#10B981", fontSize: 10 }}>{sc.command}</span>
+              <span style={{ color: "var(--q-fg)", fontSize: 12 }}>{sc.name}</span>
+              <span style={{ color: "var(--q-accent)", fontSize: 10 }}>{sc.command}</span>
             </div>
             <button
               onClick={() => removeShortcut(i)}
-              style={{ color: "#EF4444", fontSize: 11, fontFamily: font }}
+              style={{ color: "var(--q-error)", fontSize: 11, fontFamily: font }}
               onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
             >
@@ -230,9 +233,9 @@ function GeneralTab({ config, update }: TabProps) {
             onKeyDown={(e) => e.key === "Enter" && addShortcut()}
             style={{
               flex: 1,
-              backgroundColor: "#1F1F1F",
-              border: "1px solid #2a2a2a",
-              color: "#FAFAFA",
+              backgroundColor: "var(--q-bg-hover)",
+              border: "1px solid var(--q-border)",
+              color: "var(--q-fg)",
               fontSize: 11,
               fontFamily: font,
               padding: "4px 8px",
@@ -246,9 +249,9 @@ function GeneralTab({ config, update }: TabProps) {
             onKeyDown={(e) => e.key === "Enter" && addShortcut()}
             style={{
               flex: 2,
-              backgroundColor: "#1F1F1F",
-              border: "1px solid #2a2a2a",
-              color: "#10B981",
+              backgroundColor: "var(--q-bg-hover)",
+              border: "1px solid var(--q-border)",
+              color: "var(--q-accent)",
               fontSize: 11,
               fontFamily: font,
               padding: "4px 8px",
@@ -258,14 +261,14 @@ function GeneralTab({ config, update }: TabProps) {
           <button
             onClick={addShortcut}
             style={{
-              color: "#4B5563",
+              color: "var(--q-fg-muted)",
               fontSize: 11,
               fontFamily: font,
-              border: "1px dashed #2a2a2a",
+              border: "1px dashed var(--q-border)",
               padding: "4px 10px",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#6B7280")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
           >
             + add
           </button>
@@ -346,34 +349,34 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
       </Section>
 
       <Section title="per-repo overrides" description="override pull branch for specific repositories">
-        <div style={{ border: "1px solid #2a2a2a" }}>
+        <div style={{ border: "1px solid var(--q-border)" }}>
           {/* Table Header */}
-          <div className="flex" style={{ backgroundColor: "#1F1F1F", height: 32, borderBottom: "1px solid #2a2a2a" }}>
-            <div className="flex-1 flex items-center px-3" style={{ color: "#6B7280", fontSize: 10, fontWeight: 700 }}>
+          <div className="flex" style={{ backgroundColor: "var(--q-bg-hover)", height: 32, borderBottom: "1px solid var(--q-border)" }}>
+            <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontWeight: 700 }}>
               repository
             </div>
-            <div className="flex-1 flex items-center px-3" style={{ color: "#6B7280", fontSize: 10, fontWeight: 700 }}>
+            <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontWeight: 700 }}>
               pull branch
             </div>
-            <div className="flex items-center justify-center" style={{ width: 80, color: "#6B7280", fontSize: 10 }} />
+            <div className="flex items-center justify-center" style={{ width: 80, color: "var(--q-fg-secondary)", fontSize: 10 }} />
           </div>
           {/* Rows */}
           {Object.entries(config.branchOverrides).map(([repo, branch]) => (
             <div
               key={repo}
               className="flex"
-              style={{ height: 36, borderBottom: "1px solid #2a2a2a" }}
+              style={{ height: 36, borderBottom: "1px solid var(--q-border)" }}
             >
-              <div className="flex-1 flex items-center px-3" style={{ color: "#FAFAFA", fontSize: 11 }}>
+              <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg)", fontSize: 11 }}>
                 {repo}
               </div>
-              <div className="flex-1 flex items-center px-3" style={{ color: "#10B981", fontSize: 11 }}>
+              <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-accent)", fontSize: 11 }}>
                 {branch}
               </div>
               <div className="flex items-center justify-center" style={{ width: 80 }}>
                 <button
                   onClick={() => removeOverride(repo)}
-                  style={{ color: "#EF4444", fontSize: 11, fontWeight: 700 }}
+                  style={{ color: "var(--q-error)", fontSize: 11, fontWeight: 700 }}
                 >
                   x
                 </button>
@@ -389,9 +392,9 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
               style={{
                 width: 200,
                 height: 32,
-                backgroundColor: "#0F0F0F",
-                border: `1px solid ${repoDropdownOpen ? "#10B981" : "#2a2a2a"}`,
-                color: newRepo ? "#FAFAFA" : "#4B5563",
+                backgroundColor: "var(--q-bg-input)",
+                border: `1px solid ${repoDropdownOpen ? "var(--q-accent)" : "var(--q-border)"}`,
+                color: newRepo ? "var(--q-fg)" : "var(--q-fg-muted)",
                 fontSize: 12,
                 fontFamily: font,
                 padding: "0 12px",
@@ -423,7 +426,7 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
           <TextInput value={newBranch} onChange={setNewBranch} width={160} placeholder="branch" />
           <button
             onClick={addOverride}
-            style={{ color: "#10B981", fontSize: 11 }}
+            style={{ color: "var(--q-accent)", fontSize: 11 }}
           >
             + add override
           </button>
@@ -538,12 +541,12 @@ function StorageTab({ config, update, onError, onReload }: TabProps & { onError:
             <div
               className="flex items-center px-3"
               style={{
-                backgroundColor: "#0F0F0F",
-                border: "1px solid #2a2a2a",
+                backgroundColor: "var(--q-bg-input)",
+                border: "1px solid var(--q-border)",
                 height: 32,
                 width: 280,
                 opacity: 0.5,
-                color: "#6B7280",
+                color: "var(--q-fg-secondary)",
                 fontSize: 12,
               }}
             >
@@ -575,19 +578,19 @@ function StorageTab({ config, update, onError, onReload }: TabProps & { onError:
 
 function RestartModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
       <div
         className="flex flex-col gap-6 p-8"
         style={{
-          backgroundColor: "#0A0A0A",
-          border: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
           fontFamily: "'JetBrains Mono', monospace",
           maxWidth: 400,
         }}
       >
         <div className="flex flex-col gap-2">
-          <span style={{ color: "#F59E0B", fontSize: 12, fontWeight: 700 }}>~ restart required</span>
-          <span style={{ color: "#6B7280", fontSize: 11 }}>
+          <span style={{ color: "var(--q-warning)", fontSize: 12, fontWeight: 700 }}>~ restart required</span>
+          <span style={{ color: "var(--q-fg-secondary)", fontSize: 11 }}>
             storage paths have changed. please restart quant for the changes to take effect.
           </span>
         </div>
@@ -596,8 +599,8 @@ function RestartModal({ onClose }: { onClose: () => void }) {
             onClick={onClose}
             className="px-4 py-2 text-xs transition-colors"
             style={{
-              backgroundColor: "#F59E0B",
-              color: "#0A0A0A",
+              backgroundColor: "var(--q-warning)",
+              color: "var(--q-bg)",
               fontWeight: 500,
               fontFamily: "'JetBrains Mono', monospace",
             }}
@@ -752,34 +755,34 @@ function ClaudeTab({ config, update }: TabProps) {
       </Section>
 
       <Section title="per-path command overrides" description="use a different claude command for sessions whose path contains the given substring">
-        <div style={{ border: "1px solid #2a2a2a" }}>
+        <div style={{ border: "1px solid var(--q-border)" }}>
           {/* Table Header */}
-          <div className="flex" style={{ backgroundColor: "#1F1F1F", height: 32, borderBottom: "1px solid #2a2a2a" }}>
-            <div className="flex-1 flex items-center px-3" style={{ color: "#6B7280", fontSize: 10, fontWeight: 700 }}>
+          <div className="flex" style={{ backgroundColor: "var(--q-bg-hover)", height: 32, borderBottom: "1px solid var(--q-border)" }}>
+            <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontWeight: 700 }}>
               path contains
             </div>
-            <div className="flex-1 flex items-center px-3" style={{ color: "#6B7280", fontSize: 10, fontWeight: 700 }}>
+            <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontWeight: 700 }}>
               command
             </div>
-            <div className="flex items-center justify-center" style={{ width: 80, color: "#6B7280", fontSize: 10 }} />
+            <div className="flex items-center justify-center" style={{ width: 80, color: "var(--q-fg-secondary)", fontSize: 10 }} />
           </div>
           {/* Rows */}
           {Object.entries(commandOverrides).map(([path, cmd]) => (
             <div
               key={path}
               className="flex"
-              style={{ height: 36, borderBottom: "1px solid #2a2a2a" }}
+              style={{ height: 36, borderBottom: "1px solid var(--q-border)" }}
             >
-              <div className="flex-1 flex items-center px-3" style={{ color: "#FAFAFA", fontSize: 11 }}>
+              <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg)", fontSize: 11 }}>
                 {path}
               </div>
-              <div className="flex-1 flex items-center px-3" style={{ color: "#10B981", fontSize: 11 }}>
+              <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-accent)", fontSize: 11 }}>
                 {cmd}
               </div>
               <div className="flex items-center justify-center" style={{ width: 80 }}>
                 <button
                   onClick={() => removeCommandOverride(path)}
-                  style={{ color: "#EF4444", fontSize: 11, fontWeight: 700 }}
+                  style={{ color: "var(--q-error)", fontSize: 11, fontWeight: 700 }}
                 >
                   x
                 </button>
@@ -793,7 +796,7 @@ function ClaudeTab({ config, update }: TabProps) {
           <TextInput value={newCommand} onChange={setNewCommand} width={160} placeholder="e.g. claude-bl" />
           <button
             onClick={addCommandOverride}
-            style={{ color: "#10B981", fontSize: 11 }}
+            style={{ color: "var(--q-accent)", fontSize: 11 }}
           >
             + add override
           </button>
@@ -815,9 +818,9 @@ interface TabProps {
 function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col" style={{ gap: 16 }}>
-      <span style={{ color: "#10B981", fontSize: 12, fontWeight: 700 }}>{title}</span>
-      <span style={{ color: "#4B5563", fontSize: 11 }}>// {description}</span>
-      <div style={{ height: 1, backgroundColor: "#2a2a2a" }} />
+      <span style={{ color: "var(--q-accent)", fontSize: 12, fontWeight: 700 }}>{title}</span>
+      <span style={{ color: "var(--q-fg-muted)", fontSize: 11 }}>// {description}</span>
+      <div style={{ height: 1, backgroundColor: "var(--q-border)" }} />
       {children}
     </div>
   );
@@ -826,9 +829,9 @@ function Section({ title, description, children }: { title: string; description:
 function DangerSection({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col" style={{ gap: 16 }}>
-      <span style={{ color: "#EF4444", fontSize: 12, fontWeight: 700 }}>danger zone</span>
-      <span style={{ color: "#4B5563", fontSize: 11 }}>// destructive actions — use with caution</span>
-      <div style={{ height: 1, backgroundColor: "rgba(239,68,68,0.2)" }} />
+      <span style={{ color: "var(--q-error)", fontSize: 12, fontWeight: 700 }}>danger zone</span>
+      <span style={{ color: "var(--q-fg-muted)", fontSize: 11 }}>// destructive actions — use with caution</span>
+      <div style={{ height: 1, backgroundColor: "var(--q-error-bg)" }} />
       {children}
     </div>
   );
@@ -838,8 +841,8 @@ function SettingRow({ label, description, right }: { label: string; description:
   return (
     <div className="flex items-center justify-between">
       <div className="flex flex-col" style={{ gap: 2 }}>
-        <span style={{ color: "#FAFAFA", fontSize: 12 }}>{label}</span>
-        <span style={{ color: "#4B5563", fontSize: 10 }}>{description}</span>
+        <span style={{ color: "var(--q-fg)", fontSize: 12 }}>{label}</span>
+        <span style={{ color: "var(--q-fg-muted)", fontSize: 10 }}>{description}</span>
       </div>
       {right}
     </div>
@@ -859,10 +862,10 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
             width: 14,
             height: 14,
             borderRadius: 2,
-            backgroundColor: "#10B981",
+            backgroundColor: "var(--q-accent)",
           }}
         >
-          <span style={{ color: "#0A0A0A", fontSize: 9, fontWeight: 700 }}>x</span>
+          <span style={{ color: "var(--q-bg)", fontSize: 9, fontWeight: 700 }}>x</span>
         </div>
       ) : (
         <div
@@ -870,11 +873,11 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
             width: 14,
             height: 14,
             borderRadius: 2,
-            border: "1px solid #6B7280",
+            border: "1px solid var(--q-fg-secondary)",
           }}
         />
       )}
-      <span style={{ color: checked ? "#10B981" : "#6B7280", fontSize: 11 }}>
+      <span style={{ color: checked ? "var(--q-accent)" : "var(--q-fg-secondary)", fontSize: 11 }}>
         {checked ? "enabled" : "disabled"}
       </span>
     </button>
@@ -906,14 +909,14 @@ function TextInput({
       style={{
         width,
         height: 32,
-        backgroundColor: "#0F0F0F",
-        border: "1px solid #2a2a2a",
-        color: "#FAFAFA",
+        backgroundColor: "var(--q-bg-input)",
+        border: "1px solid var(--q-border)",
+        color: "var(--q-fg)",
         fontSize: 12,
         fontFamily: font,
       }}
-      onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
     />
   );
 }
@@ -958,15 +961,15 @@ function NumberInput({
       style={{
         width,
         height: 32,
-        backgroundColor: "#0F0F0F",
-        border: "1px solid #2a2a2a",
-        color: disabled ? "#4B5563" : "#FAFAFA",
+        backgroundColor: "var(--q-bg-input)",
+        border: "1px solid var(--q-border)",
+        color: disabled ? "var(--q-fg-muted)" : "var(--q-fg)",
         fontSize: 12,
         fontFamily: font,
         opacity: disabled ? 0.5 : 1,
       }}
-      onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
     />
   );
 }
@@ -1004,14 +1007,14 @@ function FloatInput({
       style={{
         width,
         height: 32,
-        backgroundColor: "#0F0F0F",
-        border: "1px solid #2a2a2a",
-        color: "#FAFAFA",
+        backgroundColor: "var(--q-bg-input)",
+        border: "1px solid var(--q-border)",
+        color: "var(--q-fg)",
         fontSize: 12,
         fontFamily: font,
       }}
-      onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
     />
   );
 }
@@ -1048,9 +1051,9 @@ function SelectInput({
         style={{
           width,
           height: 32,
-          backgroundColor: "#0F0F0F",
-          border: `1px solid ${open ? "#10B981" : "#2a2a2a"}`,
-          color: "#FAFAFA",
+          backgroundColor: "var(--q-bg-input)",
+          border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
+          color: "var(--q-fg)",
           fontSize: 12,
           fontFamily: font,
           padding: "0 12px",
@@ -1070,8 +1073,8 @@ function SelectInput({
             top: 36,
             left: 0,
             zIndex: 50,
-            backgroundColor: "#0A0A0A",
-            border: "1px solid #2a2a2a",
+            backgroundColor: "var(--q-bg)",
+            border: "1px solid var(--q-border)",
             width: "100%",
           }}
         >
@@ -1086,19 +1089,19 @@ function SelectInput({
                 gap: 8,
                 fontFamily: font,
                 fontSize: 11,
-                color: opt === value ? "#10B981" : "#D1D5DB",
-                backgroundColor: opt === value ? "#1F1F1F" : "transparent",
+                color: opt === value ? "var(--q-accent)" : "var(--q-fg-dimmed)",
+                backgroundColor: opt === value ? "var(--q-bg-hover)" : "transparent",
                 border: "none",
                 cursor: "pointer",
               }}
               onMouseEnter={(e) => {
-                if (opt !== value) e.currentTarget.style.backgroundColor = "#1F1F1F";
+                if (opt !== value) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
               }}
               onMouseLeave={(e) => {
                 if (opt !== value) e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              <span style={{ color: "#10B981", flexShrink: 0 }}>~</span>
+              <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
               <span>{opt}</span>
             </button>
           ))}
@@ -1116,18 +1119,18 @@ function BrowseButton({ onClick }: { onClick: () => void }) {
       style={{
         width: 72,
         height: 32,
-        backgroundColor: "#0A0A0A",
-        border: "1px solid #2a2a2a",
-        color: "#6B7280",
+        backgroundColor: "var(--q-bg)",
+        border: "1px solid var(--q-border)",
+        color: "var(--q-fg-secondary)",
         fontSize: 11,
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = "#10B981";
-        e.currentTarget.style.color = "#10B981";
+        e.currentTarget.style.borderColor = "var(--q-accent)";
+        e.currentTarget.style.color = "var(--q-accent)";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "#2a2a2a";
-        e.currentTarget.style.color = "#6B7280";
+        e.currentTarget.style.borderColor = "var(--q-border)";
+        e.currentTarget.style.color = "var(--q-fg-secondary)";
       }}
     >
       browse
@@ -1174,8 +1177,8 @@ function DropdownMenu({
         top: 36,
         left: 0,
         zIndex: 50,
-        backgroundColor: "#0A0A0A",
-        border: "1px solid #2a2a2a",
+        backgroundColor: "var(--q-bg)",
+        border: "1px solid var(--q-border)",
         minWidth: 180,
         width: "100%",
       }}
@@ -1183,7 +1186,7 @@ function DropdownMenu({
       {items.length === 0 && (
         <div
           className="px-3 py-2"
-          style={{ color: "#4B5563", fontSize: 11, fontFamily: font }}
+          style={{ color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font }}
         >
           no repos available
         </div>
@@ -1199,15 +1202,15 @@ function DropdownMenu({
             gap: 8,
             fontFamily: font,
             fontSize: 11,
-            color: "#D1D5DB",
+            color: "var(--q-fg-dimmed)",
             backgroundColor: "transparent",
             border: "none",
             cursor: "pointer",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1F1F1F")}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
         >
-          <span style={{ color: "#10B981", flexShrink: 0 }}>~</span>
+          <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
           <span>{item.label}</span>
         </button>
       ))}
@@ -1223,8 +1226,8 @@ function DangerButton({ label, onClick }: { label: string; onClick: () => void }
       style={{
         height: 32,
         borderRadius: 2,
-        backgroundColor: "#EF4444",
-        color: "#FAFAFA",
+        backgroundColor: "var(--q-error)",
+        color: "var(--q-fg)",
         fontSize: 11,
         fontWeight: 500,
       }}
@@ -1283,6 +1286,22 @@ function navIcon(name: string): React.ReactNode {
           <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
           <circle cx="9" cy="13" r="1.5" fill="currentColor" />
           <circle cx="15" cy="13" r="1.5" fill="currentColor" />
+        </svg>
+      );
+    case "palette":
+      return (
+        <svg {...props}>
+          <circle cx="13.5" cy="6.5" r="2.5" />
+          <circle cx="17.5" cy="10.5" r="2.5" />
+          <circle cx="8.5" cy="7.5" r="2.5" />
+          <circle cx="6.5" cy="12.5" r="2.5" />
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.04-.24-.3-.39-.65-.39-1.04 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-5.17-4.49-8.92-10-8.92z" />
+        </svg>
+      );
+    case "message-square":
+      return (
+        <svg {...props}>
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       );
     default:
@@ -1355,9 +1374,9 @@ function QuantiTab({ config, update }: TabProps) {
       </Section>
 
       <Section title="files" description="view and edit Quanti's personality and memory — changes take effect on the next Quanti session">
-        <div style={{ display: "flex", gap: 0, border: "1px solid #2a2a2a" }}>
+        <div style={{ display: "flex", gap: 0, border: "1px solid var(--q-border)" }}>
           {/* File list sidebar */}
-          <div style={{ width: 200, borderRight: "1px solid #2a2a2a", flexShrink: 0 }}>
+          <div style={{ width: 200, borderRight: "1px solid var(--q-border)", flexShrink: 0 }}>
             {QUANTI_FILES.map((f) => (
               <button
                 key={f.name}
@@ -1367,17 +1386,17 @@ function QuantiTab({ config, update }: TabProps) {
                   width: "100%",
                   padding: "10px 14px",
                   textAlign: "left",
-                  background: activeFile === f.name ? "#1a1a1a" : "none",
+                  background: activeFile === f.name ? "var(--q-bg-surface)" : "none",
                   border: "none",
-                  borderBottom: "1px solid #1f1f1f",
+                  borderBottom: "1px solid var(--q-bg-hover)",
                   cursor: "pointer",
                   fontFamily: font,
                 }}
               >
-                <div style={{ fontSize: 11, color: activeFile === f.name ? "#FAFAFA" : "#9CA3AF", fontWeight: activeFile === f.name ? 600 : 400 }}>
+                <div style={{ fontSize: 11, color: activeFile === f.name ? "var(--q-fg)" : "var(--q-fg-tertiary)", fontWeight: activeFile === f.name ? 600 : 400 }}>
                   {f.label}
                 </div>
-                <div style={{ fontSize: 9, color: "#4B5563", marginTop: 2 }}>{f.name}</div>
+                <div style={{ fontSize: 9, color: "var(--q-fg-muted)", marginTop: 2 }}>{f.name}</div>
               </button>
             ))}
           </div>
@@ -1385,26 +1404,26 @@ function QuantiTab({ config, update }: TabProps) {
           {/* Editor area */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 360 }}>
             {!activeFile ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#4B5563", fontSize: 11, fontFamily: font }}>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font }}>
                 select a file to view and edit
               </div>
             ) : loading ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#4B5563", fontSize: 11, fontFamily: font }}>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font }}>
                 loading…
               </div>
             ) : (
               <>
-                <div style={{ padding: "8px 12px", borderBottom: "1px solid #1f1f1f", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 10, color: "#6B7280", fontFamily: font, flex: 1 }}>{activeFileMeta?.description}</span>
+                <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--q-bg-hover)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 10, color: "var(--q-fg-secondary)", fontFamily: font, flex: 1 }}>{activeFileMeta?.description}</span>
                   <button
                     onClick={saveFile}
                     disabled={saving}
                     style={{
                       padding: "4px 12px",
-                      backgroundColor: saved ? "#065F46" : "#10B981",
+                      backgroundColor: saved ? "#065F46" : "var(--q-accent)",
                       border: "none",
                       borderRadius: 4,
-                      color: "#fff",
+                      color: "var(--q-bg)",
                       fontSize: 10,
                       fontFamily: font,
                       cursor: saving ? "default" : "pointer",
@@ -1420,9 +1439,9 @@ function QuantiTab({ config, update }: TabProps) {
                   style={{
                     flex: 1,
                     resize: "none",
-                    backgroundColor: "#0A0A0A",
+                    backgroundColor: "var(--q-bg)",
                     border: "none",
-                    color: "#D1D5DB",
+                    color: "var(--q-fg-dimmed)",
                     fontFamily: font,
                     fontSize: 11,
                     lineHeight: 1.6,

@@ -4,16 +4,16 @@ import type { Session } from "../types";
 export type DisplayStatus = Session["status"] | "starting" | "stopping" | "resuming" | "waiting" | "archived";
 
 const statusColors: Record<DisplayStatus, string> = {
-  running: "#10B981",    // green — only running is green
-  waiting: "#06B6D4",    // cyan — done, waiting for input
-  idle: "#6B7280",       // gray — never started
-  paused: "#6B7280",     // gray — same as idle
-  done: "#06B6D4",       // cyan
-  error: "#EF4444",      // red
-  starting: "#A78BFA",   // purple — transitional
-  resuming: "#A78BFA",   // purple — transitional
-  stopping: "#F59E0B",   // amber — transitional
-  archived: "#6B7280",   // gray — archived
+  running: "var(--q-accent)",    // green — only running is green
+  waiting: "var(--q-cyan)",    // cyan — done, waiting for input
+  idle: "var(--q-fg-secondary)",       // gray — never started
+  paused: "var(--q-fg-secondary)",     // gray — same as idle
+  done: "var(--q-cyan)",       // cyan
+  error: "var(--q-error)",      // red
+  starting: "var(--q-purple)",   // purple — transitional
+  resuming: "var(--q-purple)",   // purple — transitional
+  stopping: "var(--q-warning)",   // amber — transitional
+  archived: "var(--q-fg-secondary)",   // gray — archived
 };
 
 const isAnimated = (s: DisplayStatus) =>

@@ -50,8 +50,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       style={{
         left: adjustedX,
         top: adjustedY,
-        backgroundColor: "#0A0A0A",
-        border: "1px solid #2a2a2a",
+        backgroundColor: "var(--q-bg)",
+        border: "1px solid var(--q-border)",
         borderRadius: 0,
         minWidth: 180,
       }}
@@ -65,7 +65,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               style={{
                 fontFamily: "'IBM Plex Mono', monospace",
                 fontSize: 9,
-                color: "#4B5563",
+                color: "var(--q-fg-muted)",
                 lineHeight: "16px",
               }}
             >
@@ -79,7 +79,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               key={i}
               style={{
                 height: 1,
-                backgroundColor: "#2a2a2a",
+                backgroundColor: "var(--q-border)",
                 margin: "2px 0",
               }}
             />
@@ -99,13 +99,13 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               gap: 8,
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 11,
-              color: item.labelColor ?? "#D1D5DB",
+              color: item.labelColor ?? "var(--q-fg-dimmed)",
               backgroundColor: "transparent",
               border: "none",
               borderRadius: 0,
               cursor: "pointer",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1F1F1F")}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
           >
             <span style={{ color: item.iconColor, flexShrink: 0 }}>{item.icon}</span>

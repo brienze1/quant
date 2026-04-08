@@ -88,8 +88,8 @@ function SidebarScrollArea({ children }: { children: React.ReactNode }) {
       {/* custom scrollbar: black track + white thumb */}
       {thumb.show && (
         <>
-          <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "#0A0A0A", pointerEvents: "none" }} />
-          <div style={{ position: "absolute", right: 0, top: thumb.top, width: 4, height: thumb.height, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 2, pointerEvents: "none" }} />
+          <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "var(--q-bg)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", right: 0, top: thumb.top, width: 4, height: thumb.height, backgroundColor: "var(--q-scrollbar-thumb)", borderRadius: 2, pointerEvents: "none" }} />
         </>
       )}
     </div>
@@ -184,14 +184,14 @@ export function Sidebar({
         {
           type: "item",
           icon: "#",
-          iconColor: "#10B981",
+          iconColor: "var(--q-accent)",
           label: "+ task",
           onClick: () => onCreateTask(repo.id),
         },
         {
           type: "item",
           icon: ">",
-          iconColor: "#10B981",
+          iconColor: "var(--q-accent)",
           label: "+ session",
           onClick: () => onCreateSession(repo.id),
         },
@@ -199,14 +199,14 @@ export function Sidebar({
         {
           type: "item",
           icon: "$",
-          iconColor: "#6B7280",
+          iconColor: "var(--q-fg-secondary)",
           label: "open in terminal",
           onClick: () => api.openInTerminal(repo.path),
         },
         {
           type: "item",
           icon: "$",
-          iconColor: "#6B7280",
+          iconColor: "var(--q-fg-secondary)",
           label: "open in finder",
           onClick: () => api.openInFinder(repo.path),
         },
@@ -214,16 +214,16 @@ export function Sidebar({
         {
           type: "item",
           icon: "$",
-          iconColor: "#6B7280",
+          iconColor: "var(--q-fg-secondary)",
           label: "rename",
           onClick: () => console.log("TODO: rename repo", repo.id),
         },
         {
           type: "item",
           icon: "x",
-          iconColor: "#EF4444",
+          iconColor: "var(--q-error)",
           label: "remove",
-          labelColor: "#EF4444",
+          labelColor: "var(--q-error)",
           onClick: () => onRemoveRepo(repo.id),
         },
       ],
@@ -244,7 +244,7 @@ export function Sidebar({
       items.push({
         type: "item",
         icon: ">",
-        iconColor: "#10B981",
+        iconColor: "var(--q-accent)",
         label: "+ session",
         onClick: () => onCreateSession(task.repoId, task.id),
       });
@@ -252,7 +252,7 @@ export function Sidebar({
       items.push({
         type: "item",
         icon: "$",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "rename",
         onClick: () => onRenameTask?.(task.id, task.tag, task.name),
       });
@@ -260,35 +260,35 @@ export function Sidebar({
       items.push({
         type: "item",
         icon: "~",
-        iconColor: "#F59E0B",
+        iconColor: "var(--q-warning)",
         label: "archive",
-        labelColor: "#F59E0B",
+        labelColor: "var(--q-warning)",
         onClick: () => onArchiveTask(task.id),
       });
       items.push({
         type: "item",
         icon: "x",
-        iconColor: "#EF4444",
+        iconColor: "var(--q-error)",
         label: "delete",
-        labelColor: "#EF4444",
+        labelColor: "var(--q-error)",
         onClick: () => onDeleteTask(task.id),
       });
     } else {
       items.push({
         type: "item",
         icon: "~",
-        iconColor: "#10B981",
+        iconColor: "var(--q-accent)",
         label: "unarchive",
-        labelColor: "#10B981",
+        labelColor: "var(--q-accent)",
         onClick: () => onUnarchiveTask(task.id),
       });
       items.push({ type: "separator" });
       items.push({
         type: "item",
         icon: "x",
-        iconColor: "#EF4444",
+        iconColor: "var(--q-error)",
         label: "delete",
-        labelColor: "#EF4444",
+        labelColor: "var(--q-error)",
         onClick: () => onDeleteTask(task.id),
       });
     }
@@ -311,7 +311,7 @@ export function Sidebar({
       items.push({
         type: "item",
         icon: "$",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "open in system terminal",
         onClick: () => {
           const path = session.worktreePath || session.directory;
@@ -321,7 +321,7 @@ export function Sidebar({
       items.push({
         type: "item",
         icon: "$",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "open in finder",
         onClick: () => {
           const path = session.worktreePath || session.directory;
@@ -332,7 +332,7 @@ export function Sidebar({
       items.push({
         type: "item",
         icon: "$",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "rename",
         onClick: () => onRenameSession?.(session.id, session.name),
       });
@@ -343,7 +343,7 @@ export function Sidebar({
         items.push({
           type: "item",
           icon: "$",
-          iconColor: "#6B7280",
+          iconColor: "var(--q-fg-secondary)",
           label: "move to task",
           onClick: () => onMoveSession(session.id, session.repoId),
         });
@@ -354,21 +354,21 @@ export function Sidebar({
       items.push({
         type: "item",
         icon: "$",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "git commit",
         onClick: () => onGitCommit(session.id, session.name),
       });
       items.push({
         type: "item",
         icon: "$",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "git pull",
         onClick: () => onGitPull(session.id),
       });
       items.push({
         type: "item",
         icon: "$",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "git push",
         onClick: () => onGitPush(session.id),
       });
@@ -380,7 +380,7 @@ export function Sidebar({
           items.push({
             type: "item",
             icon: ">",
-            iconColor: "#10B981",
+            iconColor: "var(--q-accent)",
             label: sc.name,
             onClick: () => api.runShortcut(session.id, sc.command).catch(console.error),
           });
@@ -392,35 +392,35 @@ export function Sidebar({
       items.push({
         type: "item",
         icon: "~",
-        iconColor: "#F59E0B",
+        iconColor: "var(--q-warning)",
         label: "archive",
-        labelColor: "#F59E0B",
+        labelColor: "var(--q-warning)",
         onClick: () => onArchiveSession(session.id),
       });
       items.push({
         type: "item",
         icon: "x",
-        iconColor: "#EF4444",
+        iconColor: "var(--q-error)",
         label: "delete",
-        labelColor: "#EF4444",
+        labelColor: "var(--q-error)",
         onClick: () => onDeleteSession(session.id),
       });
     } else {
       items.push({
         type: "item",
         icon: "~",
-        iconColor: "#10B981",
+        iconColor: "var(--q-accent)",
         label: "unarchive",
-        labelColor: "#10B981",
+        labelColor: "var(--q-accent)",
         onClick: () => onUnarchiveSession(session.id),
       });
       items.push({ type: "separator" });
       items.push({
         type: "item",
         icon: "x",
-        iconColor: "#EF4444",
+        iconColor: "var(--q-error)",
         label: "delete",
-        labelColor: "#EF4444",
+        labelColor: "var(--q-error)",
         onClick: () => onDeleteSession(session.id),
       });
     }
@@ -453,26 +453,26 @@ export function Sidebar({
           className="flex flex-col h-full shrink-0"
           style={{
             width: SIDEBAR_COLLAPSED_WIDTH,
-            backgroundColor: "#0A0A0A",
-            borderRight: "1px solid #2a2a2a",
+            backgroundColor: "var(--q-bg)",
+            borderRight: "1px solid var(--q-border)",
           }}
         >
           {/* header: logo + expand toggle */}
           <div
             className="flex flex-col items-center justify-center gap-1 py-2"
-            style={{ borderBottom: "1px solid #2a2a2a", height: 64 }}
+            style={{ borderBottom: "1px solid var(--q-border)", height: 64 }}
           >
             <span
-              style={{ color: "#10B981", fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700 }}
+              style={{ color: "var(--q-accent)", fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700 }}
             >
               {">"}
             </span>
             <button
               onClick={() => setCollapsed(false)}
               className="flex items-center justify-center transition-colors"
-              style={{ color: "#6B7280" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+              style={{ color: "var(--q-fg-secondary)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
               title="expand sidebar"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -493,29 +493,29 @@ export function Sidebar({
                 className="flex items-center justify-center shrink-0 transition-colors"
                 style={{
                   width: 32, height: 32, borderRadius: 4,
-                  color: "#6B7280",
+                  color: "var(--q-fg-secondary)",
                   fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 14, fontWeight: 700,
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#1F1F1F"; e.currentTarget.style.color = "#10B981"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#6B7280"; }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"; e.currentTarget.style.color = "var(--q-accent)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
                 title={repo.name}
               >
                 /
               </button>
             ))}
-            <div style={{ width: 24, height: 1, backgroundColor: "#2a2a2a", marginTop: 4, marginBottom: 4 }} />
+            <div style={{ width: 24, height: 1, backgroundColor: "var(--q-border)", marginTop: 4, marginBottom: 4 }} />
             <button
               onClick={onOpenRepo}
               className="flex items-center justify-center shrink-0 transition-colors"
               style={{
                 width: 32, height: 32, borderRadius: 4,
-                color: "#4B5563",
+                color: "var(--q-fg-muted)",
                 fontFamily: "'JetBrains Mono', monospace",
                 fontSize: 14,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "#10B981"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "#4B5563"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-accent)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-muted)"; }}
               title="add repo"
             >
               +
@@ -525,16 +525,16 @@ export function Sidebar({
           {/* bottom bar */}
           <div
             className="flex flex-col items-center justify-center gap-1.5 py-2"
-            style={{ borderTop: "1px solid #2a2a2a" }}
+            style={{ borderTop: "1px solid var(--q-border)" }}
           >
             <button
               onClick={() => {
                 if (repos.length > 0) onCreateSession(repos[0].id);
               }}
               className="flex items-center justify-center transition-colors"
-              style={{ color: "#10B981", fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700 }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#059669")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#10B981")}
+              style={{ color: "var(--q-accent)", fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700 }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
               title="new session"
             >
               +
@@ -565,38 +565,38 @@ export function Sidebar({
           width: sidebarWidth,
           minWidth: SIDEBAR_MIN_WIDTH,
           maxWidth: SIDEBAR_MAX_WIDTH,
-          backgroundColor: "#0A0A0A",
-          borderRight: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          borderRight: "1px solid var(--q-border)",
         }}
       >
         {/* header */}
         <div
           className="flex items-center justify-between px-4 py-3"
-          style={{ borderBottom: "1px solid #2a2a2a" }}
+          style={{ borderBottom: "1px solid var(--q-border)" }}
         >
           <h1
             className="text-sm font-bold lowercase"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}
           >
-            <span style={{ color: "#10B981" }}>{">"}</span>{" "}
-            <span style={{ color: "#FAFAFA" }}>quant</span>
+            <span style={{ color: "var(--q-accent)" }}>{">"}</span>{" "}
+            <span style={{ color: "var(--q-fg)" }}>quant</span>
           </h1>
           <div className="flex items-center gap-3">
             <button
               onClick={onOpenRepo}
               className="text-xs lowercase transition-colors"
-              style={{ color: "#6B7280", fontFamily: "'JetBrains Mono', monospace" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+              style={{ color: "var(--q-fg-secondary)", fontFamily: "'JetBrains Mono', monospace" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
             >
               + repo
             </button>
             <button
               onClick={() => setCollapsed(true)}
               className="flex items-center justify-center transition-colors"
-              style={{ color: "#6B7280" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+              style={{ color: "var(--q-fg-secondary)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
               title="collapse sidebar"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -611,7 +611,7 @@ export function Sidebar({
         {/* archive toggle */}
         <div
           className="flex"
-          style={{ borderBottom: "1px solid #2a2a2a" }}
+          style={{ borderBottom: "1px solid var(--q-border)" }}
         >
           <button
             onClick={() => setShowArchived(false)}
@@ -619,8 +619,8 @@ export function Sidebar({
             style={{
               fontFamily: "'JetBrains Mono', monospace",
               fontWeight: showArchived ? "normal" : 500,
-              color: showArchived ? "#6B7280" : "#10B981",
-              borderBottom: showArchived ? "2px solid transparent" : "2px solid #10B981",
+              color: showArchived ? "var(--q-fg-secondary)" : "var(--q-accent)",
+              borderBottom: showArchived ? "2px solid transparent" : "2px solid var(--q-accent)",
             }}
           >
             active
@@ -631,8 +631,8 @@ export function Sidebar({
             style={{
               fontFamily: "'JetBrains Mono', monospace",
               fontWeight: showArchived ? 500 : "normal",
-              color: showArchived ? "#10B981" : "#6B7280",
-              borderBottom: showArchived ? "2px solid #10B981" : "2px solid transparent",
+              color: showArchived ? "var(--q-accent)" : "var(--q-fg-secondary)",
+              borderBottom: showArchived ? "2px solid var(--q-accent)" : "2px solid transparent",
             }}
           >
             archived
@@ -671,7 +671,7 @@ export function Sidebar({
         </SidebarScrollArea>
 
         {/* bottom bar */}
-        <div className="flex items-center gap-2 p-3" style={{ borderTop: "1px solid #2a2a2a" }}>
+        <div className="flex items-center gap-2 p-3" style={{ borderTop: "1px solid var(--q-border)" }}>
           <button
             onClick={() => {
               if (repos.length > 0) {
@@ -680,13 +680,13 @@ export function Sidebar({
             }}
             className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm lowercase transition-colors"
             style={{
-              backgroundColor: "#10B981",
-              color: "#0A0A0A",
+              backgroundColor: "var(--q-accent)",
+              color: "var(--q-bg)",
               fontFamily: "'JetBrains Mono', monospace",
               fontWeight: 500,
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#059669")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#10B981")}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-accent-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--q-accent)")}
           >
             $ new_session
           </button>
@@ -714,11 +714,11 @@ export function Sidebar({
         }}
         onMouseEnter={(e) => {
           const grip = e.currentTarget.querySelector<HTMLElement>("[data-grip]");
-          if (grip) grip.style.backgroundColor = "#6B7280";
+          if (grip) grip.style.backgroundColor = "var(--q-fg-secondary)";
         }}
         onMouseLeave={(e) => {
           const grip = e.currentTarget.querySelector<HTMLElement>("[data-grip]");
-          if (grip) grip.style.backgroundColor = "#4B5563";
+          if (grip) grip.style.backgroundColor = "var(--q-fg-muted)";
         }}
       >
         <div
@@ -727,7 +727,7 @@ export function Sidebar({
             width: 2,
             height: 32,
             borderRadius: 1,
-            backgroundColor: "#4B5563",
+            backgroundColor: "var(--q-fg-muted)",
             transition: "background-color 150ms",
           }}
         />
@@ -793,25 +793,25 @@ function RepoNode({
         onContextMenu={(e) => onRepoContextMenu(e, repo)}
         className="w-full flex items-center gap-1.5 px-3 py-2 text-left text-xs transition-colors"
         style={{ fontFamily: "'JetBrains Mono', monospace" }}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#1F1F1F")}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
       >
-        <span className="text-[10px] w-3 shrink-0" style={{ color: "#4B5563" }}>
+        <span className="text-[10px] w-3 shrink-0" style={{ color: "var(--q-fg-muted)" }}>
           {expanded ? "v" : ">"}
         </span>
-        <span className="shrink-0 font-bold" style={{ color: "#6B7280" }}>
+        <span className="shrink-0 font-bold" style={{ color: "var(--q-fg-secondary)" }}>
           /
         </span>
         <span
           className="font-bold overflow-hidden whitespace-nowrap flex-1"
-          style={{ color: "#FAFAFA" }}
+          style={{ color: "var(--q-fg)" }}
         >
           {repo.name}
         </span>
         <span
           className="text-[9px] overflow-hidden whitespace-nowrap shrink-0 max-w-[100px]"
           style={{
-            color: "#4B5563",
+            color: "var(--q-fg-muted)",
             textOverflow: "ellipsis",
           }}
         >
@@ -853,11 +853,11 @@ function RepoNode({
               className="w-full flex items-center gap-1.5 py-1 text-[10px] transition-colors"
               style={{
                 paddingLeft: "36px",
-                color: "#4B5563",
+                color: "var(--q-fg-muted)",
                 fontFamily: "'JetBrains Mono', monospace",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#10B981")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
             >
               + task
             </button>
@@ -866,7 +866,7 @@ function RepoNode({
       )}
 
       {showSeparator && (
-        <div className="mx-3 my-1" style={{ borderBottom: "1px solid #2a2a2a" }} />
+        <div className="mx-3 my-1" style={{ borderBottom: "1px solid var(--q-border)" }} />
       )}
     </div>
   );
@@ -956,22 +956,22 @@ function TaskNode({
         style={{
           paddingLeft: "28px",
           fontFamily: "'JetBrains Mono', monospace",
-          backgroundColor: isDragOver ? "#1F1F1F" : undefined,
-          borderLeft: isDragOver ? "2px solid #10B981" : "2px solid transparent",
+          backgroundColor: isDragOver ? "var(--q-bg-hover)" : undefined,
+          borderLeft: isDragOver ? "2px solid var(--q-accent)" : "2px solid transparent",
           opacity: isArchived ? 0.6 : 1,
         }}
-        onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = "#1F1F1F"; }}
+        onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"; }}
         onMouseLeave={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = "transparent"; }}
       >
-        <span className="text-[10px] w-3 shrink-0" style={{ color: "#4B5563" }}>
+        <span className="text-[10px] w-3 shrink-0" style={{ color: "var(--q-fg-muted)" }}>
           {expanded ? "v" : ">"}
         </span>
-        <span className="shrink-0 font-bold" style={{ color: "#10B981" }}>
+        <span className="shrink-0 font-bold" style={{ color: "var(--q-accent)" }}>
           #
         </span>
         <span
           className="overflow-hidden whitespace-nowrap flex-1"
-          style={{ color: "#FAFAFA" }}
+          style={{ color: "var(--q-fg)" }}
         >
           {task.tag} {task.name}
         </span>
@@ -1002,11 +1002,11 @@ function TaskNode({
               className="w-full flex items-center gap-1.5 py-1 text-[10px] transition-colors"
               style={{
                 paddingLeft: "60px",
-                color: "#4B5563",
+                color: "var(--q-fg-muted)",
                 fontFamily: "'JetBrains Mono', monospace",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#6B7280")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
             >
               + session
             </button>
@@ -1106,12 +1106,12 @@ function SessionNode({
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-xs transition-colors"
         style={{
           paddingLeft: `${paddingLeft}px`,
-          backgroundColor: isActive ? "#1F1F1F" : "transparent",
+          backgroundColor: isActive ? "var(--q-bg-hover)" : "transparent",
           fontFamily: "'JetBrains Mono', monospace",
           opacity: isArchived ? 0.6 : 1,
         }}
         onMouseEnter={(e) => {
-          if (!isActive) e.currentTarget.style.backgroundColor = "#1F1F1F";
+          if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
         }}
         onMouseLeave={(e) => {
           if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
@@ -1121,7 +1121,7 @@ function SessionNode({
         <span
           className="overflow-hidden whitespace-nowrap flex-1"
           style={{
-            color: isActive ? "#FAFAFA" : "#6B7280",
+            color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
             textOverflow: "ellipsis",
           }}
         >
@@ -1131,8 +1131,8 @@ function SessionNode({
           <span
             className="shrink-0 text-[8px] px-1"
             style={{
-              color: "#10B981",
-              border: "1px solid #10B981",
+              color: "var(--q-accent)",
+              border: "1px solid var(--q-accent)",
             }}
           >
             wt
@@ -1142,8 +1142,8 @@ function SessionNode({
           <span
             className="shrink-0 text-[8px] px-1"
             style={{
-              color: "#A855F7",
-              border: "1px solid #A855F7",
+              color: "var(--q-purple-light)",
+              border: "1px solid var(--q-purple-light)",
             }}
           >
             sh

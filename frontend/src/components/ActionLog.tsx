@@ -9,12 +9,12 @@ const actionConfig: Record<
   Action["type"],
   { prefix: string; prefixColor: string; textColor: string }
 > = {
-  user_message: { prefix: ">", prefixColor: "#FAFAFA", textColor: "#FAFAFA" },
-  claude_read: { prefix: "$", prefixColor: "#6B7280", textColor: "#6B7280" },
-  claude_edit: { prefix: "++", prefixColor: "#10B981", textColor: "#10B981" },
-  claude_create: { prefix: "++", prefixColor: "#10B981", textColor: "#10B981" },
-  claude_bash: { prefix: "$", prefixColor: "#F59E0B", textColor: "#F59E0B" },
-  claude_result: { prefix: "$", prefixColor: "#10B981", textColor: "#10B981" },
+  user_message: { prefix: ">", prefixColor: "var(--q-fg)", textColor: "var(--q-fg)" },
+  claude_read: { prefix: "$", prefixColor: "var(--q-fg-secondary)", textColor: "var(--q-fg-secondary)" },
+  claude_edit: { prefix: "++", prefixColor: "var(--q-accent)", textColor: "var(--q-accent)" },
+  claude_create: { prefix: "++", prefixColor: "var(--q-accent)", textColor: "var(--q-accent)" },
+  claude_bash: { prefix: "$", prefixColor: "var(--q-warning)", textColor: "var(--q-warning)" },
+  claude_result: { prefix: "$", prefixColor: "var(--q-accent)", textColor: "var(--q-accent)" },
 };
 
 function formatTime(ts: string): string {
@@ -40,7 +40,7 @@ export function ActionLog({ actions, maxVisible }: Props) {
     <div className="ml-4 mr-2 my-1">
       <div
         className="text-[9px] px-2 py-0.5 mb-0.5"
-        style={{ color: "#4B5563", fontFamily: "'JetBrains Mono', monospace" }}
+        style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
       >
         // {visible.length} of {total} actions
       </div>
@@ -56,7 +56,7 @@ export function ActionLog({ actions, maxVisible }: Props) {
               className="flex items-center gap-1.5 px-2 py-0.5"
               style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px" }}
             >
-              <span className="shrink-0" style={{ color: "#4B5563" }}>
+              <span className="shrink-0" style={{ color: "var(--q-fg-muted)" }}>
                 {formatTime(action.timestamp)}
               </span>
               <span className="shrink-0" style={{ color: cfg.prefixColor }}>
@@ -78,7 +78,7 @@ export function ActionLog({ actions, maxVisible }: Props) {
       {remaining > 0 && (
         <div
           className="text-[9px] px-2 py-0.5"
-          style={{ color: "#4B5563", fontFamily: "'JetBrains Mono', monospace" }}
+          style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
         >
           {">> scroll for " + remaining + " more"}
         </div>

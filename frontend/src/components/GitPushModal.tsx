@@ -21,40 +21,40 @@ export function GitPushModal({ sessionId, currentBranch, onSubmit, onCancel }: P
   }, [sessionId]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
       <div
         className="w-full p-6"
         style={{
           maxWidth: 480,
-          backgroundColor: "#0A0A0A",
-          border: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
           fontFamily: font,
         }}
       >
-        <label className="block text-[10px] mb-1 lowercase" style={{ color: "#6B7280" }}>
+        <label className="block text-[10px] mb-1 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
           // git push
         </label>
-        <div className="text-[10px] mb-4" style={{ color: "#4B5563" }}>
-          branch: <span style={{ color: "#10B981" }}>{currentBranch}</span>
+        <div className="text-[10px] mb-4" style={{ color: "var(--q-fg-muted)" }}>
+          branch: <span style={{ color: "var(--q-accent)" }}>{currentBranch}</span>
         </div>
 
         <div
           className="mb-5"
           style={{
-            border: "1px solid #2a2a2a",
+            border: "1px solid var(--q-border)",
             minHeight: 80,
             maxHeight: 240,
             overflowY: "auto",
           }}
         >
           {commits === null && !error && (
-            <div className="px-3 py-3 text-[10px]" style={{ color: "#4B5563" }}>loading commits...</div>
+            <div className="px-3 py-3 text-[10px]" style={{ color: "var(--q-fg-muted)" }}>loading commits...</div>
           )}
           {error && (
-            <div className="px-3 py-3 text-[10px]" style={{ color: "#EF4444" }}>{error}</div>
+            <div className="px-3 py-3 text-[10px]" style={{ color: "var(--q-error)" }}>{error}</div>
           )}
           {commits !== null && commits.length === 0 && (
-            <div className="px-3 py-3 text-[10px]" style={{ color: "#4B5563" }}>
+            <div className="px-3 py-3 text-[10px]" style={{ color: "var(--q-fg-muted)" }}>
               no unpushed commits
             </div>
           )}
@@ -66,10 +66,10 @@ export function GitPushModal({ sessionId, currentBranch, onSubmit, onCancel }: P
               <div
                 key={i}
                 className="flex items-start gap-3 px-3 py-2 text-[11px]"
-                style={{ borderBottom: i < commits.length - 1 ? "1px solid #2a2a2a" : "none" }}
+                style={{ borderBottom: i < commits.length - 1 ? "1px solid var(--q-border)" : "none" }}
               >
-                <span style={{ color: "#10B981", flexShrink: 0 }}>{hash}</span>
-                <span style={{ color: "#FAFAFA" }}>{msg}</span>
+                <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>{hash}</span>
+                <span style={{ color: "var(--q-fg)" }}>{msg}</span>
               </div>
             );
           })}
@@ -80,9 +80,9 @@ export function GitPushModal({ sessionId, currentBranch, onSubmit, onCancel }: P
             type="button"
             onClick={onCancel}
             className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "#6B7280" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+            style={{ color: "var(--q-fg-secondary)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
           >
             cancel
           </button>
@@ -92,8 +92,8 @@ export function GitPushModal({ sessionId, currentBranch, onSubmit, onCancel }: P
             disabled={commits !== null && commits.length === 0}
             className="px-4 py-2 text-xs lowercase transition-colors"
             style={{
-              backgroundColor: commits !== null && commits.length === 0 ? "#1F1F1F" : "#10B981",
-              color: commits !== null && commits.length === 0 ? "#4B5563" : "#0A0A0A",
+              backgroundColor: commits !== null && commits.length === 0 ? "var(--q-bg-hover)" : "var(--q-accent)",
+              color: commits !== null && commits.length === 0 ? "var(--q-fg-muted)" : "var(--q-bg)",
               fontWeight: 500,
             }}
           >

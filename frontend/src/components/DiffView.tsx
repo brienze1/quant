@@ -110,11 +110,11 @@ function buildVisualRows(beforeLines: string[], afterLines: string[], hunks: Hun
 
 function statusColor(s: string) {
   switch (s) {
-    case "A": return "#10B981";
-    case "D": return "#EF4444";
-    case "R": return "#F59E0B";
-    case "?": return "#6B7280";
-    default:  return "#60A5FA";
+    case "A": return "var(--q-accent)";
+    case "D": return "var(--q-error)";
+    case "R": return "var(--q-warning)";
+    case "?": return "var(--q-fg-secondary)";
+    default:  return "var(--q-blue-light)";
   }
 }
 
@@ -259,9 +259,9 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
     s.textContent = `
       .diff-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
       .diff-scroll::-webkit-scrollbar-track { background: transparent; }
-      .diff-scroll::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
-      .diff-scroll::-webkit-scrollbar-thumb:hover { background: #4B5563; }
-      .diff-scroll::-webkit-scrollbar-corner { background: #0A0A0A; }
+      .diff-scroll::-webkit-scrollbar-thumb { background: var(--q-border); border-radius: 3px; }
+      .diff-scroll::-webkit-scrollbar-thumb:hover { background: var(--q-fg-muted); }
+      .diff-scroll::-webkit-scrollbar-corner { background: var(--q-bg); }
     `;
     document.head.appendChild(s);
   }, []);
@@ -357,29 +357,29 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: "#0A0A0A", fontFamily: FONT }}>
+    <div className="flex h-screen w-screen overflow-hidden" style={{ backgroundColor: "var(--q-bg)", fontFamily: FONT }}>
 
       {/* ── SIDEBAR ───────────────────────────────────────────────────────── */}
       <div ref={sidebarRef} className="flex flex-col h-full relative"
-        style={{ width: sidebarWidth, minWidth: sidebarWidth, borderRight: "1px solid #2a2a2a" }}>
+        style={{ width: sidebarWidth, minWidth: sidebarWidth, borderRight: "1px solid var(--q-border)" }}>
 
         <button onClick={onBack} className="flex items-center gap-2 px-4 w-full text-left flex-shrink-0"
-          style={{ height: 48, borderBottom: "1px solid #2a2a2a", backgroundColor: "transparent" }}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = "#1F1F1F"}
+          style={{ height: 48, borderBottom: "1px solid var(--q-border)", backgroundColor: "transparent" }}
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--q-fg-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
           </svg>
-          <span style={{ color: "#FAFAFA", fontSize: 13, fontWeight: 700 }}>&gt; git diff</span>
+          <span style={{ color: "var(--q-fg)", fontSize: 13, fontWeight: 700 }}>&gt; git diff</span>
         </button>
 
         <div className="flex items-center gap-2 px-4 flex-shrink-0"
-          style={{ height: 32, borderBottom: "1px solid #2a2a2a", cursor: "pointer" }} onClick={toggleAll}>
-          <div style={{ width: 14, height: 14, backgroundColor: "#0A0A0A", border: `1px solid ${allChecked || someChecked ? "#10B981" : "#6B7280"}`, borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {allChecked  && <span style={{ color: "#10B981", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>}
-            {someChecked && <span style={{ color: "#10B981", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>−</span>}
+          style={{ height: 32, borderBottom: "1px solid var(--q-border)", cursor: "pointer" }} onClick={toggleAll}>
+          <div style={{ width: 14, height: 14, backgroundColor: "var(--q-bg)", border: `1px solid ${allChecked || someChecked ? "var(--q-accent)" : "var(--q-fg-secondary)"}`, borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {allChecked  && <span style={{ color: "var(--q-accent)", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>}
+            {someChecked && <span style={{ color: "var(--q-accent)", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>−</span>}
           </div>
-          <span style={{ color: "#6B7280", fontSize: 11 }}>{loadingFiles ? "loading..." : `${checkedPaths.size} of ${files.length} files`}</span>
+          <span style={{ color: "var(--q-fg-secondary)", fontSize: 11 }}>{loadingFiles ? "loading..." : `${checkedPaths.size} of ${files.length} files`}</span>
         </div>
 
         <div className="overflow-y-auto flex-shrink-0" style={{ height: `calc(${fileListFlex * 100}% - 86px)` }}>
@@ -388,50 +388,50 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
             const isChecked = checkedPaths.has(file.path);
             return (
               <div key={file.path} className="flex items-center gap-2 px-3"
-                style={{ height: 32, cursor: "pointer", backgroundColor: isSelected ? "#1F1F1F" : "transparent", borderBottom: "1px solid #1a1a1a" }}
+                style={{ height: 32, cursor: "pointer", backgroundColor: isSelected ? "var(--q-bg-hover)" : "transparent", borderBottom: "1px solid var(--q-bg-surface)" }}
                 onClick={() => setSelectedFile(file)}
-                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = "#161616"; }}
+                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = "var(--q-bg-menu)"; }}
                 onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = "transparent"; }}>
-                <div style={{ width: 14, height: 14, backgroundColor: "#0A0A0A", border: `1px solid ${isChecked ? "#10B981" : "#6B7280"}`, borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                <div style={{ width: 14, height: 14, backgroundColor: "var(--q-bg)", border: `1px solid ${isChecked ? "var(--q-accent)" : "var(--q-fg-secondary)"}`, borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                   onClick={e => { e.stopPropagation(); toggleFile(file.path); }}>
-                  {isChecked && <span style={{ color: "#10B981", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>}
+                  {isChecked && <span style={{ color: "var(--q-accent)", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>}
                 </div>
                 <span style={{ color: statusColor(file.status), fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{file.status}</span>
-                <span style={{ color: isSelected ? "#FAFAFA" : "#9CA3AF", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }} title={file.path}>{file.path}</span>
+                <span style={{ color: isSelected ? "var(--q-fg)" : "var(--q-fg-tertiary)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }} title={file.path}>{file.path}</span>
               </div>
             );
           })}
           {!loadingFiles && files.length === 0 && (
-            <div className="flex items-center justify-center h-16"><span style={{ color: "#4B5563", fontSize: 11 }}>no changes</span></div>
+            <div className="flex items-center justify-center h-16"><span style={{ color: "var(--q-fg-muted)", fontSize: 11 }}>no changes</span></div>
           )}
         </div>
 
-        <div style={{ height: 6, cursor: "row-resize", backgroundColor: "#0A0A0A", borderTop: "1px solid #2a2a2a", borderBottom: "1px solid #2a2a2a", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+        <div style={{ height: 6, cursor: "row-resize", backgroundColor: "var(--q-bg)", borderTop: "1px solid var(--q-border)", borderBottom: "1px solid var(--q-border)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
           onMouseDown={onFileListResizeStart}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = "#1F1F1F"}
-          onMouseLeave={e => e.currentTarget.style.backgroundColor = "#0A0A0A"}>
-          <div style={{ width: 32, height: 2, borderRadius: 1, backgroundColor: "#4B5563" }} />
+          onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"}
+          onMouseLeave={e => e.currentTarget.style.backgroundColor = "var(--q-bg)"}>
+          <div style={{ width: 32, height: 2, borderRadius: 1, backgroundColor: "var(--q-fg-muted)" }} />
         </div>
 
         <div className="flex flex-col gap-3 p-3 overflow-y-auto" style={{ flex: 1, minHeight: 0 }}>
-          <label style={{ color: "#6B7280", fontSize: 10 }}>// commit message</label>
-          {prefix && <div className="px-2 py-1" style={{ color: "#6B7280", fontSize: 10, backgroundColor: "#1F1F1F", border: "1px solid #2a2a2a" }}>{prefix}</div>}
+          <label style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>// commit message</label>
+          {prefix && <div className="px-2 py-1" style={{ color: "var(--q-fg-secondary)", fontSize: 10, backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-border)" }}>{prefix}</div>}
           <textarea value={commitMessage} onChange={e => setCommitMessage(e.target.value)}
             placeholder="describe your changes..." rows={4}
-            style={{ backgroundColor: "#1F1F1F", border: "1px solid #2a2a2a", color: "#FAFAFA", fontFamily: FONT, fontSize: 11, padding: "6px 8px", resize: "none", outline: "none", width: "100%", boxSizing: "border-box" }}
-            onFocus={e => e.currentTarget.style.borderColor = "#10B981"}
-            onBlur={e => e.currentTarget.style.borderColor = "#2a2a2a"} />
-          <div className="flex items-center gap-2 cursor-pointer" style={{ color: "#6B7280", fontSize: 11 }} onClick={() => setPushAfter(v => !v)}>
-            <div style={{ width: 14, height: 14, backgroundColor: "#0A0A0A", border: `1px solid ${pushAfter ? "#10B981" : "#6B7280"}`, borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              {pushAfter && <span style={{ color: "#10B981", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>}
+            style={{ backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-border)", color: "var(--q-fg)", fontFamily: FONT, fontSize: 11, padding: "6px 8px", resize: "none", outline: "none", width: "100%", boxSizing: "border-box" }}
+            onFocus={e => e.currentTarget.style.borderColor = "var(--q-accent)"}
+            onBlur={e => e.currentTarget.style.borderColor = "var(--q-border)"} />
+          <div className="flex items-center gap-2 cursor-pointer" style={{ color: "var(--q-fg-secondary)", fontSize: 11 }} onClick={() => setPushAfter(v => !v)}>
+            <div style={{ width: 14, height: 14, backgroundColor: "var(--q-bg)", border: `1px solid ${pushAfter ? "var(--q-accent)" : "var(--q-fg-secondary)"}`, borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {pushAfter && <span style={{ color: "var(--q-accent)", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>}
             </div>
             push after commit
           </div>
-          {commitError && <div className="px-2 py-2" style={{ fontSize: 10, backgroundColor: "#1F1F1F", border: "1px solid #EF4444", color: "#EF4444" }}>{commitError}</div>}
+          {commitError && <div className="px-2 py-2" style={{ fontSize: 10, backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-error)", color: "var(--q-error)" }}>{commitError}</div>}
           <button disabled={committing || !(prefix + commitMessage).trim() || checkedPaths.size === 0} onClick={handleCommit}
             style={{ width: "100%", padding: "8px 0", fontSize: 12, fontFamily: FONT, fontWeight: 600,
-              backgroundColor: (prefix + commitMessage).trim() && checkedPaths.size > 0 && !committing ? "#10B981" : "#1F1F1F",
-              color: (prefix + commitMessage).trim() && checkedPaths.size > 0 && !committing ? "#0A0A0A" : "#4B5563",
+              backgroundColor: (prefix + commitMessage).trim() && checkedPaths.size > 0 && !committing ? "var(--q-accent)" : "var(--q-bg-hover)",
+              color: (prefix + commitMessage).trim() && checkedPaths.size > 0 && !committing ? "var(--q-bg)" : "var(--q-fg-muted)",
               border: "none", cursor: "pointer", outline: "none" }}>
             {committing ? "..." : `commit${pushAfter ? " & push" : ""}`}
           </button>
@@ -444,15 +444,15 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
       <div ref={diffAreaRef} className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
         <div className="flex items-center gap-3 px-4 flex-shrink-0"
-          style={{ height: 40, borderBottom: "1px solid #2a2a2a", backgroundColor: "#0D0D0D" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          style={{ height: 40, borderBottom: "1px solid var(--q-border)", backgroundColor: "var(--q-bg-subtle)" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--q-fg-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
           </svg>
-          <span style={{ color: "#FAFAFA", fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ color: "var(--q-fg)", fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {selectedFile ? selectedFile.path : "select a file"}
           </span>
           {selectedFile && diffCount > 0 && (
-            <span style={{ fontSize: 10, color: "#10B981", backgroundColor: "#0A1E12", border: "1px solid #10B981", padding: "1px 8px", flexShrink: 0 }}>
+            <span style={{ fontSize: 10, color: "var(--q-accent)", backgroundColor: "var(--q-accent-bg-faint)", border: "1px solid var(--q-accent)", padding: "1px 8px", flexShrink: 0 }}>
               {diffCount} {diffCount === 1 ? "change" : "changes"}
             </span>
           )}
@@ -462,17 +462,17 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
           <div className="flex flex-1 min-h-0 overflow-hidden">
 
             {/* ── BEFORE panel (full HEAD content, spacers for added blocks) ── */}
-            <div className="flex flex-col overflow-hidden" style={{ flex: beforePanelFlex, minWidth: 0, borderRight: "1px solid #2a2a2a" }}>
+            <div className="flex flex-col overflow-hidden" style={{ flex: beforePanelFlex, minWidth: 0, borderRight: "1px solid var(--q-border)" }}>
               <div className="flex items-center gap-2 px-4 flex-shrink-0"
-                style={{ height: 32, borderBottom: "1px solid #2a2a2a", backgroundColor: "#0D0D0D" }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#EF4444" }} />
-                <span style={{ color: "#6B7280", fontSize: 11 }}>before</span>
+                style={{ height: 32, borderBottom: "1px solid var(--q-border)", backgroundColor: "var(--q-bg-subtle)" }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--q-error)" }} />
+                <span style={{ color: "var(--q-fg-secondary)", fontSize: 11 }}>before</span>
               </div>
               <div ref={beforeScrollRef} className="flex-1 overflow-auto diff-scroll"
-                style={{ backgroundColor: "#0A0A0A" }}
+                style={{ backgroundColor: "var(--q-bg)" }}
                 onScroll={e => syncFromBefore(e.currentTarget.scrollTop, e.currentTarget.scrollLeft)}>
                 {loadingDiff ? (
-                  <div className="flex items-center justify-center h-full"><span style={{ color: "#4B5563", fontSize: 11 }}>loading...</span></div>
+                  <div className="flex items-center justify-center h-full"><span style={{ color: "var(--q-fg-muted)", fontSize: 11 }}>loading...</span></div>
                 ) : visualRows.length > 0 ? (
                   <div style={{ minWidth: "max-content" }}>
                     {visualRows.map(row => {
@@ -480,14 +480,14 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
                       const isSpacer = cell === null;
                       const isChanged = !isSpacer && cell.type === "removed" && row.after !== null;
                       const isRemoved = !isSpacer && cell.type === "removed" && row.after === null;
-                      const bg     = isSpacer ? "#111111" : isChanged ? "#1B2A40" : isRemoved ? "#2D0E0E" : "transparent";
-                      const numClr = isChanged ? "#2563EB" : isRemoved ? "#7F1D1D" : "#4B5563";
-                      const mrkClr = isChanged ? "#60A5FA" : isRemoved ? "#EF4444" : "transparent";
+                      const bg     = isSpacer ? "var(--q-bg-elevated)" : isChanged ? "var(--q-diff-changed-bg)" : isRemoved ? "var(--q-diff-removed-bg)" : "transparent";
+                      const numClr = isChanged ? "var(--q-blue-bright)" : isRemoved ? "var(--q-diff-removed-gutter)" : "var(--q-fg-muted)";
+                      const mrkClr = isChanged ? "var(--q-blue-light)" : isRemoved ? "var(--q-error)" : "transparent";
                       const mrkSym = isChanged ? "~" : isRemoved ? "−" : " ";
-                      const txtClr = isRemoved ? "#FCA5A5" : "#9CA3AF";
+                      const txtClr = isRemoved ? "var(--q-diff-removed-text)" : "var(--q-fg-tertiary)";
                       return (
                         <div key={row.key} style={{ display: "flex", height: LINE_HEIGHT, backgroundColor: bg }}>
-                          <span style={{ width: GUTTER_W, minWidth: GUTTER_W, paddingRight: 8, textAlign: "right", color: numClr, fontSize: 11, fontFamily: FONT, lineHeight: `${LINE_HEIGHT}px`, userSelect: "none", borderRight: "1px solid #1a1a1a", flexShrink: 0 }}>
+                          <span style={{ width: GUTTER_W, minWidth: GUTTER_W, paddingRight: 8, textAlign: "right", color: numClr, fontSize: 11, fontFamily: FONT, lineHeight: `${LINE_HEIGHT}px`, userSelect: "none", borderRight: "1px solid var(--q-bg-surface)", flexShrink: 0 }}>
                             {isSpacer ? "" : cell.num}
                           </span>
                           <span style={{ width: MARKER_W, minWidth: MARKER_W, textAlign: "center", color: mrkClr, fontSize: 11, fontFamily: FONT, lineHeight: `${LINE_HEIGHT}px`, userSelect: "none", flexShrink: 0 }}>
@@ -496,7 +496,7 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
                           {!isSpacer && (
                             <div style={{ margin: 0, padding: "0 8px", color: txtClr, fontSize: FONT_SIZE, lineHeight: `${LINE_HEIGHT}px`, fontFamily: FONT, whiteSpace: "pre", flex: 1, overflow: "hidden" }}>
                               {isChanged
-                                ? <DiffChars content={cell.content} other={row.after!.content} highlightBg="#2A4A70" />
+                                ? <DiffChars content={cell.content} other={row.after!.content} highlightBg="var(--q-diff-char-highlight)" />
                                 : cell.content}
                             </div>
                           )}
@@ -505,44 +505,44 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
                     })}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-full"><span style={{ color: "#4B5563", fontSize: 11 }}>new file</span></div>
+                  <div className="flex items-center justify-center h-full"><span style={{ color: "var(--q-fg-muted)", fontSize: 11 }}>new file</span></div>
                 )}
               </div>
             </div>
 
             {/* Panel resize */}
-            <div style={{ width: 6, cursor: "col-resize", backgroundColor: "#0A0A0A", borderLeft: "1px solid #2a2a2a", borderRight: "1px solid #2a2a2a", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+            <div style={{ width: 6, cursor: "col-resize", backgroundColor: "var(--q-bg)", borderLeft: "1px solid var(--q-border)", borderRight: "1px solid var(--q-border)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
               onMouseDown={onBeforeResizeStart}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = "#1F1F1F"}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = "#0A0A0A"}>
-              <div style={{ width: 2, height: 32, borderRadius: 1, backgroundColor: "#4B5563" }} />
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = "var(--q-bg)"}>
+              <div style={{ width: 2, height: 32, borderRadius: 1, backgroundColor: "var(--q-fg-muted)" }} />
             </div>
 
             {/* ── AFTER panel (editable textarea + aligned gutter/bg) ─────── */}
             <div className="flex flex-col overflow-hidden" style={{ flex: 1 - beforePanelFlex, minWidth: 0, position: "relative" }}>
               <div className="flex items-center gap-2 px-4 flex-shrink-0"
-                style={{ height: 32, borderBottom: "1px solid #2a2a2a", backgroundColor: "#0D0D0D" }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#10B981" }} />
-                <span style={{ color: "#FAFAFA", fontSize: 11, fontWeight: 500 }}>current version</span>
-                <span style={{ marginLeft: "auto", color: "#4B5563", fontSize: 10 }}>editable</span>
+                style={{ height: 32, borderBottom: "1px solid var(--q-border)", backgroundColor: "var(--q-bg-subtle)" }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--q-accent)" }} />
+                <span style={{ color: "var(--q-fg)", fontSize: 11, fontWeight: 500 }}>current version</span>
+                <span style={{ marginLeft: "auto", color: "var(--q-fg-muted)", fontSize: 10 }}>editable</span>
               </div>
 
               {loadingDiff ? (
-                <div className="flex flex-1 items-center justify-center"><span style={{ color: "#4B5563", fontSize: 11 }}>loading...</span></div>
+                <div className="flex flex-1 items-center justify-center"><span style={{ color: "var(--q-fg-muted)", fontSize: 11 }}>loading...</span></div>
               ) : (
-                <div className="flex flex-1 min-h-0 overflow-hidden" style={{ position: "relative", backgroundColor: "#0A0A0A" }}>
+                <div className="flex flex-1 min-h-0 overflow-hidden" style={{ position: "relative", backgroundColor: "var(--q-bg)" }}>
 
                   {/* Gutter: line numbers + spacers, synced via scrollTop */}
                   <div ref={afterGutterRef}
-                    style={{ width: GUTTER_W + MARKER_W, minWidth: GUTTER_W + MARKER_W, overflow: "hidden", borderRight: "1px solid #1a1a1a", flexShrink: 0, backgroundColor: "#0A0A0A" }}>
+                    style={{ width: GUTTER_W + MARKER_W, minWidth: GUTTER_W + MARKER_W, overflow: "hidden", borderRight: "1px solid var(--q-bg-surface)", flexShrink: 0, backgroundColor: "var(--q-bg)" }}>
                     {visualRows.map(row => {
                       const cell = row.after;
                       const isSpacer = cell === null;
                       const isChanged = !isSpacer && cell.type === "added" && row.before !== null;
                       const isAdded   = !isSpacer && cell.type === "added" && row.before === null;
-                      const gutterBg  = isSpacer ? "#111111" : "transparent";
-                      const numClr    = isChanged ? "#2563EB" : isAdded ? "#059669" : "#4B5563";
-                      const mrkClr    = isChanged ? "#60A5FA" : isAdded ? "#10B981" : "transparent";
+                      const gutterBg  = isSpacer ? "var(--q-bg-elevated)" : "transparent";
+                      const numClr    = isChanged ? "var(--q-blue-bright)" : isAdded ? "var(--q-accent-hover)" : "var(--q-fg-muted)";
+                      const mrkClr    = isChanged ? "var(--q-blue-light)" : isAdded ? "var(--q-accent)" : "transparent";
                       const mrkSym    = isChanged ? "~" : isAdded ? "+" : " ";
                       return (
                         <div key={row.key} style={{ display: "flex", height: LINE_HEIGHT, lineHeight: `${LINE_HEIGHT}px`, backgroundColor: gutterBg }}>
@@ -568,12 +568,12 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
                         const isSpacer  = cell === null;
                         const isChanged = !isSpacer && cell.type === "added" && row.before !== null;
                         const isAdded   = !isSpacer && cell.type === "added" && row.before === null;
-                        const bg = isSpacer ? "#111111" : isChanged ? "#1B2A40" : isAdded ? "#0D2B1A" : "transparent";
+                        const bg = isSpacer ? "var(--q-bg-elevated)" : isChanged ? "var(--q-diff-changed-bg)" : isAdded ? "var(--q-accent-bg-faint)" : "transparent";
                         return (
                           <div key={row.key} style={{ height: LINE_HEIGHT, backgroundColor: bg, position: isChanged ? "relative" : undefined }}>
                             {isChanged && (
                               <div style={{ position: "absolute", top: 0, left: 8, right: 0, bottom: 0, fontFamily: FONT, fontSize: FONT_SIZE, whiteSpace: "pre", lineHeight: `${LINE_HEIGHT}px`, pointerEvents: "none" }}>
-                                <DiffChars content={cell!.content} other={row.before!.content} highlightBg="#2A4A70" transparent />
+                                <DiffChars content={cell!.content} other={row.before!.content} highlightBg="var(--q-diff-char-highlight)" transparent />
                               </div>
                             )}
                           </div>
@@ -594,7 +594,7 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
                         position: "absolute", inset: 0,
                         width: "100%", height: "100%",
                         backgroundColor: "transparent",
-                        color: "#9CA3AF",
+                        color: "var(--q-fg-tertiary)",
                         fontFamily: FONT, fontSize: FONT_SIZE,
                         lineHeight: `${LINE_HEIGHT}px`,
                         padding: `0 8px ${numAfterSpacers * LINE_HEIGHT}px 8px`,
@@ -602,7 +602,7 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
                         boxSizing: "border-box",
                         tabSize: 2,
                         zIndex: 1,
-                        caretColor: "#10B981",
+                        caretColor: "var(--q-accent)",
                         overflowX: "auto",
                         whiteSpace: "pre",
                       }}
@@ -614,13 +614,13 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
 
               {/* ── Scroll indicator strip (IntelliJ-style change map) ── */}
               {visualRows.length > 0 && (
-                <div style={{ position: "absolute", top: 32, right: 0, bottom: 0, width: 7, backgroundColor: "#0D0D0D", zIndex: 30, pointerEvents: "none" }}>
+                <div style={{ position: "absolute", top: 32, right: 0, bottom: 0, width: 7, backgroundColor: "var(--q-bg-subtle)", zIndex: 30, pointerEvents: "none" }}>
                   {visualRows.map((row, i) => {
                     const isChanged = row.before !== null && row.after !== null && row.before.type !== "context";
                     const isAdded   = row.before === null && row.after !== null;
                     const isRemoved = row.before !== null && row.after === null && row.before.type === "removed";
                     if (!isChanged && !isAdded && !isRemoved) return null;
-                    const color = isChanged ? "#3B82F6" : isAdded ? "#10B981" : "#EF4444";
+                    const color = isChanged ? "var(--q-blue)" : isAdded ? "var(--q-accent)" : "var(--q-error)";
                     const pct = (i / visualRows.length) * 100;
                     const h = Math.max(2, 100 / visualRows.length);
                     return <div key={row.key} style={{ position: "absolute", top: `${pct}%`, height: `${h}%`, minHeight: 2, left: 1, right: 1, backgroundColor: color, borderRadius: 1 }} />;
@@ -632,7 +632,7 @@ export function DiffView({ sessionId, sessionName, commitMessagePrefix, onBack }
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-center">
-            <span style={{ color: "#4B5563", fontSize: 12 }}>
+            <span style={{ color: "var(--q-fg-muted)", fontSize: 12 }}>
               {loadingFiles ? "loading changes..." : files.length === 0 ? "no changes detected" : "select a file to view its diff"}
             </span>
           </div>

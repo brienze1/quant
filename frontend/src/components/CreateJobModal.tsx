@@ -155,16 +155,16 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
   const triggeredByRefs = editJob?.triggeredBy ?? [];
 
   const inputStyle: React.CSSProperties = {
-    backgroundColor: "#0A0A0A",
-    border: "1px solid #2a2a2a",
-    color: "#FAFAFA",
+    backgroundColor: "var(--q-bg)",
+    border: "1px solid var(--q-border)",
+    color: "var(--q-fg)",
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 12,
     height: 36,
   };
 
   const labelStyle: React.CSSProperties = {
-    color: "#6B7280",
+    color: "var(--q-fg-secondary)",
     fontSize: 10,
     fontFamily: "'JetBrains Mono', monospace",
     display: "block",
@@ -175,7 +175,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
     >
       <form
         onSubmit={handleSubmit}
@@ -183,15 +183,15 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
         style={{
           width: 520,
           maxHeight: "90vh",
-          backgroundColor: "#0A0A0A",
-          border: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
           fontFamily: "'JetBrains Mono', monospace",
         }}
       >
         {/* header */}
         <div className="px-8 pt-8 shrink-0">
-          <h2 style={{ color: "#FAFAFA", fontSize: 14, fontWeight: 700 }}>
-            <span style={{ color: "#10B981" }}>{">"}</span>{" "}
+          <h2 style={{ color: "var(--q-fg)", fontSize: 14, fontWeight: 700 }}>
+            <span style={{ color: "var(--q-accent)" }}>{">"}</span>{" "}
             {isEdit ? "edit_job" : "new_job"}
           </h2>
         </div>
@@ -199,7 +199,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
         {/* tab bar */}
         <div
           className="flex px-8 mt-4 shrink-0"
-          style={{ borderBottom: "1px solid #2a2a2a" }}
+          style={{ borderBottom: "1px solid var(--q-border)" }}
         >
           {tabs.map((tab) => (
             <button
@@ -208,11 +208,11 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
               onClick={() => setActiveTab(tab.key)}
               className="px-4 py-2 text-[11px] lowercase transition-colors"
               style={{
-                color: activeTab === tab.key ? "#10B981" : "#6B7280",
+                color: activeTab === tab.key ? "var(--q-accent)" : "var(--q-fg-secondary)",
                 fontWeight: activeTab === tab.key ? 500 : "normal",
                 borderBottom:
                   activeTab === tab.key
-                    ? "2px solid #10B981"
+                    ? "2px solid var(--q-accent)"
                     : "2px solid transparent",
                 fontFamily: "'JetBrains Mono', monospace",
                 marginBottom: -1,
@@ -220,7 +220,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                 border: "none",
                 borderBottomWidth: 2,
                 borderBottomStyle: "solid",
-                borderBottomColor: activeTab === tab.key ? "#10B981" : "transparent",
+                borderBottomColor: activeTab === tab.key ? "var(--q-accent)" : "transparent",
                 cursor: "pointer",
               }}
             >
@@ -253,11 +253,11 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                         cursor: "pointer",
                         border:
                           form.type === t
-                            ? "1px solid #10B981"
-                            : "1px solid #2a2a2a",
+                            ? "1px solid var(--q-accent)"
+                            : "1px solid var(--q-border)",
                         backgroundColor:
-                          form.type === t ? "#10B981" : "transparent",
-                        color: form.type === t ? "#0A0A0A" : "#6B7280",
+                          form.type === t ? "var(--q-accent)" : "transparent",
+                        color: form.type === t ? "var(--q-bg)" : "var(--q-fg-secondary)",
                         fontWeight: form.type === t ? 600 : 400,
                       }}
                     >
@@ -277,8 +277,8 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                   placeholder="my-job"
                   className="w-full px-3 focus:outline-none"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                 />
               </div>
 
@@ -291,8 +291,8 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                   placeholder="what does this job do?"
                   className="w-full px-3 focus:outline-none"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                 />
               </div>
 
@@ -307,10 +307,10 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     className="flex-1 px-3 focus:outline-none"
                     style={inputStyle}
                     onFocus={(e) =>
-                      (e.currentTarget.style.borderColor = "#10B981")
+                      (e.currentTarget.style.borderColor = "var(--q-accent)")
                     }
                     onBlur={(e) =>
-                      (e.currentTarget.style.borderColor = "#2a2a2a")
+                      (e.currentTarget.style.borderColor = "var(--q-border)")
                     }
                   />
                   <button
@@ -319,9 +319,9 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     style={{
                       width: 36,
                       height: 36,
-                      backgroundColor: "#141414",
-                      border: "1px solid #2a2a2a",
-                      color: "#6B7280",
+                      backgroundColor: "var(--q-bg-menu)",
+                      border: "1px solid var(--q-border)",
+                      color: "var(--q-fg-secondary)",
                       fontSize: 14,
                       cursor: "pointer",
                       display: "flex",
@@ -345,7 +345,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                 <div className="flex flex-col" style={{ gap: 2 }}>
                   <span
                     style={{
-                      color: "#FAFAFA",
+                      color: "var(--q-fg)",
                       fontSize: 11,
                       fontFamily: "'JetBrains Mono', monospace",
                     }}
@@ -378,12 +378,12 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                             cursor: "pointer",
                             border:
                               form.scheduleType === t
-                                ? "1px solid #10B981"
-                                : "1px solid #2a2a2a",
+                                ? "1px solid var(--q-accent)"
+                                : "1px solid var(--q-border)",
                             backgroundColor:
-                              form.scheduleType === t ? "#10B981" : "transparent",
+                              form.scheduleType === t ? "var(--q-accent)" : "transparent",
                             color:
-                              form.scheduleType === t ? "#0A0A0A" : "#6B7280",
+                              form.scheduleType === t ? "var(--q-bg)" : "var(--q-fg-secondary)",
                             fontWeight: form.scheduleType === t ? 600 : 400,
                           }}
                         >
@@ -411,10 +411,10 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                           className="px-3 focus:outline-none"
                           style={{ ...inputStyle, width: 60 }}
                           onFocus={(e) =>
-                            (e.currentTarget.style.borderColor = "#10B981")
+                            (e.currentTarget.style.borderColor = "var(--q-accent)")
                           }
                           onBlur={(e) =>
-                            (e.currentTarget.style.borderColor = "#2a2a2a")
+                            (e.currentTarget.style.borderColor = "var(--q-border)")
                           }
                         />
                         <MiniSelect
@@ -437,10 +437,10 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                       className="w-full px-3 focus:outline-none"
                       style={inputStyle}
                       onFocus={(e) =>
-                        (e.currentTarget.style.borderColor = "#10B981")
+                        (e.currentTarget.style.borderColor = "var(--q-accent)")
                       }
                       onBlur={(e) =>
-                        (e.currentTarget.style.borderColor = "#2a2a2a")
+                        (e.currentTarget.style.borderColor = "var(--q-border)")
                       }
                     />
                   </div>
@@ -458,10 +458,10 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                       className="w-full px-3 focus:outline-none"
                       style={inputStyle}
                       onFocus={(e) =>
-                        (e.currentTarget.style.borderColor = "#10B981")
+                        (e.currentTarget.style.borderColor = "var(--q-accent)")
                       }
                       onBlur={(e) =>
-                        (e.currentTarget.style.borderColor = "#2a2a2a")
+                        (e.currentTarget.style.borderColor = "var(--q-border)")
                       }
                     />
                   </div>
@@ -477,7 +477,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
               <div className="flex items-center justify-between">
                 <span
                   style={{
-                    color: "#FAFAFA",
+                    color: "var(--q-fg)",
                     fontSize: 11,
                     fontFamily: "'JetBrains Mono', monospace",
                   }}
@@ -494,10 +494,10 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                   className="px-3 focus:outline-none text-right"
                   style={{ ...inputStyle, width: 140 }}
                   onFocus={(e) =>
-                    (e.currentTarget.style.borderColor = "#10B981")
+                    (e.currentTarget.style.borderColor = "var(--q-accent)")
                   }
                   onBlur={(e) =>
-                    (e.currentTarget.style.borderColor = "#2a2a2a")
+                    (e.currentTarget.style.borderColor = "var(--q-border)")
                   }
                 />
               </div>
@@ -506,7 +506,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
               <div className="flex items-center justify-between">
                 <span
                   style={{
-                    color: "#FAFAFA",
+                    color: "var(--q-fg)",
                     fontSize: 11,
                     fontFamily: "'JetBrains Mono', monospace",
                   }}
@@ -525,7 +525,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
               <div className="flex items-center justify-between">
                 <span
                   style={{
-                    color: "#FAFAFA",
+                    color: "var(--q-fg)",
                     fontSize: 11,
                     fontFamily: "'JetBrains Mono', monospace",
                   }}
@@ -545,7 +545,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
               <div className="flex items-center justify-between">
                 <span
                   style={{
-                    color: "#FAFAFA",
+                    color: "var(--q-fg)",
                     fontSize: 11,
                     fontFamily: "'JetBrains Mono', monospace",
                   }}
@@ -564,7 +564,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
               <div className="flex items-center justify-between">
                 <span
                   style={{
-                    color: "#FAFAFA",
+                    color: "var(--q-fg)",
                     fontSize: 11,
                     fontFamily: "'JetBrains Mono', monospace",
                   }}
@@ -578,17 +578,17 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                   className="px-3 focus:outline-none"
                   style={{ ...inputStyle, width: 140 }}
                   onFocus={(e) =>
-                    (e.currentTarget.style.borderColor = "#10B981")
+                    (e.currentTarget.style.borderColor = "var(--q-accent)")
                   }
                   onBlur={(e) =>
-                    (e.currentTarget.style.borderColor = "#2a2a2a")
+                    (e.currentTarget.style.borderColor = "var(--q-border)")
                   }
                 />
               </div>
 
               {/* prompts group */}
-              <div style={{ borderTop: "1px solid #2a2a2a", paddingTop: 12, marginTop: 4, display: "flex", flexDirection: "column", gap: 12 }}>
-                <span style={{ color: "#4B5563", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
+              <div style={{ borderTop: "1px solid var(--q-border)", paddingTop: 12, marginTop: 4, display: "flex", flexDirection: "column", gap: 12 }}>
+                <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
                   # prompts
                 </span>
 
@@ -599,47 +599,47 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     onChange={(e) => update("prompt", e.target.value)}
                     placeholder="describe what the job should do..."
                     style={{ ...inputStyle, width: "100%", height: 120, resize: "vertical", padding: "8px 12px", boxSizing: "border-box" as const }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                   />
                 </div>
 
                 <div>
-                  <span style={labelStyle}>success criteria <span style={{ color: "#4B5563" }}>(optional, max 300 chars)</span></span>
+                  <span style={labelStyle}>success criteria <span style={{ color: "var(--q-fg-muted)" }}>(optional, max 300 chars)</span></span>
                   <textarea
                     placeholder="e.g. PRs were reviewed and feedback was posted successfully"
                     maxLength={300}
                     value={form.successPrompt}
                     onChange={(e) => update("successPrompt", e.target.value)}
                     style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                   />
                 </div>
 
                 <div>
-                  <span style={labelStyle}>failure criteria <span style={{ color: "#4B5563" }}>(optional, max 300 chars)</span></span>
+                  <span style={labelStyle}>failure criteria <span style={{ color: "var(--q-fg-muted)" }}>(optional, max 300 chars)</span></span>
                   <textarea
                     placeholder="e.g. no PRs found to review, or API errors occurred"
                     maxLength={300}
                     value={form.failurePrompt}
                     onChange={(e) => update("failurePrompt", e.target.value)}
                     style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                   />
                 </div>
 
                 <div>
-                  <span style={labelStyle}>metadata to extract <span style={{ color: "#4B5563" }}>(optional)</span></span>
+                  <span style={labelStyle}>metadata to extract <span style={{ color: "var(--q-fg-muted)" }}>(optional)</span></span>
                   <textarea
                     placeholder="e.g. extract PR URLs, review counts, and error details to pass to triggered jobs"
                     maxLength={500}
                     value={form.metadataPrompt}
                     onChange={(e) => update("metadataPrompt", e.target.value)}
                     style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                   />
                 </div>
               </div>
@@ -676,10 +676,10 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     fontSize: 12,
                   }}
                   onFocus={(e) =>
-                    (e.currentTarget.style.borderColor = "#10B981")
+                    (e.currentTarget.style.borderColor = "var(--q-accent)")
                   }
                   onBlur={(e) =>
-                    (e.currentTarget.style.borderColor = "#2a2a2a")
+                    (e.currentTarget.style.borderColor = "var(--q-border)")
                   }
                 />
               </div>
@@ -689,8 +689,8 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                 <span style={labelStyle}>environment variables</span>
                 <div
                   style={{
-                    border: "1px solid #2a2a2a",
-                    backgroundColor: "#0A0A0A",
+                    border: "1px solid var(--q-border)",
+                    backgroundColor: "var(--q-bg)",
                     maxHeight: 120,
                     overflowY: "auto",
                   }}
@@ -701,12 +701,12 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                       className="flex items-center justify-between px-3"
                       style={{
                         height: 28,
-                        borderBottom: "1px solid #1F1F1F",
+                        borderBottom: "1px solid var(--q-bg-hover)",
                       }}
                     >
                       <span
                         style={{
-                          color: "#FAFAFA",
+                          color: "var(--q-fg)",
                           fontSize: 11,
                           fontFamily: "'JetBrains Mono', monospace",
                         }}
@@ -721,7 +721,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                           update("envVariables", next);
                         }}
                         style={{
-                          color: "#6B7280",
+                          color: "var(--q-fg-secondary)",
                           fontSize: 12,
                           background: "none",
                           border: "none",
@@ -737,7 +737,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     <div
                       className="px-3 py-2"
                       style={{
-                        color: "#4B5563",
+                        color: "var(--q-fg-muted)",
                         fontSize: 10,
                         fontFamily: "'JetBrains Mono', monospace",
                       }}
@@ -759,13 +759,13 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                       fontSize: 10,
                     }}
                     onFocus={(e) =>
-                      (e.currentTarget.style.borderColor = "#10B981")
+                      (e.currentTarget.style.borderColor = "var(--q-accent)")
                     }
                     onBlur={(e) =>
-                      (e.currentTarget.style.borderColor = "#2a2a2a")
+                      (e.currentTarget.style.borderColor = "var(--q-border)")
                     }
                   />
-                  <span style={{ color: "#6B7280", fontSize: 10 }}>=</span>
+                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>=</span>
                   <input
                     value={newEnvValue}
                     onChange={(e) => setNewEnvValue(e.target.value)}
@@ -777,10 +777,10 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                       fontSize: 10,
                     }}
                     onFocus={(e) =>
-                      (e.currentTarget.style.borderColor = "#10B981")
+                      (e.currentTarget.style.borderColor = "var(--q-accent)")
                     }
                     onBlur={(e) =>
-                      (e.currentTarget.style.borderColor = "#2a2a2a")
+                      (e.currentTarget.style.borderColor = "var(--q-border)")
                     }
                   />
                   <button
@@ -797,7 +797,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     }}
                     style={{
                       fontSize: 10,
-                      color: "#10B981",
+                      color: "var(--q-accent)",
                       background: "none",
                       border: "none",
                       cursor: "pointer",
@@ -822,15 +822,15 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
             onClick={onCancel}
             className="px-4 text-xs lowercase transition-colors"
             style={{
-              color: "#6B7280",
+              color: "var(--q-fg-secondary)",
               background: "none",
               border: "none",
               cursor: "pointer",
               height: 36,
               fontFamily: "'JetBrains Mono', monospace",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
           >
             cancel
           </button>
@@ -841,8 +841,8 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
             style={{
               width: 80,
               height: 36,
-              backgroundColor: "#10B981",
-              color: "#0A0A0A",
+              backgroundColor: "var(--q-accent)",
+              color: "var(--q-bg)",
               fontWeight: 500,
               border: "none",
               cursor: "pointer",
@@ -874,7 +874,7 @@ function ToggleSwitch({
         width: 36,
         height: 20,
         borderRadius: 10,
-        backgroundColor: checked ? "#10B981" : "#2a2a2a",
+        backgroundColor: checked ? "var(--q-accent)" : "var(--q-border)",
         border: "none",
         cursor: "pointer",
         position: "relative",
@@ -887,7 +887,7 @@ function ToggleSwitch({
           width: 16,
           height: 16,
           borderRadius: 8,
-          backgroundColor: "#FAFAFA",
+          backgroundColor: "var(--q-fg)",
           position: "absolute",
           top: 2,
           left: checked ? 18 : 2,
@@ -936,9 +936,9 @@ function MiniSelect({
         style={{
           width,
           height: 36,
-          backgroundColor: "#0A0A0A",
-          border: `1px solid ${open ? "#10B981" : "#2a2a2a"}`,
-          color: "#FAFAFA",
+          backgroundColor: "var(--q-bg)",
+          border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
+          color: "var(--q-fg)",
           fontSize: 11,
           fontFamily: "'JetBrains Mono', monospace",
           padding: "0 12px",
@@ -958,8 +958,8 @@ function MiniSelect({
             top: 40,
             left: 0,
             zIndex: 50,
-            backgroundColor: "#0A0A0A",
-            border: "1px solid #2a2a2a",
+            backgroundColor: "var(--q-bg)",
+            border: "1px solid var(--q-border)",
             width: "100%",
           }}
         >
@@ -978,21 +978,21 @@ function MiniSelect({
                 gap: 8,
                 fontFamily: "'JetBrains Mono', monospace",
                 fontSize: 11,
-                color: opt === value ? "#10B981" : "#D1D5DB",
-                backgroundColor: opt === value ? "#1F1F1F" : "transparent",
+                color: opt === value ? "var(--q-accent)" : "var(--q-fg-dimmed)",
+                backgroundColor: opt === value ? "var(--q-bg-hover)" : "transparent",
                 border: "none",
                 cursor: "pointer",
               }}
               onMouseEnter={(e) => {
                 if (opt !== value)
-                  e.currentTarget.style.backgroundColor = "#1F1F1F";
+                  e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
               }}
               onMouseLeave={(e) => {
                 if (opt !== value)
                   e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              <span style={{ color: "#10B981", flexShrink: 0 }}>~</span>
+              <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
               <span>{getLabel(opt, idx)}</span>
             </button>
           ))}
@@ -1016,8 +1016,8 @@ function TriggerList({
   return (
     <div
       style={{
-        border: "1px solid #2a2a2a",
-        backgroundColor: "#0A0A0A",
+        border: "1px solid var(--q-border)",
+        backgroundColor: "var(--q-bg)",
         maxHeight: 100,
         overflowY: "auto",
       }}
@@ -1026,7 +1026,7 @@ function TriggerList({
         <div
           className="px-3 py-2"
           style={{
-            color: "#4B5563",
+            color: "var(--q-fg-muted)",
             fontSize: 10,
             fontFamily: "'JetBrains Mono', monospace",
           }}
@@ -1042,12 +1042,12 @@ function TriggerList({
             className="flex items-center justify-between px-3"
             style={{
               height: 28,
-              borderBottom: "1px solid #1F1F1F",
+              borderBottom: "1px solid var(--q-bg-hover)",
             }}
           >
             <span
               style={{
-                color: "#FAFAFA",
+                color: "var(--q-fg)",
                 fontSize: 11,
                 fontFamily: "'JetBrains Mono', monospace",
               }}
@@ -1059,7 +1059,7 @@ function TriggerList({
                 type="button"
                 onClick={() => onRemove(id)}
                 style={{
-                  color: "#6B7280",
+                  color: "var(--q-fg-secondary)",
                   fontSize: 12,
                   background: "none",
                   border: "none",
@@ -1091,8 +1091,8 @@ function JobDropdown({
         top: 24,
         left: 0,
         zIndex: 50,
-        backgroundColor: "#0A0A0A",
-        border: "1px solid #2a2a2a",
+        backgroundColor: "var(--q-bg)",
+        border: "1px solid var(--q-border)",
         width: 200,
         maxHeight: 120,
         overflowY: "auto",
@@ -1102,7 +1102,7 @@ function JobDropdown({
         <div
           className="px-3 py-2"
           style={{
-            color: "#4B5563",
+            color: "var(--q-fg-muted)",
             fontSize: 10,
             fontFamily: "'JetBrains Mono', monospace",
           }}
@@ -1117,7 +1117,7 @@ function JobDropdown({
           onClick={() => onSelect(job.id)}
           className="w-full text-left px-3 py-1.5 transition-colors"
           style={{
-            color: "#FAFAFA",
+            color: "var(--q-fg)",
             fontSize: 11,
             fontFamily: "'JetBrains Mono', monospace",
             backgroundColor: "transparent",
@@ -1125,7 +1125,7 @@ function JobDropdown({
             cursor: "pointer",
           }}
           onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundColor = "#1F1F1F")
+            (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")
           }
           onMouseLeave={(e) =>
             (e.currentTarget.style.backgroundColor = "transparent")

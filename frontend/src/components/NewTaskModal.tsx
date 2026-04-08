@@ -23,29 +23,29 @@ export function NewTaskModal({ repoId, repoName, onSubmit, onCancel }: Props) {
   }
 
   const inputStyle: React.CSSProperties = {
-    backgroundColor: "#0A0A0A",
-    border: "1px solid #2a2a2a",
-    color: "#FAFAFA",
+    backgroundColor: "var(--q-bg)",
+    border: "1px solid var(--q-border)",
+    color: "var(--q-fg)",
     fontFamily: "'JetBrains Mono', monospace",
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-md p-8"
         style={{
-          backgroundColor: "#0A0A0A",
-          border: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
           fontFamily: "'JetBrains Mono', monospace",
         }}
       >
-        <h2 className="text-sm font-bold lowercase mb-5" style={{ color: "#FAFAFA" }}>
-          <span style={{ color: "#10B981" }}>{">"}</span> new_task
+        <h2 className="text-sm font-bold lowercase mb-5" style={{ color: "var(--q-fg)" }}>
+          <span style={{ color: "var(--q-accent)" }}>{">"}</span> new_task
         </h2>
 
         <label className="block mb-4">
-          <span className="text-[10px] lowercase" style={{ color: "#6B7280" }}>tag</span>
+          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>tag</span>
           <input
             autoFocus
             value={tag}
@@ -53,28 +53,28 @@ export function NewTaskModal({ repoId, repoName, onSubmit, onCancel }: Props) {
             placeholder="PLT-123"
             className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
             style={inputStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
           />
         </label>
 
         <label className="block mb-4">
-          <span className="text-[10px] lowercase" style={{ color: "#6B7280" }}>name</span>
+          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>name</span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="fix auth flow"
             className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
             style={inputStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
           />
         </label>
 
         {repoName && (
           <p
             className="mb-5 text-[10px]"
-            style={{ color: "#4B5563", fontFamily: "'IBM Plex Mono', monospace" }}
+            style={{ color: "var(--q-fg-muted)", fontFamily: "'IBM Plex Mono', monospace" }}
           >
             // repo: {repoName}
           </p>
@@ -85,9 +85,9 @@ export function NewTaskModal({ repoId, repoName, onSubmit, onCancel }: Props) {
             type="button"
             onClick={onCancel}
             className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "#6B7280" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+            style={{ color: "var(--q-fg-secondary)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
           >
             cancel
           </button>
@@ -96,8 +96,8 @@ export function NewTaskModal({ repoId, repoName, onSubmit, onCancel }: Props) {
             disabled={!tag.trim()}
             className="px-4 py-2 text-xs lowercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
-              backgroundColor: "#10B981",
-              color: "#0A0A0A",
+              backgroundColor: "var(--q-accent)",
+              color: "var(--q-bg)",
               fontWeight: 500,
             }}
           >

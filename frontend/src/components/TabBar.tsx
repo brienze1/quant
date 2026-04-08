@@ -41,10 +41,10 @@ function ScrollButton({
       className="shrink-0 flex items-center justify-center"
       style={{
         width: 24,
-        backgroundColor: hovered ? "#1F1F1F" : "#0A0A0A",
-        color: hovered ? "#FAFAFA" : "#6B7280",
-        borderRight: direction === "left" ? "1px solid #2a2a2a" : "none",
-        borderLeft: direction === "right" ? "1px solid #2a2a2a" : "none",
+        backgroundColor: hovered ? "var(--q-bg-hover)" : "var(--q-bg)",
+        color: hovered ? "var(--q-fg)" : "var(--q-fg-secondary)",
+        borderRight: direction === "left" ? "1px solid var(--q-border)" : "none",
+        borderLeft: direction === "right" ? "1px solid var(--q-border)" : "none",
         cursor: "pointer",
         fontSize: 12,
         fontFamily: "'JetBrains Mono', monospace",
@@ -109,25 +109,25 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
       {
         type: "item",
         icon: "×",
-        iconColor: "#EF4444",
+        iconColor: "var(--q-error)",
         label: "close all tabs",
         onClick: () => onCloseAllTabs(),
       },
       {
         type: "item",
         icon: "←",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "close tabs to the left",
         onClick: () => onCloseTabsToLeft(tabId),
-        ...(idx === 0 ? { labelColor: "#4B5563" } : {}),
+        ...(idx === 0 ? { labelColor: "var(--q-fg-muted)" } : {}),
       },
       {
         type: "item",
         icon: "→",
-        iconColor: "#6B7280",
+        iconColor: "var(--q-fg-secondary)",
         label: "close tabs to the right",
         onClick: () => onCloseTabsToRight(tabId),
-        ...(idx === tabs.length - 1 ? { labelColor: "#4B5563" } : {}),
+        ...(idx === tabs.length - 1 ? { labelColor: "var(--q-fg-muted)" } : {}),
       },
     ];
   }
@@ -137,8 +137,8 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
     <div
       className="flex items-center shrink-0 min-w-0 overflow-hidden"
       style={{
-        backgroundColor: "#0A0A0A",
-        borderBottom: "1px solid #2a2a2a",
+        backgroundColor: "var(--q-bg)",
+        borderBottom: "1px solid var(--q-border)",
         fontFamily: "'JetBrains Mono', monospace",
       }}
     >
@@ -166,14 +166,14 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
               key={tab.id}
               className="flex items-center gap-1.5 px-3 py-2 shrink-0 cursor-pointer"
               style={{
-                backgroundColor: isActive ? "#1F1F1F" : "transparent",
-                borderRight: "1px solid #2a2a2a",
+                backgroundColor: isActive ? "var(--q-bg-hover)" : "transparent",
+                borderRight: "1px solid var(--q-border)",
                 maxWidth: 200,
               }}
               onClick={() => onSelectTab(tab.id)}
               onContextMenu={(e) => openTabContextMenu(e, tab.id)}
               onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.backgroundColor = "#1F1F1F";
+                if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
               }}
               onMouseLeave={(e) => {
                 if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
@@ -183,7 +183,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
               <span
                 className="text-xs overflow-hidden whitespace-nowrap flex-1"
                 style={{
-                  color: isActive ? "#FAFAFA" : "#6B7280",
+                  color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
                   textOverflow: "ellipsis",
                 }}
               >
@@ -195,9 +195,9 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
                   onCloseTab(tab.id);
                 }}
                 className="shrink-0 ml-1 text-[10px] transition-colors"
-                style={{ color: "#4B5563" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "#4B5563")}
+                style={{ color: "var(--q-fg-muted)" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
                 title="close tab"
               >
                 [x]
