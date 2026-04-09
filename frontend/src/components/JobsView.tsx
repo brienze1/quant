@@ -403,27 +403,38 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     };
   }, [resizingSidebar]);
 
-  // Pipeline execution data: group runs by correlationId across all jobs in all groups
+  // Pipeline execution types and data: scoped per job group
+  type PipelineExec = { correlationId: string; status: string; startedAt: string; runs: JobRun[] };
   useEffect(() => {
     if (jobs.length === 0) {
-      setPipelineExecutions([]);
+      setExecutionsByGroup({});
       return;
     }
     let cancelled = false;
     const fetchExecutions = async () => {
       try {
-        const allJobIds = new Set<string>(jobs.map((j) => j.id));
+        // Fetch runs for all jobs in one pass
         const allRuns: JobRun[] = [];
         await Promise.all(
-          Array.from(allJobIds).map(async (jobId) => {
+          jobs.map(async (job) => {
             try {
-              const jobRuns = await api.listRunsByJob(jobId);
+              const jobRuns = await api.listRunsByJob(job.id);
               if (!cancelled) allRuns.push(...jobRuns);
             } catch { /* ignore */ }
           })
         );
         if (cancelled) return;
-        // Group by correlationId
+
+        // Index runs by jobId for quick lookup
+        const runsByJobId = new Map<string, JobRun[]>();
+        for (const run of allRuns) {
+          if (!run.correlationId) continue;
+          const arr = runsByJobId.get(run.jobId) || [];
+          arr.push(run);
+          runsByJobId.set(run.jobId, arr);
+        }
+
+        // Build correlationId -> runs map
         const byCorr = new Map<string, JobRun[]>();
         for (const run of allRuns) {
           if (!run.correlationId) continue;
@@ -431,35 +442,74 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           arr.push(run);
           byCorr.set(run.correlationId, arr);
         }
-        // Build execution list
-        const execs = Array.from(byCorr.entries()).map(([corrId, corrRuns]) => {
-          const sorted = corrRuns.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
-          // Deduplicate: latest run per job for status aggregation
-          const latestByJob = new Map<string, JobRun>();
-          for (const r of sorted) {
-            latestByJob.set(r.jobId, r);
+
+        // Helper: build PipelineExec[] from a set of correlationIds filtered to specific jobIds
+        const buildExecs = (corrIds: Set<string>, scopeJobIds: Set<string>): PipelineExec[] => {
+          return Array.from(corrIds).map((corrId) => {
+            const corrRuns = (byCorr.get(corrId) || []).filter((r) => scopeJobIds.has(r.jobId));
+            const sorted = corrRuns.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+            const latestByJob = new Map<string, JobRun>();
+            for (const r of sorted) latestByJob.set(r.jobId, r);
+            let status = "success";
+            for (const r of latestByJob.values()) {
+              if (r.status === "waiting") { status = "waiting"; break; }
+              if (r.status === "running") status = "running";
+              else if (r.status === "failed" && status !== "running") status = "failed";
+              else if (r.status === "pending" && status === "success") status = "pending";
+            }
+            return { correlationId: corrId, status, startedAt: sorted[0]?.startedAt ?? "", runs: sorted };
+          }).filter((e) => e.runs.length > 0).sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+        };
+
+        const result: Record<string, PipelineExec[]> = {};
+
+        // For each job group: only include correlationIds where ALL runs belong to this group's jobs
+        const groupedJobIds = new Set<string>();
+        for (const group of jobGroups) {
+          const groupJobSet = new Set(group.jobIds);
+          group.jobIds.forEach((id) => groupedJobIds.add(id));
+          const relevantCorrIds = new Set<string>();
+          for (const [corrId, corrRuns] of byCorr) {
+            if (corrRuns.every((r) => groupJobSet.has(r.jobId))) {
+              relevantCorrIds.add(corrId);
+            }
           }
-          // Aggregate status: waiting > running > failed > success
-          let status = "success";
-          for (const r of latestByJob.values()) {
-            if (r.status === "waiting") { status = "waiting"; break; }
-            if (r.status === "running") status = "running";
-            else if (r.status === "failed" && status !== "running") status = "failed";
-            else if (r.status === "pending" && status === "success") status = "pending";
-          }
-          return { correlationId: corrId, status, startedAt: sorted[0]?.startedAt ?? "", runs: sorted };
-        });
-        execs.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
-        setPipelineExecutions(execs);
-        // Auto-select most recent active if nothing selected (but respect user "all" choice)
-        if (!userExplicitlySelectedAll.current && (!selectedExecutionId || !execs.find((e) => e.correlationId === selectedExecutionId))) {
-          const active = execs.find((e) => e.status === "waiting" || e.status === "running");
-          setSelectedExecutionId(active?.correlationId ?? execs[0]?.correlationId ?? "");
+          result[group.id] = buildExecs(relevantCorrIds, groupJobSet);
         }
+
+        // Ungrouped: only include correlationIds that have 2+ distinct jobIds or any triggeredBy
+        const ungroupedJobSet = new Set(jobs.map((j) => j.id).filter((id) => !groupedJobIds.has(id)));
+        const ungroupedCorrIds = new Set<string>();
+        for (const [corrId, corrRuns] of byCorr) {
+          const ungroupedRuns = corrRuns.filter((r) => ungroupedJobSet.has(r.jobId));
+          if (ungroupedRuns.length === 0) continue;
+          // Only include if it's an actual pipeline (multi-job or triggered)
+          const distinctJobs = new Set(ungroupedRuns.map((r) => r.jobId));
+          const hasTriggered = ungroupedRuns.some((r) => r.triggeredBy);
+          if (distinctJobs.size >= 2 || hasTriggered) {
+            ungroupedCorrIds.add(corrId);
+          }
+        }
+        result["ungrouped"] = buildExecs(ungroupedCorrIds, ungroupedJobSet);
+
+        setExecutionsByGroup(result);
+
+        // Auto-select per group (respect user "all" choice per group)
+        setSelectedExecByGroup((prev) => {
+          const next = { ...prev };
+          for (const [groupKey, execs] of Object.entries(result)) {
+            if (userExplicitlySelectedAllByGroup.current[groupKey] !== false) continue;
+            if (!next[groupKey] || !execs.find((e) => e.correlationId === next[groupKey])) {
+              const active = execs.find((e) => e.status === "waiting" || e.status === "running");
+              next[groupKey] = active?.correlationId ?? execs[0]?.correlationId ?? "";
+            }
+          }
+          return next;
+        });
       } catch { /* ignore */ }
     };
     fetchExecutions();
-    const hasActive = pipelineExecutions.some((e) => e.status === "running" || e.status === "waiting");
+    const hasActive = Object.values(executionsByGroup).some((execs) => execs.some((e) => e.status === "running" || e.status === "waiting"));
     const interval = hasActive ? setInterval(fetchExecutions, 5000) : undefined;
     return () => { cancelled = true; if (interval) clearInterval(interval); };
   }, [jobGroups, jobs]);
@@ -494,19 +544,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const deleteZoneRef = useRef<HTMLDivElement>(null);
   const [spaceDown, setSpaceDown] = useState(false);
 
-  // Pipeline execution state
-  const [pipelineExecutions, setPipelineExecutions] = useState<{ correlationId: string; status: string; startedAt: string; runs: JobRun[] }[]>([]);
-  const [selectedExecutionId, setSelectedExecutionId] = useState<string>("");
-  const userExplicitlySelectedAll = useRef(true);
-  const [showExecutionDropdown, setShowExecutionDropdown] = useState(false);
+  // Pipeline execution state — scoped per group
+  const [executionsByGroup, setExecutionsByGroup] = useState<Record<string, PipelineExec[]>>({});
+  const [selectedExecByGroup, setSelectedExecByGroup] = useState<Record<string, string>>({});
+  const userExplicitlySelectedAllByGroup = useRef<Record<string, boolean>>({});
+  const [openDropdownGroup, setOpenDropdownGroup] = useState<string | null>(null);
 
   // Close execution dropdown on outside click
   useEffect(() => {
-    if (!showExecutionDropdown) return;
-    const handle = () => setShowExecutionDropdown(false);
+    if (!openDropdownGroup) return;
+    const handle = () => setOpenDropdownGroup(null);
     const timer = setTimeout(() => document.addEventListener("click", handle), 0);
     return () => { clearTimeout(timer); document.removeEventListener("click", handle); };
-  }, [showExecutionDropdown]);
+  }, [openDropdownGroup]);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
@@ -1436,12 +1486,15 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           style={{ width: 220, borderRight: "1px solid var(--q-border)" }}
         >
           {(() => {
-            const filteredRuns = selectedExecutionId
-              ? runs.filter((r) => r.correlationId === selectedExecutionId)
+            const sidebarGroup = selectedJobId ? jobGroups.find((g) => g.jobIds.includes(selectedJobId)) : undefined;
+            const sidebarGroupKey = sidebarGroup?.id ?? "ungrouped";
+            const sidebarExecId = selectedExecByGroup[sidebarGroupKey] ?? "";
+            const filteredRuns = sidebarExecId
+              ? runs.filter((r) => r.correlationId === sidebarExecId)
               : runs;
             return filteredRuns.length === 0 ? (
             <div className="flex items-center justify-center p-4">
-              <span style={{ color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font }}>{selectedExecutionId ? "no runs in this execution" : "no runs yet"}</span>
+              <span style={{ color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font }}>{sidebarExecId ? "no runs in this execution" : "no runs yet"}</span>
             </div>
           ) : (
             filteredRuns.map((run) => {
@@ -1957,12 +2010,18 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           if (!srcInGroup && !tgtInGroup) { edgeOpacity = 0.06; defaultStroke = "var(--q-fg-muted)"; }
         } else if (hoverConnectedNodes && !isSelected && !isFlashing) {
           if (!isHoverRelevant) { edgeOpacity = 0.06; defaultStroke = "var(--q-fg-muted)"; }
-        } else if (selectedExecutionId && !isSelected && !isFlashing) {
-          // Execution view: dim edges to unreached nodes
-          const selExec = pipelineExecutions.find((e) => e.correlationId === selectedExecutionId);
-          const srcHasRun = selExec?.runs.some((r) => r.jobId === job.id);
-          const tgtHasRun = selExec?.runs.some((r) => r.jobId === targetId);
-          if (!srcHasRun || !tgtHasRun) { edgeOpacity = 0.15; defaultStroke = "var(--q-fg-muted)"; }
+        } else if (!isSelected && !isFlashing) {
+          // Execution view: dim edges to unreached nodes (scoped per group)
+          const edgeGroup = jobGroups.find((g) => g.jobIds.includes(job.id));
+          const edgeGroupKey = edgeGroup?.id ?? "ungrouped";
+          const edgeExecId = selectedExecByGroup[edgeGroupKey] ?? "";
+          if (edgeExecId) {
+            const edgeGroupExecs = executionsByGroup[edgeGroupKey] ?? [];
+            const selExec = edgeGroupExecs.find((e) => e.correlationId === edgeExecId);
+            const srcHasRun = selExec?.runs.some((r) => r.jobId === job.id);
+            const tgtHasRun = selExec?.runs.some((r) => r.jobId === targetId);
+            if (!srcHasRun || !tgtHasRun) { edgeOpacity = 0.15; defaultStroke = "var(--q-fg-muted)"; }
+          }
         } else if (routeState && !isSelected && !isFlashing) {
           const isInFlow = routeState.flowNodes.has(job.id) || routeState.flowNodes.has(targetId);
           if (isInRoute) {
@@ -2489,10 +2548,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           {jobGroups.map((group) => {
             const positions = group.jobIds.map((id) => nodePositions[id]).filter(Boolean);
             if (positions.length === 0) return null;
-            // Pipeline execution data for this group
-            const groupExecs = pipelineExecutions.filter((e) => e.runs.some((r) => group.jobIds.includes(r.jobId)));
+            // Pipeline execution data for this group (scoped)
+            const groupExecs = executionsByGroup[group.id] ?? [];
+            const groupSelExecId = selectedExecByGroup[group.id] ?? "";
             const activeCount = groupExecs.filter((e) => e.status === "running" || e.status === "waiting").length;
-            const selectedExec = groupExecs.find((e) => e.correlationId === selectedExecutionId);
+            const selectedExec = groupExecs.find((e) => e.correlationId === groupSelExecId);
             const hasExecs = groupExecs.length > 0;
             const hasWaitingNode = selectedExec?.runs.some((r) => r.status === "waiting" && (r.result || r.errorMessage));
             const warningExtraH = hasWaitingNode ? 80 : 0;
@@ -2501,6 +2561,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const maxX = Math.max(...positions.map((p) => p.x + NODE_W)) + 24 + (hasWaitingNode ? 60 : 0);
             const minY = Math.min(...positions.map((p) => p.y)) - 24;
             const maxY = Math.max(...positions.map((p) => p.y + NODE_H)) + 24 + warningExtraH;
+            const isDropdownOpen = openDropdownGroup === group.id;
             return (
               <div key={`group-box-${group.id}`} style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px solid var(--q-border)", borderRadius: 8, backgroundColor: "#0f0f0f80", pointerEvents: "none" }}>
                 {/* Group name label */}
@@ -2537,7 +2598,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     <span style={{ flex: 1 }} />
                     <div style={{ position: "relative" }}>
                       <button
-                        onClick={(e) => { e.stopPropagation(); setShowExecutionDropdown(!showExecutionDropdown); }}
+                        onClick={(e) => { e.stopPropagation(); setOpenDropdownGroup(isDropdownOpen ? null : group.id); }}
                         style={{
                           display: "flex",
                           alignItems: "center",
@@ -2558,7 +2619,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         <span>{selectedExec ? `${selectedExec.correlationId.slice(0, 8)} · ${relativeTime(selectedExec.startedAt)}` : "select"}</span>
                         <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>▾</span>
                       </button>
-                      {showExecutionDropdown && (
+                      {isDropdownOpen && (
                         <div
                           onClick={(e) => e.stopPropagation()}
                           style={{
@@ -2577,28 +2638,28 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         >
                           <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--q-fg-muted)", fontWeight: 500 }}>select execution</div>
                           <div
-                            onClick={() => { userExplicitlySelectedAll.current = true; setSelectedExecutionId(""); setShowExecutionDropdown(false); }}
+                            onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, [group.id]: true }; setSelectedExecByGroup((prev) => ({ ...prev, [group.id]: "" })); setOpenDropdownGroup(null); }}
                             style={{
                               display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
-                              backgroundColor: selectedExecutionId === "" ? "var(--q-bg-input)" : "transparent",
+                              backgroundColor: groupSelExecId === "" ? "var(--q-bg-input)" : "transparent",
                               fontSize: 10, color: "var(--q-fg-secondary)",
                             }}
                             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = selectedExecutionId === "" ? "var(--q-bg-input)" : "transparent"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = groupSelExecId === "" ? "var(--q-bg-input)" : "transparent"; }}
                           >
                             all
                           </div>
                           {groupExecs.map((exec) => (
                             <div
                               key={exec.correlationId}
-                              onClick={() => { userExplicitlySelectedAll.current = false; setSelectedExecutionId(exec.correlationId); setShowExecutionDropdown(false); }}
+                              onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, [group.id]: false }; setSelectedExecByGroup((prev) => ({ ...prev, [group.id]: exec.correlationId })); setOpenDropdownGroup(null); }}
                               style={{
                                 display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
-                                backgroundColor: exec.correlationId === selectedExecutionId ? "var(--q-bg-input)" : "transparent",
+                                backgroundColor: exec.correlationId === groupSelExecId ? "var(--q-bg-input)" : "transparent",
                                 fontSize: 10,
                               }}
                               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === selectedExecutionId ? "var(--q-bg-input)" : "transparent"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === groupSelExecId ? "var(--q-bg-input)" : "transparent"; }}
                             >
                               <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(exec.status as any), flexShrink: 0 }} />
                               <span style={{ color: "var(--q-fg)", fontWeight: 500 }}>{exec.correlationId.slice(0, 8)} · {relativeTime(exec.startedAt)}</span>
@@ -2614,15 +2675,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             );
           })}
 
-          {/* Pipeline box for ungrouped jobs */}
+          {/* Pipeline box for ungrouped jobs — only wraps jobs that appear in execution runs */}
           {(() => {
-            const groupedJobIds = new Set(jobGroups.flatMap((g) => g.jobIds));
-            const ungroupedJobIds = jobs.map((j) => j.id).filter((id) => !groupedJobIds.has(id));
-            const ungroupedExecs = pipelineExecutions.filter((e) => e.runs.some((r) => ungroupedJobIds.includes(r.jobId)));
+            const ungroupedExecs = executionsByGroup["ungrouped"] ?? [];
             if (ungroupedExecs.length === 0) return null;
-            const positions = ungroupedJobIds.map((id) => nodePositions[id]).filter(Boolean);
+            // Only include jobs that actually have runs in any ungrouped execution
+            const jobsInExecs = new Set<string>();
+            for (const exec of ungroupedExecs) {
+              for (const r of exec.runs) jobsInExecs.add(r.jobId);
+            }
+            const positions = Array.from(jobsInExecs).map((id) => nodePositions[id]).filter(Boolean);
             if (positions.length === 0) return null;
-            const selExec = ungroupedExecs.find((e) => e.correlationId === selectedExecutionId);
+            const ungroupedSelExecId = selectedExecByGroup["ungrouped"] ?? "";
+            const selExec = ungroupedExecs.find((e) => e.correlationId === ungroupedSelExecId);
             const hasWaitingNode = selExec?.runs.some((r) => r.status === "waiting" && (r.result || r.errorMessage));
             const warningExtraH = hasWaitingNode ? 80 : 0;
             const minX = Math.min(...positions.map((p) => p.x)) - 24;
@@ -2630,8 +2695,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const minY = Math.min(...positions.map((p) => p.y)) - 24;
             const maxY = Math.max(...positions.map((p) => p.y + NODE_H)) + 24 + warningExtraH;
             const activeCount = ungroupedExecs.filter((e) => e.status === "running" || e.status === "waiting").length;
-            const selectedExec = ungroupedExecs.find((e) => e.correlationId === selectedExecutionId);
+            const selectedExec = ungroupedExecs.find((e) => e.correlationId === ungroupedSelExecId);
             const headerH = 28;
+            const isDropdownOpen = openDropdownGroup === "ungrouped";
             return (
               <div style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px solid var(--q-border)", borderRadius: 8, backgroundColor: "#0f0f0f80", pointerEvents: "none" }}>
                 <div style={{
@@ -2652,7 +2718,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   <span style={{ flex: 1 }} />
                   <div style={{ position: "relative" }}>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setShowExecutionDropdown(!showExecutionDropdown); }}
+                      onClick={(e) => { e.stopPropagation(); setOpenDropdownGroup(isDropdownOpen ? null : "ungrouped"); }}
                       style={{
                         display: "flex", alignItems: "center", gap: 6, padding: "2px 8px", borderRadius: 6,
                         backgroundColor: "var(--q-bg-input)", border: "1px solid var(--q-border)",
@@ -2665,7 +2731,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       <span>{selectedExec ? `${selectedExec.correlationId.slice(0, 8)} · ${relativeTime(selectedExec.startedAt)}` : "select"}</span>
                       <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>▾</span>
                     </button>
-                    {showExecutionDropdown && (
+                    {isDropdownOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
                         style={{
@@ -2676,28 +2742,28 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       >
                         <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--q-fg-muted)", fontWeight: 500 }}>select execution</div>
                         <div
-                          onClick={() => { userExplicitlySelectedAll.current = true; setSelectedExecutionId(""); setShowExecutionDropdown(false); }}
+                          onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, ungrouped: true }; setSelectedExecByGroup((prev) => ({ ...prev, ungrouped: "" })); setOpenDropdownGroup(null); }}
                           style={{
                             display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
-                            backgroundColor: selectedExecutionId === "" ? "var(--q-bg-input)" : "transparent",
+                            backgroundColor: ungroupedSelExecId === "" ? "var(--q-bg-input)" : "transparent",
                             fontSize: 10, color: "var(--q-fg-secondary)",
                           }}
                           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = selectedExecutionId === "" ? "var(--q-bg-input)" : "transparent"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ungroupedSelExecId === "" ? "var(--q-bg-input)" : "transparent"; }}
                         >
                           all
                         </div>
                         {ungroupedExecs.map((exec) => (
                           <div
                             key={exec.correlationId}
-                            onClick={() => { userExplicitlySelectedAll.current = false; setSelectedExecutionId(exec.correlationId); setShowExecutionDropdown(false); }}
+                            onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, ungrouped: false }; setSelectedExecByGroup((prev) => ({ ...prev, ungrouped: exec.correlationId })); setOpenDropdownGroup(null); }}
                             style={{
                               display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
-                              backgroundColor: exec.correlationId === selectedExecutionId ? "var(--q-bg-input)" : "transparent",
+                              backgroundColor: exec.correlationId === ungroupedSelExecId ? "var(--q-bg-input)" : "transparent",
                               fontSize: 10,
                             }}
                             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === selectedExecutionId ? "var(--q-bg-input)" : "transparent"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === ungroupedSelExecId ? "var(--q-bg-input)" : "transparent"; }}
                           >
                             <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(exec.status as any), flexShrink: 0 }} />
                             <span style={{ color: "var(--q-fg)", fontWeight: 500 }}>{exec.correlationId.slice(0, 8)} · {relativeTime(exec.startedAt)}</span>
@@ -2742,18 +2808,25 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             else if (isConnectSource) borderColor = connectingMode?.type === "success" ? "var(--q-accent)" : "var(--q-error)";
             else if (connectingMode && isHovered) borderColor = connectingMode.type === "success" ? "var(--q-accent)" : "var(--q-error)";
 
-            // Pipeline execution overlay
-            const execRun = selectedExecutionId
-              ? pipelineExecutions.find((e) => e.correlationId === selectedExecutionId)?.runs.filter((r) => r.jobId === job.id).slice(-1)[0]
+            // Pipeline execution overlay — scoped to this job's group
+            const nodeGroup = jobGroups.find((g) => g.jobIds.includes(job.id));
+            const nodeGroupKey = nodeGroup?.id ?? "ungrouped";
+            const nodeGroupExecId = selectedExecByGroup[nodeGroupKey] ?? "";
+            const nodeGroupExecs = executionsByGroup[nodeGroupKey] ?? [];
+            const execRun = nodeGroupExecId
+              ? nodeGroupExecs.find((e) => e.correlationId === nodeGroupExecId)?.runs.filter((r) => r.jobId === job.id).slice(-1)[0]
               : undefined;
-            // Scope running indicator to selected execution
-            const isRunning = selectedExecutionId ? (execRun?.status === "running" || execRun?.status === "pending") : isRunningGlobal;
+            // Scope running indicator to selected execution within group
+            const isRunning = nodeGroupExecId ? (execRun?.status === "running" || execRun?.status === "pending") : isRunningGlobal;
             let borderThickness = 1;
             if (execRun && !isDraggingThis && !isSelected && !isMultiSelected && !connectingMode) {
               borderColor = statusColor(execRun.status as any);
               if (execRun.status === "waiting") borderThickness = 2;
-            } else if (selectedExecutionId && !execRun && !isDraggingThis && !isSelected && !isMultiSelected && !connectingMode) {
-              borderColor = "var(--q-fg-muted)";
+            } else if (nodeGroupExecId && !execRun && !isDraggingThis && !isSelected && !isMultiSelected && !connectingMode) {
+              // Only mute border for jobs that are actually part of a pipeline in this group
+              // For ungrouped: only if the job appears in any ungrouped execution's runs
+              const isInAnyExec = nodeGroupExecs.some((e) => e.runs.some((r) => r.jobId === job.id));
+              if (isInAnyExec) borderColor = "var(--q-fg-muted)";
             }
 
             // Hover/route/group node highlighting
@@ -2764,7 +2837,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               nodeOpacity = isInHoveredGroup ? 1 : 0.15;
             } else if (hoverConnectedNodes && !isDraggingThis && !isSelected && !connectingMode) {
               nodeOpacity = hoverConnectedNodes.has(job.id) ? 1 : 0.15;
-            } else if (selectedExecutionId && !isDraggingThis && !isSelected && !connectingMode) {
+            } else if (nodeGroupExecId && !isDraggingThis && !isSelected && !connectingMode) {
               // In execution view: dim unreached nodes via border only (avoid opacity for crisp text)
               nodeOpacity = 1;
             } else if (routeState && !isDraggingThis && !isSelected && !connectingMode) {
