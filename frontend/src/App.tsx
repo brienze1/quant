@@ -1469,6 +1469,25 @@ function App() {
                     >...</button>
                   </div>
                   {pathErrors.mcp && <div style={{ color: "#EF4444", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.mcp}</div>}
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <button
+                      type="submit"
+                      style={{
+                        padding: "3px 10px", borderRadius: 4, border: "1px solid #10B981",
+                        backgroundColor: "#10B981", color: "#0A0A0A", cursor: "pointer",
+                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >Save</button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setCreatingWorkspace(false); setNewWorkspaceName(""); setNewClaudeConfigPath(""); setNewMcpConfigPath(""); }}
+                      style={{
+                        padding: "3px 10px", borderRadius: 4, border: "1px solid #333",
+                        backgroundColor: "transparent", color: "#6B7280", cursor: "pointer",
+                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >Cancel</button>
+                  </div>
                 </form>
               ) : (
                 <button
