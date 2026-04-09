@@ -23,13 +23,13 @@ func NewJobPersistence(db *sql.DB) adapter.JobPersistence {
 
 const jobColumns = `id, name, description, type, working_directory, schedule_enabled, schedule_type, cron_expression,
 		schedule_interval, schedule_start_time, timeout_seconds, prompt, allow_bypass, autonomous_mode,
-		max_retries, model, override_repo_command, claude_command, agent_id, success_prompt, failure_prompt, metadata_prompt,
+		max_retries, model, override_repo_command, claude_command, agent_id, success_prompt, failure_prompt, metadata_prompt, triage_prompt,
 		interpreter, script_content, env_variables, workspace_id, created_at, updated_at, last_run_at`
 
 const jobTriggerColumns = `id, source_job_id, target_job_id, trigger_on`
 
-const jobRunColumns = `id, job_id, status, triggered_by, session_id, model_used, duration_ms, tokens_used, result,
-		error_message, started_at, finished_at`
+const jobRunColumns = `id, job_id, status, triggered_by, correlation_id, session_id, model_used, duration_ms, tokens_used, result,
+		error_message, injected_context, started_at, finished_at`
 
 func scanJobRow(scanner interface{ Scan(...any) error }) (pdto.JobRow, error) {
 	var row pdto.JobRow
@@ -39,7 +39,7 @@ func scanJobRow(scanner interface{ Scan(...any) error }) (pdto.JobRow, error) {
 		&row.ScheduleInterval, &row.ScheduleStartTime, &row.TimeoutSeconds,
 		&row.Prompt, &row.AllowBypass, &row.AutonomousMode,
 		&row.MaxRetries, &row.Model, &row.OverrideRepoCommand, &row.ClaudeCommand,
-		&row.AgentID, &row.SuccessPrompt, &row.FailurePrompt, &row.MetadataPrompt,
+		&row.AgentID, &row.SuccessPrompt, &row.FailurePrompt, &row.MetadataPrompt, &row.TriagePrompt,
 		&row.Interpreter, &row.ScriptContent, &row.EnvVariables,
 		&row.WorkspaceID, &row.CreatedAt, &row.UpdatedAt, &row.LastRunAt,
 	)
@@ -57,9 +57,9 @@ func scanJobTriggerRow(scanner interface{ Scan(...any) error }) (pdto.JobTrigger
 func scanJobRunRow(scanner interface{ Scan(...any) error }) (pdto.JobRunRow, error) {
 	var row pdto.JobRunRow
 	err := scanner.Scan(
-		&row.ID, &row.JobID, &row.Status, &row.TriggeredBy, &row.SessionID,
+		&row.ID, &row.JobID, &row.Status, &row.TriggeredBy, &row.CorrelationID, &row.SessionID,
 		&row.ModelUsed, &row.DurationMs, &row.TokensUsed, &row.Result,
-		&row.ErrorMessage, &row.StartedAt, &row.FinishedAt,
+		&row.ErrorMessage, &row.InjectedContext, &row.StartedAt, &row.FinishedAt,
 	)
 	return row, err
 }
@@ -140,9 +140,9 @@ func (p *jobPersistence) SaveJob(job entity.Job) error {
 	query := `INSERT INTO jobs (id, name, description, type, working_directory, schedule_enabled, schedule_type,
 		cron_expression, schedule_interval, schedule_start_time, timeout_seconds, prompt, allow_bypass,
 		autonomous_mode, max_retries, model, override_repo_command, claude_command, agent_id,
-		success_prompt, failure_prompt, metadata_prompt,
+		success_prompt, failure_prompt, metadata_prompt, triage_prompt,
 		interpreter, script_content, env_variables, workspace_id, created_at, updated_at, last_run_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := p.db.Exec(query,
 		row.ID, row.Name, row.Description, row.Type, row.WorkingDirectory,
@@ -150,7 +150,7 @@ func (p *jobPersistence) SaveJob(job entity.Job) error {
 		row.ScheduleInterval, row.ScheduleStartTime, row.TimeoutSeconds,
 		row.Prompt, row.AllowBypass, row.AutonomousMode,
 		row.MaxRetries, row.Model, row.OverrideRepoCommand, row.ClaudeCommand,
-		row.AgentID, row.SuccessPrompt, row.FailurePrompt, row.MetadataPrompt,
+		row.AgentID, row.SuccessPrompt, row.FailurePrompt, row.MetadataPrompt, row.TriagePrompt,
 		row.Interpreter, row.ScriptContent, row.EnvVariables,
 		row.WorkspaceID, row.CreatedAt, row.UpdatedAt, row.LastRunAt,
 	)
@@ -169,7 +169,7 @@ func (p *jobPersistence) UpdateJob(job entity.Job) error {
 		schedule_enabled = ?, schedule_type = ?, cron_expression = ?, schedule_interval = ?,
 		schedule_start_time = ?, timeout_seconds = ?, prompt = ?, allow_bypass = ?,
 		autonomous_mode = ?, max_retries = ?, model = ?, override_repo_command = ?,
-		claude_command = ?, agent_id = ?, success_prompt = ?, failure_prompt = ?, metadata_prompt = ?,
+		claude_command = ?, agent_id = ?, success_prompt = ?, failure_prompt = ?, metadata_prompt = ?, triage_prompt = ?,
 		interpreter = ?, script_content = ?, env_variables = ?,
 		workspace_id = ?, updated_at = ?, last_run_at = ? WHERE id = ?`
 
@@ -178,7 +178,7 @@ func (p *jobPersistence) UpdateJob(job entity.Job) error {
 		row.ScheduleEnabled, row.ScheduleType, row.CronExpression, row.ScheduleInterval,
 		row.ScheduleStartTime, row.TimeoutSeconds, row.Prompt, row.AllowBypass,
 		row.AutonomousMode, row.MaxRetries, row.Model, row.OverrideRepoCommand,
-		row.ClaudeCommand, row.AgentID, row.SuccessPrompt, row.FailurePrompt, row.MetadataPrompt,
+		row.ClaudeCommand, row.AgentID, row.SuccessPrompt, row.FailurePrompt, row.MetadataPrompt, row.TriagePrompt,
 		row.Interpreter, row.ScriptContent, row.EnvVariables,
 		row.WorkspaceID, row.UpdatedAt, row.LastRunAt, row.ID,
 	)
@@ -362,18 +362,44 @@ func (p *jobPersistence) FindJobRunsByJobID(jobID string) ([]entity.JobRun, erro
 	return runs, nil
 }
 
+// FindJobRunsByCorrelationID retrieves all runs sharing a correlation ID.
+func (p *jobPersistence) FindJobRunsByCorrelationID(correlationID string) ([]entity.JobRun, error) {
+	query := `SELECT ` + jobRunColumns + ` FROM job_runs WHERE correlation_id = ? ORDER BY started_at ASC`
+
+	rows, err := p.db.Query(query, correlationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list runs by correlation: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []entity.JobRun
+	for rows.Next() {
+		row, err := scanJobRunRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan job run row: %w", err)
+		}
+		runs = append(runs, row.ToEntity())
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating job run rows: %w", err)
+	}
+
+	return runs, nil
+}
+
 // SaveJobRun persists a new job run to the database.
 func (p *jobPersistence) SaveJobRun(run entity.JobRun) error {
 	row := pdto.JobRunRowFromEntity(run)
 
-	query := `INSERT INTO job_runs (id, job_id, status, triggered_by, session_id, model_used, duration_ms, tokens_used,
-		result, error_message, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO job_runs (id, job_id, status, triggered_by, correlation_id, session_id, model_used, duration_ms, tokens_used,
+		result, error_message, injected_context, started_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := p.db.Exec(query,
-		row.ID, row.JobID, row.Status, row.TriggeredBy, row.SessionID,
+		row.ID, row.JobID, row.Status, row.TriggeredBy, row.CorrelationID, row.SessionID,
 		row.ModelUsed, row.DurationMs, row.TokensUsed, row.Result,
-		row.ErrorMessage, row.StartedAt, row.FinishedAt,
+		row.ErrorMessage, row.InjectedContext, row.StartedAt, row.FinishedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save job run: %w", err)
@@ -386,14 +412,14 @@ func (p *jobPersistence) SaveJobRun(run entity.JobRun) error {
 func (p *jobPersistence) UpdateJobRun(run entity.JobRun) error {
 	row := pdto.JobRunRowFromEntity(run)
 
-	query := `UPDATE job_runs SET job_id = ?, status = ?, triggered_by = ?, session_id = ?,
+	query := `UPDATE job_runs SET job_id = ?, status = ?, triggered_by = ?, correlation_id = ?, session_id = ?,
 		model_used = ?, duration_ms = ?, tokens_used = ?, result = ?, error_message = ?,
-		started_at = ?, finished_at = ? WHERE id = ?`
+		injected_context = ?, started_at = ?, finished_at = ? WHERE id = ?`
 
 	result, err := p.db.Exec(query,
-		row.JobID, row.Status, row.TriggeredBy, row.SessionID,
+		row.JobID, row.Status, row.TriggeredBy, row.CorrelationID, row.SessionID,
 		row.ModelUsed, row.DurationMs, row.TokensUsed, row.Result, row.ErrorMessage,
-		row.StartedAt, row.FinishedAt, row.ID,
+		row.InjectedContext, row.StartedAt, row.FinishedAt, row.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update job run: %w", err)

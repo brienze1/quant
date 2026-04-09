@@ -13,14 +13,16 @@ type JobRunRow struct {
 	ID           string
 	JobID        string
 	Status       string
-	TriggeredBy  sql.NullString
-	SessionID    sql.NullString
+	TriggeredBy   sql.NullString
+	CorrelationID string
+	SessionID     sql.NullString
 	ModelUsed    string
 	DurationMs   int64
 	TokensUsed   int
-	Result       string
-	ErrorMessage string
-	StartedAt    string
+	Result          string
+	ErrorMessage    string
+	InjectedContext string
+	StartedAt       string
 	FinishedAt   sql.NullString
 }
 
@@ -48,15 +50,17 @@ func (r JobRunRow) ToEntity() entity.JobRun {
 		ID:           r.ID,
 		JobID:        r.JobID,
 		Status:       r.Status,
-		TriggeredBy:  triggeredBy,
-		SessionID:    sessionID,
-		ModelUsed:    r.ModelUsed,
+		TriggeredBy:   triggeredBy,
+		CorrelationID: r.CorrelationID,
+		SessionID:     sessionID,
+		ModelUsed:     r.ModelUsed,
 		DurationMs:   r.DurationMs,
 		TokensUsed:   r.TokensUsed,
-		Result:       r.Result,
-		ErrorMessage: r.ErrorMessage,
-		StartedAt:    startedAt,
-		FinishedAt:   finishedAt,
+		Result:          r.Result,
+		ErrorMessage:    r.ErrorMessage,
+		InjectedContext: r.InjectedContext,
+		StartedAt:       startedAt,
+		FinishedAt:      finishedAt,
 	}
 }
 
@@ -78,17 +82,19 @@ func JobRunRowFromEntity(run entity.JobRun) JobRunRow {
 	}
 
 	return JobRunRow{
-		ID:           run.ID,
-		JobID:        run.JobID,
-		Status:       run.Status,
-		TriggeredBy:  triggeredBy,
-		SessionID:    sessionID,
-		ModelUsed:    run.ModelUsed,
+		ID:            run.ID,
+		JobID:         run.JobID,
+		Status:        run.Status,
+		TriggeredBy:   triggeredBy,
+		CorrelationID: run.CorrelationID,
+		SessionID:     sessionID,
+		ModelUsed:     run.ModelUsed,
 		DurationMs:   run.DurationMs,
 		TokensUsed:   run.TokensUsed,
-		Result:       run.Result,
-		ErrorMessage: run.ErrorMessage,
-		StartedAt:    run.StartedAt.Format(time.RFC3339),
+		Result:          run.Result,
+		ErrorMessage:    run.ErrorMessage,
+		InjectedContext: run.InjectedContext,
+		StartedAt:       run.StartedAt.Format(time.RFC3339),
 		FinishedAt:   finishedAt,
 	}
 }

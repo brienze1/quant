@@ -3,6 +3,8 @@
 import {dto} from '../models';
 import {context} from '../models';
 
+export function AdvancePipeline(arg1:string,arg2:string,arg3:string):Promise<dto.JobRunResponse>;
+
 export function CancelRun(arg1:string):Promise<void>;
 
 export function CreateJob(arg1:dto.CreateJobRequest):Promise<dto.JobResponse>;
@@ -17,6 +19,8 @@ export function GetRunOutput(arg1:string):Promise<string>;
 
 export function ListJobs():Promise<Array<dto.JobResponse>>;
 
+export function ListRunsByCorrelation(arg1:string):Promise<Array<dto.JobRunResponse>>;
+
 export function ListRunsByJob(arg1:string):Promise<Array<dto.JobRunResponse>>;
 
 export function OnShutdown(arg1:context.Context):Promise<void>;
@@ -24,6 +28,8 @@ export function OnShutdown(arg1:context.Context):Promise<void>;
 export function OnStartup(arg1:context.Context):Promise<void>;
 
 export function RerunJob(arg1:string,arg2:string):Promise<dto.JobRunResponse>;
+
+export function ResumeJob(arg1:string,arg2:string):Promise<dto.JobRunResponse>;
 
 export function RunJob(arg1:string):Promise<dto.JobRunResponse>;
 

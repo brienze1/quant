@@ -87,7 +87,7 @@ export interface CreateSessionRequest {
 // --- Jobs ---
 
 export type JobType = "claude" | "bash";
-export type JobRunStatus = "pending" | "running" | "success" | "failed" | "cancelled" | "timed_out";
+export type JobRunStatus = "pending" | "running" | "success" | "failed" | "cancelled" | "timed_out" | "waiting";
 export type ScheduleType = "recurring" | "one_time";
 
 export interface Job {
@@ -112,6 +112,7 @@ export interface Job {
   successPrompt: string;
   failurePrompt: string;
   metadataPrompt: string;
+  triagePrompt: string;
   interpreter: string;
   scriptContent: string;
   envVariables: Record<string, string>;
@@ -149,6 +150,7 @@ export interface CreateJobRequest {
   successPrompt: string;
   failurePrompt: string;
   metadataPrompt: string;
+  triagePrompt: string;
   interpreter: string;
   scriptContent: string;
   envVariables: Record<string, string>;
@@ -166,12 +168,14 @@ export interface JobRun {
   jobId: string;
   status: JobRunStatus;
   triggeredBy: string;
+  correlationId: string;
   sessionId: string;
   modelUsed: string;
   durationMs: number;
   tokensUsed: number;
   result: string;
   errorMessage: string;
+  injectedContext: string;
   startedAt: string;
   finishedAt: string;
 }

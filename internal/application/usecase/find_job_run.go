@@ -8,4 +8,5 @@ import (
 type FindJobRun interface {
 	FindJobRunByID(id string) (*entity.JobRun, error)
 	FindJobRunsByJobID(jobID string) ([]entity.JobRun, error)
+	FindJobRunsByCorrelationID(correlationID string) ([]entity.JobRun, error)
 }

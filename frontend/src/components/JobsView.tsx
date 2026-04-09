@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Job, JobRun, UpdateJobRequest, Agent, JobGroup } from "../types";
 import * as api from "../api";
 
@@ -51,11 +51,12 @@ function formatDuration(ms: number): string {
 function statusColor(status: string): string {
   switch (status) {
     case "success": return "var(--q-accent)";
-    case "running": return "var(--q-accent)";
+    case "running": return "var(--q-warning)";
     case "pending": return "var(--q-warning)";
     case "failed": return "var(--q-error)";
     case "cancelled": return "var(--q-fg-secondary)";
     case "timed_out": return "var(--q-error)";
+    case "waiting": return "var(--q-warning)";
     default: return "var(--q-fg-secondary)";
   }
 }
@@ -402,6 +403,67 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     };
   }, [resizingSidebar]);
 
+  // Pipeline execution data: group runs by correlationId across all jobs in all groups
+  useEffect(() => {
+    if (jobs.length === 0) {
+      setPipelineExecutions([]);
+      return;
+    }
+    let cancelled = false;
+    const fetchExecutions = async () => {
+      try {
+        const allJobIds = new Set<string>(jobs.map((j) => j.id));
+        const allRuns: JobRun[] = [];
+        await Promise.all(
+          Array.from(allJobIds).map(async (jobId) => {
+            try {
+              const jobRuns = await api.listRunsByJob(jobId);
+              if (!cancelled) allRuns.push(...jobRuns);
+            } catch { /* ignore */ }
+          })
+        );
+        if (cancelled) return;
+        // Group by correlationId
+        const byCorr = new Map<string, JobRun[]>();
+        for (const run of allRuns) {
+          if (!run.correlationId) continue;
+          const arr = byCorr.get(run.correlationId) || [];
+          arr.push(run);
+          byCorr.set(run.correlationId, arr);
+        }
+        // Build execution list
+        const execs = Array.from(byCorr.entries()).map(([corrId, corrRuns]) => {
+          const sorted = corrRuns.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+          // Deduplicate: latest run per job for status aggregation
+          const latestByJob = new Map<string, JobRun>();
+          for (const r of sorted) {
+            latestByJob.set(r.jobId, r);
+          }
+          // Aggregate status: waiting > running > failed > success
+          let status = "success";
+          for (const r of latestByJob.values()) {
+            if (r.status === "waiting") { status = "waiting"; break; }
+            if (r.status === "running") status = "running";
+            else if (r.status === "failed" && status !== "running") status = "failed";
+            else if (r.status === "pending" && status === "success") status = "pending";
+          }
+          return { correlationId: corrId, status, startedAt: sorted[0]?.startedAt ?? "", runs: sorted };
+        });
+        execs.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+        setPipelineExecutions(execs);
+        // Auto-select most recent active if nothing selected (but respect user "all" choice)
+        if (!userExplicitlySelectedAll.current && (!selectedExecutionId || !execs.find((e) => e.correlationId === selectedExecutionId))) {
+          const active = execs.find((e) => e.status === "waiting" || e.status === "running");
+          setSelectedExecutionId(active?.correlationId ?? execs[0]?.correlationId ?? "");
+        }
+      } catch { /* ignore */ }
+    };
+    fetchExecutions();
+    const hasActive = pipelineExecutions.some((e) => e.status === "running" || e.status === "waiting");
+    const interval = hasActive ? setInterval(fetchExecutions, 5000) : undefined;
+    return () => { cancelled = true; if (interval) clearInterval(interval); };
+  }, [jobGroups, jobs]);
+
   // Close trigger dropdown on outside click
   useEffect(() => {
     if (!triggerDropdownOpen) return;
@@ -410,6 +472,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     return () => { clearTimeout(timer); document.removeEventListener("click", handle); };
   }, [triggerDropdownOpen]);
   const [connectMousePos, setConnectMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [resumeDialog, setResumeDialog] = useState<{ jobId: string; runId: string } | null>(null);
+  const [resumeContext, setResumeContext] = useState("");
+  const [resumeScreen, setResumeScreen] = useState<"menu" | "rerun" | "advance">("menu");
+  const [advanceTargetJobId, setAdvanceTargetJobId] = useState<string>("");
+  const [pipelineRuns, setPipelineRuns] = useState<JobRun[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [runningJobIds, setRunningJobIds] = useState<Set<string>>(new Set());
   const [selectedEdge, setSelectedEdge] = useState<{ sourceId: string; targetId: string; type: "success" | "failure" } | null>(null);
@@ -426,6 +493,20 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const [dragDeleteHover, setDragDeleteHover] = useState(false);
   const deleteZoneRef = useRef<HTMLDivElement>(null);
   const [spaceDown, setSpaceDown] = useState(false);
+
+  // Pipeline execution state
+  const [pipelineExecutions, setPipelineExecutions] = useState<{ correlationId: string; status: string; startedAt: string; runs: JobRun[] }[]>([]);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string>("");
+  const userExplicitlySelectedAll = useRef(true);
+  const [showExecutionDropdown, setShowExecutionDropdown] = useState(false);
+
+  // Close execution dropdown on outside click
+  useEffect(() => {
+    if (!showExecutionDropdown) return;
+    const handle = () => setShowExecutionDropdown(false);
+    const timer = setTimeout(() => document.addEventListener("click", handle), 0);
+    return () => { clearTimeout(timer); document.removeEventListener("click", handle); };
+  }, [showExecutionDropdown]);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
@@ -654,6 +735,24 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     return () => clearInterval(interval);
   }, [selectedRun?.status, selectedJobId, selectedRunId, selectedRunTab, fetchRuns, fetchOutput]);
 
+  // Fetch pipeline sibling runs when a run with correlationId is selected
+  useEffect(() => {
+    if (!selectedRun?.correlationId) {
+      setPipelineRuns([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const runs = await api.listRunsByCorrelation(selectedRun.correlationId);
+        if (!cancelled) setPipelineRuns(runs);
+      } catch {
+        if (!cancelled) setPipelineRuns([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedRun?.correlationId, selectedRun?.status]);
+
   // Animate wave on selected edge with smooth amplitude transitions
   const selectedEdgeRef = useRef(selectedEdge);
   selectedEdgeRef.current = selectedEdge;
@@ -686,11 +785,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         waveAmplitude.current = 0;
       }
 
-      // Accumulate phase based on speed (not absolute time)
+      // Accumulate phase based on speed (not absolute time) — only re-render when visibly animating
       const now = Date.now();
       const dt = now - lastFrameTime.current;
       lastFrameTime.current = now;
-      setWavePhase((prev) => prev + waveSpeed.current * dt);
+      if (waveAmplitude.current > 0.05) {
+        setWavePhase((prev) => prev + waveSpeed.current * dt);
+      }
       waveAnimRef.current = requestAnimationFrame(animate);
     };
 
@@ -861,6 +962,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             successPrompt: sourceJob.successPrompt,
             failurePrompt: sourceJob.failurePrompt,
             metadataPrompt: sourceJob.metadataPrompt,
+            triagePrompt: sourceJob.triagePrompt ?? "",
             interpreter: sourceJob.interpreter,
             scriptContent: sourceJob.scriptContent,
             envVariables: sourceJob.envVariables,
@@ -1031,6 +1133,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       successPrompt: sourceJob.successPrompt,
       failurePrompt: sourceJob.failurePrompt,
       metadataPrompt: sourceJob.metadataPrompt,
+      triagePrompt: sourceJob.triagePrompt ?? "",
       interpreter: sourceJob.interpreter,
       scriptContent: sourceJob.scriptContent,
       envVariables: sourceJob.envVariables,
@@ -1332,12 +1435,16 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           className="flex flex-col h-full shrink-0 overflow-y-auto"
           style={{ width: 220, borderRight: "1px solid var(--q-border)" }}
         >
-          {runs.length === 0 ? (
+          {(() => {
+            const filteredRuns = selectedExecutionId
+              ? runs.filter((r) => r.correlationId === selectedExecutionId)
+              : runs;
+            return filteredRuns.length === 0 ? (
             <div className="flex items-center justify-center p-4">
-              <span style={{ color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font }}>no runs yet</span>
+              <span style={{ color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font }}>{selectedExecutionId ? "no runs in this execution" : "no runs yet"}</span>
             </div>
           ) : (
-            runs.map((run) => {
+            filteredRuns.map((run) => {
               const active = run.id === selectedRunId;
               const canRerun = run.status !== "running" && run.status !== "pending";
               return (
@@ -1375,6 +1482,39 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       </span>
                     </div>
                   </button>
+                  {run.status === "waiting" && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!selectedJobId) return;
+                        setResumeDialog({ jobId: selectedJobId, runId: run.id });
+                        setResumeContext("");
+                        setResumeScreen("menu");
+                        setAdvanceTargetJobId("");
+                        if (run.correlationId) {
+                          try {
+                            const pr = await api.listRunsByCorrelation(run.correlationId);
+                            setPipelineRuns(pr);
+                          } catch { setPipelineRuns([]); }
+                        }
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--q-warning)",
+                        fontSize: 10,
+                        fontFamily: font,
+                        padding: "4px 8px",
+                        flexShrink: 0,
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-warning)")}
+                      title="resume this job with context"
+                    >
+                      &#9654;
+                    </button>
+                  )}
                   {canRerun && (
                     <button
                       onClick={async (e) => {
@@ -1410,7 +1550,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 </div>
               );
             })
-          )}
+          );
+          })()}
         </div>
 
         {/* Run detail area */}
@@ -1576,11 +1717,58 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     {renderKeyValue("run_id", selectedRun.id)}
                     {renderKeyValue("status", selectedRun.status)}
                     {renderKeyValue("triggered_by", parentRunInfo ? parentRunInfo.jobName : selectedRun.triggeredBy || "manual")}
+                    {selectedRun.correlationId && renderKeyValue("pipeline_id", selectedRun.correlationId.slice(0, 12) + "...")}
                     {renderKeyValue("started", selectedRun.startedAt ? new Date(selectedRun.startedAt).toLocaleString() : "---")}
                     {selectedRun.finishedAt && renderKeyValue("finished", new Date(selectedRun.finishedAt).toLocaleString())}
                     {renderKeyValue("duration", formatDuration(selectedRun.durationMs))}
                     {selectedRun.modelUsed && renderKeyValue("model", selectedRun.modelUsed)}
                     {selectedRun.tokensUsed > 0 && renderKeyValue("tokens_used", selectedRun.tokensUsed.toLocaleString())}
+                  </>)}
+
+                  {pipelineRuns.length > 1 && renderSection("pipeline", <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {(() => {
+                        const byJob = new Map<string, JobRun>();
+                        for (const r of pipelineRuns) {
+                          const existing = byJob.get(r.jobId);
+                          if (!existing || new Date(r.startedAt).getTime() > new Date(existing.startedAt).getTime()) {
+                            byJob.set(r.jobId, r);
+                          }
+                        }
+                        return Array.from(byJob.values());
+                      })().map((pr) => {
+                        const jobName = jobs.find(j => j.id === pr.jobId)?.name || pr.jobId.slice(0, 8);
+                        const isCurrent = pr.id === selectedRun.id;
+                        return (
+                          <div key={pr.id} style={{
+                            display: "flex", alignItems: "center", gap: 8,
+                            fontSize: 11, fontFamily: font,
+                            opacity: isCurrent ? 1 : 0.8,
+                          }}>
+                            <span style={{
+                              width: 6, height: 6, borderRadius: "50%",
+                              backgroundColor: statusColor(pr.status),
+                              flexShrink: 0,
+                              animation: pr.status === "running" ? "job-pulse 1.5s ease-in-out infinite" : "none",
+                            }} />
+                            <span style={{
+                              color: isCurrent ? "var(--q-accent)" : "var(--q-fg)",
+                              fontWeight: isCurrent ? 600 : "normal",
+                            }}>
+                              {jobName}
+                            </span>
+                            <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>
+                              {pr.status}
+                            </span>
+                            {pr.finishedAt && (
+                              <span style={{ color: "var(--q-fg-muted)", fontSize: 9, marginLeft: "auto" }}>
+                                {formatDuration(pr.durationMs)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </>)}
 
                   {selectedJob && renderSection("input", <>
@@ -1616,6 +1804,12 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       </pre>
                     ) : null;
                   })()}
+
+                  {selectedRun.injectedContext && renderSection("injected_context",
+                    <pre style={{ color: "var(--q-warning)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                      {selectedRun.injectedContext}
+                    </pre>
+                  )}
 
                   {selectedRun.sessionId && renderSection("triggered_sessions",
                     <div style={{ fontSize: 11, fontFamily: font }}>
@@ -1763,6 +1957,12 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           if (!srcInGroup && !tgtInGroup) { edgeOpacity = 0.06; defaultStroke = "var(--q-fg-muted)"; }
         } else if (hoverConnectedNodes && !isSelected && !isFlashing) {
           if (!isHoverRelevant) { edgeOpacity = 0.06; defaultStroke = "var(--q-fg-muted)"; }
+        } else if (selectedExecutionId && !isSelected && !isFlashing) {
+          // Execution view: dim edges to unreached nodes
+          const selExec = pipelineExecutions.find((e) => e.correlationId === selectedExecutionId);
+          const srcHasRun = selExec?.runs.some((r) => r.jobId === job.id);
+          const tgtHasRun = selExec?.runs.some((r) => r.jobId === targetId);
+          if (!srcHasRun || !tgtHasRun) { edgeOpacity = 0.15; defaultStroke = "var(--q-fg-muted)"; }
         } else if (routeState && !isSelected && !isFlashing) {
           const isInFlow = routeState.flowNodes.has(job.id) || routeState.flowNodes.has(targetId);
           if (isInRoute) {
@@ -1770,7 +1970,6 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           } else if (isInFlow) {
             edgeOpacity = 0.12; defaultStroke = "var(--q-fg-muted)";
           }
-          // Edges between unrelated jobs stay at full opacity
         }
 
         lines.push(
@@ -1844,6 +2043,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       successPrompt: sourceJob.successPrompt,
                       failurePrompt: sourceJob.failurePrompt,
                       metadataPrompt: sourceJob.metadataPrompt,
+                      triagePrompt: sourceJob.triagePrompt ?? "",
                       interpreter: sourceJob.interpreter,
                       scriptContent: sourceJob.scriptContent,
                       envVariables: sourceJob.envVariables,
@@ -2285,20 +2485,232 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             zIndex: isDraggingNode ? 200 : 2,
           }}
         >
-          {/* Visual group boxes */}
+          {/* Visual group boxes with pipeline header */}
           {jobGroups.map((group) => {
             const positions = group.jobIds.map((id) => nodePositions[id]).filter(Boolean);
             if (positions.length === 0) return null;
+            // Pipeline execution data for this group
+            const groupExecs = pipelineExecutions.filter((e) => e.runs.some((r) => group.jobIds.includes(r.jobId)));
+            const activeCount = groupExecs.filter((e) => e.status === "running" || e.status === "waiting").length;
+            const selectedExec = groupExecs.find((e) => e.correlationId === selectedExecutionId);
+            const hasExecs = groupExecs.length > 0;
+            const hasWaitingNode = selectedExec?.runs.some((r) => r.status === "waiting" && (r.result || r.errorMessage));
+            const warningExtraH = hasWaitingNode ? 80 : 0;
+            const headerH = hasExecs ? 28 : 0;
             const minX = Math.min(...positions.map((p) => p.x)) - 24;
-            const maxX = Math.max(...positions.map((p) => p.x + NODE_W)) + 24;
+            const maxX = Math.max(...positions.map((p) => p.x + NODE_W)) + 24 + (hasWaitingNode ? 60 : 0);
             const minY = Math.min(...positions.map((p) => p.y)) - 24;
-            const maxY = Math.max(...positions.map((p) => p.y + NODE_H)) + 24;
+            const maxY = Math.max(...positions.map((p) => p.y + NODE_H)) + 24 + warningExtraH;
             return (
-              <div key={`group-box-${group.id}`} style={{ position: "absolute", left: minX, top: minY, width: maxX - minX, height: maxY - minY, border: "1px solid var(--q-border)", borderRadius: 8, backgroundColor: "#0f0f0f80", pointerEvents: "none" }}>
+              <div key={`group-box-${group.id}`} style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px solid var(--q-border)", borderRadius: 8, backgroundColor: "#0f0f0f80", pointerEvents: "none" }}>
+                {/* Group name label */}
                 <span style={{ position: "absolute", top: -12, left: 12, backgroundColor: "var(--q-bg-input)", padding: "0 6px", color: "var(--q-fg-muted)", fontSize: 9, fontFamily: font, whiteSpace: "nowrap" }}>{group.name}</span>
+                {/* Pipeline header inside box */}
+                {hasExecs && (
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "4px 12px",
+                    borderBottom: "1px solid var(--q-border)",
+                    borderRadius: "8px 8px 0 0",
+                    backgroundColor: "var(--q-bg-elevated)",
+                    pointerEvents: "auto",
+                    fontFamily: font,
+                  }}>
+                    {activeCount > 0 && (
+                      <span style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "1px 8px",
+                        borderRadius: 10,
+                        backgroundColor: "color-mix(in srgb, var(--q-accent) 15%, transparent)",
+                        fontSize: 9,
+                        fontWeight: 600,
+                        color: "var(--q-accent)",
+                      }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--q-accent)" }} />
+                        {activeCount} active
+                      </span>
+                    )}
+                    <span style={{ flex: 1 }} />
+                    <div style={{ position: "relative" }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowExecutionDropdown(!showExecutionDropdown); }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          backgroundColor: "var(--q-bg-input)",
+                          border: "1px solid var(--q-border)",
+                          cursor: "pointer",
+                          fontFamily: font,
+                          fontSize: 10,
+                          color: "var(--q-fg)",
+                        }}
+                      >
+                        {selectedExec && (
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(selectedExec.status as any) }} />
+                        )}
+                        <span>{selectedExec ? `${selectedExec.correlationId.slice(0, 8)} · ${relativeTime(selectedExec.startedAt)}` : "select"}</span>
+                        <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>▾</span>
+                      </button>
+                      {showExecutionDropdown && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            right: 0,
+                            marginTop: 4,
+                            minWidth: 220,
+                            backgroundColor: "var(--q-bg-elevated)",
+                            border: "1px solid var(--q-border)",
+                            borderRadius: 6,
+                            padding: "4px 0",
+                            zIndex: 30,
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                          }}
+                        >
+                          <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--q-fg-muted)", fontWeight: 500 }}>select execution</div>
+                          <div
+                            onClick={() => { userExplicitlySelectedAll.current = true; setSelectedExecutionId(""); setShowExecutionDropdown(false); }}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
+                              backgroundColor: selectedExecutionId === "" ? "var(--q-bg-input)" : "transparent",
+                              fontSize: 10, color: "var(--q-fg-secondary)",
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = selectedExecutionId === "" ? "var(--q-bg-input)" : "transparent"; }}
+                          >
+                            all
+                          </div>
+                          {groupExecs.map((exec) => (
+                            <div
+                              key={exec.correlationId}
+                              onClick={() => { userExplicitlySelectedAll.current = false; setSelectedExecutionId(exec.correlationId); setShowExecutionDropdown(false); }}
+                              style={{
+                                display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
+                                backgroundColor: exec.correlationId === selectedExecutionId ? "var(--q-bg-input)" : "transparent",
+                                fontSize: 10,
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === selectedExecutionId ? "var(--q-bg-input)" : "transparent"; }}
+                            >
+                              <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(exec.status as any), flexShrink: 0 }} />
+                              <span style={{ color: "var(--q-fg)", fontWeight: 500 }}>{exec.correlationId.slice(0, 8)} · {relativeTime(exec.startedAt)}</span>
+                              <span style={{ marginLeft: "auto", color: statusColor(exec.status as any), fontSize: 9 }}>{exec.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
+
+          {/* Pipeline box for ungrouped jobs */}
+          {(() => {
+            const groupedJobIds = new Set(jobGroups.flatMap((g) => g.jobIds));
+            const ungroupedJobIds = jobs.map((j) => j.id).filter((id) => !groupedJobIds.has(id));
+            const ungroupedExecs = pipelineExecutions.filter((e) => e.runs.some((r) => ungroupedJobIds.includes(r.jobId)));
+            if (ungroupedExecs.length === 0) return null;
+            const positions = ungroupedJobIds.map((id) => nodePositions[id]).filter(Boolean);
+            if (positions.length === 0) return null;
+            const selExec = ungroupedExecs.find((e) => e.correlationId === selectedExecutionId);
+            const hasWaitingNode = selExec?.runs.some((r) => r.status === "waiting" && (r.result || r.errorMessage));
+            const warningExtraH = hasWaitingNode ? 80 : 0;
+            const minX = Math.min(...positions.map((p) => p.x)) - 24;
+            const maxX = Math.max(...positions.map((p) => p.x + NODE_W)) + 24 + (hasWaitingNode ? 60 : 0);
+            const minY = Math.min(...positions.map((p) => p.y)) - 24;
+            const maxY = Math.max(...positions.map((p) => p.y + NODE_H)) + 24 + warningExtraH;
+            const activeCount = ungroupedExecs.filter((e) => e.status === "running" || e.status === "waiting").length;
+            const selectedExec = ungroupedExecs.find((e) => e.correlationId === selectedExecutionId);
+            const headerH = 28;
+            return (
+              <div style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px solid var(--q-border)", borderRadius: 8, backgroundColor: "#0f0f0f80", pointerEvents: "none" }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "4px 12px",
+                  borderBottom: "1px solid var(--q-border)", borderRadius: "8px 8px 0 0",
+                  backgroundColor: "var(--q-bg-elevated)", pointerEvents: "auto", fontFamily: font,
+                }}>
+                  {activeCount > 0 && (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 8px", borderRadius: 10,
+                      backgroundColor: "color-mix(in srgb, var(--q-accent) 15%, transparent)",
+                      fontSize: 9, fontWeight: 600, color: "var(--q-accent)",
+                    }}>
+                      <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--q-accent)" }} />
+                      {activeCount} active
+                    </span>
+                  )}
+                  <span style={{ flex: 1 }} />
+                  <div style={{ position: "relative" }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowExecutionDropdown(!showExecutionDropdown); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6, padding: "2px 8px", borderRadius: 6,
+                        backgroundColor: "var(--q-bg-input)", border: "1px solid var(--q-border)",
+                        cursor: "pointer", fontFamily: font, fontSize: 10, color: "var(--q-fg)",
+                      }}
+                    >
+                      {selectedExec && (
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(selectedExec.status as any) }} />
+                      )}
+                      <span>{selectedExec ? `${selectedExec.correlationId.slice(0, 8)} · ${relativeTime(selectedExec.startedAt)}` : "select"}</span>
+                      <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>▾</span>
+                    </button>
+                    {showExecutionDropdown && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: "absolute", top: "100%", right: 0, marginTop: 4, minWidth: 220,
+                          backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border)",
+                          borderRadius: 6, padding: "4px 0", zIndex: 30, boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                        }}
+                      >
+                        <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--q-fg-muted)", fontWeight: 500 }}>select execution</div>
+                        <div
+                          onClick={() => { userExplicitlySelectedAll.current = true; setSelectedExecutionId(""); setShowExecutionDropdown(false); }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
+                            backgroundColor: selectedExecutionId === "" ? "var(--q-bg-input)" : "transparent",
+                            fontSize: 10, color: "var(--q-fg-secondary)",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = selectedExecutionId === "" ? "var(--q-bg-input)" : "transparent"; }}
+                        >
+                          all
+                        </div>
+                        {ungroupedExecs.map((exec) => (
+                          <div
+                            key={exec.correlationId}
+                            onClick={() => { userExplicitlySelectedAll.current = false; setSelectedExecutionId(exec.correlationId); setShowExecutionDropdown(false); }}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
+                              backgroundColor: exec.correlationId === selectedExecutionId ? "var(--q-bg-input)" : "transparent",
+                              fontSize: 10,
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === selectedExecutionId ? "var(--q-bg-input)" : "transparent"; }}
+                          >
+                            <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(exec.status as any), flexShrink: 0 }} />
+                            <span style={{ color: "var(--q-fg)", fontWeight: 500 }}>{exec.correlationId.slice(0, 8)} · {relativeTime(exec.startedAt)}</span>
+                            <span style={{ marginLeft: "auto", color: statusColor(exec.status as any), fontSize: 9 }}>{exec.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Selection box */}
           {selectionBox && (() => {
@@ -2318,17 +2730,31 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const isMultiSelected = selectedJobIds.has(job.id);
             const isConnectSource = connectingMode?.sourceId === job.id;
             const isHovered = hoveredNodeId === job.id;
-            const isRunning = runningJobIds.has(job.id);
+            const isRunningGlobal = runningJobIds.has(job.id);
             const isDraggingThis = dragging?.id === job.id && isDraggingNode;
             const isInHoveredGroup = hoveredGroupId ? (jobGroups.find((g) => g.id === hoveredGroupId)?.jobIds.includes(job.id) ?? false) : false;
             let borderColor = "var(--q-border)";
             if (isDraggingThis && dragDeleteHover) borderColor = "var(--q-error)";
             else if (isDraggingThis) borderColor = "var(--q-fg)";
             else if (isMultiSelected) borderColor = "var(--q-accent)";
-            else if (isRunning) borderColor = "var(--q-accent)";
+            else if (isRunningGlobal) borderColor = "var(--q-warning)";
             else if (isSelected) borderColor = "var(--q-accent)";
             else if (isConnectSource) borderColor = connectingMode?.type === "success" ? "var(--q-accent)" : "var(--q-error)";
             else if (connectingMode && isHovered) borderColor = connectingMode.type === "success" ? "var(--q-accent)" : "var(--q-error)";
+
+            // Pipeline execution overlay
+            const execRun = selectedExecutionId
+              ? pipelineExecutions.find((e) => e.correlationId === selectedExecutionId)?.runs.filter((r) => r.jobId === job.id).slice(-1)[0]
+              : undefined;
+            // Scope running indicator to selected execution
+            const isRunning = selectedExecutionId ? (execRun?.status === "running" || execRun?.status === "pending") : isRunningGlobal;
+            let borderThickness = 1;
+            if (execRun && !isDraggingThis && !isSelected && !isMultiSelected && !connectingMode) {
+              borderColor = statusColor(execRun.status as any);
+              if (execRun.status === "waiting") borderThickness = 2;
+            } else if (selectedExecutionId && !execRun && !isDraggingThis && !isSelected && !isMultiSelected && !connectingMode) {
+              borderColor = "var(--q-fg-muted)";
+            }
 
             // Hover/route/group node highlighting
             let nodeOpacity = 1;
@@ -2338,13 +2764,15 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               nodeOpacity = isInHoveredGroup ? 1 : 0.15;
             } else if (hoverConnectedNodes && !isDraggingThis && !isSelected && !connectingMode) {
               nodeOpacity = hoverConnectedNodes.has(job.id) ? 1 : 0.15;
+            } else if (selectedExecutionId && !isDraggingThis && !isSelected && !connectingMode) {
+              // In execution view: dim unreached nodes via border only (avoid opacity for crisp text)
+              nodeOpacity = 1;
             } else if (routeState && !isDraggingThis && !isSelected && !connectingMode) {
               if (routeState.routeNodes.has(job.id)) {
                 nodeOpacity = 1;
               } else if (routeState.flowNodes.has(job.id)) {
-                nodeOpacity = 0.35;
+                nodeOpacity = 0.5;
               }
-              // Jobs not in the flow stay at opacity 1
             }
 
             const scheduleInfo = job.scheduleEnabled
@@ -2352,22 +2780,22 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               : "disabled";
 
             return (
+              <React.Fragment key={job.id}>
               <div
-                key={job.id}
                 style={{
                   position: "absolute",
                   left: pos.x,
                   top: pos.y,
                   width: NODE_W,
                   backgroundColor: "var(--q-bg-elevated)",
-                  border: `1px solid ${borderColor}`,
+                  border: `${borderThickness}px solid ${borderColor}`,
                   borderRadius: 4,
                   padding: "10px 14px",
                   cursor: connectingMode ? "pointer" : dragging?.id === job.id ? "grabbing" : "grab",
                   userSelect: "none",
                   WebkitUserSelect: "none",
                   pointerEvents: "auto",
-                  transition: dragging?.id === job.id ? "none" : "border-color 0.15s, opacity 0.2s",
+                  transition: dragging?.id === job.id ? "none" : "border-color 0.15s",
                   animation: isDraggingThis
                     ? (dragDeleteHover ? "node-shake-scared 0.2s ease-in-out infinite" : "node-shake 0.3s ease-in-out infinite")
                     : "none",
@@ -2434,13 +2862,43 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         width: 8,
                         height: 8,
                         borderRadius: "50%",
-                        backgroundColor: "var(--q-accent)",
+                        backgroundColor: "var(--q-warning)",
                         animation: "job-pulse 1.5s ease-in-out infinite",
                         display: "inline-block",
                         flexShrink: 0,
                       }}
                       title="running..."
                     />
+                  ) : execRun?.status === "waiting" ? (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setResumeDialog({ jobId: job.id, runId: execRun.id });
+                        setResumeContext("");
+                        setResumeScreen("menu");
+                        setAdvanceTargetJobId("");
+                        if (execRun.correlationId) {
+                          try {
+                            const pr = await api.listRunsByCorrelation(execRun.correlationId);
+                            setPipelineRuns(pr);
+                          } catch { setPipelineRuns([]); }
+                        }
+                      }}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--q-warning)",
+                        fontSize: 10,
+                        cursor: "pointer",
+                        padding: "0 2px",
+                        fontFamily: font,
+                        lineHeight: 1,
+                      }}
+                      title="resume waiting job"
+                    >
+                      &#9654;
+                    </button>
                   ) : (
                     <button
                       onClick={(e) => {
@@ -2466,10 +2924,40 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 </div>
                 {/* Second line */}
                 <div style={{ marginTop: 4, color: "var(--q-fg-muted)", fontSize: 9, fontFamily: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {job.type}{agentName(job.agentId) ? <span style={{ color: "var(--q-accent)" }}> &middot; {agentName(job.agentId)}</span> : null} &middot; {scheduleInfo}
+                  {execRun ? (
+                    <span style={{ color: statusColor(execRun.status as any) }}>
+                      {execRun.status} &middot; {execRun.durationMs > 0 ? formatDuration(execRun.durationMs) : relativeTime(execRun.startedAt)}
+                    </span>
+                  ) : isRunning ? (
+                    <span style={{ color: statusColor("running") }}>running</span>
+                  ) : (
+                    <>
+                      {job.type}{agentName(job.agentId) ? <span style={{ color: "var(--q-accent)" }}> &middot; {agentName(job.agentId)}</span> : null} &middot; {scheduleInfo}
+                    </>
+                  )}
                 </div>
               </div>
-            );
+              {/* Waiting warning box */}
+              {execRun?.status === "waiting" && (execRun.result || execRun.errorMessage) && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: pos.x,
+                    top: pos.y + NODE_H + 12,
+                    maxWidth: NODE_W + 60,
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    backgroundColor: "color-mix(in srgb, var(--q-accent) 10%, var(--q-bg))",
+                    border: "1px solid color-mix(in srgb, var(--q-accent) 30%, transparent)",
+                    pointerEvents: "auto",
+                    zIndex: 3,
+                    fontFamily: font,
+                  }}
+                >
+                  <div style={{ fontSize: 10, fontWeight: 600, color: "var(--q-accent)", marginBottom: 2 }}>⚠ {execRun.errorMessage || "waiting for input"}</div>
+                </div>
+              )}
+            </React.Fragment>);
           })}
         </div>
 
@@ -3049,6 +3537,338 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       <style>{pulseKeyframes}</style>
       {renderGroupsSidebar()}
       {renderCanvasView()}
+
+      {/* Pipeline Decision Dialog */}
+      {resumeDialog && (() => {
+        const waitingJob = jobs.find(j => j.id === resumeDialog.jobId);
+        const waitingJobName = waitingJob?.name || resumeDialog.jobId.slice(0, 8);
+        const waitingRun = runs.find(r => r.id === resumeDialog.runId);
+        const advanceTargetName = jobs.find(j => j.id === advanceTargetJobId)?.name || advanceTargetJobId.slice(0, 8);
+
+        const modalStyle: React.CSSProperties = {
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
+          borderRadius: 12, padding: 24, width: 520,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          animation: "modal-scale-in 0.15s ease-out",
+          fontFamily: font,
+          display: "flex", flexDirection: "column", gap: 16,
+        };
+        const labelStyle: React.CSSProperties = { color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: font };
+        const hintStyle: React.CSSProperties = { color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font, lineHeight: 1.5 };
+        const textareaStyle: React.CSSProperties = {
+          width: "100%", height: 100, resize: "vertical",
+          backgroundColor: "var(--q-bg-secondary, #111)", color: "var(--q-fg)",
+          border: "1px solid var(--q-border)", borderRadius: 8,
+          padding: "10px 12px", fontSize: 11, fontFamily: font,
+          boxSizing: "border-box" as const, lineHeight: 1.5,
+        };
+        const cancelBtnStyle: React.CSSProperties = {
+          background: "none", border: "1px solid var(--q-border)",
+          color: "var(--q-fg-secondary)", borderRadius: 6,
+          padding: "8px 16px", fontSize: 11, fontFamily: font, cursor: "pointer",
+        };
+        const submitBtnStyle: React.CSSProperties = {
+          background: "var(--q-accent)", border: "none",
+          color: "var(--q-bg)", borderRadius: 6,
+          padding: "8px 16px", fontSize: 11, fontFamily: font,
+          fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+        };
+        const actionCardStyle: React.CSSProperties = {
+          display: "flex", alignItems: "center", gap: 12,
+          width: "100%", padding: "12px 14px",
+          backgroundColor: "var(--q-bg-secondary, #111)",
+          border: "1px solid var(--q-border)", borderRadius: 8,
+          cursor: "pointer", textAlign: "left" as const,
+        };
+
+        const closeDialog = () => {
+          setResumeDialog(null);
+          setResumeContext("");
+          setResumeScreen("menu");
+          setAdvanceTargetJobId("");
+        };
+
+        const handleRerun = async () => {
+          if (!resumeDialog) return;
+          try {
+            const newRun = await api.resumeJob(resumeDialog.runId, resumeContext);
+            await fetchRuns(resumeDialog.jobId);
+            setSelectedRunId(newRun.id);
+            setSelectedRunTab("session");
+            onRefreshJobs();
+            closeDialog();
+          } catch (err) { console.error("failed to resume job:", err); }
+        };
+
+        const handleAdvance = async () => {
+          if (!resumeDialog) return;
+          try {
+            const newRun = await api.advancePipeline(resumeDialog.runId, advanceTargetJobId, resumeContext);
+            await fetchRuns(resumeDialog.jobId);
+            if (newRun?.id) {
+              setSelectedRunId(newRun.id);
+              setSelectedRunTab("session");
+            }
+            onRefreshJobs();
+            closeDialog();
+          } catch (err) { console.error("failed to advance pipeline:", err); }
+        };
+
+        return (
+          <div
+            style={{
+              position: "fixed", inset: 0, zIndex: 9999,
+              backgroundColor: "rgba(0,0,0,0.75)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              animation: "modal-backdrop-in 0.15s ease-out",
+            }}
+            onClick={closeDialog}
+          >
+            <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+
+              {/* === SCREEN: MENU === */}
+              {resumeScreen === "menu" && (<>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "var(--q-fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>pipeline paused</span>
+                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
+                </div>
+
+                <div style={hintStyle}>
+                  // {waitingJobName} entered &apos;waiting&apos; state. Discuss with your session, then choose an action.
+                </div>
+
+                {waitingRun?.errorMessage && (
+                  <div style={{ backgroundColor: "var(--q-bg-secondary, #111)", borderRadius: 8, padding: "12px 14px" }}>
+                    <div style={labelStyle}>waiting reason</div>
+                    <div style={{ color: "var(--q-fg-tertiary, #999)", fontSize: 11, fontFamily: font, marginTop: 4, lineHeight: 1.5 }}>
+                      {waitingJob?.triagePrompt || waitingRun.errorMessage}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ width: "100%", height: 1, backgroundColor: "var(--q-border)" }} />
+                <div style={labelStyle}>choose action</div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <button
+                    onClick={() => { setResumeScreen("rerun"); setResumeContext(""); }}
+                    style={actionCardStyle}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--q-fg-secondary)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                  >
+                    <span style={{ fontSize: 16 }}>&#8635;</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: "var(--q-fg)", fontSize: 12, fontWeight: 600, fontFamily: font }}>re-run this step</div>
+                      <div style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: font, marginTop: 2 }}>retry with additional context injected into the prompt</div>
+                    </div>
+                    <span style={{ color: "var(--q-fg-secondary)", fontSize: 12, fontFamily: font }}>&gt;</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setResumeScreen("advance"); setResumeContext(""); setAdvanceTargetJobId(""); }}
+                    style={actionCardStyle}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--q-fg-secondary)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                  >
+                    <span style={{ color: "var(--q-accent)", fontSize: 16 }}>&#10003;</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: "var(--q-fg)", fontSize: 12, fontWeight: 600, fontFamily: font }}>continue</div>
+                      <div style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: font, marginTop: 2 }}>approve output and advance the pipeline, optionally to a specific step</div>
+                    </div>
+                    <span style={{ color: "var(--q-fg-secondary)", fontSize: 12, fontFamily: font }}>&gt;</span>
+                  </button>
+                </div>
+
+                {pipelineRuns.length > 1 && (<>
+                  <div style={{ width: "100%", height: 1, backgroundColor: "var(--q-border)" }} />
+                  <div style={labelStyle}>pipeline state</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {(() => {
+                      const byJob = new Map<string, JobRun>();
+                      for (const r of pipelineRuns) {
+                        const existing = byJob.get(r.jobId);
+                        if (!existing || new Date(r.startedAt).getTime() > new Date(existing.startedAt).getTime()) {
+                          byJob.set(r.jobId, r);
+                        }
+                      }
+                      return Array.from(byJob.values());
+                    })().map((pr) => {
+                      const jName = jobs.find(j => j.id === pr.jobId)?.name || pr.jobId.slice(0, 8);
+                      const isWaiting = pr.id === resumeDialog.runId;
+                      return (
+                        <div key={pr.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontFamily: font, padding: "4px 0" }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: statusColor(pr.status), flexShrink: 0 }} />
+                          <span style={{ color: isWaiting ? "var(--q-warning)" : "var(--q-fg)", fontWeight: isWaiting ? 600 : "normal" }}>{jName}</span>
+                          <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>{pr.status}</span>
+                          {pr.finishedAt && <span style={{ color: "var(--q-fg-muted)", fontSize: 9, marginLeft: "auto" }}>{formatDuration(pr.durationMs)}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>)}
+              </>)}
+
+              {/* === SCREEN: RE-RUN THIS STEP === */}
+              {resumeScreen === "rerun" && (<>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button onClick={() => setResumeScreen("menu")} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>&lt;</button>
+                    <span style={{ color: "var(--q-fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>re-run this step</span>
+                  </div>
+                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
+                </div>
+
+                <div style={hintStyle}>
+                  // the {waitingJobName} job will re-run from scratch with your context injected alongside the original prompt.
+                </div>
+
+                <div style={labelStyle}>resolution context</div>
+                <textarea
+                  autoFocus
+                  placeholder="e.g. Use approach X instead, fix the config, focus on Y..."
+                  value={resumeContext}
+                  onChange={(e) => setResumeContext(e.target.value)}
+                  style={textareaStyle}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                />
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button onClick={() => setResumeScreen("menu")} style={cancelBtnStyle}>cancel</button>
+                  <button onClick={handleRerun} style={submitBtnStyle}>
+                    <span>&#8635;</span> re-run {waitingJobName}
+                  </button>
+                </div>
+              </>)}
+
+              {/* === SCREEN: CONTINUE TO STEP === */}
+              {resumeScreen === "advance" && (<>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button onClick={() => setResumeScreen("menu")} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>&lt;</button>
+                    <span style={{ color: "var(--q-fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>continue</span>
+                  </div>
+                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
+                </div>
+
+                <div style={hintStyle}>
+                  // approve the output and advance. Pick a step to jump to, or leave unselected to follow natural triggers.
+                </div>
+
+                <div style={labelStyle}>continue from (optional)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {(() => {
+                    // Deduplicate: keep latest run per jobId
+                    const byJob = new Map<string, JobRun>();
+                    for (const r of pipelineRuns) {
+                      const existing = byJob.get(r.jobId);
+                      if (!existing || new Date(r.startedAt).getTime() > new Date(existing.startedAt).getTime()) {
+                        byJob.set(r.jobId, r);
+                      }
+                    }
+                    return Array.from(byJob.values());
+                  })().map((pr) => {
+                    const jName = jobs.find(j => j.id === pr.jobId)?.name || pr.jobId.slice(0, 8);
+                    const isSelected = pr.jobId === advanceTargetJobId;
+                    const isWaiting = pr.status === "waiting";
+                    return (
+                      <button
+                        key={pr.id}
+                        onClick={() => setAdvanceTargetJobId(pr.jobId)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8,
+                          width: "100%", padding: "8px 12px", borderRadius: 6,
+                          backgroundColor: isSelected ? "var(--q-accent)" : "var(--q-bg-secondary, #111)",
+                          border: isSelected ? "none" : isWaiting ? "1px solid var(--q-warning)" : "1px solid var(--q-border)",
+                          cursor: "pointer", textAlign: "left" as const,
+                        }}
+                      >
+                        <span style={{
+                          width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                          backgroundColor: isSelected ? "var(--q-bg)" : statusColor(pr.status),
+                        }} />
+                        <span style={{
+                          color: isSelected ? "var(--q-bg)" : isWaiting ? "var(--q-warning)" : "var(--q-fg)",
+                          fontSize: 11, fontFamily: font, fontWeight: isSelected ? 600 : "normal",
+                        }}>
+                          {jName}
+                        </span>
+                        {!isSelected && (
+                          <span style={{ color: isWaiting ? "var(--q-warning)" : "var(--q-fg-secondary)", fontSize: 10, fontFamily: font }}>
+                            {pr.status}
+                          </span>
+                        )}
+                        {isSelected && (
+                          <span style={{ marginLeft: "auto", color: "var(--q-bg)", fontSize: 12 }}>&#10003;</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {/* Also show jobs not yet in pipelineRuns (not started) */}
+                  {jobs
+                    .filter(j => {
+                      const inPipeline = pipelineRuns.some(pr => pr.jobId === j.id);
+                      if (inPipeline) return false;
+                      // Show jobs that are triggered by any job in the pipeline
+                      return pipelineRuns.some(pr => {
+                        const pJob = jobs.find(jj => jj.id === pr.jobId);
+                        return pJob?.onSuccess?.includes(j.id) || pJob?.onFailure?.includes(j.id);
+                      });
+                    })
+                    .map((j) => {
+                      const isSelected = j.id === advanceTargetJobId;
+                      return (
+                        <button
+                          key={j.id}
+                          onClick={() => setAdvanceTargetJobId(j.id)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 8,
+                            width: "100%", padding: "8px 12px", borderRadius: 6,
+                            backgroundColor: isSelected ? "var(--q-accent)" : "var(--q-bg-secondary, #111)",
+                            border: isSelected ? "none" : "1px solid var(--q-border)",
+                            cursor: "pointer", textAlign: "left" as const,
+                          }}
+                        >
+                          <span style={{
+                            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                            backgroundColor: isSelected ? "var(--q-bg)" : "var(--q-fg-muted)",
+                          }} />
+                          <span style={{
+                            color: isSelected ? "var(--q-bg)" : "var(--q-fg-muted)",
+                            fontSize: 11, fontFamily: font, fontWeight: isSelected ? 600 : "normal",
+                          }}>
+                            {j.name}
+                          </span>
+                          {!isSelected && <span style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: font }}>not started</span>}
+                          {isSelected && <span style={{ marginLeft: "auto", color: "var(--q-bg)", fontSize: 12 }}>&#10003;</span>}
+                        </button>
+                      );
+                    })}
+                </div>
+
+                <div style={labelStyle}>context{advanceTargetJobId ? ` for ${advanceTargetName}` : ""} (optional)</div>
+                <textarea
+                  placeholder="e.g. Focus on improvement #2, skip the others for now..."
+                  value={resumeContext}
+                  onChange={(e) => setResumeContext(e.target.value)}
+                  style={{ ...textareaStyle, height: 80 }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                />
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button onClick={() => setResumeScreen("menu")} style={cancelBtnStyle}>cancel</button>
+                  <button onClick={handleAdvance} style={submitBtnStyle}>
+                    <span>&#9654;</span> {advanceTargetJobId ? `continue to ${advanceTargetName}` : "continue pipeline"}
+                  </button>
+                </div>
+              </>)}
+
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

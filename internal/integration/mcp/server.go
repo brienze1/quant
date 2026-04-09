@@ -137,6 +137,7 @@ Returns the created job object with the generated ID. Use this ID for run_job, u
 			mcp.WithString("successPrompt", mcp.Description("How to evaluate success after the main task completes (max 300 chars). E.g. 'All tests passed and PR was created'. Claude runs a second evaluation call using this. Optional — if omitted, exit code determines success")),
 			mcp.WithString("failurePrompt", mcp.Description("How to evaluate failure after the main task completes (max 300 chars). E.g. 'Tests failed, build errors, or no PR created'. Used in the evaluation call. Optional")),
 			mcp.WithString("metadataPrompt", mcp.Description("What structured data to extract for triggered downstream jobs (max 500 chars). E.g. 'Extract PR URL, test count, error summary as JSON'. This metadata is passed as context to downstream triggered jobs, saving tokens vs passing raw output. Optional")),
+			mcp.WithString("triagePrompt", mcp.Description("Criteria for putting the job in 'waiting' state (max 500 chars). E.g. 'Missing credentials, ambiguous requirements, or blocked on external decision'. When set, evaluation can return waiting status to pause the pipeline for human input. Optional")),
 			// Bash config
 			mcp.WithString("interpreter", mcp.Description("Shell interpreter for bash jobs: '/bin/bash' (default), '/bin/zsh', 'python3', 'node', etc. The scriptContent is piped to this via stdin")),
 			mcp.WithString("scriptContent", mcp.Description("Script content for bash jobs. Piped to the interpreter via stdin. Exit 0 = success (fires onSuccess triggers), non-zero = failure (fires onFailure triggers). Stdout/stderr are captured as run output")),
@@ -187,6 +188,7 @@ Common workflows:
 			mcp.WithString("successPrompt", mcp.Description("Success evaluation criteria (max 300 chars)")),
 			mcp.WithString("failurePrompt", mcp.Description("Failure evaluation criteria (max 300 chars)")),
 			mcp.WithString("metadataPrompt", mcp.Description("Metadata extraction instructions (max 500 chars)")),
+			mcp.WithString("triagePrompt", mcp.Description("Criteria for 'waiting' state (max 500 chars). Set to empty string to disable triage")),
 			mcp.WithString("interpreter", mcp.Description("Script interpreter for bash jobs")),
 			mcp.WithString("scriptContent", mcp.Description("Script content for bash jobs")),
 			mcp.WithString("envVariables", mcp.Description("JSON object of env vars. E.g. '{\"KEY\":\"value\"}'. Replaces existing env vars")),
@@ -251,6 +253,42 @@ Use this instead of run_job when you want to retry a specific run with the same 
 		s.handleRerunJob,
 	)
 
+	// 6c. resume_job
+	mcpServer.AddTool(
+		mcp.NewTool("resume_job",
+			mcp.WithDescription("Resume a waiting job run with injected resolution context. Use after a job enters 'waiting' status. The context describes what was resolved and will be injected into the job's prompt."),
+			mcp.WithString("runId", mcp.Required(), mcp.Description("Run ID of the waiting run to resume")),
+			mcp.WithString("context", mcp.Required(), mcp.Description("Resolution context — what was resolved, decisions made, instructions for retry")),
+		),
+		s.handleResumeJob,
+	)
+
+	// 6d. advance_pipeline
+	mcpServer.AddTool(
+		mcp.NewTool("advance_pipeline",
+			mcp.WithDescription(`Advance a waiting pipeline. Three modes depending on parameters:
+
+- No targetJobId: mark waiting run as success and fire its natural downstream triggers (approve and continue)
+- targetJobId set: mark waiting run as resolved and run the target job with the same correlation ID (jump to any step)
+- context (optional): injected into the downstream/target job's prompt as human intervention context
+
+Use list_runs_by_correlation to see all jobs in the pipeline and pick the right target.`),
+			mcp.WithString("runId", mcp.Required(), mcp.Description("Run ID of the waiting run (get from list_runs with status=waiting)")),
+			mcp.WithString("targetJobId", mcp.Description("Job ID to advance to. Omit to continue via natural triggers. Set to jump to any step (forward or backward)")),
+			mcp.WithString("context", mcp.Description("Optional context to inject into the next job's prompt")),
+		),
+		s.handleAdvancePipeline,
+	)
+
+	// 6f. list_runs_by_correlation
+	mcpServer.AddTool(
+		mcp.NewTool("list_runs_by_correlation",
+			mcp.WithDescription("List all job runs in a pipeline execution by correlation ID. Returns runs in execution order. Use to get context from sibling jobs."),
+			mcp.WithString("correlationId", mcp.Required(), mcp.Description("Correlation ID shared by all runs in a pipeline (from any run object)")),
+		),
+		s.handleListRunsByCorrelation,
+	)
+
 	// 7. get_run
 	mcpServer.AddTool(
 		mcp.NewTool("get_run",
@@ -284,6 +322,7 @@ Use after run_job to check if execution completed, or to inspect historical run 
 Returns lightweight summaries: id, status, durationMs, tokensUsed, startedAt, finishedAt, errorMessage (if failed).
 Use get_run(id) for full details. Use get_run_output(id) for logs.`),
 			mcp.WithString("jobId", mcp.Required(), mcp.Description("Job ID (get from list_jobs)")),
+			mcp.WithString("status", mcp.Description("Filter by status: pending, running, success, failed, cancelled, timed_out, waiting")),
 			mcp.WithNumber("limit", mcp.Description("Max runs to return (default 10)")),
 			mcp.WithNumber("offset", mcp.Description("Skip this many runs (default 0, for pagination)")),
 		),
@@ -858,6 +897,7 @@ func (s *QuantMCPServer) handleCreateJob(_ context.Context, request mcp.CallTool
 		SuccessPrompt:       stringArg(args, "successPrompt"),
 		FailurePrompt:       stringArg(args, "failurePrompt"),
 		MetadataPrompt:      stringArg(args, "metadataPrompt"),
+		TriagePrompt:        stringArg(args, "triagePrompt"),
 		Interpreter:         stringArg(args, "interpreter"),
 		ScriptContent:       stringArg(args, "scriptContent"),
 		EnvVariables:        mapStringArg(args, "envVariables"),
@@ -953,6 +993,9 @@ func (s *QuantMCPServer) handleUpdateJob(_ context.Context, request mcp.CallTool
 	if v, ok := args["metadataPrompt"]; ok {
 		existing.MetadataPrompt = v.(string)
 	}
+	if v, ok := args["triagePrompt"]; ok {
+		existing.TriagePrompt = v.(string)
+	}
 	if v, ok := args["interpreter"]; ok {
 		existing.Interpreter = v.(string)
 	}
@@ -1037,6 +1080,66 @@ func (s *QuantMCPServer) handleRerunJob(_ context.Context, request mcp.CallToolR
 	return marshalResult(runToMap(run))
 }
 
+func (s *QuantMCPServer) handleResumeJob(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	runID, err := requiredString(request, "runId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	ctx := stringArg(request.GetArguments(), "context")
+	run, err := s.jobManager.ResumeJob(runID, ctx)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return marshalResult(runToMap(run))
+}
+
+func (s *QuantMCPServer) handleAdvancePipeline(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	runID, err := requiredString(request, "runId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	targetJobID := stringArg(request.GetArguments(), "targetJobId")
+	ctx := stringArg(request.GetArguments(), "context")
+	run, err := s.jobManager.AdvancePipeline(runID, targetJobID, ctx)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return marshalResult(runToMap(run))
+}
+
+func (s *QuantMCPServer) handleListRunsByCorrelation(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	correlationID, err := requiredString(request, "correlationId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	runs, err := s.jobManager.ListRunsByCorrelation(correlationID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	summaries := make([]map[string]any, 0, len(runs))
+	for i := range runs {
+		r := &runs[i]
+		m := map[string]any{
+			"id":            r.ID,
+			"jobId":         r.JobID,
+			"status":        r.Status,
+			"correlationId": r.CorrelationID,
+			"startedAt":     r.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
+		}
+		if r.FinishedAt != nil {
+			m["finishedAt"] = r.FinishedAt.Format("2006-01-02T15:04:05Z07:00")
+		}
+		if r.TriggeredBy != "" {
+			m["triggeredBy"] = r.TriggeredBy
+		}
+		if r.ErrorMessage != "" {
+			m["errorMessage"] = r.ErrorMessage
+		}
+		summaries = append(summaries, m)
+	}
+	return marshalResult(map[string]any{"runs": summaries, "total": len(summaries)})
+}
+
 func (s *QuantMCPServer) handleGetRun(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	runID, err := requiredString(request, "runId")
 	if err != nil {
@@ -1060,6 +1163,18 @@ func (s *QuantMCPServer) handleListRuns(_ context.Context, request mcp.CallToolR
 	runs, err := s.jobManager.ListRunsByJob(jobID)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Filter by status if provided
+	statusFilter := stringArg(request.GetArguments(), "status")
+	if statusFilter != "" {
+		filtered := make([]entity.JobRun, 0)
+		for _, r := range runs {
+			if r.Status == statusFilter {
+				filtered = append(filtered, r)
+			}
+		}
+		runs = filtered
 	}
 
 	// Paginate
@@ -2180,6 +2295,7 @@ func jobToMap(job *entity.Job) map[string]any {
 		"successPrompt":       job.SuccessPrompt,
 		"failurePrompt":       job.FailurePrompt,
 		"metadataPrompt":      job.MetadataPrompt,
+		"triagePrompt":        job.TriagePrompt,
 		"interpreter":         job.Interpreter,
 		"scriptContent":       job.ScriptContent,
 		"createdAt":           job.CreatedAt,
@@ -2202,14 +2318,16 @@ func runToMap(run *entity.JobRun) map[string]any {
 		"id":           run.ID,
 		"jobId":        run.JobID,
 		"status":       run.Status,
-		"triggeredBy":  run.TriggeredBy,
+		"triggeredBy":   run.TriggeredBy,
+		"correlationId": run.CorrelationID,
 		"sessionId":    run.SessionID,
 		"modelUsed":    run.ModelUsed,
 		"durationMs":   run.DurationMs,
 		"tokensUsed":   run.TokensUsed,
 		"result":       run.Result,
-		"errorMessage": run.ErrorMessage,
-		"startedAt":    run.StartedAt,
+		"errorMessage":    run.ErrorMessage,
+		"injectedContext": run.InjectedContext,
+		"startedAt":       run.StartedAt,
 	}
 	if run.FinishedAt != nil {
 		m["finishedAt"] = *run.FinishedAt

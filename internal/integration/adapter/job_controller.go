@@ -21,4 +21,8 @@ type JobController interface {
 	GetRun(runID string) (*dto.JobRunResponse, error)
 	ListRunsByJob(jobID string) ([]dto.JobRunResponse, error)
 	GetRunOutput(runID string) (string, error)
+	RerunJob(jobID string, originalRunID string) (*dto.JobRunResponse, error)
+	ResumeJob(runID string, context string) (*dto.JobRunResponse, error)
+	AdvancePipeline(runID string, targetJobID string, context string) (*dto.JobRunResponse, error)
+	ListRunsByCorrelation(correlationID string) ([]dto.JobRunResponse, error)
 }

@@ -27,6 +27,7 @@ type CreateJobRequest struct {
 	SuccessPrompt       string            `json:"successPrompt"`
 	FailurePrompt       string            `json:"failurePrompt"`
 	MetadataPrompt      string            `json:"metadataPrompt"`
+	TriagePrompt        string            `json:"triagePrompt"`
 	Interpreter         string            `json:"interpreter"`
 	ScriptContent       string            `json:"scriptContent"`
 	EnvVariables        map[string]string `json:"envVariables"`
@@ -58,6 +59,7 @@ type UpdateJobRequest struct {
 	SuccessPrompt       string            `json:"successPrompt"`
 	FailurePrompt       string            `json:"failurePrompt"`
 	MetadataPrompt      string            `json:"metadataPrompt"`
+	TriagePrompt        string            `json:"triagePrompt"`
 	Interpreter         string            `json:"interpreter"`
 	ScriptContent       string            `json:"scriptContent"`
 	EnvVariables        map[string]string `json:"envVariables"`
@@ -89,6 +91,7 @@ type JobResponse struct {
 	SuccessPrompt       string            `json:"successPrompt"`
 	FailurePrompt       string            `json:"failurePrompt"`
 	MetadataPrompt      string            `json:"metadataPrompt"`
+	TriagePrompt        string            `json:"triagePrompt"`
 	Interpreter         string            `json:"interpreter"`
 	ScriptContent       string            `json:"scriptContent"`
 	EnvVariables        map[string]string `json:"envVariables"`
@@ -111,15 +114,17 @@ type JobRunResponse struct {
 	ID           string `json:"id"`
 	JobID        string `json:"jobId"`
 	Status       string `json:"status"`
-	TriggeredBy  string `json:"triggeredBy"`
-	SessionID    string `json:"sessionId"`
+	TriggeredBy   string `json:"triggeredBy"`
+	CorrelationID string `json:"correlationId"`
+	SessionID     string `json:"sessionId"`
 	ModelUsed    string `json:"modelUsed"`
 	DurationMs   int64  `json:"durationMs"`
 	TokensUsed   int    `json:"tokensUsed"`
-	Result       string `json:"result"`
-	ErrorMessage string `json:"errorMessage"`
-	StartedAt    string `json:"startedAt"`
-	FinishedAt   string `json:"finishedAt"`
+	Result          string `json:"result"`
+	ErrorMessage    string `json:"errorMessage"`
+	InjectedContext string `json:"injectedContext"`
+	StartedAt       string `json:"startedAt"`
+	FinishedAt      string `json:"finishedAt"`
 }
 
 // JobResponseFromEntity converts a domain entity to a JobResponse DTO with trigger information.
@@ -161,6 +166,7 @@ func JobResponseFromEntity(job entity.Job, onSuccess []entity.JobTrigger, onFail
 		SuccessPrompt:       job.SuccessPrompt,
 		FailurePrompt:       job.FailurePrompt,
 		MetadataPrompt:      job.MetadataPrompt,
+		TriagePrompt:        job.TriagePrompt,
 		Interpreter:         job.Interpreter,
 		ScriptContent:       job.ScriptContent,
 		EnvVariables:        job.EnvVariables,
@@ -206,14 +212,16 @@ func JobRunResponseFromEntity(run entity.JobRun) JobRunResponse {
 		ID:           run.ID,
 		JobID:        run.JobID,
 		Status:       run.Status,
-		TriggeredBy:  run.TriggeredBy,
-		SessionID:    run.SessionID,
+		TriggeredBy:   run.TriggeredBy,
+		CorrelationID: run.CorrelationID,
+		SessionID:     run.SessionID,
 		ModelUsed:    run.ModelUsed,
 		DurationMs:   run.DurationMs,
 		TokensUsed:   run.TokensUsed,
-		Result:       run.Result,
-		ErrorMessage: run.ErrorMessage,
-		StartedAt:    run.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Result:          run.Result,
+		ErrorMessage:    run.ErrorMessage,
+		InjectedContext: run.InjectedContext,
+		StartedAt:       run.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 		FinishedAt:   finishedAt,
 	}
 }

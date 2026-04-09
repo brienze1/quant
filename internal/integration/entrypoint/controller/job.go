@@ -58,6 +58,7 @@ func (c *jobController) CreateJob(request dto.CreateJobRequest) (*dto.JobRespons
 		SuccessPrompt:       request.SuccessPrompt,
 		FailurePrompt:       request.FailurePrompt,
 		MetadataPrompt:      request.MetadataPrompt,
+		TriagePrompt:        request.TriagePrompt,
 		Interpreter:         request.Interpreter,
 		ScriptContent:       request.ScriptContent,
 		EnvVariables:        request.EnvVariables,
@@ -101,6 +102,7 @@ func (c *jobController) UpdateJob(request dto.UpdateJobRequest) (*dto.JobRespons
 		SuccessPrompt:       request.SuccessPrompt,
 		FailurePrompt:       request.FailurePrompt,
 		MetadataPrompt:      request.MetadataPrompt,
+		TriagePrompt:        request.TriagePrompt,
 		Interpreter:         request.Interpreter,
 		ScriptContent:       request.ScriptContent,
 		EnvVariables:        request.EnvVariables,
@@ -191,6 +193,33 @@ func (c *jobController) ListRunsByJob(jobID string) ([]dto.JobRunResponse, error
 		return nil, err
 	}
 
+	return dto.JobRunResponseListFromEntities(runs), nil
+}
+
+// ResumeJob resumes a waiting job run with injected resolution context.
+func (c *jobController) ResumeJob(runID string, context string) (*dto.JobRunResponse, error) {
+	run, err := c.jobManager.ResumeJob(runID, context)
+	if err != nil {
+		return nil, err
+	}
+	return dto.JobRunResponseFromEntityPtr(run), nil
+}
+
+// AdvancePipeline handles all pipeline advancement from a waiting run.
+func (c *jobController) AdvancePipeline(runID string, targetJobID string, context string) (*dto.JobRunResponse, error) {
+	run, err := c.jobManager.AdvancePipeline(runID, targetJobID, context)
+	if err != nil {
+		return nil, err
+	}
+	return dto.JobRunResponseFromEntityPtr(run), nil
+}
+
+// ListRunsByCorrelation returns all runs in a pipeline by correlation ID.
+func (c *jobController) ListRunsByCorrelation(correlationID string) ([]dto.JobRunResponse, error) {
+	runs, err := c.jobManager.ListRunsByCorrelation(correlationID)
+	if err != nil {
+		return nil, err
+	}
 	return dto.JobRunResponseListFromEntities(runs), nil
 }
 

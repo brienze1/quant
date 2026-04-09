@@ -233,6 +233,7 @@ export namespace dto {
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
+	    triagePrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -266,6 +267,7 @@ export namespace dto {
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];
+	        this.triagePrompt = source["triagePrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
@@ -434,6 +436,7 @@ export namespace dto {
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
+	    triagePrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -471,6 +474,7 @@ export namespace dto {
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];
+	        this.triagePrompt = source["triagePrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
@@ -505,12 +509,14 @@ export namespace dto {
 	    jobId: string;
 	    status: string;
 	    triggeredBy: string;
+	    correlationId: string;
 	    sessionId: string;
 	    modelUsed: string;
 	    durationMs: number;
 	    tokensUsed: number;
 	    result: string;
 	    errorMessage: string;
+	    injectedContext: string;
 	    startedAt: string;
 	    finishedAt: string;
 	
@@ -524,12 +530,14 @@ export namespace dto {
 	        this.jobId = source["jobId"];
 	        this.status = source["status"];
 	        this.triggeredBy = source["triggeredBy"];
+	        this.correlationId = source["correlationId"];
 	        this.sessionId = source["sessionId"];
 	        this.modelUsed = source["modelUsed"];
 	        this.durationMs = source["durationMs"];
 	        this.tokensUsed = source["tokensUsed"];
 	        this.result = source["result"];
 	        this.errorMessage = source["errorMessage"];
+	        this.injectedContext = source["injectedContext"];
 	        this.startedAt = source["startedAt"];
 	        this.finishedAt = source["finishedAt"];
 	    }
@@ -824,6 +832,7 @@ export namespace dto {
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
+	    triagePrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -858,6 +867,7 @@ export namespace dto {
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];
+	        this.triagePrompt = source["triagePrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];

@@ -19,4 +19,7 @@ const (
 
 	// TimedOut indicates the run exceeded its timeout limit.
 	TimedOut = "timed_out"
+
+	// Waiting indicates the run needs human intervention before continuing.
+	Waiting = "waiting"
 )

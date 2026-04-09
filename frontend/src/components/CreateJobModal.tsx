@@ -38,6 +38,7 @@ function buildDefaultForm(): CreateJobRequest {
     successPrompt: "",
     failurePrompt: "",
     metadataPrompt: "",
+    triagePrompt: "",
     interpreter: "/bin/bash",
     scriptContent: "",
     envVariables: {},
@@ -68,6 +69,7 @@ function jobToForm(job: Job): CreateJobRequest {
     successPrompt: job.successPrompt,
     failurePrompt: job.failurePrompt,
     metadataPrompt: job.metadataPrompt,
+    triagePrompt: job.triagePrompt ?? "",
     interpreter: job.interpreter,
     scriptContent: job.scriptContent,
     envVariables: job.envVariables ?? {},
@@ -640,6 +642,22 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const }}
                     onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
                     onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                  />
+                </div>
+
+                <div>
+                  <span style={labelStyle}>triage prompt <span style={{ color: "var(--q-fg-muted)" }}>(optional, max 500 chars)</span></span>
+                  <span style={{ display: "block", color: "var(--q-fg-muted)", fontSize: 10, marginBottom: 4, fontFamily: "var(--q-font-mono)" }}>
+                    when set, jobs can enter &apos;waiting&apos; state for human intervention
+                  </span>
+                  <textarea
+                    placeholder="e.g. the task requires design decisions, missing permissions, or ambiguous requirements that need human input"
+                    maxLength={500}
+                    value={form.triagePrompt}
+                    onChange={(e) => update("triagePrompt", e.target.value)}
+                    style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const, borderColor: form.triagePrompt ? "var(--q-cyan)" : "var(--q-border)" }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = form.triagePrompt ? "var(--q-cyan)" : "var(--q-border)")}
                   />
                 </div>
               </div>

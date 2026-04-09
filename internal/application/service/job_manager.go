@@ -196,7 +196,7 @@ func (s *jobManagerService) GetTriggersForJob(jobID string) (onSuccess []entity.
 }
 
 // RunJob starts a new run for a job. Supports retries with history for Claude jobs.
-func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string) (*entity.JobRun, error) {
+func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correlationID ...string) (*entity.JobRun, error) {
 	job, err := s.findJob.FindJobByID(jobID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find job: %w", err)
@@ -212,6 +212,12 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string) (*enti
 		Status:      jobrunstatus.Running,
 		TriggeredBy: triggeredByRunID,
 		StartedAt:   now,
+	}
+
+	if len(correlationID) > 0 && correlationID[0] != "" {
+		run.CorrelationID = correlationID[0]
+	} else if triggeredByRunID == "" {
+		run.CorrelationID = uuid.New().String()
 	}
 
 	if err := s.saveJobRun.SaveJobRun(run); err != nil {
@@ -231,17 +237,19 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string) (*enti
 // RerunJob creates a new run for a job, preserving the trigger context from a previous run.
 // It looks up the original run's triggeredBy parent and rebuilds the same context injection.
 func (s *jobManagerService) RerunJob(jobID string, originalRunID string) (*entity.JobRun, error) {
-	// Look up the original run to get its triggeredBy
+	// Look up the original run to get its triggeredBy and CorrelationID
 	originalRun, err := s.findJobRun.FindJobRunByID(originalRunID)
 	if err != nil || originalRun == nil {
 		// Fallback: run without trigger context
 		return s.RunJob(jobID, "")
 	}
 
+	cid := originalRun.CorrelationID
+
 	parentRunID := originalRun.TriggeredBy
 	if parentRunID == "" {
 		// Original was manual, just run fresh
-		return s.RunJob(jobID, "")
+		return s.RunJob(jobID, "", cid)
 	}
 
 	// Rebuild trigger context from the parent run
@@ -288,7 +296,7 @@ func (s *jobManagerService) RerunJob(jobID string, originalRunID string) (*entit
 		)
 	}
 
-	newRun, err := s.RunJob(jobID, parentRunID)
+	newRun, err := s.RunJob(jobID, parentRunID, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +306,125 @@ func (s *jobManagerService) RerunJob(jobID string, originalRunID string) (*entit
 	s.mu.Unlock()
 
 	return newRun, nil
+}
+
+// ResumeJob creates a new run for a job that was in "waiting" status, injecting resolution context.
+func (s *jobManagerService) ResumeJob(runID string, extraContext string) (*entity.JobRun, error) {
+	// Look up the specific waiting run
+	waitingRun, err := s.findJobRun.FindJobRunByID(runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find run: %w", err)
+	}
+	if waitingRun == nil {
+		return nil, fmt.Errorf("run not found: %s", runID)
+	}
+	if waitingRun.Status != jobrunstatus.Waiting {
+		return nil, fmt.Errorf("run %s is not in waiting status (current: %s)", runID, waitingRun.Status)
+	}
+
+	job, err := s.findJob.FindJobByID(waitingRun.JobID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find job: %w", err)
+	}
+	if job == nil {
+		return nil, fmt.Errorf("job not found: %s", waitingRun.JobID)
+	}
+
+	now := time.Now()
+	run := entity.JobRun{
+		ID:            uuid.New().String(),
+		JobID:         waitingRun.JobID,
+		Status:        jobrunstatus.Running,
+		CorrelationID: waitingRun.CorrelationID,
+		StartedAt:     now,
+	}
+
+	if err := s.saveJobRun.SaveJobRun(run); err != nil {
+		return nil, fmt.Errorf("failed to save run: %w", err)
+	}
+
+	job.LastRunAt = &now
+	_ = s.updateJob.UpdateJob(*job)
+
+	if extraContext != "" {
+		s.mu.Lock()
+		s.triggerCtx[run.ID] = fmt.Sprintf(
+			"## Resume context\n"+
+				"This job is being resumed after human intervention.\n\n"+
+				"%s\n", extraContext)
+		s.mu.Unlock()
+	}
+
+	go s.executeWithRetries(job, &run)
+
+	return &run, nil
+}
+
+// AdvancePipeline handles all pipeline advancement from a waiting run.
+// - No targetJobID: mark waiting run as success, fire natural triggers (flow B)
+// - targetJobID set: mark waiting run as resolved, run target job with same correlationID (flows C/D)
+// - extraContext: injected into the downstream/target run's prompt
+func (s *jobManagerService) AdvancePipeline(runID string, targetJobID string, extraContext string) (*entity.JobRun, error) {
+	run, err := s.findJobRun.FindJobRunByID(runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find run: %w", err)
+	}
+	if run == nil {
+		return nil, fmt.Errorf("run not found: %s", runID)
+	}
+	if run.Status != jobrunstatus.Waiting {
+		return nil, fmt.Errorf("run %s is not in waiting status (current: %s)", runID, run.Status)
+	}
+
+	now := time.Now()
+
+	if targetJobID == "" {
+		// Flow B: continue to natural next step via triggers
+		run.Status = jobrunstatus.Success
+		run.FinishedAt = &now
+		run.ErrorMessage = ""
+		if err := s.saveJobRun.UpdateJobRun(*run); err != nil {
+			return nil, fmt.Errorf("failed to update run: %w", err)
+		}
+
+		if extraContext != "" {
+			s.mu.Lock()
+			s.triggerCtx["continue:"+run.ID] = extraContext
+			s.mu.Unlock()
+		}
+
+		s.fireTriggers(run.JobID, run)
+		return run, nil
+	}
+
+	// Flow C/D: advance to a specific job — mark as success since user approved
+	run.Status = jobrunstatus.Success
+	run.FinishedAt = &now
+	run.ErrorMessage = "resolved: pipeline advanced to " + targetJobID
+	if err := s.saveJobRun.UpdateJobRun(*run); err != nil {
+		return nil, fmt.Errorf("failed to update run: %w", err)
+	}
+
+	newRun, err := s.RunJob(targetJobID, "", run.CorrelationID)
+	if err != nil {
+		return nil, err
+	}
+
+	if extraContext != "" {
+		s.mu.Lock()
+		s.triggerCtx[newRun.ID] = fmt.Sprintf(
+			"## Pipeline advance context\n"+
+				"This job was started after human intervention on a waiting pipeline.\n\n"+
+				"%s\n", extraContext)
+		s.mu.Unlock()
+	}
+
+	return newRun, nil
+}
+
+// ListRunsByCorrelation returns all runs sharing a correlation ID.
+func (s *jobManagerService) ListRunsByCorrelation(correlationID string) ([]entity.JobRun, error) {
+	return s.findJobRun.FindJobRunsByCorrelationID(correlationID)
 }
 
 // executeWithRetries runs the job, retrying on failure up to MaxRetries.
@@ -374,6 +501,26 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 			run.Result = result
 			run.FinishedAt = &now
 
+			// Handle waiting status — no retry, NO triggers (pipeline pauses here)
+			if eval.Result == "waiting" {
+				run.Status = jobrunstatus.Waiting
+				// Extract reason from metadata if available
+				reason := "waiting for human intervention"
+				if r, ok := eval.Metadata["reason"].(string); ok && r != "" {
+					reason = r
+				} else if r, ok := eval.Metadata["summary"].(string); ok && r != "" {
+					reason = r
+				} else if r, ok := eval.Metadata["message"].(string); ok && r != "" {
+					reason = r
+				}
+				run.ErrorMessage = reason
+				if metaJSON, err := json.Marshal(eval.Metadata); err == nil {
+					run.Result = result + "\n\n--- metadata ---\n" + string(metaJSON)
+				}
+				_ = s.saveJobRun.UpdateJobRun(*run)
+				return
+			}
+
 			if eval.Result == "failure" {
 				run.Status = jobrunstatus.Failed
 				run.ErrorMessage = "task evaluated as failure"
@@ -446,6 +593,9 @@ func (s *jobManagerService) buildClaudePrompt(job *entity.Job, run *entity.JobRu
 	if hasTriggerCtx {
 		sb.WriteString("\n")
 		sb.WriteString(ctx)
+		// Persist injected context on the run for UI visibility
+		run.InjectedContext = ctx
+		_ = s.saveJobRun.UpdateJobRun(*run)
 		// Clean up after use
 		s.mu.Lock()
 		delete(s.triggerCtx, run.ID)
@@ -763,6 +913,12 @@ func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string
 		evalPrompt.WriteString("- No evaluation criteria defined. Set result to \"success\".\n")
 	}
 
+	// Triage criteria — only when TriagePrompt is set
+	if job.TriagePrompt != "" {
+		evalPrompt.WriteString(fmt.Sprintf("- Set result to \"waiting\" if: %s\n", job.TriagePrompt))
+		evalPrompt.WriteString("- Use \"waiting\" when the issue needs human input to resolve (ambiguous requirements, missing permissions, design decisions).\n")
+	}
+
 	// Metadata instructions — be very prescriptive about the exact keys
 	evalPrompt.WriteString("\nMETADATA EXTRACTION:\n")
 	if job.MetadataPrompt != "" {
@@ -775,11 +931,14 @@ func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string
 
 	// Build a concrete example that matches the user's metadata prompt
 	evalPrompt.WriteString("\nRESPOND WITH ONLY A RAW JSON OBJECT (no markdown, no code blocks, no explanation):\n")
+	resultExample := "success"
+	if job.TriagePrompt != "" {
+		resultExample = "success|failure|waiting"
+	}
 	if job.MetadataPrompt != "" {
-		// Parse the metadata prompt to extract field names and generate a matching example
-		evalPrompt.WriteString(fmt.Sprintf("{\"result\":\"success\",\"metadata\":{%s}}\n", buildMetadataExample(job.MetadataPrompt)))
+		evalPrompt.WriteString(fmt.Sprintf("{\"result\":\"%s\",\"metadata\":{%s}}\n", resultExample, buildMetadataExample(job.MetadataPrompt)))
 	} else {
-		evalPrompt.WriteString("{\"result\":\"success\",\"metadata\":{\"summary\":\"brief description\"}}\n")
+		evalPrompt.WriteString(fmt.Sprintf("{\"result\":\"%s\",\"metadata\":{\"summary\":\"brief description\"}}\n", resultExample))
 	}
 
 	claudeCmd := job.ClaudeCommand
@@ -868,8 +1027,10 @@ func (s *jobManagerService) evaluateJobResult(job *entity.Job, taskOutput string
 		eval.Metadata["raw_eval"] = output
 	}
 
-	// Validate result value — anything other than "failure" is treated as success
-	if eval.Result != "failure" {
+	// Validate result value
+	if job.TriagePrompt != "" && eval.Result == "waiting" {
+		// Keep "waiting" — valid when TriagePrompt is set
+	} else if eval.Result != "failure" {
 		eval.Result = "success"
 	}
 	if eval.Metadata == nil {
@@ -1041,6 +1202,10 @@ func (s *jobManagerService) executeBashJob(job *entity.Job, run *entity.JobRun) 
 
 // fireTriggers fires trigger chains after a job run completes.
 func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun) {
+	if run.Status == jobrunstatus.Waiting {
+		return
+	}
+
 	triggers, err := s.findJobTrigger.FindTriggersBySourceJobID(jobID)
 	if err != nil {
 		return
@@ -1090,9 +1255,14 @@ func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun) {
 			}
 
 			// Store context for the new run to pick up
-			newRun, err := s.RunJob(trigger.TargetJobID, run.ID)
+			newRun, err := s.RunJob(trigger.TargetJobID, run.ID, run.CorrelationID)
 			if err == nil && newRun != nil {
 				s.mu.Lock()
+				// Append continue_pipeline context if present
+				if continueCtx, ok := s.triggerCtx["continue:"+run.ID]; ok {
+					ctx += fmt.Sprintf("\n## Human intervention context\n%s\n", continueCtx)
+					delete(s.triggerCtx, "continue:"+run.ID)
+				}
 				s.triggerCtx[newRun.ID] = ctx
 				s.mu.Unlock()
 			}

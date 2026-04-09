@@ -304,6 +304,18 @@ export function rerunJob(jobId: string, originalRunId: string): Promise<JobRun> 
   return callGo(PKG, JOB_CTRL, "RerunJob", jobId, originalRunId);
 }
 
+export function resumeJob(runId: string, context: string): Promise<JobRun> {
+  return callGo(PKG, JOB_CTRL, "ResumeJob", runId, context);
+}
+
+export function advancePipeline(runId: string, targetJobId: string, context: string): Promise<JobRun> {
+  return callGo(PKG, JOB_CTRL, "AdvancePipeline", runId, targetJobId, context);
+}
+
+export function listRunsByCorrelation(correlationId: string): Promise<JobRun[]> {
+  return callGo(PKG, JOB_CTRL, "ListRunsByCorrelation", correlationId);
+}
+
 export function cancelRun(runId: string): Promise<void> {
   return callGo(PKG, JOB_CTRL, "CancelRun", runId);
 }
