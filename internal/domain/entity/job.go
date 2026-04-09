@@ -33,6 +33,7 @@ type Job struct {
 	SuccessPrompt       string // optional, max 300 chars — describes what success looks like
 	FailurePrompt       string // optional, max 300 chars — describes what failure looks like
 	MetadataPrompt      string // optional — describes what metadata to extract for triggered jobs
+	TriagePrompt        string // optional, max 500 chars — criteria for "waiting" state
 
 	// Bash script configuration
 	Interpreter   string

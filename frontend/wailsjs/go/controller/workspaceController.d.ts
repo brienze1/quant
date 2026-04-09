@@ -3,6 +3,10 @@
 import {dto} from '../models';
 import {context} from '../models';
 
+export function BrowseClaudeConfigDir():Promise<string>;
+
+export function BrowseMcpConfigFile():Promise<string>;
+
 export function CreateWorkspace(arg1:dto.CreateWorkspaceRequest):Promise<dto.WorkspaceResponse>;
 
 export function DeleteWorkspace(arg1:string):Promise<void>;
@@ -16,3 +20,5 @@ export function OnShutdown(arg1:context.Context):Promise<void>;
 export function OnStartup(arg1:context.Context):Promise<void>;
 
 export function UpdateWorkspace(arg1:dto.UpdateWorkspaceRequest):Promise<dto.WorkspaceResponse>;
+
+export function ValidatePaths(arg1:string,arg2:string):Promise<dto.PathValidationResult>;

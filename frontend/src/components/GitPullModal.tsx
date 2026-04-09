@@ -67,22 +67,22 @@ export function GitPullModal({ sessionId, currentBranch, onSubmit, onCancel }: P
   const displayBranches = branches.length > 0 ? branches : [currentBranch];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
       <form
         onSubmit={handleSubmit}
         className="w-full p-6"
         style={{
           maxWidth: 400,
-          backgroundColor: "#0A0A0A",
-          border: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
           fontFamily: font,
         }}
       >
-        <label className="block text-[10px] mb-1 lowercase" style={{ color: "#6B7280" }}>
+        <label className="block text-[10px] mb-1 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
           // git pull origin
         </label>
-        <div className="text-[10px] mb-4" style={{ color: "#4B5563" }}>
-          current branch: <span style={{ color: "#10B981" }}>{currentBranch}</span>
+        <div className="text-[10px] mb-4" style={{ color: "var(--q-fg-muted)" }}>
+          current branch: <span style={{ color: "var(--q-accent)" }}>{currentBranch}</span>
         </div>
 
         <div ref={wrapRef} style={{ position: "relative", marginBottom: 20 }}>
@@ -92,9 +92,9 @@ export function GitPullModal({ sessionId, currentBranch, onSubmit, onCancel }: P
             style={{
               width: "100%",
               height: 32,
-              backgroundColor: "#0F0F0F",
-              border: `1px solid ${open ? "#10B981" : "#2a2a2a"}`,
-              color: "#FAFAFA",
+              backgroundColor: "var(--q-bg-input)",
+              border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
+              color: "var(--q-fg)",
               fontSize: 12,
               fontFamily: font,
               padding: "0 12px",
@@ -108,7 +108,7 @@ export function GitPullModal({ sessionId, currentBranch, onSubmit, onCancel }: P
             {branch}
           </button>
           {open && (
-            <div style={{ position: "absolute", top: 36, left: 0, zIndex: 50, width: "100%", backgroundColor: "#0A0A0A", border: "1px solid #2a2a2a" }}>
+            <div style={{ position: "absolute", top: 36, left: 0, zIndex: 50, width: "100%", backgroundColor: "var(--q-bg)", border: "1px solid var(--q-border)" }}>
               {/* scroll container wider than box so native scrollbar hides off-screen */}
               <div style={{ position: "relative", overflow: "hidden", maxHeight: MAX_HEIGHT }}>
                 <div
@@ -128,15 +128,15 @@ export function GitPullModal({ sessionId, currentBranch, onSubmit, onCancel }: P
                         gap: 8,
                         fontFamily: font,
                         fontSize: 11,
-                        color: b === branch ? "#10B981" : "#D1D5DB",
-                        backgroundColor: b === branch ? "#1F1F1F" : "transparent",
+                        color: b === branch ? "var(--q-accent)" : "var(--q-fg-dimmed)",
+                        backgroundColor: b === branch ? "var(--q-bg-hover)" : "transparent",
                         border: "none",
                         cursor: "pointer",
                       }}
-                      onMouseEnter={(e) => { if (b !== branch) e.currentTarget.style.backgroundColor = "#1F1F1F"; }}
+                      onMouseEnter={(e) => { if (b !== branch) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"; }}
                       onMouseLeave={(e) => { if (b !== branch) e.currentTarget.style.backgroundColor = "transparent"; }}
                     >
-                      <span style={{ color: "#10B981", flexShrink: 0 }}>~</span>
+                      <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
                       <span style={{ marginLeft: 8 }}>{b}</span>
                     </button>
                   ))}
@@ -144,8 +144,8 @@ export function GitPullModal({ sessionId, currentBranch, onSubmit, onCancel }: P
                 {/* custom scrollbar overlay */}
                 {thumb.show && (
                   <>
-                    <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "#0A0A0A", pointerEvents: "none" }} />
-                    <div style={{ position: "absolute", right: 0, top: thumb.top, width: 4, height: thumb.height, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 2, pointerEvents: "none" }} />
+                    <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "var(--q-bg)", pointerEvents: "none" }} />
+                    <div style={{ position: "absolute", right: 0, top: thumb.top, width: 4, height: thumb.height, backgroundColor: "var(--q-scrollbar-thumb)", borderRadius: 2, pointerEvents: "none" }} />
                   </>
                 )}
               </div>
@@ -158,9 +158,9 @@ export function GitPullModal({ sessionId, currentBranch, onSubmit, onCancel }: P
             type="button"
             onClick={onCancel}
             className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "#6B7280" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+            style={{ color: "var(--q-fg-secondary)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
           >
             cancel
           </button>
@@ -169,8 +169,8 @@ export function GitPullModal({ sessionId, currentBranch, onSubmit, onCancel }: P
             disabled={!branch}
             className="px-4 py-2 text-xs lowercase transition-colors"
             style={{
-              backgroundColor: branch ? "#10B981" : "#1F1F1F",
-              color: branch ? "#0A0A0A" : "#4B5563",
+              backgroundColor: branch ? "var(--q-accent)" : "var(--q-bg-hover)",
+              color: branch ? "var(--q-bg)" : "var(--q-fg-muted)",
               fontWeight: 500,
             }}
           >

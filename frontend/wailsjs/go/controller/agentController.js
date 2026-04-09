@@ -18,12 +18,12 @@ export function ListAgents() {
   return window['go']['controller']['agentController']['ListAgents']();
 }
 
-export function ListAvailableMcpServers() {
-  return window['go']['controller']['agentController']['ListAvailableMcpServers']();
+export function ListAvailableMcpServers(arg1) {
+  return window['go']['controller']['agentController']['ListAvailableMcpServers'](arg1);
 }
 
-export function ListAvailableSkills() {
-  return window['go']['controller']['agentController']['ListAvailableSkills']();
+export function ListAvailableSkills(arg1) {
+  return window['go']['controller']['agentController']['ListAvailableSkills'](arg1);
 }
 
 export function OnShutdown(arg1) {

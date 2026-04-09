@@ -28,7 +28,7 @@ function renderText(text: string) {
       }
       if (part.startsWith("`") && part.endsWith("`")) {
         return (
-          <code key={j} style={{ backgroundColor: "#1a1a1a", padding: "1px 4px", borderRadius: 3, fontSize: 10 }}>
+          <code key={j} style={{ backgroundColor: "var(--q-bg-surface)", padding: "1px 4px", borderRadius: 3, fontSize: 10 }}>
             {part.slice(1, -1)}
           </code>
         );
@@ -197,8 +197,8 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
       flexDirection: "column",
       width: 440,
       height: 560,
-      backgroundColor: "#0f0f0f",
-      border: "1px solid #2a2a2a",
+      backgroundColor: "var(--q-bg-input)",
+      border: "1px solid var(--q-border)",
       borderRadius: 10,
       fontFamily: font,
       overflow: "hidden",
@@ -210,16 +210,16 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
         alignItems: "center",
         gap: 8,
         padding: "10px 14px",
-        borderBottom: "1px solid #1a1a1a",
+        borderBottom: "1px solid var(--q-bg-surface)",
         flexShrink: 0,
       }}>
-        <div style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: "#10B981" }} />
-        <span style={{ fontSize: 11, color: "#FAFAFA", fontWeight: 600, letterSpacing: 0.3 }}>quanti</span>
+        <div style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: "var(--q-accent)" }} />
+        <span style={{ fontSize: 11, color: "var(--q-fg)", fontWeight: 600, letterSpacing: 0.3 }}>quanti</span>
         <button
           onClick={onMinimize}
-          style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#4B5563", display: "flex", alignItems: "center", padding: 4 }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "#FAFAFA"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "#4B5563"; }}
+          style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--q-fg-muted)", display: "flex", alignItems: "center", padding: 4 }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-muted)"; }}
           title="Minimize"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -234,8 +234,8 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
         {welcomeVisible && (
           <div style={{
             alignSelf: "flex-start", maxWidth: "88%",
-            backgroundColor: "#1a1a1a", padding: "8px 12px",
-            borderRadius: "4px 12px 12px 12px", fontSize: 11, color: "#D1D5DB", lineHeight: 1.6,
+            backgroundColor: "var(--q-bg-surface)", padding: "8px 12px",
+            borderRadius: "4px 12px 12px 12px", fontSize: 11, color: "var(--q-fg-dimmed)", lineHeight: 1.6,
             opacity: 1, transition: "opacity 0.4s ease",
           }}>
             {welcomeText}
@@ -249,8 +249,8 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
           msg.role === "user" ? (
             <div key={msg.id} style={{ display: "flex", justifyContent: "flex-end" }}>
               <div style={{
-                maxWidth: "80%", backgroundColor: "#10B981", padding: "7px 11px",
-                borderRadius: "12px 4px 12px 12px", fontSize: 11, color: "#0A0A0A",
+                maxWidth: "80%", backgroundColor: "var(--q-accent)", padding: "7px 11px",
+                borderRadius: "12px 4px 12px 12px", fontSize: 11, color: "var(--q-bg)",
                 lineHeight: 1.5, wordBreak: "break-word",
               }}>
                 {msg.text}
@@ -259,8 +259,8 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
           ) : (
             <div key={msg.id} style={{ display: "flex", justifyContent: "flex-start" }}>
               <div style={{
-                maxWidth: "88%", backgroundColor: "#1a1a1a", padding: "7px 11px",
-                borderRadius: "4px 12px 12px 12px", fontSize: 11, color: "#D1D5DB",
+                maxWidth: "88%", backgroundColor: "var(--q-bg-surface)", padding: "7px 11px",
+                borderRadius: "4px 12px 12px 12px", fontSize: 11, color: "var(--q-fg-dimmed)",
                 lineHeight: 1.6, wordBreak: "break-word",
               }}>
                 {msg.typing
@@ -275,9 +275,9 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
         {/* Thinking dots while waiting for response */}
         {waiting && (
           <div style={{ display: "flex", justifyContent: "flex-start" }}>
-            <div style={{ backgroundColor: "#1a1a1a", padding: "9px 13px", borderRadius: "4px 12px 12px 12px", display: "flex", gap: 5 }}>
+            <div style={{ backgroundColor: "var(--q-bg-surface)", padding: "9px 13px", borderRadius: "4px 12px 12px 12px", display: "flex", gap: 5 }}>
               {[0, 1, 2].map((i) => (
-                <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "#4B5563", animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--q-fg-muted)", animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
               ))}
             </div>
           </div>
@@ -287,7 +287,7 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
       </div>
 
       {/* Input */}
-      <div style={{ padding: "10px 12px", borderTop: "1px solid #1a1a1a", flexShrink: 0, display: "flex", gap: 8, alignItems: "flex-end" }}>
+      <div style={{ padding: "10px 12px", borderTop: "1px solid var(--q-bg-surface)", flexShrink: 0, display: "flex", gap: 8, alignItems: "flex-end" }}>
         <textarea
           ref={inputRef}
           value={input}
@@ -296,12 +296,12 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
           placeholder={waiting ? "quanti is thinking…" : "Ask quanti…"}
           rows={1}
           style={{
-            flex: 1, backgroundColor: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8,
-            padding: "7px 10px", color: "#FAFAFA", fontFamily: font, fontSize: 11,
+            flex: 1, backgroundColor: "var(--q-bg-surface)", border: "1px solid var(--q-border)", borderRadius: 8,
+            padding: "7px 10px", color: "var(--q-fg)", fontFamily: font, fontSize: 11,
             resize: "none", outline: "none", lineHeight: 1.5, maxHeight: 80, overflowY: "auto",
           }}
-          onFocus={(e) => { e.currentTarget.style.borderColor = "#10B981"; }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = "#2a2a2a"; }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border)"; }}
           onInput={(e) => {
             const el = e.currentTarget;
             el.style.height = "auto";
@@ -313,14 +313,14 @@ export function QuantAssistant({ convID: initialConvID, model, onMinimize }: Pro
           disabled={!input.trim() || waiting}
           style={{
             width: 32, height: 32, borderRadius: 8,
-            backgroundColor: input.trim() && !waiting ? "#10B981" : "#1a1a1a",
-            border: "1px solid #2a2a2a", cursor: input.trim() && !waiting ? "pointer" : "default",
+            backgroundColor: input.trim() && !waiting ? "var(--q-accent)" : "var(--q-bg-surface)",
+            border: "1px solid var(--q-border)", cursor: input.trim() && !waiting ? "pointer" : "default",
             display: "flex", alignItems: "center", justifyContent: "center",
             flexShrink: 0, transition: "background-color 0.15s",
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke={input.trim() && !waiting ? "#0A0A0A" : "#4B5563"}
+            stroke={input.trim() && !waiting ? "var(--q-bg)" : "var(--q-fg-muted)"}
             strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
           </svg>

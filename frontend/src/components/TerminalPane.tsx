@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import type { Session, Config } from "../types";
 import * as api from "../api";
+import { useTheme } from "../theme";
 
 interface TerminalPaneProps {
   session: Session;
@@ -25,6 +26,9 @@ export function TerminalPane({
   autoScroll,
   onAutoScrollChange,
 }: TerminalPaneProps) {
+  const { theme } = useTheme();
+  const tc = theme.colors;
+
   const wrapperRef = useRef<HTMLDivElement>(null);
   const termContainerRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
@@ -59,26 +63,26 @@ export function TerminalPane({
       lineHeight: cfg?.lineHeight ?? 1.2,
       scrollback: cfg?.scrollbackLines ?? 10000,
       theme: {
-        background: "#0A0A0A",
-        foreground: "#FAFAFA",
-        cursor: isArchived ? "#0A0A0A" : "#10B981",
-        selectionBackground: "rgba(16, 185, 129, 0.3)",
-        black: "#0A0A0A",
-        red: "#EF4444",
-        green: "#10B981",
-        yellow: "#F59E0B",
-        blue: "#3B82F6",
-        magenta: "#8B5CF6",
-        cyan: "#06B6D4",
-        white: "#FAFAFA",
-        brightBlack: "#4B5563",
-        brightRed: "#F87171",
-        brightGreen: "#34D399",
-        brightYellow: "#FBBF24",
-        brightBlue: "#60A5FA",
-        brightMagenta: "#A78BFA",
-        brightCyan: "#22D3EE",
-        brightWhite: "#FFFFFF",
+        background: tc.termBg,
+        foreground: tc.termFg,
+        cursor: isArchived ? tc.bg : tc.termCursor,
+        selectionBackground: tc.selectionBg,
+        black: tc.termBlack,
+        red: tc.termRed,
+        green: tc.termGreen,
+        yellow: tc.termYellow,
+        blue: tc.termBlue,
+        magenta: tc.termMagenta,
+        cyan: tc.termCyan,
+        white: tc.termWhite,
+        brightBlack: tc.termBrightBlack,
+        brightRed: tc.termBrightRed,
+        brightGreen: tc.termBrightGreen,
+        brightYellow: tc.termBrightYellow,
+        brightBlue: tc.termBrightBlue,
+        brightMagenta: tc.termBrightMagenta,
+        brightCyan: tc.termBrightCyan,
+        brightWhite: tc.termBrightWhite,
       },
       allowProposedApi: true,
     });
@@ -140,7 +144,7 @@ export function TerminalPane({
 
     return term;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isArchived, termConfig]);
+  }, [isArchived, termConfig, tc]);
 
   useEffect(() => {
     if (!termConfig) return;
@@ -290,11 +294,11 @@ export function TerminalPane({
         style={{ position: "absolute", inset: 0, padding: "4px 0 0 4px" }}
       />
       {/* custom scrollbar track */}
-      <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "#0A0A0A", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "var(--q-bg)", pointerEvents: "none" }} />
       {/* custom scrollbar thumb */}
       <div
         ref={thumbRef}
-        style={{ position: "absolute", right: 0, top: 0, width: 4, height: 24, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 2, pointerEvents: "none", display: "none" }}
+        style={{ position: "absolute", right: 0, top: 0, width: 4, height: 24, backgroundColor: "var(--q-scrollbar-thumb)", borderRadius: 2, pointerEvents: "none", display: "none" }}
       />
     </div>
   );

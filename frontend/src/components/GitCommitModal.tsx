@@ -40,18 +40,18 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
   const fullMessage = prefix + message;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.7)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
       <form
         onSubmit={handleSubmit}
         className="w-full p-6"
         style={{
           maxWidth: 480,
-          backgroundColor: "#0A0A0A",
-          border: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
           fontFamily: font,
         }}
       >
-        <label className="block text-[10px] mb-4 lowercase" style={{ color: "#6B7280" }}>
+        <label className="block text-[10px] mb-4 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
           // git commit
         </label>
 
@@ -59,7 +59,7 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
           {prefix && (
             <div
               className="px-3 py-1 text-xs mb-1"
-              style={{ color: "#6B7280", backgroundColor: "#1F1F1F", border: "1px solid #2a2a2a", borderBottom: "none" }}
+              style={{ color: "var(--q-fg-secondary)", backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-border)", borderBottom: "none" }}
             >
               {prefix}
             </div>
@@ -72,34 +72,34 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
             placeholder="commit message"
             className="w-full px-3 py-2 text-xs"
             style={{
-              backgroundColor: "#1F1F1F",
-              border: "1px solid #2a2a2a",
-              color: "#FAFAFA",
+              backgroundColor: "var(--q-bg-hover)",
+              border: "1px solid var(--q-border)",
+              color: "var(--q-fg)",
               fontFamily: font,
               outline: "none",
             }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
           />
         </div>
 
         {fullMessage.trim() && (
-          <div className="mb-4 px-3 py-2 text-[10px]" style={{ backgroundColor: "#1F1F1F", border: "1px solid #2a2a2a", color: "#10B981" }}>
+          <div className="mb-4 px-3 py-2 text-[10px]" style={{ backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-border)", color: "var(--q-accent)" }}>
             {fullMessage}
           </div>
         )}
 
         <div
           className="flex items-center gap-2 mb-5 cursor-pointer"
-          style={{ color: "#6B7280", fontSize: 11, fontFamily: font }}
+          style={{ color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font }}
           onClick={() => setPushAfter((v) => !v)}
         >
           <div
             style={{
               width: 14,
               height: 14,
-              backgroundColor: "#0A0A0A",
-              border: `1px solid ${pushAfter ? "#10B981" : "#2a2a2a"}`,
+              backgroundColor: "var(--q-bg)",
+              border: `1px solid ${pushAfter ? "var(--q-accent)" : "var(--q-border)"}`,
               borderRadius: 2,
               display: "flex",
               alignItems: "center",
@@ -108,14 +108,14 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
             }}
           >
             {pushAfter && (
-              <span style={{ color: "#10B981", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>
+              <span style={{ color: "var(--q-accent)", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>
             )}
           </div>
           push after commit
         </div>
 
         {error && (
-          <div className="mb-4 px-3 py-2 text-[10px]" style={{ backgroundColor: "#1F1F1F", border: "1px solid #EF4444", color: "#EF4444", fontFamily: font }}>
+          <div className="mb-4 px-3 py-2 text-[10px]" style={{ backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-error)", color: "var(--q-error)", fontFamily: font }}>
             {error}
           </div>
         )}
@@ -125,9 +125,9 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
             type="button"
             onClick={onCancel}
             className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "#6B7280" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+            style={{ color: "var(--q-fg-secondary)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
           >
             cancel
           </button>
@@ -136,8 +136,8 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
             disabled={!fullMessage.trim() || loading}
             className="px-4 py-2 text-xs lowercase transition-colors"
             style={{
-              backgroundColor: fullMessage.trim() && !loading ? "#10B981" : "#1F1F1F",
-              color: fullMessage.trim() && !loading ? "#0A0A0A" : "#4B5563",
+              backgroundColor: fullMessage.trim() && !loading ? "var(--q-accent)" : "var(--q-bg-hover)",
+              color: fullMessage.trim() && !loading ? "var(--q-bg)" : "var(--q-fg-muted)",
               fontWeight: 500,
             }}
           >

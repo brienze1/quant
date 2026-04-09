@@ -96,8 +96,13 @@ function App() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [jobGroups, setJobGroups] = useState<JobGroup[]>([]);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [newClaudeConfigPath, setNewClaudeConfigPath] = useState("");
+  const [newMcpConfigPath, setNewMcpConfigPath] = useState("");
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
+  const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
+  const [editWorkspaceForm, setEditWorkspaceForm] = useState({ name: "", claudeConfigPath: "", mcpConfigPath: "" });
+  const [pathErrors, setPathErrors] = useState({ claude: "", mcp: "" });
   const [diffSession, setDiffSession] = useState<{ id: string; name: string } | null>(null);
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
   const [commitMessagePrefix, setCommitMessagePrefix] = useState("");
@@ -1009,8 +1014,8 @@ function App() {
       <div
         style={{
           width: 40,
-          backgroundColor: "#0A0A0A",
-          borderLeft: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          borderLeft: "1px solid var(--q-border)",
           display: "flex",
           flexDirection: "column",
           padding: "8px 0",
@@ -1025,16 +1030,16 @@ function App() {
                 style={{
                   width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
                   background: "none", border: "none", cursor: "pointer",
-                  color: currentView === item.view ? "#FAFAFA" : "#6B7280",
-                  borderRight: currentView === item.view ? "2px solid #10B981" : "2px solid transparent",
+                  color: currentView === item.view ? "var(--q-fg)" : "var(--q-fg-secondary)",
+                  borderRight: currentView === item.view ? "2px solid var(--q-accent)" : "2px solid transparent",
                 }}
                 onMouseEnter={(e) => {
-                  if (currentView !== item.view) e.currentTarget.style.color = "#FAFAFA";
+                  if (currentView !== item.view) e.currentTarget.style.color = "var(--q-fg)";
                   const tooltip = e.currentTarget.parentElement?.querySelector("[data-tooltip]") as HTMLElement;
                   if (tooltip) tooltip.style.opacity = "1";
                 }}
                 onMouseLeave={(e) => {
-                  if (currentView !== item.view) e.currentTarget.style.color = "#6B7280";
+                  if (currentView !== item.view) e.currentTarget.style.color = "var(--q-fg-secondary)";
                   const tooltip = e.currentTarget.parentElement?.querySelector("[data-tooltip]") as HTMLElement;
                   if (tooltip) tooltip.style.opacity = "0";
                 }}
@@ -1048,13 +1053,13 @@ function App() {
                   right: 44,
                   top: "50%",
                   transform: "translateY(-50%)",
-                  backgroundColor: "#1a1a1a",
-                  color: "#FAFAFA",
+                  backgroundColor: "var(--q-bg-surface)",
+                  color: "var(--q-fg)",
                   fontSize: 11,
                   fontFamily: "'JetBrains Mono', monospace",
                   padding: "4px 8px",
                   borderRadius: 4,
-                  border: "1px solid #2a2a2a",
+                  border: "1px solid var(--q-border)",
                   whiteSpace: "nowrap",
                   pointerEvents: "none",
                   opacity: 0,
@@ -1074,11 +1079,11 @@ function App() {
             style={{
               width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
               background: "none", border: "none", cursor: "pointer",
-              color: assistantOpen ? "#FAFAFA" : "#6B7280",
-              borderRight: assistantOpen ? "2px solid #10B981" : "2px solid transparent",
+              color: assistantOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
+              borderRight: assistantOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
             }}
-            onMouseEnter={(e) => { if (!assistantOpen) e.currentTarget.style.color = "#FAFAFA"; }}
-            onMouseLeave={(e) => { if (!assistantOpen) e.currentTarget.style.color = "#6B7280"; }}
+            onMouseEnter={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
+            onMouseLeave={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
             title="Quant Assistant"
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1093,11 +1098,11 @@ function App() {
             style={{
               width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
               background: "none", border: "none", cursor: "pointer",
-              color: workspaceDropdownOpen ? "#FAFAFA" : "#6B7280",
-              borderRight: workspaceDropdownOpen ? "2px solid #10B981" : "2px solid transparent",
+              color: workspaceDropdownOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
+              borderRight: workspaceDropdownOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
             }}
-            onMouseEnter={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "#FAFAFA"; }}
-            onMouseLeave={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "#6B7280"; }}
+            onMouseEnter={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
+            onMouseLeave={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
             title={`Workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? "Default"}`}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1112,8 +1117,8 @@ function App() {
                 position: "absolute",
                 right: 44,
                 bottom: 0,
-                backgroundColor: "#1a1a1a",
-                border: "1px solid #2a2a2a",
+                backgroundColor: "var(--q-bg-surface)",
+                border: "1px solid var(--q-border)",
                 borderRadius: 6,
                 padding: "4px 0",
                 minWidth: 180,
@@ -1123,7 +1128,7 @@ function App() {
                 boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
               }}
             >
-              <div style={{ padding: "4px 12px", color: "#6B7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+              <div style={{ padding: "4px 12px", color: "var(--q-fg-secondary)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
                 Workspaces
               </div>
               {workspaces.map((ws) => {
@@ -1134,9 +1139,9 @@ function App() {
                 if (isConfirmingDelete) {
                   return (
                     <div key={ws.id} style={{ padding: "6px 12px", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ color: "#FAFAFA", marginBottom: 6 }}>
+                      <div style={{ color: "var(--q-fg)", marginBottom: 6 }}>
                         Delete "{ws.name}"?
-                        <br /><span style={{ color: "#6B7280" }}>All items will be deleted.</span>
+                        <br /><span style={{ color: "var(--q-fg-secondary)" }}>All items will be deleted.</span>
                       </div>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button
@@ -1151,16 +1156,16 @@ function App() {
                             }
                           }}
                           style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid #EF4444",
-                            backgroundColor: "#EF4444", color: "#fff", cursor: "pointer",
+                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-error)",
+                            backgroundColor: "var(--q-error)", color: "var(--q-fg)", cursor: "pointer",
                             fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
                           }}
                         >Delete</button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setDeletingWorkspaceId(null); }}
                           style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid #333",
-                            backgroundColor: "transparent", color: "#6B7280", cursor: "pointer",
+                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-border-light)",
+                            backgroundColor: "transparent", color: "var(--q-fg-secondary)", cursor: "pointer",
                             fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
                           }}
                         >Cancel</button>
@@ -1169,14 +1174,128 @@ function App() {
                   );
                 }
 
+                if (editingWorkspaceId === ws.id) {
+                  const inputStyle = {
+                    width: "100%", padding: "4px 8px", marginTop: 4,
+                    backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border-light)", borderRadius: 4,
+                    color: "var(--q-fg)", fontSize: 11, outline: "none",
+                    fontFamily: "'JetBrains Mono', monospace",
+                  } as const;
+                  return (
+                    <form
+                      key={ws.id}
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!editWorkspaceForm.name.trim()) return;
+                        const v = await api.validateWorkspacePaths(editWorkspaceForm.claudeConfigPath.trim(), editWorkspaceForm.mcpConfigPath.trim());
+                        setPathErrors({ claude: v.claudeConfigError || "", mcp: v.mcpConfigError || "" });
+                        if (!v.claudeConfigValid || !v.mcpConfigValid) return;
+                        try {
+                          await api.updateWorkspace({
+                            id: ws.id,
+                            name: editWorkspaceForm.name.trim(),
+                            claudeConfigPath: editWorkspaceForm.claudeConfigPath.trim() || undefined,
+                            mcpConfigPath: editWorkspaceForm.mcpConfigPath.trim() || undefined,
+                          });
+                          await fetchWorkspaces();
+                          setEditingWorkspaceId(null);
+                          setPathErrors({ claude: "", mcp: "" });
+                        } catch (err) {
+                          console.error("failed to update workspace:", err);
+                        }
+                      }}
+                      style={{ padding: "6px 12px" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ color: "var(--q-fg-secondary)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Edit workspace</div>
+                      <input
+                        autoFocus
+                        value={editWorkspaceForm.name}
+                        onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, name: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Escape") setEditingWorkspaceId(null); }}
+                        placeholder="Name"
+                        style={{ ...inputStyle, marginTop: 0 }}
+                        onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
+                        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                      />
+                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                        <input
+                          value={editWorkspaceForm.claudeConfigPath}
+                          onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, claudeConfigPath: e.target.value }))}
+                          placeholder=".claude root"
+                          title="Project root containing .claude/skills/"
+                          style={{ ...inputStyle, marginTop: 0, flex: 1 }}
+                          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
+                          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const path = await api.browseClaudeConfigDir();
+                            if (path) setEditWorkspaceForm((f) => ({ ...f, claudeConfigPath: path }));
+                          }}
+                          style={{ padding: "4px 8px", backgroundColor: "var(--q-bg-inset)", border: "1px solid var(--q-border-light)", borderRadius: 4, color: "var(--q-fg-secondary)", cursor: "pointer", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                          title="Browse project root for .claude"
+                        >...</button>
+                      </div>
+                      {pathErrors.claude && <div style={{ color: "var(--q-error)", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.claude}</div>}
+                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                        <input
+                          value={editWorkspaceForm.mcpConfigPath}
+                          onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, mcpConfigPath: e.target.value }))}
+                          placeholder=".mcp.json root"
+                          title="Project root containing .mcp.json"
+                          style={{ ...inputStyle, marginTop: 0, flex: 1 }}
+                          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
+                          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const path = await api.browseMcpConfigFile();
+                            if (path) setEditWorkspaceForm((f) => ({ ...f, mcpConfigPath: path }));
+                          }}
+                          style={{ padding: "4px 8px", backgroundColor: "var(--q-bg-inset)", border: "1px solid var(--q-border-light)", borderRadius: 4, color: "var(--q-fg-secondary)", cursor: "pointer", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                          title="Browse project root for .mcp.json"
+                        >...</button>
+                      </div>
+                      {pathErrors.mcp && <div style={{ color: "var(--q-error)", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.mcp}</div>}
+                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                        <button
+                          type="submit"
+                          style={{
+                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-accent)",
+                            backgroundColor: "var(--q-accent)", color: "var(--q-bg)", cursor: "pointer",
+                            fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                          }}
+                        >Save</button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setEditingWorkspaceId(null); }}
+                          style={{
+                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-border-light)",
+                            backgroundColor: "transparent", color: "var(--q-fg-secondary)", cursor: "pointer",
+                            fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                          }}
+                        >Cancel</button>
+                      </div>
+                    </form>
+                  );
+                }
+
                 return (
                   <div
                     key={ws.id}
                     style={{
                       display: "flex", alignItems: "center",
-                      background: isActive ? "#2a2a2a" : "none",
+                      background: isActive ? "var(--q-border)" : "none",
                     }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "#222"; }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-inset)"; }}
                     onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "transparent"; }}
                   >
                     <button
@@ -1188,18 +1307,42 @@ function App() {
                         display: "flex", alignItems: "center", gap: 8,
                         flex: 1, padding: "6px 12px",
                         background: "none", border: "none", cursor: "pointer",
-                        color: isActive ? "#10B981" : "#FAFAFA",
+                        color: isActive ? "var(--q-accent)" : "var(--q-fg)",
                         textAlign: "left", fontSize: 12,
                         fontFamily: "'JetBrains Mono', monospace",
                       }}
                     >
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: isActive ? "#10B981" : "#444", flexShrink: 0 }} />
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: isActive ? "var(--q-accent)" : "var(--q-border-light)", flexShrink: 0 }} />
                       {ws.name}
                       {isActive && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--q-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       )}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingWorkspaceId(ws.id);
+                        setEditWorkspaceForm({
+                          name: ws.name,
+                          claudeConfigPath: ws.claudeConfigPath ?? "",
+                          mcpConfigPath: ws.mcpConfigPath ?? "",
+                        });
+                      }}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        width: 28, height: 28, flexShrink: 0,
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "var(--q-fg-secondary)",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                      title={`Settings for ${ws.name}`}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
                     </button>
                     {isDeletable && (
                       <button
@@ -1208,10 +1351,10 @@ function App() {
                           display: "flex", alignItems: "center", justifyContent: "center",
                           width: 28, height: 28, flexShrink: 0,
                           background: "none", border: "none", cursor: "pointer",
-                          color: "#6B7280", marginRight: 4,
+                          color: "var(--q-fg-secondary)", marginRight: 4,
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.color = "#EF4444"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = "#6B7280"; }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-error)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
                         title={`Delete ${ws.name}`}
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1222,19 +1365,29 @@ function App() {
                   </div>
                 );
               })}
-              <div style={{ borderTop: "1px solid #2a2a2a", margin: "4px 0" }} />
+              <div style={{ borderTop: "1px solid var(--q-border)", margin: "4px 0" }} />
               {creatingWorkspace ? (
                 <form
                   onSubmit={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     if (!newWorkspaceName.trim()) return;
+                    const v = await api.validateWorkspacePaths(newClaudeConfigPath.trim(), newMcpConfigPath.trim());
+                    setPathErrors({ claude: v.claudeConfigError || "", mcp: v.mcpConfigError || "" });
+                    if (!v.claudeConfigValid || !v.mcpConfigValid) return;
                     try {
-                      const ws = await api.createWorkspace({ name: newWorkspaceName.trim() });
+                      const ws = await api.createWorkspace({
+                        name: newWorkspaceName.trim(),
+                        claudeConfigPath: newClaudeConfigPath.trim() || undefined,
+                        mcpConfigPath: newMcpConfigPath.trim() || undefined,
+                      });
                       await fetchWorkspaces();
                       setActiveWorkspaceId(ws.id);
                       setCreatingWorkspace(false);
                       setNewWorkspaceName("");
+                      setNewClaudeConfigPath("");
+                      setNewMcpConfigPath("");
+                      setPathErrors({ claude: "", mcp: "" });
                       setWorkspaceDropdownOpen(false);
                     } catch (err) {
                       console.error("failed to create workspace:", err);
@@ -1248,18 +1401,93 @@ function App() {
                     value={newWorkspaceName}
                     onChange={(e) => setNewWorkspaceName(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Escape") { setCreatingWorkspace(false); setNewWorkspaceName(""); }
+                      if (e.key === "Escape") { setCreatingWorkspace(false); setNewWorkspaceName(""); setNewClaudeConfigPath(""); setNewMcpConfigPath(""); }
                     }}
                     placeholder="Workspace name..."
                     style={{
                       width: "100%", padding: "4px 8px",
-                      backgroundColor: "#111", border: "1px solid #333", borderRadius: 4,
-                      color: "#FAFAFA", fontSize: 12, outline: "none",
+                      backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border-light)", borderRadius: 4,
+                      color: "var(--q-fg)", fontSize: 12, outline: "none",
                       fontFamily: "'JetBrains Mono', monospace",
                     }}
-                    onFocus={(e) => { e.currentTarget.style.borderColor = "#10B981"; }}
-                    onBlur={(e) => { e.currentTarget.style.borderColor = "#333"; }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
                   />
+                  <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                    <input
+                      value={newClaudeConfigPath}
+                      onChange={(e) => setNewClaudeConfigPath(e.target.value)}
+                      placeholder=".claude root (optional)"
+                      title="Project root containing .claude/skills/ (e.g. /path/to/project)"
+                      style={{
+                        flex: 1, padding: "4px 8px",
+                        backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border-light)", borderRadius: 4,
+                        color: "var(--q-fg)", fontSize: 11, outline: "none",
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const path = await api.browseClaudeConfigDir();
+                        if (path) setNewClaudeConfigPath(path);
+                      }}
+                      style={{ padding: "4px 8px", backgroundColor: "var(--q-bg-inset)", border: "1px solid var(--q-border-light)", borderRadius: 4, color: "var(--q-fg-secondary)", cursor: "pointer", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                      title="Browse project root for .claude"
+                    >...</button>
+                  </div>
+                  {pathErrors.claude && <div style={{ color: "var(--q-error)", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.claude}</div>}
+                  <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                    <input
+                      value={newMcpConfigPath}
+                      onChange={(e) => setNewMcpConfigPath(e.target.value)}
+                      placeholder=".mcp.json root (optional)"
+                      title="Project root containing .mcp.json (e.g. /path/to/project)"
+                      style={{
+                        flex: 1, padding: "4px 8px",
+                        backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border-light)", borderRadius: 4,
+                        color: "var(--q-fg)", fontSize: 11, outline: "none",
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const path = await api.browseMcpConfigFile();
+                        if (path) setNewMcpConfigPath(path);
+                      }}
+                      style={{ padding: "4px 8px", backgroundColor: "var(--q-bg-inset)", border: "1px solid var(--q-border-light)", borderRadius: 4, color: "var(--q-fg-secondary)", cursor: "pointer", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                      title="Browse project root for .mcp.json"
+                    >...</button>
+                  </div>
+                  {pathErrors.mcp && <div style={{ color: "var(--q-error)", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.mcp}</div>}
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <button
+                      type="submit"
+                      style={{
+                        padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-accent)",
+                        backgroundColor: "var(--q-accent)", color: "var(--q-bg)", cursor: "pointer",
+                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >Save</button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setCreatingWorkspace(false); setNewWorkspaceName(""); setNewClaudeConfigPath(""); setNewMcpConfigPath(""); }}
+                      style={{
+                        padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-border-light)",
+                        backgroundColor: "transparent", color: "var(--q-fg-secondary)", cursor: "pointer",
+                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >Cancel</button>
+                  </div>
                 </form>
               ) : (
                 <button
@@ -1271,11 +1499,11 @@ function App() {
                     display: "flex", alignItems: "center", gap: 8,
                     width: "100%", padding: "6px 12px",
                     background: "none", border: "none", cursor: "pointer",
-                    color: "#6B7280", textAlign: "left", fontSize: 12,
+                    color: "var(--q-fg-secondary)", textAlign: "left", fontSize: 12,
                     fontFamily: "'JetBrains Mono', monospace",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#FAFAFA"; e.currentTarget.style.backgroundColor = "#222"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "#6B7280"; e.currentTarget.style.backgroundColor = "transparent"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; e.currentTarget.style.backgroundColor = "var(--q-bg-inset)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -1331,6 +1559,7 @@ function App() {
       )}
       {modal.type === "createAgent" && (
         <CreateAgentModal
+          workspaceId={activeWorkspaceId}
           onSubmit={async (req) => {
             const agentReq = req as CreateAgentRequest;
             agentReq.workspaceId = activeWorkspaceId;
@@ -1344,6 +1573,7 @@ function App() {
       {modal.type === "editAgent" && (
         <CreateAgentModal
           agent={modal.agent}
+          workspaceId={modal.agent.workspaceId}
           onSubmit={async (req) => {
             const agentReq = req as UpdateAgentRequest;
             agentReq.workspaceId = modal.agent.workspaceId;
@@ -1393,7 +1623,7 @@ function App() {
       {renderQuantiOverlay()}
 
       {view === "jobs" && (
-        <div className="flex h-screen w-screen" style={{ backgroundColor: "#0A0A0A", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
+        <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
           <JobsView
             jobs={filteredJobs}
             agents={filteredAgents}
@@ -1409,7 +1639,7 @@ function App() {
       )}
 
       {view === "agents" && (
-        <div className="flex h-screen w-screen" style={{ backgroundColor: "#0A0A0A", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
+        <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
           <AgentsView
             agents={filteredAgents}
             onCreateAgent={() => setModal({ type: "createAgent" })}
@@ -1424,7 +1654,7 @@ function App() {
         </div>
       )}
 
-    <div className="flex h-screen w-screen" style={{ backgroundColor: "#0A0A0A" }}>
+    <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)" }}>
       <Sidebar
         repos={repos}
         tasksByRepo={tasksByRepo}
@@ -1465,14 +1695,14 @@ function App() {
         onGitPush={openGitPushModal}
       />
 
-      <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "#0A0A0A" }}>
+      <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "var(--q-bg)" }}>
         {error && (
           <div
             className="absolute top-0 left-0 right-0 z-40 text-xs px-4 py-2 flex justify-between"
             style={{
-              backgroundColor: "rgba(239,68,68,0.15)",
-              color: "#EF4444",
-              borderBottom: "1px solid #2a2a2a",
+              backgroundColor: "var(--q-error-bg)",
+              color: "var(--q-error)",
+              borderBottom: "1px solid var(--q-border)",
               fontFamily: "'JetBrains Mono', monospace",
             }}
           >
@@ -1480,9 +1710,9 @@ function App() {
             <button
               onClick={() => setError(null)}
               className="ml-2 transition-colors"
-              style={{ color: "#EF4444" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#EF4444")}
+              style={{ color: "var(--q-error)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-error)")}
             >
               [x]
             </button>
@@ -1637,9 +1867,9 @@ function App() {
             <div
               key={toast.id}
               style={{
-                backgroundColor: "#1F1F1F",
-                border: "1px solid #10B981",
-                color: "#FAFAFA",
+                backgroundColor: "var(--q-bg-hover)",
+                border: "1px solid var(--q-accent)",
+                color: "var(--q-fg)",
                 fontSize: 12,
                 padding: "10px 16px",
                 borderRadius: 4,
@@ -1647,7 +1877,7 @@ function App() {
                 boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
               }}
             >
-              <span style={{ color: "#10B981", marginRight: 8 }}>~</span>
+              <span style={{ color: "var(--q-accent)", marginRight: 8 }}>~</span>
               {toast.message}
             </div>
           ))}

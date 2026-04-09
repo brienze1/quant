@@ -233,6 +233,7 @@ export namespace dto {
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
+	    triagePrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -266,6 +267,7 @@ export namespace dto {
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];
+	        this.triagePrompt = source["triagePrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
@@ -346,6 +348,8 @@ export namespace dto {
 	}
 	export class CreateWorkspaceRequest {
 	    name: string;
+	    claudeConfigPath: string;
+	    mcpConfigPath: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new CreateWorkspaceRequest(source);
@@ -354,6 +358,8 @@ export namespace dto {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
+	        this.claudeConfigPath = source["claudeConfigPath"];
+	        this.mcpConfigPath = source["mcpConfigPath"];
 	    }
 	}
 	export class DiffFileResponse {
@@ -430,6 +436,7 @@ export namespace dto {
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
+	    triagePrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -467,6 +474,7 @@ export namespace dto {
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];
+	        this.triagePrompt = source["triagePrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
@@ -501,12 +509,14 @@ export namespace dto {
 	    jobId: string;
 	    status: string;
 	    triggeredBy: string;
+	    correlationId: string;
 	    sessionId: string;
 	    modelUsed: string;
 	    durationMs: number;
 	    tokensUsed: number;
 	    result: string;
 	    errorMessage: string;
+	    injectedContext: string;
 	    startedAt: string;
 	    finishedAt: string;
 	
@@ -520,14 +530,34 @@ export namespace dto {
 	        this.jobId = source["jobId"];
 	        this.status = source["status"];
 	        this.triggeredBy = source["triggeredBy"];
+	        this.correlationId = source["correlationId"];
 	        this.sessionId = source["sessionId"];
 	        this.modelUsed = source["modelUsed"];
 	        this.durationMs = source["durationMs"];
 	        this.tokensUsed = source["tokensUsed"];
 	        this.result = source["result"];
 	        this.errorMessage = source["errorMessage"];
+	        this.injectedContext = source["injectedContext"];
 	        this.startedAt = source["startedAt"];
 	        this.finishedAt = source["finishedAt"];
+	    }
+	}
+	export class PathValidationResult {
+	    claudeConfigValid: boolean;
+	    claudeConfigError: string;
+	    mcpConfigValid: boolean;
+	    mcpConfigError: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PathValidationResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.claudeConfigValid = source["claudeConfigValid"];
+	        this.claudeConfigError = source["claudeConfigError"];
+	        this.mcpConfigValid = source["mcpConfigValid"];
+	        this.mcpConfigError = source["mcpConfigError"];
 	    }
 	}
 	export class RepoResponse {
@@ -802,6 +832,7 @@ export namespace dto {
 	    successPrompt: string;
 	    failurePrompt: string;
 	    metadataPrompt: string;
+	    triagePrompt: string;
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
@@ -836,6 +867,7 @@ export namespace dto {
 	        this.successPrompt = source["successPrompt"];
 	        this.failurePrompt = source["failurePrompt"];
 	        this.metadataPrompt = source["metadataPrompt"];
+	        this.triagePrompt = source["triagePrompt"];
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
@@ -847,6 +879,8 @@ export namespace dto {
 	export class UpdateWorkspaceRequest {
 	    id: string;
 	    name: string;
+	    claudeConfigPath: string;
+	    mcpConfigPath: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateWorkspaceRequest(source);
@@ -856,11 +890,15 @@ export namespace dto {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.claudeConfigPath = source["claudeConfigPath"];
+	        this.mcpConfigPath = source["mcpConfigPath"];
 	    }
 	}
 	export class WorkspaceResponse {
 	    id: string;
 	    name: string;
+	    claudeConfigPath: string;
+	    mcpConfigPath: string;
 	    createdAt: string;
 	    updatedAt: string;
 	
@@ -872,6 +910,8 @@ export namespace dto {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.claudeConfigPath = source["claudeConfigPath"];
+	        this.mcpConfigPath = source["mcpConfigPath"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
 	    }

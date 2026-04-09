@@ -9,6 +9,7 @@ type TabKey = "personality" | "access" | "boundaries" | "skills";
 
 interface Props {
   agent?: Agent;
+  workspaceId: string;
   onSubmit: (req: CreateAgentRequest | UpdateAgentRequest) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
   onCancel: () => void;
@@ -46,7 +47,7 @@ function agentToForm(agent: Agent): CreateAgentRequest {
 
 // --- Inline SVG icons ---
 
-function IconX({ size = 16, color = "#6B7280" }: { size?: number; color?: string }) {
+function IconX({ size = 16, color = "var(--q-fg-secondary)" }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
       <path d="M4 4l8 8M12 4l-8 8" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
@@ -54,7 +55,7 @@ function IconX({ size = 16, color = "#6B7280" }: { size?: number; color?: string
   );
 }
 
-function IconPlus({ size = 14, color = "#EF4444" }: { size?: number; color?: string }) {
+function IconPlus({ size = 14, color = "var(--q-error)" }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
       <path d="M7 2v10M2 7h10" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
@@ -62,7 +63,7 @@ function IconPlus({ size = 14, color = "#EF4444" }: { size?: number; color?: str
   );
 }
 
-function IconLock({ size = 12, color = "#6B7280" }: { size?: number; color?: string }) {
+function IconLock({ size = 12, color = "var(--q-fg-secondary)" }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 12 12" fill="none">
       <rect x="2" y="5" width="8" height="6" rx="1" stroke={color} strokeWidth="1.2" />
@@ -71,7 +72,7 @@ function IconLock({ size = 12, color = "#6B7280" }: { size?: number; color?: str
   );
 }
 
-function IconTrash({ size = 14, color = "#EF4444" }: { size?: number; color?: string }) {
+function IconTrash({ size = 14, color = "var(--q-error)" }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
       <path d="M2.5 4h9M5 4V2.5h4V4M3.5 4l.5 8h6l.5-8" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
@@ -90,7 +91,7 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
         width: 32,
         height: 16,
         borderRadius: 8,
-        backgroundColor: checked ? "#10B981" : "#2a2a2a",
+        backgroundColor: checked ? "var(--q-accent)" : "var(--q-border)",
         border: "none",
         cursor: "pointer",
         position: "relative",
@@ -103,7 +104,7 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
           width: 12,
           height: 12,
           borderRadius: 6,
-          backgroundColor: checked ? "#FAFAFA" : "#6B7280",
+          backgroundColor: checked ? "var(--q-fg)" : "var(--q-fg-secondary)",
           position: "absolute",
           top: 2,
           left: checked ? 18 : 2,
@@ -148,9 +149,9 @@ function MiniSelect({
         style={{
           width,
           height: 36,
-          backgroundColor: "#0A0A0A",
-          border: `1px solid ${open ? "#10B981" : "#2a2a2a"}`,
-          color: "#FAFAFA",
+          backgroundColor: "var(--q-bg)",
+          border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
+          color: "var(--q-fg)",
           fontSize: 11,
           fontFamily: "'JetBrains Mono', monospace",
           padding: "0 12px",
@@ -170,8 +171,8 @@ function MiniSelect({
             top: 40,
             left: 0,
             zIndex: 50,
-            backgroundColor: "#0A0A0A",
-            border: "1px solid #2a2a2a",
+            backgroundColor: "var(--q-bg)",
+            border: "1px solid var(--q-border)",
             width: "100%",
           }}
         >
@@ -190,19 +191,19 @@ function MiniSelect({
                 gap: 8,
                 fontFamily: "'JetBrains Mono', monospace",
                 fontSize: 11,
-                color: opt === value ? "#10B981" : "#D1D5DB",
-                backgroundColor: opt === value ? "#1F1F1F" : "transparent",
+                color: opt === value ? "var(--q-accent)" : "var(--q-fg-dimmed)",
+                backgroundColor: opt === value ? "var(--q-bg-hover)" : "transparent",
                 border: "none",
                 cursor: "pointer",
               }}
               onMouseEnter={(e) => {
-                if (opt !== value) e.currentTarget.style.backgroundColor = "#1F1F1F";
+                if (opt !== value) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
               }}
               onMouseLeave={(e) => {
                 if (opt !== value) e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              <span style={{ color: "#10B981", flexShrink: 0 }}>~</span>
+              <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
               <span>{opt}</span>
             </button>
           ))}
@@ -214,7 +215,7 @@ function MiniSelect({
 
 // --- Main component ---
 
-export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props) {
+export function CreateAgentModal({ agent, workspaceId, onSubmit, onDelete, onCancel }: Props) {
   const isEdit = !!agent;
   const [form, setForm] = useState<CreateAgentRequest>(
     agent ? agentToForm(agent) : buildDefaultForm()
@@ -232,14 +233,14 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
   const [availableSkills, setAvailableSkills] = useState<SkillInfo[]>([]);
 
   useEffect(() => {
-    api.listAvailableMcpServers().then((servers) => {
+    api.listAvailableMcpServers(workspaceId).then((servers) => {
       setMcpServers(servers ?? []);
     }).catch(() => {});
 
-    api.listAvailableSkills().then((skills) => {
+    api.listAvailableSkills(workspaceId).then((skills) => {
       setAvailableSkills(skills ?? []);
     }).catch(() => {});
-  }, []);
+  }, [workspaceId]);
 
   function update<K extends keyof CreateAgentRequest>(key: K, value: CreateAgentRequest[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -278,9 +279,9 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
   ];
 
   const inputStyle: React.CSSProperties = {
-    backgroundColor: "#0A0A0A",
-    border: "1px solid #2a2a2a",
-    color: "#FAFAFA",
+    backgroundColor: "var(--q-bg)",
+    border: "1px solid var(--q-border)",
+    color: "var(--q-fg)",
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 12,
     padding: "0 12px",
@@ -291,7 +292,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
   };
 
   const labelStyle: React.CSSProperties = {
-    color: "#6B7280",
+    color: "var(--q-fg-secondary)",
     fontSize: 10,
     fontFamily: "'JetBrains Mono', monospace",
     display: "block",
@@ -305,7 +306,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
     >
       <form
         onSubmit={handleSubmit}
@@ -313,8 +314,8 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
         style={{
           width: 720,
           maxHeight: "90vh",
-          backgroundColor: "#0A0A0A",
-          border: "1px solid #2a2a2a",
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
           fontFamily: "'JetBrains Mono', monospace",
         }}
       >
@@ -329,11 +330,11 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                 width: 8,
                 height: 8,
                 borderRadius: 4,
-                backgroundColor: "#10B981",
+                backgroundColor: "var(--q-accent)",
               }}
             />
-            <h2 style={{ color: "#FAFAFA", fontSize: 14, fontWeight: 700, margin: 0 }}>
-              <span style={{ color: "#10B981" }}>{">"}</span>{" "}
+            <h2 style={{ color: "var(--q-fg)", fontSize: 14, fontWeight: 700, margin: 0 }}>
+              <span style={{ color: "var(--q-accent)" }}>{">"}</span>{" "}
               {isEdit ? `edit_agent: ${agent!.name}` : "new_agent"}
             </h2>
           </div>
@@ -349,17 +350,17 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               alignItems: "center",
               justifyContent: "center",
             }}
-            onMouseEnter={(e) => (e.currentTarget.querySelector("svg path") as SVGPathElement | null)?.setAttribute("stroke", "#FAFAFA")}
-            onMouseLeave={(e) => (e.currentTarget.querySelector("svg path") as SVGPathElement | null)?.setAttribute("stroke", "#6B7280")}
+            onMouseEnter={(e) => (e.currentTarget.querySelector("svg path") as SVGPathElement | null)?.setAttribute("stroke", "var(--q-fg)")}
+            onMouseLeave={(e) => (e.currentTarget.querySelector("svg path") as SVGPathElement | null)?.setAttribute("stroke", "var(--q-fg-secondary)")}
           >
-            <IconX size={16} color="#6B7280" />
+            <IconX size={16} color="var(--q-fg-secondary)" />
           </button>
         </div>
 
         {/* tab bar - 36px */}
         <div
           className="flex px-8 shrink-0"
-          style={{ height: 36, borderBottom: "1px solid #2a2a2a" }}
+          style={{ height: 36, borderBottom: "1px solid var(--q-border)" }}
         >
           {tabs.map((tab) => (
             <button
@@ -369,12 +370,12 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               style={{
                 padding: "0 16px",
                 fontSize: 11,
-                color: activeTab === tab.key ? "#10B981" : "#6B7280",
+                color: activeTab === tab.key ? "var(--q-accent)" : "var(--q-fg-secondary)",
                 fontWeight: activeTab === tab.key ? 500 : 400,
                 fontFamily: "'JetBrains Mono', monospace",
                 background: "none",
                 border: "none",
-                borderBottom: activeTab === tab.key ? "2px solid #10B981" : "2px solid transparent",
+                borderBottom: activeTab === tab.key ? "2px solid var(--q-accent)" : "2px solid transparent",
                 marginBottom: -1,
                 cursor: "pointer",
                 textTransform: "lowercase",
@@ -400,7 +401,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                   style={{
                     width: 64,
                     height: 64,
-                    backgroundColor: form.color || "#10B981",
+                    backgroundColor: form.color || "var(--q-accent)",
                     borderRadius: 4,
                     flexShrink: 0,
                     display: "flex",
@@ -408,7 +409,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     justifyContent: "center",
                     fontSize: 24,
                     fontWeight: 700,
-                    color: "#0A0A0A",
+                    color: "var(--q-bg)",
                     fontFamily: "'JetBrains Mono', monospace",
                   }}
                 >
@@ -425,8 +426,8 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                       onChange={(e) => update("name", e.target.value)}
                       placeholder="agent-name"
                       style={inputStyle}
-                      onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                      onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                      onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                     />
                   </div>
 
@@ -444,7 +445,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                             height: 24,
                             borderRadius: 4,
                             backgroundColor: c,
-                            border: form.color === c ? "2px solid #FAFAFA" : "2px solid transparent",
+                            border: form.color === c ? "2px solid var(--q-fg)" : "2px solid transparent",
                             cursor: "pointer",
                             padding: 0,
                           }}
@@ -459,7 +460,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               <div>
                 <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
                   <span style={{ ...labelStyle, marginBottom: 0 }}>role</span>
-                  <span style={{ color: "#6B7280", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                     {form.role.length} / 500
                   </span>
                 </div>
@@ -474,8 +475,8 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     resize: "none",
                     padding: "8px 12px",
                   }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                 />
               </div>
 
@@ -483,7 +484,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               <div>
                 <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
                   <span style={{ ...labelStyle, marginBottom: 0 }}>goal</span>
-                  <span style={{ color: "#6B7280", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                     {form.goal.length} / 500
                   </span>
                 </div>
@@ -498,8 +499,8 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     resize: "none",
                     padding: "8px 12px",
                   }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                 />
               </div>
 
@@ -522,10 +523,10 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               {/* Autonomous mode toggle */}
               <div className="flex items-center justify-between">
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ color: "#FAFAFA", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
                     autonomous mode
                   </span>
-                  <span style={{ color: "#6B7280", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                     allow agent to run without manual approval for each action
                   </span>
                 </div>
@@ -536,13 +537,13 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               </div>
 
               {/* MCP Servers */}
-              <div style={{ borderTop: "1px solid #2a2a2a", paddingTop: 12, marginTop: 4 }}>
-                <span style={{ color: "#4B5563", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
+              <div style={{ borderTop: "1px solid var(--q-border)", paddingTop: 12, marginTop: 4 }}>
+                <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
                   # mcp servers
                 </span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 0, marginTop: 8 }}>
                   {mcpServers.length === 0 && (
-                    <div style={{ color: "#4B5563", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 0" }}>
+                    <div style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 0" }}>
                       // no mcp servers available
                     </div>
                   )}
@@ -552,10 +553,10 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                       className="flex items-center justify-between"
                       style={{
                         height: 36,
-                        borderBottom: "1px solid #1F1F1F",
+                        borderBottom: "1px solid var(--q-bg-hover)",
                       }}
                     >
-                      <span style={{ color: "#FAFAFA", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                      <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
                         {server}
                       </span>
                       <ToggleSwitch
@@ -570,14 +571,14 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               </div>
 
               {/* Environment Variables */}
-              <div style={{ borderTop: "1px solid #2a2a2a", paddingTop: 12, marginTop: 4 }}>
-                <span style={{ color: "#4B5563", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
+              <div style={{ borderTop: "1px solid var(--q-border)", paddingTop: 12, marginTop: 4 }}>
+                <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
                   # environment variables
                 </span>
                 <div
                   style={{
-                    border: "1px solid #2a2a2a",
-                    backgroundColor: "#0A0A0A",
+                    border: "1px solid var(--q-border)",
+                    backgroundColor: "var(--q-bg)",
                     maxHeight: 160,
                     overflowY: "auto",
                     marginTop: 8,
@@ -587,14 +588,14 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     <div
                       key={key}
                       className="flex items-center justify-between px-3"
-                      style={{ height: 32, borderBottom: "1px solid #1F1F1F" }}
+                      style={{ height: 32, borderBottom: "1px solid var(--q-bg-hover)" }}
                     >
                       <div className="flex items-center" style={{ gap: 8, flex: 1, minWidth: 0 }}>
-                        <span style={{ color: "#10B981", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
+                        <span style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
                           {key}
                         </span>
-                        <span style={{ color: "#6B7280", fontSize: 11 }}>=</span>
-                        <span style={{ color: "#FAFAFA", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span style={{ color: "var(--q-fg-secondary)", fontSize: 11 }}>=</span>
+                        <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {envValueVisible[key] ? val : "********"}
                         </span>
                       </div>
@@ -604,7 +605,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                           onClick={() => setEnvValueVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
                           style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
                         >
-                          <IconLock size={12} color={envValueVisible[key] ? "#10B981" : "#6B7280"} />
+                          <IconLock size={12} color={envValueVisible[key] ? "var(--q-accent)" : "var(--q-fg-secondary)"} />
                         </button>
                         <button
                           type="button"
@@ -615,13 +616,13 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                           }}
                           style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
                         >
-                          <IconX size={12} color="#6B7280" />
+                          <IconX size={12} color="var(--q-fg-secondary)" />
                         </button>
                       </div>
                     </div>
                   ))}
                   {Object.keys(form.envVariables).length === 0 && (
-                    <div style={{ color: "#4B5563", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 12px" }}>
+                    <div style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 12px" }}>
                       // no variables
                     </div>
                   )}
@@ -632,17 +633,17 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     onChange={(e) => setNewEnvKey(e.target.value)}
                     placeholder="KEY"
                     style={{ ...inputStyle, width: 120, height: 28, fontSize: 10 }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                   />
-                  <span style={{ color: "#6B7280", fontSize: 10 }}>=</span>
+                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>=</span>
                   <input
                     value={newEnvValue}
                     onChange={(e) => setNewEnvValue(e.target.value)}
                     placeholder="VALUE"
                     style={{ ...inputStyle, flex: 1, width: "auto", height: 28, fontSize: 10 }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                   />
                   <button
                     type="button"
@@ -655,7 +656,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     }}
                     style={{
                       fontSize: 10,
-                      color: "#10B981",
+                      color: "var(--q-accent)",
                       background: "none",
                       border: "none",
                       cursor: "pointer",
@@ -675,7 +676,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
           {activeTab === "boundaries" && (
             <>
               <div>
-                <span style={{ color: "#4B5563", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
+                <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
                   # anti-prompt rules
                 </span>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
@@ -690,8 +691,8 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                         }}
                         placeholder="do not..."
                         style={inputStyle}
-                        onFocus={(e) => (e.currentTarget.style.borderColor = "#10B981")}
-                        onBlur={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+                        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+                        onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                       />
                       <button
                         type="button"
@@ -710,7 +711,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                           flexShrink: 0,
                         }}
                       >
-                        <IconX size={14} color="#EF4444" />
+                        <IconX size={14} color="var(--q-error)" />
                       </button>
                     </div>
                   ))}
@@ -724,8 +725,8 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     width: "100%",
                     height: 36,
                     backgroundColor: "transparent",
-                    border: "1px dashed #EF4444",
-                    color: "#EF4444",
+                    border: "1px dashed var(--q-error)",
+                    color: "var(--q-error)",
                     fontSize: 11,
                     fontFamily: "'JetBrains Mono', monospace",
                     cursor: "pointer",
@@ -735,7 +736,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     gap: 6,
                   }}
                 >
-                  <IconPlus size={12} color="#EF4444" />
+                  <IconPlus size={12} color="var(--q-error)" />
                   add rule
                 </button>
               </div>
@@ -746,17 +747,17 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
           {activeTab === "skills" && (
             <>
               <div className="flex items-center justify-between">
-                <span style={{ color: "#FAFAFA", fontSize: 12, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
+                <span style={{ color: "var(--q-fg)", fontSize: 12, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
                   available skills
                 </span>
-                <span style={{ color: "#6B7280", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                   {enabledSkillsCount} of {totalSkillsCount} enabled
                 </span>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                 {availableSkills.length === 0 && (
-                  <div style={{ color: "#4B5563", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 0" }}>
+                  <div style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 0" }}>
                     // no skills available
                   </div>
                 )}
@@ -766,14 +767,14 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                     className="flex items-center justify-between"
                     style={{
                       height: 44,
-                      borderBottom: "1px solid #1F1F1F",
+                      borderBottom: "1px solid var(--q-bg-hover)",
                     }}
                   >
                     <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0, overflow: "hidden" }}>
-                      <span style={{ color: "#FAFAFA", fontSize: 11, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
+                      <span style={{ color: "var(--q-fg)", fontSize: 11, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
                         {skill.name}
                       </span>
-                      <span style={{ color: "#6B7280", fontSize: 9, fontFamily: "'JetBrains Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ color: "var(--q-fg-secondary)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {skill.filePath}
                       </span>
                     </div>
@@ -795,7 +796,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
           className="flex items-center px-8 shrink-0"
           style={{
             height: 64,
-            borderTop: "1px solid #2a2a2a",
+            borderTop: "1px solid var(--q-border)",
             justifyContent: "space-between",
           }}
         >
@@ -810,8 +811,8 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                   height: 36,
                   padding: "0 16px",
                   backgroundColor: "transparent",
-                  border: "1px solid #EF4444",
-                  color: "#EF4444",
+                  border: "1px solid var(--q-error)",
+                  color: "var(--q-error)",
                   fontSize: 11,
                   fontFamily: "'JetBrains Mono', monospace",
                   cursor: saving ? "not-allowed" : "pointer",
@@ -821,7 +822,7 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
                   opacity: saving ? 0.4 : 1,
                 }}
               >
-                <IconTrash size={12} color="#EF4444" />
+                <IconTrash size={12} color="var(--q-error)" />
                 delete
               </button>
             )}
@@ -835,15 +836,15 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               style={{
                 height: 36,
                 padding: "0 16px",
-                color: "#6B7280",
+                color: "var(--q-fg-secondary)",
                 background: "none",
                 border: "none",
                 cursor: "pointer",
                 fontSize: 11,
                 fontFamily: "'JetBrains Mono', monospace",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#FAFAFA")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#6B7280")}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
             >
               cancel
             </button>
@@ -853,8 +854,8 @@ export function CreateAgentModal({ agent, onSubmit, onDelete, onCancel }: Props)
               style={{
                 height: 36,
                 padding: "0 20px",
-                backgroundColor: "#10B981",
-                color: "#0A0A0A",
+                backgroundColor: "var(--q-accent)",
+                color: "var(--q-bg)",
                 fontWeight: 500,
                 border: "none",
                 cursor: !form.name.trim() || saving ? "not-allowed" : "pointer",

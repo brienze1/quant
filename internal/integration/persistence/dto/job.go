@@ -33,6 +33,7 @@ type JobRow struct {
 	SuccessPrompt       string
 	FailurePrompt       string
 	MetadataPrompt      string
+	TriagePrompt        string
 	Interpreter         string
 	ScriptContent       string
 	EnvVariables        string // JSON
@@ -87,6 +88,7 @@ func (r JobRow) ToEntity() entity.Job {
 		SuccessPrompt:       r.SuccessPrompt,
 		FailurePrompt:       r.FailurePrompt,
 		MetadataPrompt:      r.MetadataPrompt,
+		TriagePrompt:        r.TriagePrompt,
 		Interpreter:         r.Interpreter,
 		ScriptContent:       r.ScriptContent,
 		EnvVariables:        envVars,
@@ -150,6 +152,7 @@ func JobRowFromEntity(job entity.Job) JobRow {
 		SuccessPrompt:       job.SuccessPrompt,
 		FailurePrompt:       job.FailurePrompt,
 		MetadataPrompt:      job.MetadataPrompt,
+		TriagePrompt:        job.TriagePrompt,
 		Interpreter:         job.Interpreter,
 		ScriptContent:       job.ScriptContent,
 		EnvVariables:        string(envJSON),

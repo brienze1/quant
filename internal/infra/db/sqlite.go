@@ -173,6 +173,7 @@ func runMigrations(db *sql.DB) error {
 		status TEXT NOT NULL DEFAULT 'pending',
 		triggered_by TEXT,
 		session_id TEXT,
+		correlation_id TEXT NOT NULL DEFAULT '',
 		duration_ms INTEGER NOT NULL DEFAULT 0,
 		tokens_used INTEGER NOT NULL DEFAULT 0,
 		result TEXT NOT NULL DEFAULT '',
@@ -281,6 +282,11 @@ func runMigrations(db *sql.DB) error {
 		`ALTER TABLE jobs ADD COLUMN workspace_id TEXT DEFAULT 'default'`,
 		`ALTER TABLE agents ADD COLUMN workspace_id TEXT DEFAULT 'default'`,
 		`ALTER TABLE repos ADD COLUMN workspace_id TEXT DEFAULT 'default'`,
+		`ALTER TABLE workspaces ADD COLUMN claude_config_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE workspaces ADD COLUMN mcp_config_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE jobs ADD COLUMN triage_prompt TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE job_runs ADD COLUMN correlation_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE job_runs ADD COLUMN injected_context TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alterStatements {
 		// Ignore errors from ALTER TABLE since the column may already exist.

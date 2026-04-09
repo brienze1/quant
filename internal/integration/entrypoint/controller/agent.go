@@ -17,14 +17,16 @@ import (
 
 // agentController implements the intAdapter.AgentController interface.
 type agentController struct {
-	ctx          context.Context
-	agentManager appAdapter.AgentManager
+	ctx              context.Context
+	agentManager     appAdapter.AgentManager
+	workspaceManager appAdapter.WorkspaceManager
 }
 
 // NewAgentController creates a new Wails-bound agent controller.
-func NewAgentController(agentManager appAdapter.AgentManager) intAdapter.AgentController {
+func NewAgentController(agentManager appAdapter.AgentManager, workspaceManager appAdapter.WorkspaceManager) intAdapter.AgentController {
 	return &agentController{
-		agentManager: agentManager,
+		agentManager:     agentManager,
+		workspaceManager: workspaceManager,
 	}
 }
 
@@ -108,14 +110,47 @@ func (c *agentController) ListAgents() ([]dto.AgentResponse, error) {
 	return dto.AgentResponseListFromEntities(agents), nil
 }
 
-// ListAvailableSkills reads Claude skill files from ~/.claude/skills/.
-func (c *agentController) ListAvailableSkills() ([]dto.SkillInfo, error) {
+// resolveSkillsDir returns the skills directory for the given workspace,
+// falling back to ~/.claude/skills when the workspace has no custom path.
+// ClaudeConfigPath is the project root; .claude/skills is appended automatically.
+func (c *agentController) resolveSkillsDir(workspaceID string) string {
+	if workspaceID != "" {
+		ws, err := c.workspaceManager.GetWorkspace(workspaceID)
+		if err == nil && ws != nil && ws.ClaudeConfigPath != "" {
+			return filepath.Join(ws.ClaudeConfigPath, ".claude", "skills")
+		}
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude", "skills")
+}
+
+// resolveMcpConfigPath returns the .mcp.json path for the given workspace,
+// falling back to ~/.mcp.json when the workspace has no custom path.
+// McpConfigPath is the project root; .mcp.json is appended automatically.
+func (c *agentController) resolveMcpConfigPath(workspaceID string) string {
+	if workspaceID != "" {
+		ws, err := c.workspaceManager.GetWorkspace(workspaceID)
+		if err == nil && ws != nil && ws.McpConfigPath != "" {
+			return filepath.Join(ws.McpConfigPath, ".mcp.json")
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".mcp.json")
+}
+
+// ListAvailableSkills reads Claude skill files from the workspace's configured path or ~/.claude/skills/.
+func (c *agentController) ListAvailableSkills(workspaceID string) ([]dto.SkillInfo, error) {
+	skillsDir := c.resolveSkillsDir(workspaceID)
+	if skillsDir == "" {
 		return []dto.SkillInfo{}, nil
 	}
 
-	skillsDir := filepath.Join(home, ".claude", "skills")
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		return []dto.SkillInfo{}, nil
@@ -125,7 +160,6 @@ func (c *agentController) ListAvailableSkills() ([]dto.SkillInfo, error) {
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() {
-			// Check for SKILL.md inside directory-based skills
 			skillFile := filepath.Join(skillsDir, name, "SKILL.md")
 			if _, err := os.Stat(skillFile); err == nil {
 				skills = append(skills, dto.SkillInfo{
@@ -150,14 +184,13 @@ func (c *agentController) ListAvailableSkills() ([]dto.SkillInfo, error) {
 	return skills, nil
 }
 
-// ListAvailableMcpServers reads MCP server names from ~/.mcp.json.
-func (c *agentController) ListAvailableMcpServers() ([]string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
+// ListAvailableMcpServers reads MCP server names from the workspace's configured path or ~/.mcp.json.
+func (c *agentController) ListAvailableMcpServers(workspaceID string) ([]string, error) {
+	mcpPath := c.resolveMcpConfigPath(workspaceID)
+	if mcpPath == "" {
 		return []string{}, nil
 	}
 
-	mcpPath := filepath.Join(home, ".mcp.json")
 	data, err := os.ReadFile(mcpPath)
 	if err != nil {
 		return []string{}, nil

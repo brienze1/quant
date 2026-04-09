@@ -20,12 +20,12 @@ func NewWorkspacePersistence(db *sql.DB) adapter.WorkspacePersistence {
 	return &workspacePersistence{db: db}
 }
 
-const workspaceColumns = `id, name, created_at, updated_at`
+const workspaceColumns = `id, name, claude_config_path, mcp_config_path, created_at, updated_at`
 
 func scanWorkspaceRow(scanner interface{ Scan(...any) error }) (pdto.WorkspaceRow, error) {
 	var row pdto.WorkspaceRow
 	err := scanner.Scan(
-		&row.ID, &row.Name, &row.CreatedAt, &row.UpdatedAt,
+		&row.ID, &row.Name, &row.ClaudeConfigPath, &row.McpConfigPath, &row.CreatedAt, &row.UpdatedAt,
 	)
 	return row, err
 }
@@ -77,11 +77,11 @@ func (p *workspacePersistence) FindAllWorkspaces() ([]entity.Workspace, error) {
 func (p *workspacePersistence) SaveWorkspace(workspace entity.Workspace) error {
 	row := pdto.WorkspaceRowFromEntity(workspace)
 
-	query := `INSERT INTO workspaces (id, name, created_at, updated_at)
-		VALUES (?, ?, ?, ?)`
+	query := `INSERT INTO workspaces (id, name, claude_config_path, mcp_config_path, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`
 
 	_, err := p.db.Exec(query,
-		row.ID, row.Name, row.CreatedAt, row.UpdatedAt,
+		row.ID, row.Name, row.ClaudeConfigPath, row.McpConfigPath, row.CreatedAt, row.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save workspace: %w", err)
@@ -94,9 +94,9 @@ func (p *workspacePersistence) SaveWorkspace(workspace entity.Workspace) error {
 func (p *workspacePersistence) UpdateWorkspace(workspace entity.Workspace) error {
 	row := pdto.WorkspaceRowFromEntity(workspace)
 
-	query := `UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE workspaces SET name = ?, claude_config_path = ?, mcp_config_path = ?, updated_at = ? WHERE id = ?`
 
-	result, err := p.db.Exec(query, row.Name, row.UpdatedAt, row.ID)
+	result, err := p.db.Exec(query, row.Name, row.ClaudeConfigPath, row.McpConfigPath, row.UpdatedAt, row.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update workspace: %w", err)
 	}

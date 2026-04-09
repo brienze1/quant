@@ -16,6 +16,6 @@ type AgentController interface {
 	DeleteAgent(id string) error
 	GetAgent(id string) (*dto.AgentResponse, error)
 	ListAgents() ([]dto.AgentResponse, error)
-	ListAvailableSkills() ([]dto.SkillInfo, error)
-	ListAvailableMcpServers() ([]string, error)
+	ListAvailableSkills(workspaceID string) ([]dto.SkillInfo, error)
+	ListAvailableMcpServers(workspaceID string) ([]string, error)
 }

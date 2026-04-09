@@ -279,7 +279,7 @@ func (i *Injector) AgentManager() appAdapter.AgentManager {
 // AgentController returns the singleton AgentController instance.
 func (i *Injector) AgentController() intAdapter.AgentController {
 	if i.agentController == nil {
-		i.agentController = controller.NewAgentController(i.AgentManager())
+		i.agentController = controller.NewAgentController(i.AgentManager(), i.WorkspaceManager())
 	}
 	return i.agentController
 }

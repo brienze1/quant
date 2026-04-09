@@ -7,30 +7,46 @@ import (
 
 // CreateWorkspaceRequest represents the request payload for creating a new workspace.
 type CreateWorkspaceRequest struct {
-	Name string `json:"name"`
+	Name             string `json:"name"`
+	ClaudeConfigPath string `json:"claudeConfigPath"`
+	McpConfigPath    string `json:"mcpConfigPath"`
 }
 
 // UpdateWorkspaceRequest represents the request payload for updating an existing workspace.
 type UpdateWorkspaceRequest struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	ClaudeConfigPath string `json:"claudeConfigPath"`
+	McpConfigPath    string `json:"mcpConfigPath"`
 }
 
 // WorkspaceResponse represents the response payload for workspace data.
 type WorkspaceResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	ClaudeConfigPath string `json:"claudeConfigPath"`
+	McpConfigPath    string `json:"mcpConfigPath"`
+	CreatedAt        string `json:"createdAt"`
+	UpdatedAt        string `json:"updatedAt"`
+}
+
+// PathValidationResult contains the validation status for workspace config paths.
+type PathValidationResult struct {
+	ClaudeConfigValid bool   `json:"claudeConfigValid"`
+	ClaudeConfigError string `json:"claudeConfigError"`
+	McpConfigValid    bool   `json:"mcpConfigValid"`
+	McpConfigError    string `json:"mcpConfigError"`
 }
 
 // WorkspaceResponseFromEntity converts a domain entity to a WorkspaceResponse DTO.
 func WorkspaceResponseFromEntity(workspace entity.Workspace) WorkspaceResponse {
 	return WorkspaceResponse{
-		ID:        workspace.ID,
-		Name:      workspace.Name,
-		CreatedAt: workspace.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt: workspace.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:               workspace.ID,
+		Name:             workspace.Name,
+		ClaudeConfigPath: workspace.ClaudeConfigPath,
+		McpConfigPath:    workspace.McpConfigPath,
+		CreatedAt:        workspace.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:        workspace.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
 

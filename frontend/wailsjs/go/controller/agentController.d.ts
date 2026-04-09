@@ -11,9 +11,9 @@ export function GetAgent(arg1:string):Promise<dto.AgentResponse>;
 
 export function ListAgents():Promise<Array<dto.AgentResponse>>;
 
-export function ListAvailableMcpServers():Promise<Array<string>>;
+export function ListAvailableMcpServers(arg1:string):Promise<Array<string>>;
 
-export function ListAvailableSkills():Promise<Array<dto.SkillInfo>>;
+export function ListAvailableSkills(arg1:string):Promise<Array<dto.SkillInfo>>;
 
 export function OnShutdown(arg1:context.Context):Promise<void>;
 

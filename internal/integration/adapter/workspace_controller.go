@@ -16,4 +16,7 @@ type WorkspaceController interface {
 	DeleteWorkspace(id string) error
 	GetWorkspace(id string) (*dto.WorkspaceResponse, error)
 	ListWorkspaces() ([]dto.WorkspaceResponse, error)
+	BrowseClaudeConfigDir() (string, error)
+	BrowseMcpConfigFile() (string, error)
+	ValidatePaths(claudeRoot string, mcpRoot string) dto.PathValidationResult
 }
