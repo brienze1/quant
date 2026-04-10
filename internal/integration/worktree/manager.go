@@ -30,7 +30,21 @@ func NewWorktreeManager() adapter.WorktreeManager {
 
 // Create creates a new git worktree with the given branch name.
 // The worktree is stored in ~/.quant/worktrees/<repo>/<sanitized-branch-name>.
+// If a worktree for the branch already exists (created outside quant), it is reused.
 func (m *worktreeManager) Create(repoDir string, branchName string) (usecase.WorktreeInfo, error) {
+	// Check if a worktree for this branch already exists.
+	existing, err := m.List(repoDir)
+	if err == nil {
+		for _, wt := range existing {
+			if wt.Branch == branchName {
+				return usecase.WorktreeInfo{
+					Path:   wt.Path,
+					Branch: wt.Branch,
+				}, nil
+			}
+		}
+	}
+
 	// Sanitize branch name for use as directory name.
 	repoName := filepath.Base(repoDir)
 	dirName := strings.ReplaceAll(branchName, "/", "-")
