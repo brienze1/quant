@@ -18,10 +18,12 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
-      - name: Get latest version tag
+      - name: Get next version
         id: version
         run: |
-          LATEST=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName --jq '.[0].tagName // "v0.0.0"')
+          git fetch --tags
+          LATEST=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          LATEST="${LATEST:-v0.0.0}"
           echo "current=${LATEST}" >> $GITHUB_OUTPUT
 
           MAJOR=$(echo "$LATEST" | sed 's/v//' | cut -d. -f1)
@@ -29,13 +31,15 @@ jobs:
           PATCH=$(echo "$LATEST" | sed 's/v//' | cut -d. -f3)
           NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
           echo "next=${NEXT}" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "${{ steps.version.outputs.next }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.version.outputs.next }} already exists, skipping"
+            exit 0
+          fi
           git tag "${{ steps.version.outputs.next }}"
           git push origin "${{ steps.version.outputs.next }}"
 
