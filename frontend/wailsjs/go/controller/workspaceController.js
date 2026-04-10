@@ -18,6 +18,10 @@ export function DeleteWorkspace(arg1) {
   return window['go']['controller']['workspaceController']['DeleteWorkspace'](arg1);
 }
 
+export function GetCurrentWorkspace() {
+  return window['go']['controller']['workspaceController']['GetCurrentWorkspace']();
+}
+
 export function GetWorkspace(arg1) {
   return window['go']['controller']['workspaceController']['GetWorkspace'](arg1);
 }
@@ -32,6 +36,10 @@ export function OnShutdown(arg1) {
 
 export function OnStartup(arg1) {
   return window['go']['controller']['workspaceController']['OnStartup'](arg1);
+}
+
+export function SetCurrentWorkspace(arg1) {
+  return window['go']['controller']['workspaceController']['SetCurrentWorkspace'](arg1);
 }
 
 export function UpdateWorkspace(arg1) {

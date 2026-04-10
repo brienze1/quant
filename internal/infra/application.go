@@ -107,7 +107,7 @@ func disableQuantInSettingsLocal(settingsPath string) {
 // injectQuantMCP registers the Quant MCP server so all Claude accounts can discover it.
 // 1. Adds the "quant" server entry to ~/.mcp.json (the global server registry).
 // 2. Enables it in every detected Claude config dir's settings.local.json.
-func injectQuantMCP() {
+func injectQuantMCP(port int) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return
@@ -129,7 +129,7 @@ func injectQuantMCP() {
 	}
 	mcpServers["quant"] = map[string]interface{}{
 		"type": "http",
-		"url":  "http://localhost:52945/mcp",
+		"url":  fmt.Sprintf("http://localhost:%d/mcp", port),
 	}
 	config["mcpServers"] = mcpServers
 	out, err := json.MarshalIndent(config, "", "  ")
@@ -218,14 +218,22 @@ func Run(assets embed.FS) error {
 
 	// Start MCP server for external AI tools to manage jobs.
 	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager())
-	go func() {
-		if err := mcpServer.Start(); err != nil {
-			fmt.Printf("MCP server error: %v\n", err)
-		}
-	}()
+	mcpPort := mcpServer.Port()
+	fmt.Printf("[quant] MCP server on port %d → http://localhost:%d/mcp\n", mcpPort, mcpPort)
+	if mcpPort != quantmcp.DefaultPort {
+		fmt.Printf("[quant] Default port %d was busy, using %d instead\n", quantmcp.DefaultPort, mcpPort)
+	}
+	if err := mcpServer.Start(); err != nil {
+		fmt.Printf("MCP server error: %v\n", err)
+	}
 
 	// Inject Quant MCP into Claude settings so sessions auto-discover it.
-	injectQuantMCP()
+	// Skip injection when QUANT_SKIP_MCP_INJECT=1 (e.g. running a second instance for testing).
+	if os.Getenv("QUANT_SKIP_MCP_INJECT") != "1" {
+		injectQuantMCP(mcpPort)
+	} else {
+		fmt.Println("[quant] Skipping MCP injection (QUANT_SKIP_MCP_INJECT=1)")
+	}
 
 	// Start job scheduler for recurring/one-time scheduled jobs.
 	jobScheduler := injector.JobScheduler()
@@ -263,7 +271,9 @@ func Run(assets embed.FS) error {
 			jobGroupCtrl.OnShutdown(ctx)
 			jobScheduler.Stop()
 			_ = mcpServer.Stop()
-			removeQuantMCP()
+			if os.Getenv("QUANT_SKIP_MCP_INJECT") != "1" {
+				removeQuantMCP()
+			}
 		},
 		Bind: []interface{}{
 			sessionCtrl,

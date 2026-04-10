@@ -297,10 +297,11 @@ func (i *Injector) WorkspaceManager() appAdapter.WorkspaceManager {
 	if i.workspaceManager == nil {
 		wp := i.WorkspacePersistence()
 		i.workspaceManager = service.NewWorkspaceManagerService(
-			wp, // FindWorkspace
-			wp, // SaveWorkspace
-			wp, // UpdateWorkspace
-			wp, // DeleteWorkspace
+			wp,                 // FindWorkspace
+			wp,                 // SaveWorkspace
+			wp,                 // UpdateWorkspace
+			wp,                 // DeleteWorkspace
+			i.ConfigManager(),  // ConfigManager
 		)
 	}
 	return i.workspaceManager

@@ -408,6 +408,14 @@ export function listWorkspaces(): Promise<Workspace[]> {
   return callGo(PKG, WORKSPACE_CTRL, "ListWorkspaces");
 }
 
+export function getCurrentWorkspace(): Promise<Workspace> {
+  return callGo(PKG, WORKSPACE_CTRL, "GetCurrentWorkspace");
+}
+
+export function setCurrentWorkspace(id: string): Promise<void> {
+  return callGo(PKG, WORKSPACE_CTRL, "SetCurrentWorkspace", id);
+}
+
 export function browseClaudeConfigDir(): Promise<string> {
   return callGo(PKG, WORKSPACE_CTRL, "BrowseClaudeConfigDir");
 }

@@ -91,6 +91,21 @@ func (c *workspaceController) ListWorkspaces() ([]dto.WorkspaceResponse, error) 
 	return dto.WorkspaceResponseListFromEntities(workspaces), nil
 }
 
+// GetCurrentWorkspace returns the currently active workspace.
+func (c *workspaceController) GetCurrentWorkspace() (*dto.WorkspaceResponse, error) {
+	workspace, err := c.workspaceManager.GetCurrentWorkspace()
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.WorkspaceResponseFromEntityPtr(workspace), nil
+}
+
+// SetCurrentWorkspace sets the currently active workspace by ID.
+func (c *workspaceController) SetCurrentWorkspace(id string) error {
+	return c.workspaceManager.SetCurrentWorkspace(id)
+}
+
 // BrowseClaudeConfigDir opens a native directory picker for selecting a .claude config directory.
 func (c *workspaceController) BrowseClaudeConfigDir() (string, error) {
 	path, err := wailsRuntime.OpenDirectoryDialog(c.ctx, wailsRuntime.OpenDialogOptions{

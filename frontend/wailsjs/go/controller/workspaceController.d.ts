@@ -11,6 +11,8 @@ export function CreateWorkspace(arg1:dto.CreateWorkspaceRequest):Promise<dto.Wor
 
 export function DeleteWorkspace(arg1:string):Promise<void>;
 
+export function GetCurrentWorkspace():Promise<dto.WorkspaceResponse>;
+
 export function GetWorkspace(arg1:string):Promise<dto.WorkspaceResponse>;
 
 export function ListWorkspaces():Promise<Array<dto.WorkspaceResponse>>;
@@ -18,6 +20,8 @@ export function ListWorkspaces():Promise<Array<dto.WorkspaceResponse>>;
 export function OnShutdown(arg1:context.Context):Promise<void>;
 
 export function OnStartup(arg1:context.Context):Promise<void>;
+
+export function SetCurrentWorkspace(arg1:string):Promise<void>;
 
 export function UpdateWorkspace(arg1:dto.UpdateWorkspaceRequest):Promise<dto.WorkspaceResponse>;
 
