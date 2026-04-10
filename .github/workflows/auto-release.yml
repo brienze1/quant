@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Get latest version tag
         id: version
