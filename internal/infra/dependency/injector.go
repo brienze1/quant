@@ -165,6 +165,7 @@ func (i *Injector) ActionLogger() appAdapter.ActionLogger {
 func (i *Injector) SessionManager() appAdapter.SessionManager {
 	if i.sessionManager == nil {
 		sp := i.SessionPersistence()
+		cp := i.ConfigPersistence()
 		i.sessionManager = service.NewSessionManagerService(
 			sp, // FindSession
 			sp, // SaveSession
@@ -173,6 +174,8 @@ func (i *Injector) SessionManager() appAdapter.SessionManager {
 			i.ProcessManager(),
 			i.RepoPersistence(), // FindRepo
 			i.WorktreeManager(), // ManageWorktree
+			cp,                  // LoadConfig
+			cp,                  // SaveConfig
 		)
 	}
 	return i.sessionManager

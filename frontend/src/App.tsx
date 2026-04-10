@@ -263,7 +263,17 @@ function App() {
   }, [fetchShortcuts, fetchJobs, fetchAgents, fetchWorkspaces, fetchJobGroups, fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
 
   useEffect(() => {
-    loadAll();
+    loadAll().then(async () => {
+      // Restore the last active session from persisted config
+      try {
+        const cfg = await api.getConfig();
+        if (cfg.activeSessionId) {
+          handleOpenTab(cfg.activeSessionId);
+        }
+      } catch (err) {
+        console.error("failed to restore active session:", err);
+      }
+    });
     // Set up Quanti directory (writes CLAUDE.md, memory files, runs background consolidation)
     // convID starts empty — first message creates a new Claude conversation,
     // then the quanti:session event gives us the real conversation ID for --resume
@@ -274,7 +284,7 @@ function App() {
         return api.startAssistantSession(model);
       })
       .catch((err) => console.error("failed to start quanti:", err));
-  }, [loadAll]);
+  }, [loadAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // Persist active workspace to localStorage and reload data
