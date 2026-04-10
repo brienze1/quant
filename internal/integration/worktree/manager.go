@@ -37,10 +37,19 @@ func (m *worktreeManager) Create(repoDir string, branchName string) (usecase.Wor
 	if err == nil {
 		for _, wt := range existing {
 			if wt.Branch == branchName {
-				return usecase.WorktreeInfo{
-					Path:   wt.Path,
-					Branch: wt.Branch,
-				}, nil
+				// Verify the worktree directory still exists on disk.
+				if _, statErr := os.Stat(wt.Path); statErr == nil {
+					return usecase.WorktreeInfo{
+						Path:   wt.Path,
+						Branch: wt.Branch,
+					}, nil
+				}
+				// Directory was deleted — prune the stale git reference
+				// so we can create a fresh worktree below.
+				pruneCmd := exec.Command("git", "worktree", "prune")
+				pruneCmd.Dir = repoDir
+				_ = pruneCmd.Run()
+				break
 			}
 		}
 	}

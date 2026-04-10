@@ -107,3 +107,42 @@ func TestCreate_ExistingBranchNoWorktree(t *testing.T) {
 		t.Errorf("expected branch %q, got %q", branchName, info.Branch)
 	}
 }
+
+func TestCreate_StaleWorktreePrunedAndRecreated(t *testing.T) {
+	repoDir := initTestRepo(t)
+	branchName := "stale-wt-branch"
+
+	// Create a worktree externally, then delete its directory (simulating manual rm).
+	externalPath := filepath.Join(t.TempDir(), "external-wt")
+	cmd := exec.Command("git", "worktree", "add", "-b", branchName, externalPath)
+	cmd.Dir = repoDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to create external worktree: %s: %s", err, out)
+	}
+	if err := os.RemoveAll(externalPath); err != nil {
+		t.Fatalf("failed to remove worktree dir: %v", err)
+	}
+
+	// Create should detect the stale reference, prune it, and create a fresh worktree.
+	baseDir := t.TempDir()
+	mgr := &worktreeManager{baseDir: baseDir}
+	info, err := mgr.Create(repoDir, branchName)
+	if err != nil {
+		t.Fatalf("Create should prune stale worktree and recreate, got error: %v", err)
+	}
+
+	if info.Branch != branchName {
+		t.Errorf("expected branch %q, got %q", branchName, info.Branch)
+	}
+
+	// Should be in quant's default location, not the old external path.
+	expectedPath := filepath.Join(baseDir, filepath.Base(repoDir), branchName)
+	if info.Path != expectedPath {
+		t.Errorf("expected new path %q, got %q", expectedPath, info.Path)
+	}
+
+	// Verify the new worktree actually exists on disk.
+	if _, err := os.Stat(info.Path); os.IsNotExist(err) {
+		t.Error("new worktree directory was not created")
+	}
+}
