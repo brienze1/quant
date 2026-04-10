@@ -1465,6 +1465,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               {renderKeyValue("task_prompt", selectedJob.prompt)}
               {renderKeyValue("success_criteria", selectedJob.successPrompt)}
               {renderKeyValue("failure_criteria", selectedJob.failurePrompt)}
+              {renderKeyValue("triage_prompt", selectedJob.triagePrompt)}
               {renderKeyValue("metadata_prompt", selectedJob.metadataPrompt)}
             </>)}
           </>
