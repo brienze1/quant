@@ -45,6 +45,9 @@ type Config struct {
 	ScrollbackLines int     `json:"scrollbackLines"`
 	NewLineKey      string  `json:"newLineKey"`
 
+	// Workspace
+	CurrentWorkspaceID string `json:"currentWorkspaceId"`
+
 	// Claude CLI
 	CliBinaryPath    string            `json:"cliBinaryPath"`
 	ExtraCliArgs     string            `json:"extraCliArgs"`
@@ -92,6 +95,9 @@ func NewDefaultConfig() Config {
 		CursorBlink:     true,
 		ScrollbackLines: 10000,
 		NewLineKey:      "backslash+enter",
+
+		// Workspace
+		CurrentWorkspaceID: "default",
 
 		// Claude CLI
 		CliBinaryPath:    "claude",

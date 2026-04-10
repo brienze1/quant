@@ -10,4 +10,6 @@ type WorkspaceManager interface {
 	DeleteWorkspace(id string) error
 	GetWorkspace(id string) (*entity.Workspace, error)
 	ListWorkspaces() ([]entity.Workspace, error)
+	GetCurrentWorkspace() (*entity.Workspace, error)
+	SetCurrentWorkspace(id string) error
 }

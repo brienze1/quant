@@ -18,6 +18,7 @@ type workspaceManagerService struct {
 	saveWorkspace   usecase.SaveWorkspace
 	updateWorkspace usecase.UpdateWorkspace
 	deleteWorkspace usecase.DeleteWorkspace
+	configManager   adapter.ConfigManager
 }
 
 // NewWorkspaceManagerService creates a new workspace manager service.
@@ -26,12 +27,14 @@ func NewWorkspaceManagerService(
 	saveWorkspace usecase.SaveWorkspace,
 	updateWorkspace usecase.UpdateWorkspace,
 	deleteWorkspace usecase.DeleteWorkspace,
+	configManager adapter.ConfigManager,
 ) adapter.WorkspaceManager {
 	return &workspaceManagerService{
 		findWorkspace:   findWorkspace,
 		saveWorkspace:   saveWorkspace,
 		updateWorkspace: updateWorkspace,
 		deleteWorkspace: deleteWorkspace,
+		configManager:   configManager,
 	}
 }
 
@@ -82,4 +85,51 @@ func (s *workspaceManagerService) GetWorkspace(id string) (*entity.Workspace, er
 // ListWorkspaces retrieves all workspaces.
 func (s *workspaceManagerService) ListWorkspaces() ([]entity.Workspace, error) {
 	return s.findWorkspace.FindAllWorkspaces()
+}
+
+// GetCurrentWorkspace returns the currently active workspace.
+func (s *workspaceManagerService) GetCurrentWorkspace() (*entity.Workspace, error) {
+	cfg, err := s.configManager.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	wsID := cfg.CurrentWorkspaceID
+	if wsID == "" {
+		wsID = "default"
+	}
+
+	ws, err := s.findWorkspace.FindWorkspaceByID(wsID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find workspace: %w", err)
+	}
+	if ws == nil {
+		return nil, fmt.Errorf("current workspace not found: %s", wsID)
+	}
+
+	return ws, nil
+}
+
+// SetCurrentWorkspace sets the currently active workspace by ID.
+func (s *workspaceManagerService) SetCurrentWorkspace(id string) error {
+	// Verify workspace exists
+	ws, err := s.findWorkspace.FindWorkspaceByID(id)
+	if err != nil {
+		return fmt.Errorf("failed to find workspace: %w", err)
+	}
+	if ws == nil {
+		return fmt.Errorf("workspace not found: %s", id)
+	}
+
+	cfg, err := s.configManager.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	cfg.CurrentWorkspaceID = id
+	if err := s.configManager.SaveConfig(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return nil
 }

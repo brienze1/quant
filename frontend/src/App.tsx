@@ -281,6 +281,9 @@ function App() {
   const prevWorkspaceId = useRef(activeWorkspaceId);
   useEffect(() => {
     localStorage.setItem("quant:activeWorkspaceId", activeWorkspaceId);
+    api.setCurrentWorkspace(activeWorkspaceId).catch((err) =>
+      console.error("failed to sync active workspace to backend:", err)
+    );
 
     // Save current tabs for the previous workspace
     if (prevWorkspaceId.current !== activeWorkspaceId) {

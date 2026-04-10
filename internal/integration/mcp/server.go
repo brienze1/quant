@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,9 @@ import (
 	"quant/internal/domain/entity"
 )
 
+// DefaultPort is the preferred MCP server port.
+const DefaultPort = 52945
+
 // QuantMCPServer wraps an MCP server that exposes job, agent, session, workspace, and repo management tools.
 type QuantMCPServer struct {
 	jobManager       appAdapter.JobManager
@@ -28,9 +32,12 @@ type QuantMCPServer struct {
 	repoManager      appAdapter.RepoManager
 	jobGroupManager  appAdapter.JobGroupManager
 	httpServer       *http.Server
+	listener         net.Listener
+	port             int
 }
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
+// It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
 func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
@@ -50,17 +57,46 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", streamable)
 
+	// Find an available port starting from the default.
+	var listener net.Listener
+	var port int
+	for p := DefaultPort; p < DefaultPort+10; p++ {
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
+		if err == nil {
+			listener = ln
+			port = p
+			break
+		}
+	}
+	if listener == nil {
+		// Fallback: let the OS pick any available port.
+		ln, err := net.Listen("tcp", ":0")
+		if err == nil {
+			listener = ln
+			port = ln.Addr().(*net.TCPAddr).Port
+		}
+	}
+
+	s.listener = listener
+	s.port = port
 	s.httpServer = &http.Server{
-		Addr:    ":52945",
 		Handler: mux,
 	}
 
 	return s
 }
 
-// Start begins listening for MCP requests in a background goroutine.
+// Port returns the actual port the MCP server is bound to.
+func (s *QuantMCPServer) Port() int {
+	return s.port
+}
+
+// Start begins serving MCP requests on the pre-bound listener.
 func (s *QuantMCPServer) Start() error {
-	go s.httpServer.ListenAndServe()
+	if s.listener == nil {
+		return fmt.Errorf("no listener available — could not bind to any port")
+	}
+	go s.httpServer.Serve(s.listener)
 	return nil
 }
 
@@ -120,6 +156,7 @@ Returns the created job object with the generated ID. Use this ID for run_job, u
 			mcp.WithString("name", mcp.Required(), mcp.Description("Unique job name (e.g. health-check, deploy-staging, code-review-bot). Shown on canvas nodes")),
 			mcp.WithString("description", mcp.Description("What the job does — shown in the canvas UI tooltip and job details")),
 			mcp.WithString("type", mcp.Required(), mcp.Description("'claude' for Claude CLI sessions, 'bash' for shell scripts")),
+			mcp.WithString("workspaceId", mcp.Required(), mcp.Description("Workspace ID where this job will be created. Use get_current_workspace to retrieve the active workspace ID")),
 			mcp.WithString("workingDirectory", mcp.Description("Working directory (supports ~/path). Leave empty for home dir. This is where Claude or the script runs")),
 			// Schedule
 			mcp.WithBoolean("scheduleEnabled", mcp.Description("Enable scheduled execution. False = manual/trigger only. Default: false")),
@@ -170,6 +207,7 @@ Common workflows:
 - Add env vars: update_job(id, envVariables='{"KEY":"value"}')
 - Disable bypass: update_job(id, allowBypass=false)`),
 			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to update (get from list_jobs)")),
+			mcp.WithString("workspaceId", mcp.Description("Workspace ID. Use get_current_workspace to retrieve the active workspace ID")),
 			mcp.WithString("name", mcp.Description("Job name")),
 			mcp.WithString("description", mcp.Description("Job description")),
 			mcp.WithString("type", mcp.Description("'claude' or 'bash'")),
@@ -667,6 +705,21 @@ Returns the created session object with generated ID. The session starts in 'idl
 	// -----------------------------------------------------------------------
 
 	mcpServer.AddTool(
+		mcp.NewTool("get_current_workspace",
+			mcp.WithDescription(`Returns the currently active workspace ID and name. Use this to get the workspaceId before creating or managing jobs.`),
+		),
+		s.handleGetCurrentWorkspace,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("set_current_workspace",
+			mcp.WithDescription(`Set the currently active workspace. This persists the selection so get_current_workspace returns the correct workspace.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Workspace ID to set as current (get from list_workspaces)")),
+		),
+		s.handleSetCurrentWorkspace,
+	)
+
+	mcpServer.AddTool(
 		mcp.NewTool("list_workspaces",
 			mcp.WithDescription(`List all workspaces. Returns an array of workspace objects with id, name, and timestamps. Workspaces are visual groupings for organizing sessions, jobs, and agents.`),
 		),
@@ -876,10 +929,16 @@ func (s *QuantMCPServer) handleGetJob(_ context.Context, request mcp.CallToolReq
 func (s *QuantMCPServer) handleCreateJob(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
+	workspaceID, err := requiredString(request, "workspaceId")
+	if err != nil {
+		return mcp.NewToolResultError("workspaceId is required — use get_current_workspace to retrieve it"), nil
+	}
+
 	job := entity.Job{
 		Name:                stringArg(args, "name"),
 		Description:         stringArg(args, "description"),
 		Type:                stringArg(args, "type"),
+		WorkspaceID:         workspaceID,
 		WorkingDirectory:    stringArg(args, "workingDirectory"),
 		ScheduleEnabled:     boolArg(args, "scheduleEnabled"),
 		ScheduleType:        stringArg(args, "scheduleType"),
@@ -936,6 +995,9 @@ func (s *QuantMCPServer) handleUpdateJob(_ context.Context, request mcp.CallTool
 	}
 
 	// Merge provided fields onto existing job.
+	if v, ok := args["workspaceId"]; ok {
+		existing.WorkspaceID, _ = v.(string)
+	}
 	if v, ok := args["name"]; ok {
 		existing.Name = v.(string)
 	}
@@ -1836,6 +1898,33 @@ func (s *QuantMCPServer) handleRenameSession(_ context.Context, request mcp.Call
 // Workspace handlers
 // ---------------------------------------------------------------------------
 
+func (s *QuantMCPServer) handleGetCurrentWorkspace(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	workspace, err := s.workspaceManager.GetCurrentWorkspace()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(workspaceToMap(workspace))
+}
+
+func (s *QuantMCPServer) handleSetCurrentWorkspace(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.workspaceManager.SetCurrentWorkspace(id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	workspace, err := s.workspaceManager.GetWorkspace(id)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(workspaceToMap(workspace))
+}
+
 func (s *QuantMCPServer) handleListWorkspaces(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	workspaces, err := s.workspaceManager.ListWorkspaces()
 	if err != nil {
@@ -2278,6 +2367,7 @@ func jobToMap(job *entity.Job) map[string]any {
 		"name":                job.Name,
 		"description":         job.Description,
 		"type":                job.Type,
+		"workspaceId":         job.WorkspaceID,
 		"workingDirectory":    job.WorkingDirectory,
 		"scheduleEnabled":     job.ScheduleEnabled,
 		"scheduleType":        job.ScheduleType,
