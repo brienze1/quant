@@ -17,6 +17,7 @@ type JobManager interface {
 	CancelRun(runID string) error
 	GetRun(runID string) (*entity.JobRun, error)
 	ListRunsByJob(jobID string) ([]entity.JobRun, error)
+	ListRunsByJobPaginated(jobID string, limit, offset int) ([]entity.JobRun, error)
 	GetRunOutput(runID string) (string, error)
 	ResumeJob(runID string, extraContext string) (*entity.JobRun, error)
 	AdvancePipeline(runID string, targetJobID string, extraContext string) (*entity.JobRun, error)

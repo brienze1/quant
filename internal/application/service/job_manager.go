@@ -1423,6 +1423,16 @@ func (s *jobManagerService) ListRunsByJob(jobID string) ([]entity.JobRun, error)
 	return runs, nil
 }
 
+// ListRunsByJobPaginated returns a page of runs for a given job.
+func (s *jobManagerService) ListRunsByJobPaginated(jobID string, limit, offset int) ([]entity.JobRun, error) {
+	runs, err := s.findJobRun.FindJobRunsByJobIDPaginated(jobID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list runs (paginated): %w", err)
+	}
+
+	return runs, nil
+}
+
 // GetRunOutput returns the full output of a job run from the log file.
 func (s *jobManagerService) GetRunOutput(runID string) (string, error) {
 	run, err := s.findJobRun.FindJobRunByID(runID)

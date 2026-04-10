@@ -328,6 +328,10 @@ export function listRunsByJob(jobId: string): Promise<JobRun[]> {
   return callGo(PKG, JOB_CTRL, "ListRunsByJob", jobId);
 }
 
+export function listRunsByJobPaginated(jobId: string, limit: number, offset: number): Promise<JobRun[]> {
+  return callGo(PKG, JOB_CTRL, "ListRunsByJobPaginated", jobId, limit, offset);
+}
+
 export function getRunOutput(runId: string): Promise<string> {
   return callGo(PKG, JOB_CTRL, "GetRunOutput", runId);
 }

@@ -413,12 +413,12 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     let cancelled = false;
     const fetchExecutions = async () => {
       try {
-        // Fetch runs for all jobs in one pass
+        // Fetch recent runs for all jobs using paginated API
         const allRuns: JobRun[] = [];
         await Promise.all(
           jobs.map(async (job) => {
             try {
-              const jobRuns = await api.listRunsByJob(job.id);
+              const jobRuns = await api.listRunsByJobPaginated(job.id, 100, 0);
               if (!cancelled) allRuns.push(...jobRuns);
             } catch { /* ignore */ }
           })
@@ -549,10 +549,15 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const [selectedExecByGroup, setSelectedExecByGroup] = useState<Record<string, string>>({});
   const userExplicitlySelectedAllByGroup = useRef<Record<string, boolean>>({});
   const [openDropdownGroup, setOpenDropdownGroup] = useState<string | null>(null);
+  // Infinite scroll pagination for execution dropdowns
+  const EXEC_PAGE_SIZE = 20;
+  const [visibleExecCount, setVisibleExecCount] = useState<Record<string, number>>({});
 
   // Close execution dropdown on outside click
   useEffect(() => {
     if (!openDropdownGroup) return;
+    // Reset visible count to first page when opening a dropdown
+    setVisibleExecCount((prev) => ({ ...prev, [openDropdownGroup]: EXEC_PAGE_SIZE }));
     const handle = () => setOpenDropdownGroup(null);
     const timer = setTimeout(() => document.addEventListener("click", handle), 0);
     return () => { clearTimeout(timer); document.removeEventListener("click", handle); };
@@ -2619,7 +2624,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         <span>{selectedExec ? `${selectedExec.correlationId.slice(0, 8)} · ${relativeTime(selectedExec.startedAt)}` : "select"}</span>
                         <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>▾</span>
                       </button>
-                      {isDropdownOpen && (
+                      {isDropdownOpen && (() => {
+                        const visibleCount = visibleExecCount[group.id] ?? EXEC_PAGE_SIZE;
+                        const visibleExecs = groupExecs.slice(0, visibleCount);
+                        const hasMore = groupExecs.length > visibleCount;
+                        return (
                         <div
                           onClick={(e) => e.stopPropagation()}
                           style={{
@@ -2628,6 +2637,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                             right: 0,
                             marginTop: 4,
                             minWidth: 220,
+                            maxHeight: 320,
+                            display: "flex",
+                            flexDirection: "column",
                             backgroundColor: "var(--q-bg-elevated)",
                             border: "1px solid var(--q-border)",
                             borderRadius: 6,
@@ -2637,6 +2649,15 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                           }}
                         >
                           <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--q-fg-muted)", fontWeight: 500 }}>select execution</div>
+                          <div
+                            style={{ overflowY: "auto", flex: 1 }}
+                            onScroll={(e) => {
+                              const el = e.currentTarget;
+                              if (hasMore && el.scrollTop + el.clientHeight >= el.scrollHeight - 10) {
+                                setVisibleExecCount((prev) => ({ ...prev, [group.id]: (prev[group.id] ?? EXEC_PAGE_SIZE) + EXEC_PAGE_SIZE }));
+                              }
+                            }}
+                          >
                           <div
                             onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, [group.id]: true }; setSelectedExecByGroup((prev) => ({ ...prev, [group.id]: "" })); setOpenDropdownGroup(null); }}
                             style={{
@@ -2649,7 +2670,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                           >
                             all
                           </div>
-                          {groupExecs.map((exec) => (
+                          {visibleExecs.map((exec) => (
                             <div
                               key={exec.correlationId}
                               onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, [group.id]: false }; setSelectedExecByGroup((prev) => ({ ...prev, [group.id]: exec.correlationId })); setOpenDropdownGroup(null); }}
@@ -2666,8 +2687,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                               <span style={{ marginLeft: "auto", color: statusColor(exec.status as any), fontSize: 9 }}>{exec.status}</span>
                             </div>
                           ))}
+                          {hasMore && (
+                            <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--q-fg-muted)", textAlign: "center" }}>scroll for more…</div>
+                          )}
+                          </div>
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -2731,16 +2757,30 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       <span>{selectedExec ? `${selectedExec.correlationId.slice(0, 8)} · ${relativeTime(selectedExec.startedAt)}` : "select"}</span>
                       <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>▾</span>
                     </button>
-                    {isDropdownOpen && (
+                    {isDropdownOpen && (() => {
+                      const visibleCount = visibleExecCount["ungrouped"] ?? EXEC_PAGE_SIZE;
+                      const visibleExecs = ungroupedExecs.slice(0, visibleCount);
+                      const hasMore = ungroupedExecs.length > visibleCount;
+                      return (
                       <div
                         onClick={(e) => e.stopPropagation()}
                         style={{
                           position: "absolute", top: "100%", right: 0, marginTop: 4, minWidth: 220,
+                          maxHeight: 320, display: "flex", flexDirection: "column",
                           backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border)",
                           borderRadius: 6, padding: "4px 0", zIndex: 30, boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
                         }}
                       >
                         <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--q-fg-muted)", fontWeight: 500 }}>select execution</div>
+                        <div
+                          style={{ overflowY: "auto", flex: 1 }}
+                          onScroll={(e) => {
+                            const el = e.currentTarget;
+                            if (hasMore && el.scrollTop + el.clientHeight >= el.scrollHeight - 10) {
+                              setVisibleExecCount((prev) => ({ ...prev, ungrouped: (prev["ungrouped"] ?? EXEC_PAGE_SIZE) + EXEC_PAGE_SIZE }));
+                            }
+                          }}
+                        >
                         <div
                           onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, ungrouped: true }; setSelectedExecByGroup((prev) => ({ ...prev, ungrouped: "" })); setOpenDropdownGroup(null); }}
                           style={{
@@ -2753,7 +2793,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         >
                           all
                         </div>
-                        {ungroupedExecs.map((exec) => (
+                        {visibleExecs.map((exec) => (
                           <div
                             key={exec.correlationId}
                             onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, ungrouped: false }; setSelectedExecByGroup((prev) => ({ ...prev, ungrouped: exec.correlationId })); setOpenDropdownGroup(null); }}
@@ -2770,8 +2810,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                             <span style={{ marginLeft: "auto", color: statusColor(exec.status as any), fontSize: 9 }}>{exec.status}</span>
                           </div>
                         ))}
+                        {hasMore && (
+                          <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--q-fg-muted)", textAlign: "center" }}>scroll for more…</div>
+                        )}
+                        </div>
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
