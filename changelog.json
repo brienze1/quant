@@ -1,6 +1,74 @@
 {
   "entries": [
     {
+      "version": "v3.1.7",
+      "date": "2026-04-11",
+      "changes": {
+        "fixes": [
+          "remove persistent cyan border from triage prompt textarea"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.6",
+      "date": "2026-04-11",
+      "changes": {
+        "features": [
+          "add run_job_with_context MCP tool for injecting arbitrary trigger context"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.5",
+      "date": "2026-04-11",
+      "changes": {
+        "fixes": [
+          "restore canvas positions and minimap on workspace switch"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.4",
+      "date": "2026-04-10",
+      "changes": {
+        "features": [
+          "require workspaceId on job methods, add get_current_workspace MCP tool"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.3",
+      "date": "2026-04-10",
+      "changes": {
+        "fixes": [
+          "prune stale worktree when directory was deleted"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.2",
+      "date": "2026-04-10",
+      "changes": {
+        "fixes": [
+          "use git tags instead of releases for version bump",
+          "use PAT for tag push so release workflow triggers"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.1",
+      "date": "2026-04-10",
+      "changes": {
+        "fixes": [
+          "reuse existing worktree instead of failing on duplicate branch",
+          "scope pipeline execution tracking per job group"
+        ],
+        "internal": [
+          "auto-release patch on PR merge to main"
+        ]
+      }
+    },
+    {
       "version": "v3.1.0",
       "date": "2026-04-09",
       "changes": {

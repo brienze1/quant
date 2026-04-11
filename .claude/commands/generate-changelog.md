@@ -1,6 +1,7 @@
 Regenerate the `changelog.json` file from git history. This should be run before each release.
 
 Steps:
+0. **Always fetch tags first**: `git fetch --tags` to ensure all remote tags are available locally
 1. List all git version tags sorted descending: `git tag --sort=-version:refname`
 2. For each consecutive pair of tags, get commits between them: `git log <prev-tag>..<tag> --oneline --no-merges`
 3. For the oldest tag, get all commits up to that tag: `git log <tag> --oneline --no-merges`
