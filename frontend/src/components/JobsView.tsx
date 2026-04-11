@@ -404,16 +404,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   }, [resizingSidebar]);
 
   // Pipeline execution types and data: scoped per job group
+  // Consolidated polling: single fetch cycle handles both execution data and running status detection
   type PipelineExec = { correlationId: string; status: string; startedAt: string; runs: JobRun[] };
+  const prevRunningRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (jobs.length === 0) {
       setExecutionsByGroup({});
+      setRunningJobIds(new Set());
       return;
     }
     let cancelled = false;
     const fetchExecutions = async () => {
       try {
-        // Fetch recent runs for all jobs using paginated API
+        // Fetch recent runs for all jobs using paginated API (single batch for both execution + running detection)
         const allRuns: JobRun[] = [];
         await Promise.all(
           jobs.map(async (job) => {
@@ -425,14 +428,47 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         );
         if (cancelled) return;
 
-        // Index runs by jobId for quick lookup
+        // Detect running jobs from fetched data (replaces separate checkRunning poll)
+        const running = new Set<string>();
         const runsByJobId = new Map<string, JobRun[]>();
         for (const run of allRuns) {
-          if (!run.correlationId) continue;
           const arr = runsByJobId.get(run.jobId) || [];
           arr.push(run);
           runsByJobId.set(run.jobId, arr);
+          if (run.status === "running") running.add(run.jobId);
         }
+
+        // Detect jobs that just stopped running — flash edges based on outcome
+        const prevRunning = prevRunningRef.current;
+        for (const jobId of prevRunning) {
+          if (!running.has(jobId)) {
+            const job = jobs.find((j) => j.id === jobId);
+            if (job) {
+              const jobRuns = runsByJobId.get(jobId) ?? [];
+              const latestRun = jobRuns.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
+              if (latestRun) {
+                const edgeKeys = new Set<string>();
+                if (latestRun.status === "success") {
+                  for (const targetId of (job.onSuccess ?? [])) edgeKeys.add(`${jobId}->${targetId}`);
+                } else if (latestRun.status === "failed") {
+                  for (const targetId of (job.onFailure ?? [])) edgeKeys.add(`${jobId}->${targetId}`);
+                }
+                if (edgeKeys.size > 0) {
+                  setFlashingEdges((prev) => new Set([...prev, ...edgeKeys]));
+                  setTimeout(() => {
+                    setFlashingEdges((prev) => {
+                      const next = new Set(prev);
+                      for (const k of edgeKeys) next.delete(k);
+                      return next;
+                    });
+                  }, 1500);
+                }
+              }
+            }
+          }
+        }
+        prevRunningRef.current = running;
+        setRunningJobIds(running);
 
         // Build correlationId -> runs map
         const byCorr = new Map<string, JobRun[]>();
@@ -483,7 +519,6 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         for (const [corrId, corrRuns] of byCorr) {
           const ungroupedRuns = corrRuns.filter((r) => ungroupedJobSet.has(r.jobId));
           if (ungroupedRuns.length === 0) continue;
-          // Only include if it's an actual pipeline (multi-job or triggered)
           const distinctJobs = new Set(ungroupedRuns.map((r) => r.jobId));
           const hasTriggered = ungroupedRuns.some((r) => r.triggeredBy);
           if (distinctJobs.size >= 2 || hasTriggered) {
@@ -509,9 +544,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       } catch { /* ignore */ }
     };
     fetchExecutions();
+    // Poll at 5s when active jobs, 30s otherwise for background sync
     const hasActive = Object.values(executionsByGroup).some((execs) => execs.some((e) => e.status === "running" || e.status === "waiting"));
-    const interval = hasActive ? setInterval(fetchExecutions, 5000) : undefined;
-    return () => { cancelled = true; if (interval) clearInterval(interval); };
+    const interval = setInterval(fetchExecutions, hasActive ? 5000 : 30000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [jobGroups, jobs]);
 
   // Close trigger dropdown on outside click
@@ -660,10 +696,16 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const jobComponentMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
     const jobIds = new Set(jobs.map((j) => j.id));
+    // Build undirected adjacency list (forward + reverse) in O(N)
     const adj = new Map<string, string[]>();
     for (const job of jobs) {
+      if (!adj.has(job.id)) adj.set(job.id, []);
       const targets = [...(job.onSuccess ?? []), ...(job.onFailure ?? [])].filter((t) => jobIds.has(t));
-      adj.set(job.id, targets);
+      for (const t of targets) {
+        adj.get(job.id)!.push(t);
+        if (!adj.has(t)) adj.set(t, []);
+        adj.get(t)!.push(job.id);
+      }
     }
     const visited = new Set<string>();
     for (const job of jobs) {
@@ -676,17 +718,35 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         visited.add(id);
         component.add(id);
         for (const t of adj.get(id) ?? []) if (!visited.has(t)) stack.push(t);
-        // Also check reverse edges
-        for (const j of jobs) {
-          if ([...(j.onSuccess ?? []), ...(j.onFailure ?? [])].includes(id) && !visited.has(j.id)) {
-            stack.push(j.id);
-          }
-        }
       }
       for (const id of component) map.set(id, component);
     }
     return map;
   }, [jobs]);
+
+  // Precompute per-node group mapping and execution data (avoids O(N*G) lookups in render loop)
+  const jobGroupMap = useMemo(() => {
+    const map = new Map<string, string>(); // jobId -> groupId
+    for (const group of jobGroups) {
+      for (const jid of group.jobIds) map.set(jid, group.id);
+    }
+    return map;
+  }, [jobGroups]);
+
+  const nodeExecData = useMemo(() => {
+    const data = new Map<string, { groupKey: string; execRun: JobRun | undefined; isInAnyExec: boolean }>();
+    for (const job of jobs) {
+      const groupKey = jobGroupMap.get(job.id) ?? "ungrouped";
+      const execId = selectedExecByGroup[groupKey] ?? "";
+      const groupExecs = executionsByGroup[groupKey] ?? [];
+      const execRun = execId
+        ? groupExecs.find((e) => e.correlationId === execId)?.runs.filter((r) => r.jobId === job.id).slice(-1)[0]
+        : undefined;
+      const isInAnyExec = !execRun && execId ? groupExecs.some((e) => e.runs.some((r) => r.jobId === job.id)) : false;
+      data.set(job.id, { groupKey, execRun, isInAnyExec });
+    }
+    return data;
+  }, [jobs, jobGroupMap, selectedExecByGroup, executionsByGroup]);
 
   // Clear stale positions immediately on workspace switch so minimap doesn't vanish
   useEffect(() => {
@@ -812,7 +872,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     return () => { cancelled = true; };
   }, [selectedRun?.correlationId, selectedRun?.status]);
 
-  // Animate wave on selected edge with smooth amplitude transitions
+  // Refs for edge deletion keyboard handler (avoids stale closures)
   const selectedEdgeRef = useRef(selectedEdge);
   selectedEdgeRef.current = selectedEdge;
   const jobsRef = useRef(jobs);
@@ -820,31 +880,30 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const edgeDeleteHoverRef = useRef(edgeDeleteHover);
   edgeDeleteHoverRef.current = edgeDeleteHover;
 
+  // Animate wave on selected edge — only runs RAF loop when an edge is selected
   useEffect(() => {
+    if (!selectedEdge) {
+      // Reset wave state when no edge selected
+      waveAmplitude.current = 0;
+      waveSpeed.current = 0;
+      return;
+    }
+
     let running = true;
+    lastFrameTime.current = Date.now();
     const animate = () => {
       if (!running) return;
 
-      // Determine target values based on current state
-      const hasEdge = !!selectedEdgeRef.current;
       const isScared = edgeDeleteHoverRef.current;
+      const targetAmp = isScared ? 5 : 2;
+      const targetSpeed = isScared ? 0.008 : 0.003;
+      const targetFreq = isScared ? 5 : 3;
 
-      const targetAmp = !hasEdge ? 0 : isScared ? 5 : 2;
-      const targetSpeed = !hasEdge ? 0 : isScared ? 0.008 : 0.003;
-      const targetFreq = !hasEdge ? 3 : isScared ? 5 : 3;
-
-      // Smoothly lerp towards targets (0.08 = smooth, higher = faster transition)
       const lerpRate = 0.08;
       waveAmplitude.current += (targetAmp - waveAmplitude.current) * lerpRate;
       waveSpeed.current += (targetSpeed - waveSpeed.current) * lerpRate;
       waveFreq.current += (targetFreq - waveFreq.current) * lerpRate;
 
-      // Snap to zero when very close
-      if (Math.abs(waveAmplitude.current) < 0.05 && targetAmp === 0) {
-        waveAmplitude.current = 0;
-      }
-
-      // Accumulate phase based on speed (not absolute time) — only re-render when visibly animating
       const now = Date.now();
       const dt = now - lastFrameTime.current;
       lastFrameTime.current = now;
@@ -859,7 +918,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       running = false;
       cancelAnimationFrame(waveAnimRef.current);
     };
-  }, []);
+  }, [selectedEdge]);
 
   // Refresh jobs list periodically so canvas stays in sync with external changes (MCP, scheduler)
   useEffect(() => {
@@ -868,68 +927,6 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     }, 10000);
     return () => clearInterval(interval);
   }, [onRefreshJobs]);
-
-  // Poll for running jobs on the canvas and detect trigger firings
-  const prevRunningRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (jobs.length === 0) return;
-
-    const checkRunning = async () => {
-      const running = new Set<string>();
-      for (const job of jobs) {
-        try {
-          const jobRuns = await api.listRunsByJob(job.id);
-          if (jobRuns?.some((r) => r.status === "running")) {
-            running.add(job.id);
-          }
-        } catch { /* ignore */ }
-      }
-
-      // Detect jobs that just stopped running — flash only the trigger edges that match the outcome
-      const prevRunning = prevRunningRef.current;
-      for (const jobId of prevRunning) {
-        if (!running.has(jobId)) {
-          const job = jobs.find((j) => j.id === jobId);
-          if (job) {
-            // Check the latest run's actual status to determine which edges fired
-            try {
-              const latestRuns = await api.listRunsByJob(jobId);
-              const latestRun = latestRuns?.[0];
-              if (latestRun) {
-                const edgeKeys = new Set<string>();
-                if (latestRun.status === "success") {
-                  for (const targetId of (job.onSuccess ?? [])) {
-                    edgeKeys.add(`${jobId}->${targetId}`);
-                  }
-                } else if (latestRun.status === "failed") {
-                  for (const targetId of (job.onFailure ?? [])) {
-                    edgeKeys.add(`${jobId}->${targetId}`);
-                  }
-                }
-                if (edgeKeys.size > 0) {
-                  setFlashingEdges((prev) => new Set([...prev, ...edgeKeys]));
-                  setTimeout(() => {
-                    setFlashingEdges((prev) => {
-                      const next = new Set(prev);
-                      for (const k of edgeKeys) next.delete(k);
-                      return next;
-                    });
-                  }, 1500);
-                }
-              }
-            } catch { /* ignore */ }
-          }
-        }
-      }
-
-      prevRunningRef.current = running;
-      setRunningJobIds(running);
-    };
-
-    checkRunning();
-    const interval = setInterval(checkRunning, 5000);
-    return () => clearInterval(interval);
-  }, [jobs]);
 
 
   async function handleRunNow() {
@@ -1055,57 +1052,66 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     };
   }, [canvasModalJobId]);
 
-  // Global mouse handlers for drag, pan, and selection box
+  // Global mouse handlers for drag, pan, and selection box — stabilized with refs
+  const draggingRef = useRef(dragging);
+  draggingRef.current = dragging;
+  const panningRef = useRef(panning);
+  panningRef.current = panning;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const nodePositionsRef = useRef(nodePositions);
+  nodePositionsRef.current = nodePositions;
+  const canvasOffsetRef = useRef(canvasOffset);
+  canvasOffsetRef.current = canvasOffset;
+
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
-      if (dragging) {
-        const dx = (e.clientX - dragging.startX) / zoom;
-        const dy = (e.clientY - dragging.startY) / zoom;
+      const currentDragging = draggingRef.current;
+      const currentPanning = panningRef.current;
+      const currentZoom = zoomRef.current;
+      const currentOffset = canvasOffsetRef.current;
+
+      if (currentDragging) {
+        const dx = (e.clientX - currentDragging.startX) / currentZoom;
+        const dy = (e.clientY - currentDragging.startY) / currentZoom;
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
           didDrag.current = true;
           setIsDraggingNode(true);
         }
         setNodePositions((prev) => ({
           ...prev,
-          [dragging.id]: { x: dragging.nodeStartX + dx, y: dragging.nodeStartY + dy },
+          [currentDragging.id]: { x: currentDragging.nodeStartX + dx, y: currentDragging.nodeStartY + dy },
         }));
-        // Check if hovering over delete zone
         if (deleteZoneRef.current) {
           const rect = deleteZoneRef.current.getBoundingClientRect();
           const over = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
           setDragDeleteHover(over);
         }
       }
-      if (panning) {
-        const dx = e.clientX - panning.startX;
-        const dy = e.clientY - panning.startY;
-        setCanvasOffset({ x: panning.offsetStartX + dx, y: panning.offsetStartY + dy });
+      if (currentPanning) {
+        const dx = e.clientX - currentPanning.startX;
+        const dy = e.clientY - currentPanning.startY;
+        setCanvasOffset({ x: currentPanning.offsetStartX + dx, y: currentPanning.offsetStartY + dy });
       }
-      // Selection box drag
       if (selectionBoxRef.current) {
         const rect = canvasRef.current?.getBoundingClientRect();
         if (rect) {
-          const worldX = (e.clientX - rect.left - canvasOffset.x) / zoom;
-          const worldY = (e.clientY - rect.top - canvasOffset.y) / zoom;
+          const worldX = (e.clientX - rect.left - currentOffset.x) / currentZoom;
+          const worldY = (e.clientY - rect.top - currentOffset.y) / currentZoom;
           const sb = selectionBoxRef.current;
-          const updated = { ...sb, currentX: worldX, currentY: worldY };
-          setSelectionBox(updated);
+          setSelectionBox({ ...sb, currentX: worldX, currentY: worldY });
 
-          // Compute which jobs intersect the selection rect
           const boxMinX = Math.min(sb.startX, worldX);
           const boxMaxX = Math.max(sb.startX, worldX);
           const boxMinY = Math.min(sb.startY, worldY);
           const boxMaxY = Math.max(sb.startY, worldY);
 
+          const currentPositions = nodePositionsRef.current;
           const selected = new Set<string>();
-          for (const job of jobs) {
-            const pos = nodePositions[job.id];
+          for (const job of jobsRef.current) {
+            const pos = currentPositions[job.id];
             if (!pos) continue;
-            const nodeMinX = pos.x;
-            const nodeMaxX = pos.x + NODE_W;
-            const nodeMinY = pos.y;
-            const nodeMaxY = pos.y + NODE_H;
-            if (nodeMaxX >= boxMinX && nodeMinX <= boxMaxX && nodeMaxY >= boxMinY && nodeMinY <= boxMaxY) {
+            if (pos.x + NODE_W >= boxMinX && pos.x <= boxMaxX && pos.y + NODE_H >= boxMinY && pos.y <= boxMaxY) {
               selected.add(job.id);
             }
           }
@@ -1114,14 +1120,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       }
     }
     function onMouseUp(e: MouseEvent) {
-      if (dragging) {
-        // Check if dropped on delete zone
+      const currentDragging = draggingRef.current;
+      if (currentDragging) {
         if (deleteZoneRef.current && didDrag.current) {
           const rect = deleteZoneRef.current.getBoundingClientRect();
           const over = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
           if (over) {
-            const jobId = dragging.id;
-            api.deleteJob(jobId).then(() => {
+            api.deleteJob(currentDragging.id).then(() => {
               onRefreshJobs();
             }).catch((err) => console.error("failed to delete job:", err));
           }
@@ -1134,15 +1139,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           return prev;
         });
       }
-      if (panning) {
+      if (panningRef.current) {
         setPanning(null);
       }
-      // Finalize selection box
       if (selectionBoxRef.current) {
         const sb = selectionBoxRef.current;
         const dx = Math.abs(sb.currentX - sb.startX);
         const dy = Math.abs(sb.currentY - sb.startY);
-        // If it was just a click (no significant drag), clear selection
         if (dx < 5 && dy < 5) {
           setSelectedJobIds(new Set());
         }
@@ -1155,7 +1158,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [dragging, panning, zoom, jobs, nodePositions, canvasOffset]);
+  }, []); // Stable — reads from refs, never needs to re-attach
 
   async function handleNodeClick(jobId: string) {
     if (!connectingMode) return;
@@ -1902,14 +1905,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     const points: string[] = [];
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      // Base bezier curve position (cubic)
       const mt = 1 - t;
       const bx = mt*mt*mt*sx + 3*mt*mt*t*cx1 + 3*mt*t*t*cx2 + t*t*t*tx;
       const by = mt*mt*mt*sy + 3*mt*mt*t*cy1 + 3*mt*t*t*cy2 + t*t*t*ty;
-      // Sine wave perpendicular to the curve, fading at endpoints (rope fixed at ends)
-      const envelope = Math.sin(t * Math.PI); // 0 at ends, 1 at middle
+      const envelope = Math.sin(t * Math.PI);
       const wave = Math.sin(t * Math.PI * frequency + time) * amplitude * envelope;
-      // Calculate normal direction (perpendicular to tangent)
       const dt = 0.01;
       const t2 = Math.min(t + dt, 1);
       const mt2 = 1 - t2;
@@ -1918,7 +1918,6 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       const dx = bx2 - bx;
       const dy = by2 - by;
       const len = Math.sqrt(dx*dx + dy*dy) || 1;
-      // Normal is perpendicular to tangent
       const nx = -dy / len;
       const ny = dx / len;
       const px = bx + nx * wave;
@@ -2014,16 +2013,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         let edgeOpacity = 1;
         let defaultStroke = edgeColor;
         if (hoveredGroupId && !isSelected && !isFlashing) {
-          const groupJobIds = jobGroups.find((g) => g.id === hoveredGroupId)?.jobIds ?? [];
-          const srcInGroup = groupJobIds.includes(job.id);
-          const tgtInGroup = groupJobIds.includes(targetId);
+          const srcInGroup = jobGroupMap.get(job.id) === hoveredGroupId;
+          const tgtInGroup = jobGroupMap.get(targetId) === hoveredGroupId;
           if (!srcInGroup && !tgtInGroup) { edgeOpacity = 0.06; defaultStroke = "var(--q-fg-muted)"; }
         } else if (hoverConnectedNodes && !isSelected && !isFlashing) {
           if (!isHoverRelevant) { edgeOpacity = 0.06; defaultStroke = "var(--q-fg-muted)"; }
         } else if (!isSelected && !isFlashing) {
           // Execution view: dim edges to unreached nodes (scoped per group)
-          const edgeGroup = jobGroups.find((g) => g.jobIds.includes(job.id));
-          const edgeGroupKey = edgeGroup?.id ?? "ungrouped";
+          const edgeGroupKey = jobGroupMap.get(job.id) ?? "ungrouped";
           const edgeExecId = selectedExecByGroup[edgeGroupKey] ?? "";
           if (edgeExecId) {
             const edgeGroupExecs = executionsByGroup[edgeGroupKey] ?? [];
@@ -2842,7 +2839,25 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             );
           })()}
 
-          {jobs.map((job) => {
+          {/* Viewport-virtualized node rendering: only render visible nodes + margin */}
+          {jobs.filter((job) => {
+            const pos = nodePositions[job.id];
+            if (!pos) return true; // render unpositioned nodes so they get laid out
+            const rect = canvasRef.current?.getBoundingClientRect();
+            if (!rect) return true;
+            // Convert node world coords to screen coords
+            const screenX = pos.x * zoom + canvasOffset.x;
+            const screenY = pos.y * zoom + canvasOffset.y;
+            const screenW = NODE_W * zoom;
+            const screenH = (NODE_H + 60) * zoom; // extra for waiting warning box
+            const margin = 100; // render margin for smooth scrolling
+            return (
+              screenX + screenW + margin >= 0 &&
+              screenX - margin <= rect.width &&
+              screenY + screenH + margin >= 0 &&
+              screenY - margin <= rect.height
+            );
+          }).map((job) => {
             const pos = nodePositions[job.id] ?? { x: 0, y: 0 };
             const isSelected = job.id === canvasModalJobId;
             const isMultiSelected = selectedJobIds.has(job.id);
@@ -2850,7 +2865,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const isHovered = hoveredNodeId === job.id;
             const isRunningGlobal = runningJobIds.has(job.id);
             const isDraggingThis = dragging?.id === job.id && isDraggingNode;
-            const isInHoveredGroup = hoveredGroupId ? (jobGroups.find((g) => g.id === hoveredGroupId)?.jobIds.includes(job.id) ?? false) : false;
+            const isInHoveredGroup = hoveredGroupId ? (jobGroupMap.get(job.id) === hoveredGroupId) : false;
             let borderColor = "var(--q-border)";
             if (isDraggingThis && dragDeleteHover) borderColor = "var(--q-error)";
             else if (isDraggingThis) borderColor = "var(--q-fg)";
@@ -2860,14 +2875,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             else if (isConnectSource) borderColor = connectingMode?.type === "success" ? "var(--q-accent)" : "var(--q-error)";
             else if (connectingMode && isHovered) borderColor = connectingMode.type === "success" ? "var(--q-accent)" : "var(--q-error)";
 
-            // Pipeline execution overlay — scoped to this job's group
-            const nodeGroup = jobGroups.find((g) => g.jobIds.includes(job.id));
-            const nodeGroupKey = nodeGroup?.id ?? "ungrouped";
+            // Pipeline execution overlay — from precomputed data
+            const ned = nodeExecData.get(job.id);
+            const nodeGroupKey = ned?.groupKey ?? "ungrouped";
             const nodeGroupExecId = selectedExecByGroup[nodeGroupKey] ?? "";
-            const nodeGroupExecs = executionsByGroup[nodeGroupKey] ?? [];
-            const execRun = nodeGroupExecId
-              ? nodeGroupExecs.find((e) => e.correlationId === nodeGroupExecId)?.runs.filter((r) => r.jobId === job.id).slice(-1)[0]
-              : undefined;
+            const execRun = ned?.execRun;
             // Scope running indicator to selected execution within group
             const isRunning = nodeGroupExecId ? (execRun?.status === "running" || execRun?.status === "pending") : isRunningGlobal;
             let borderThickness = 1;
@@ -2875,9 +2887,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               borderColor = statusColor(execRun.status as any);
               if (execRun.status === "waiting") borderThickness = 2;
             } else if (nodeGroupExecId && !execRun && !isDraggingThis && !isSelected && !isMultiSelected && !connectingMode) {
-              // Only mute border for jobs that are actually part of a pipeline in this group
-              // For ungrouped: only if the job appears in any ungrouped execution's runs
-              const isInAnyExec = nodeGroupExecs.some((e) => e.runs.some((r) => r.jobId === job.id));
+              const isInAnyExec = ned?.isInAnyExec ?? false;
               if (isInAnyExec) borderColor = "var(--q-fg-muted)";
             }
 
