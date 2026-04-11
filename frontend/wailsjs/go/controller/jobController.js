@@ -42,6 +42,10 @@ export function ListRunsByJob(arg1) {
   return window['go']['controller']['jobController']['ListRunsByJob'](arg1);
 }
 
+export function ListRunsByJobPaginated(arg1, arg2, arg3) {
+  return window['go']['controller']['jobController']['ListRunsByJobPaginated'](arg1, arg2, arg3);
+}
+
 export function OnShutdown(arg1) {
   return window['go']['controller']['jobController']['OnShutdown'](arg1);
 }
