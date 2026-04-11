@@ -18,7 +18,8 @@ import (
 
 // Injector holds singleton instances and provides lazy initialization.
 type Injector struct {
-	db *sql.DB
+	db            *sql.DB
+	changelogData []byte
 
 	agentPersistence     intAdapter.AgentPersistence
 	agentManager         appAdapter.AgentManager
@@ -45,6 +46,7 @@ type Injector struct {
 	actionController     intAdapter.ActionController
 	sessionController    intAdapter.SessionController
 	configController     intAdapter.ConfigController
+	changelogController  intAdapter.ChangelogController
 	workspacePersistence intAdapter.WorkspacePersistence
 	workspaceManager     appAdapter.WorkspaceManager
 	workspaceController  intAdapter.WorkspaceController
@@ -54,9 +56,10 @@ type Injector struct {
 }
 
 // NewInjector creates a new dependency injector with the given database connection.
-func NewInjector(db *sql.DB) *Injector {
+func NewInjector(db *sql.DB, changelogData []byte) *Injector {
 	return &Injector{
-		db: db,
+		db:            db,
+		changelogData: changelogData,
 	}
 }
 
@@ -392,4 +395,12 @@ func (i *Injector) JobGroupController() intAdapter.JobGroupController {
 		i.jobGroupController = controller.NewJobGroupController(i.JobGroupManager())
 	}
 	return i.jobGroupController
+}
+
+// ChangelogController returns the singleton ChangelogController instance.
+func (i *Injector) ChangelogController() intAdapter.ChangelogController {
+	if i.changelogController == nil {
+		i.changelogController = controller.NewChangelogController(i.changelogData)
+	}
+	return i.changelogController
 }

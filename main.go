@@ -10,8 +10,11 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed changelog.json
+var changelogData []byte
+
 func main() {
-	err := infra.Run(assets)
+	err := infra.Run(assets, changelogData)
 	if err != nil {
 		log.Fatal(err)
 	}

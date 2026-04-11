@@ -11,6 +11,7 @@ import type {
   SkillInfo,
   Workspace,
   JobGroup,
+  Changelog,
   CreateRepoRequest,
   CreateTaskRequest,
   CreateSessionRequest,
@@ -426,4 +427,16 @@ export function browseMcpConfigFile(): Promise<string> {
 
 export function validateWorkspacePaths(claudeRoot: string, mcpRoot: string): Promise<PathValidationResult> {
   return callGo(PKG, WORKSPACE_CTRL, "ValidatePaths", claudeRoot, mcpRoot);
+}
+
+// --- Changelog ---
+
+const CHANGELOG_CTRL = "changelogController";
+
+export function getChangelog(): Promise<Changelog> {
+  return callGo(PKG, CHANGELOG_CTRL, "GetChangelog");
+}
+
+export function getVersion(): Promise<string> {
+  return callGo(PKG, CHANGELOG_CTRL, "GetVersion");
 }

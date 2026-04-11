@@ -234,6 +234,24 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correl
 	return &run, nil
 }
 
+// RunJobWithContext starts a new run for a job, injecting arbitrary context into its prompt.
+// The context string is prepended to the job's prompt in the same format as trigger context,
+// so existing jobs that parse TASK_IDENTIFIER= etc. work without modification.
+func (s *jobManagerService) RunJobWithContext(jobID string, context string) (*entity.JobRun, error) {
+	run, err := s.RunJob(jobID, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if context != "" {
+		s.mu.Lock()
+		s.triggerCtx[run.ID] = context
+		s.mu.Unlock()
+	}
+
+	return run, nil
+}
+
 // RerunJob creates a new run for a job, preserving the trigger context from a previous run.
 // It looks up the original run's triggeredBy parent and rebuilds the same context injection.
 func (s *jobManagerService) RerunJob(jobID string, originalRunID string) (*entity.JobRun, error) {
