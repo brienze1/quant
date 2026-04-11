@@ -213,6 +213,8 @@ export interface Config {
   autoResumeOnStart: boolean;
   autoStopIdle: boolean;
   idleTimeoutMinutes: number;
+  activeSessionId: string;
+  openSessionIds: string[];
 
   // Storage & Data
   dataDirectory: string;
@@ -332,4 +334,16 @@ export interface PathValidationResult {
   claudeConfigError: string;
   mcpConfigValid: boolean;
   mcpConfigError: string;
+}
+
+// --- Changelog ---
+
+export interface ChangelogEntry {
+  version: string;
+  date: string;
+  changes: Record<string, string[]>;
+}
+
+export interface Changelog {
+  entries: ChangelogEntry[];
 }

@@ -39,6 +39,8 @@ import { CreateJobModal } from "./components/CreateJobModal";
 import AgentsView from "./components/AgentsView";
 import { CreateAgentModal } from "./components/CreateAgentModal";
 import { QuantAssistant } from "./components/QuantAssistant";
+import { ChangelogModal } from "./components/ChangelogModal";
+import type { ChangelogEntry } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -55,7 +57,8 @@ type ModalState =
   | { type: "createJob" }
   | { type: "editJob"; job: Job }
   | { type: "createAgent" }
-  | { type: "editAgent"; agent: Agent };
+  | { type: "editAgent"; agent: Agent }
+  | { type: "changelog" };
 
 type View = "dashboard" | "settings" | "diff" | "jobs" | "agents";
 
@@ -95,6 +98,8 @@ function App() {
   const [quantiModel, setQuantiModel] = useState<string>("claude-sonnet-4-6");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [jobGroups, setJobGroups] = useState<JobGroup[]>([]);
+  const [appVersion, setAppVersion] = useState<string>("");
+  const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[]>([]);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [newClaudeConfigPath, setNewClaudeConfigPath] = useState("");
   const [newMcpConfigPath, setNewMcpConfigPath] = useState("");
@@ -263,7 +268,28 @@ function App() {
   }, [fetchShortcuts, fetchJobs, fetchAgents, fetchWorkspaces, fetchJobGroups, fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
 
   useEffect(() => {
-    loadAll();
+    loadAll().then(async () => {
+      // Restore all open session tabs from persisted config
+      try {
+        const cfg = await api.getConfig();
+        const ids = cfg.openSessionIds ?? [];
+        for (const id of ids) {
+          setOpenTabIds((prev) => prev.includes(id) ? prev : [...prev, id]);
+        }
+        if (cfg.activeSessionId && ids.includes(cfg.activeSessionId)) {
+          setActiveTabId(cfg.activeSessionId);
+          setSelectedSessionId(cfg.activeSessionId);
+        } else if (ids.length > 0) {
+          setActiveTabId(ids[0]);
+          setSelectedSessionId(ids[0]);
+        }
+      } catch (err) {
+        console.error("failed to restore active session:", err);
+      }
+    });
+    // Load app version and changelog
+    api.getVersion().then(setAppVersion).catch(() => setAppVersion(""));
+    api.getChangelog().then((cl) => setChangelogEntries(cl.entries ?? [])).catch(() => {});
     // Set up Quanti directory (writes CLAUDE.md, memory files, runs background consolidation)
     // convID starts empty — first message creates a new Claude conversation,
     // then the quanti:session event gives us the real conversation ID for --resume
@@ -274,7 +300,7 @@ function App() {
         return api.startAssistantSession(model);
       })
       .catch((err) => console.error("failed to start quanti:", err));
-  }, [loadAll]);
+  }, [loadAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // Persist active workspace to localStorage and reload data
@@ -321,6 +347,25 @@ function App() {
     fetchAgents();
     fetchJobGroups();
   }, [activeWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist open tabs and active tab to config whenever they change
+  const tabsRestoredRef = useRef(false);
+  useEffect(() => {
+    // Skip until initial restore from config has completed
+    if (!tabsRestoredRef.current) {
+      if (openTabIds.length > 0 || activeTabId) {
+        tabsRestoredRef.current = true;
+      }
+      return;
+    }
+    api.getConfig()
+      .then((cfg) => {
+        cfg.openSessionIds = openTabIds;
+        cfg.activeSessionId = activeTabId ?? "";
+        return api.saveConfig(cfg);
+      })
+      .catch((err) => console.error("failed to persist open tabs:", err));
+  }, [openTabIds, activeTabId]);
 
   // Close workspace dropdown when clicking outside
   useEffect(() => {
@@ -1696,6 +1741,8 @@ function App() {
         onGitCommit={openGitCommitModal}
         onGitPull={openGitPullModal}
         onGitPush={openGitPushModal}
+        appVersion={appVersion}
+        onShowChangelog={() => setModal({ type: "changelog" })}
       />
 
       <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "var(--q-bg)" }}>
@@ -1843,6 +1890,14 @@ function App() {
           currentBranch={modal.currentBranch}
           onSubmit={() => handleGitPush(modal.sessionId)}
           onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+
+      {modal.type === "changelog" && (
+        <ChangelogModal
+          entries={changelogEntries}
+          currentVersion={appVersion}
+          onClose={() => setModal({ type: "none" })}
         />
       )}
 

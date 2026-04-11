@@ -11,6 +11,7 @@ import type {
   SkillInfo,
   Workspace,
   JobGroup,
+  Changelog,
   CreateRepoRequest,
   CreateTaskRequest,
   CreateSessionRequest,
@@ -328,6 +329,10 @@ export function listRunsByJob(jobId: string): Promise<JobRun[]> {
   return callGo(PKG, JOB_CTRL, "ListRunsByJob", jobId);
 }
 
+export function listRunsByJobPaginated(jobId: string, limit: number, offset: number): Promise<JobRun[]> {
+  return callGo(PKG, JOB_CTRL, "ListRunsByJobPaginated", jobId, limit, offset);
+}
+
 export function getRunOutput(runId: string): Promise<string> {
   return callGo(PKG, JOB_CTRL, "GetRunOutput", runId);
 }
@@ -426,4 +431,16 @@ export function browseMcpConfigFile(): Promise<string> {
 
 export function validateWorkspacePaths(claudeRoot: string, mcpRoot: string): Promise<PathValidationResult> {
   return callGo(PKG, WORKSPACE_CTRL, "ValidatePaths", claudeRoot, mcpRoot);
+}
+
+// --- Changelog ---
+
+const CHANGELOG_CTRL = "changelogController";
+
+export function getChangelog(): Promise<Changelog> {
+  return callGo(PKG, CHANGELOG_CTRL, "GetChangelog");
+}
+
+export function getVersion(): Promise<string> {
+  return callGo(PKG, CHANGELOG_CTRL, "GetVersion");
 }

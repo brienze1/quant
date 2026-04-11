@@ -23,6 +23,8 @@ export function ListRunsByCorrelation(arg1:string):Promise<Array<dto.JobRunRespo
 
 export function ListRunsByJob(arg1:string):Promise<Array<dto.JobRunResponse>>;
 
+export function ListRunsByJobPaginated(arg1:string,arg2:number,arg3:number):Promise<Array<dto.JobRunResponse>>;
+
 export function OnShutdown(arg1:context.Context):Promise<void>;
 
 export function OnStartup(arg1:context.Context):Promise<void>;

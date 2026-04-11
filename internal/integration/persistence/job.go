@@ -362,6 +362,32 @@ func (p *jobPersistence) FindJobRunsByJobID(jobID string) ([]entity.JobRun, erro
 	return runs, nil
 }
 
+// FindJobRunsByJobIDPaginated retrieves runs for a job with limit and offset.
+func (p *jobPersistence) FindJobRunsByJobIDPaginated(jobID string, limit, offset int) ([]entity.JobRun, error) {
+	query := `SELECT ` + jobRunColumns + ` FROM job_runs WHERE job_id = ? ORDER BY started_at DESC LIMIT ? OFFSET ?`
+
+	rows, err := p.db.Query(query, jobID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find job runs by job id (paginated): %w", err)
+	}
+	defer rows.Close()
+
+	var runs []entity.JobRun
+	for rows.Next() {
+		row, err := scanJobRunRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan job run row: %w", err)
+		}
+		runs = append(runs, row.ToEntity())
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating job run rows: %w", err)
+	}
+
+	return runs, nil
+}
+
 // FindJobRunsByCorrelationID retrieves all runs sharing a correlation ID.
 func (p *jobPersistence) FindJobRunsByCorrelationID(correlationID string) ([]entity.JobRun, error) {
 	query := `SELECT ` + jobRunColumns + ` FROM job_runs WHERE correlation_id = ? ORDER BY started_at ASC`

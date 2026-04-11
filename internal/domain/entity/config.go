@@ -24,12 +24,14 @@ type Config struct {
 	CommitMessagePrefix string            `json:"commitMessagePrefix"`
 
 	// Sessions
-	UseWorktreeDefault    bool `json:"useWorktreeDefault"`
-	SkipPermissions       bool `json:"skipPermissions"`
-	MaxConcurrentSessions int  `json:"maxConcurrentSessions"`
-	AutoResumeOnStart     bool `json:"autoResumeOnStart"`
-	AutoStopIdle          bool `json:"autoStopIdle"`
-	IdleTimeoutMinutes    int  `json:"idleTimeoutMinutes"`
+	UseWorktreeDefault    bool   `json:"useWorktreeDefault"`
+	SkipPermissions       bool   `json:"skipPermissions"`
+	MaxConcurrentSessions int    `json:"maxConcurrentSessions"`
+	AutoResumeOnStart     bool   `json:"autoResumeOnStart"`
+	AutoStopIdle          bool   `json:"autoStopIdle"`
+	IdleTimeoutMinutes    int    `json:"idleTimeoutMinutes"`
+	ActiveSessionID       string   `json:"activeSessionId"`
+	OpenSessionIDs        []string `json:"openSessionIds"`
 
 	// Storage & Data
 	DataDirectory     string `json:"dataDirectory"`

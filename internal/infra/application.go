@@ -180,7 +180,7 @@ func removeQuantMCP() {
 }
 
 // Run bootstraps and starts the Wails application with all dependencies wired.
-func Run(assets embed.FS) error {
+func Run(assets embed.FS, changelogData []byte) error {
 	database, err := db.NewSQLiteConnection()
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -204,7 +204,7 @@ func Run(assets embed.FS) error {
 		}()
 	}
 
-	injector := dependency.NewInjector(database)
+	injector := dependency.NewInjector(database, changelogData)
 	sessionCtrl := injector.SessionController()
 	repoCtrl := injector.RepoController()
 	taskCtrl := injector.TaskController()
@@ -214,6 +214,7 @@ func Run(assets embed.FS) error {
 	agentCtrl := injector.AgentController()
 	workspaceCtrl := injector.WorkspaceController()
 	jobGroupCtrl := injector.JobGroupController()
+	changelogCtrl := injector.ChangelogController()
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
@@ -258,6 +259,7 @@ func Run(assets embed.FS) error {
 			agentCtrl.OnStartup(ctx)
 			workspaceCtrl.OnStartup(ctx)
 			jobGroupCtrl.OnStartup(ctx)
+			changelogCtrl.OnStartup(ctx)
 		},
 		OnShutdown: func(ctx context.Context) {
 			sessionCtrl.OnShutdown(ctx)
@@ -269,6 +271,7 @@ func Run(assets embed.FS) error {
 			agentCtrl.OnShutdown(ctx)
 			workspaceCtrl.OnShutdown(ctx)
 			jobGroupCtrl.OnShutdown(ctx)
+			changelogCtrl.OnShutdown(ctx)
 			jobScheduler.Stop()
 			_ = mcpServer.Stop()
 			if os.Getenv("QUANT_SKIP_MCP_INJECT") != "1" {
@@ -285,6 +288,7 @@ func Run(assets embed.FS) error {
 			agentCtrl,
 			workspaceCtrl,
 			jobGroupCtrl,
+			changelogCtrl,
 		},
 	})
 	if err != nil {

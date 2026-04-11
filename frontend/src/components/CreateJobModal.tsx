@@ -655,9 +655,9 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     maxLength={500}
                     value={form.triagePrompt}
                     onChange={(e) => update("triagePrompt", e.target.value)}
-                    style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const, borderColor: form.triagePrompt ? "var(--q-cyan)" : "var(--q-border)" }}
+                    style={{ ...inputStyle, width: "100%", height: 56, resize: "none", padding: "8px 12px", boxSizing: "border-box" as const }}
                     onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = form.triagePrompt ? "var(--q-cyan)" : "var(--q-border)")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
                   />
                 </div>
               </div>
