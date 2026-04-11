@@ -113,7 +113,7 @@ function App() {
   const [commitMessagePrefix, setCommitMessagePrefix] = useState("");
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const [error, setError] = useState<string | null>(null);
-  const [toasts, setToasts] = useState<{ id: number; message: string }[]>([]);
+  const [toasts, setToasts] = useState<{ id: number; message: string; sessionId?: string }[]>([]);
   const toastIdRef = useRef(0);
 
   // keep refs for polling callbacks
@@ -510,7 +510,7 @@ function App() {
 
             // In-app toast notification
             const toastId = ++toastIdRef.current;
-            setToasts((prev) => [...prev, { id: toastId, message: `session "${name}" has finished` }]);
+            setToasts((prev) => [...prev, { id: toastId, message: `session "${name}" has finished`, sessionId: id }]);
             setTimeout(() => {
               setToasts((prev) => prev.filter((t) => t.id !== toastId));
             }, 5000);
@@ -1924,6 +1924,12 @@ function App() {
           {toasts.map((toast) => (
             <div
               key={toast.id}
+              onClick={() => {
+                if (toast.sessionId) {
+                  handleOpenTab(toast.sessionId);
+                  setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+                }
+              }}
               style={{
                 backgroundColor: "var(--q-bg-hover)",
                 border: "1px solid var(--q-accent)",
@@ -1933,10 +1939,33 @@ function App() {
                 borderRadius: 4,
                 maxWidth: 320,
                 boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+                cursor: toast.sessionId ? "pointer" : "default",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
               }}
             >
-              <span style={{ color: "var(--q-accent)", marginRight: 8 }}>~</span>
-              {toast.message}
+              <span style={{ flex: 1 }}>
+                <span style={{ color: "var(--q-accent)", marginRight: 8 }}>~</span>
+                {toast.message}
+              </span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+                }}
+                style={{
+                  cursor: "pointer",
+                  color: "var(--q-fg-muted)",
+                  fontSize: 14,
+                  lineHeight: 1,
+                  padding: "0 2px",
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </span>
             </div>
           ))}
         </div>
