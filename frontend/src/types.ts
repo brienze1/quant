@@ -118,15 +118,22 @@ export interface Job {
   envVariables: Record<string, string>;
   onSuccess: string[];
   onFailure: string[];
+  onCustom: CustomTriggerRef[];
   triggeredBy: TriggerRef[];
   workspaceId: string;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface CustomTriggerRef {
+  targetJobId: string;
+  customPrompt: string;
+}
+
 export interface TriggerRef {
   jobId: string;
-  triggerOn: "success" | "failure";
+  triggerOn: "success" | "failure" | "custom";
+  customPrompt?: string;
 }
 
 export interface CreateJobRequest {
@@ -156,6 +163,7 @@ export interface CreateJobRequest {
   envVariables: Record<string, string>;
   onSuccess: string[];
   onFailure: string[];
+  onCustom: CustomTriggerRef[];
   workspaceId?: string;
 }
 

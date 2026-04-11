@@ -44,6 +44,7 @@ function buildDefaultForm(): CreateJobRequest {
     envVariables: {},
     onSuccess: [],
     onFailure: [],
+    onCustom: [],
   };
 }
 
@@ -75,6 +76,7 @@ function jobToForm(job: Job): CreateJobRequest {
     envVariables: job.envVariables ?? {},
     onSuccess: job.onSuccess ?? [],
     onFailure: job.onFailure ?? [],
+    onCustom: job.onCustom ?? [],
   };
 }
 

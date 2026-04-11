@@ -65,17 +65,17 @@ func (c *jobController) CreateJob(request dto.CreateJobRequest) (*dto.JobRespons
 		WorkspaceID:         request.WorkspaceID,
 	}
 
-	created, err := c.jobManager.CreateJob(job, request.OnSuccess, request.OnFailure)
+	created, err := c.jobManager.CreateJob(job, request.OnSuccess, request.OnFailure, request.OnCustom)
 	if err != nil {
 		return nil, err
 	}
 
-	onSuccess, onFailure, triggeredBy, err := c.jobManager.GetTriggersForJob(created.ID)
+	onSuccess, onFailure, onCustom, triggeredBy, err := c.jobManager.GetTriggersForJob(created.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	return dto.JobResponseFromEntityPtr(created, onSuccess, onFailure, triggeredBy), nil
+	return dto.JobResponseFromEntityPtr(created, onSuccess, onFailure, onCustom, triggeredBy), nil
 }
 
 // UpdateJob updates an existing job and returns its response DTO.
@@ -109,17 +109,17 @@ func (c *jobController) UpdateJob(request dto.UpdateJobRequest) (*dto.JobRespons
 		WorkspaceID:         request.WorkspaceID,
 	}
 
-	updated, err := c.jobManager.UpdateJob(job, request.OnSuccess, request.OnFailure)
+	updated, err := c.jobManager.UpdateJob(job, request.OnSuccess, request.OnFailure, request.OnCustom)
 	if err != nil {
 		return nil, err
 	}
 
-	onSuccess, onFailure, triggeredBy, err := c.jobManager.GetTriggersForJob(updated.ID)
+	onSuccess, onFailure, onCustom, triggeredBy, err := c.jobManager.GetTriggersForJob(updated.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	return dto.JobResponseFromEntityPtr(updated, onSuccess, onFailure, triggeredBy), nil
+	return dto.JobResponseFromEntityPtr(updated, onSuccess, onFailure, onCustom, triggeredBy), nil
 }
 
 // DeleteJob deletes a job by ID.
@@ -134,12 +134,12 @@ func (c *jobController) GetJob(id string) (*dto.JobResponse, error) {
 		return nil, err
 	}
 
-	onSuccess, onFailure, triggeredBy, err := c.jobManager.GetTriggersForJob(job.ID)
+	onSuccess, onFailure, onCustom, triggeredBy, err := c.jobManager.GetTriggersForJob(job.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	return dto.JobResponseFromEntityPtr(job, onSuccess, onFailure, triggeredBy), nil
+	return dto.JobResponseFromEntityPtr(job, onSuccess, onFailure, onCustom, triggeredBy), nil
 }
 
 // ListJobs returns all jobs as response DTOs.

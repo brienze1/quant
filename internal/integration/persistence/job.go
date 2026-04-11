@@ -26,7 +26,7 @@ const jobColumns = `id, name, description, type, working_directory, schedule_ena
 		max_retries, model, override_repo_command, claude_command, agent_id, success_prompt, failure_prompt, metadata_prompt, triage_prompt,
 		interpreter, script_content, env_variables, workspace_id, created_at, updated_at, last_run_at`
 
-const jobTriggerColumns = `id, source_job_id, target_job_id, trigger_on`
+const jobTriggerColumns = `id, source_job_id, target_job_id, trigger_on, custom_prompt`
 
 const jobRunColumns = `id, job_id, status, triggered_by, correlation_id, session_id, model_used, duration_ms, tokens_used, result,
 		error_message, injected_context, started_at, finished_at`
@@ -49,7 +49,7 @@ func scanJobRow(scanner interface{ Scan(...any) error }) (pdto.JobRow, error) {
 func scanJobTriggerRow(scanner interface{ Scan(...any) error }) (pdto.JobTriggerRow, error) {
 	var row pdto.JobTriggerRow
 	err := scanner.Scan(
-		&row.ID, &row.SourceJobID, &row.TargetJobID, &row.TriggerOn,
+		&row.ID, &row.SourceJobID, &row.TargetJobID, &row.TriggerOn, &row.CustomPrompt,
 	)
 	return row, err
 }
@@ -275,10 +275,10 @@ func (p *jobPersistence) FindTriggersByTargetJobID(jobID string) ([]entity.JobTr
 func (p *jobPersistence) SaveJobTrigger(trigger entity.JobTrigger) error {
 	row := pdto.JobTriggerRowFromEntity(trigger)
 
-	query := `INSERT INTO job_triggers (id, source_job_id, target_job_id, trigger_on)
-		VALUES (?, ?, ?, ?)`
+	query := `INSERT INTO job_triggers (id, source_job_id, target_job_id, trigger_on, custom_prompt)
+		VALUES (?, ?, ?, ?, ?)`
 
-	_, err := p.db.Exec(query, row.ID, row.SourceJobID, row.TargetJobID, row.TriggerOn)
+	_, err := p.db.Exec(query, row.ID, row.SourceJobID, row.TargetJobID, row.TriggerOn, row.CustomPrompt)
 	if err != nil {
 		return fmt.Errorf("failed to save job trigger: %w", err)
 	}

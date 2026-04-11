@@ -69,7 +69,7 @@ func NewJobManagerService(
 }
 
 // CreateJob creates a new job with optional trigger chains.
-func (s *jobManagerService) CreateJob(job entity.Job, onSuccess []string, onFailure []string) (*entity.Job, error) {
+func (s *jobManagerService) CreateJob(job entity.Job, onSuccess []string, onFailure []string, onCustom []entity.CustomTriggerRef) (*entity.Job, error) {
 	now := time.Now()
 	job.ID = uuid.New().String()
 	job.CreatedAt = now
@@ -80,7 +80,7 @@ func (s *jobManagerService) CreateJob(job entity.Job, onSuccess []string, onFail
 		return nil, fmt.Errorf("failed to save job: %w", err)
 	}
 
-	err = s.createTriggers(job.ID, onSuccess, onFailure)
+	err = s.createTriggers(job.ID, onSuccess, onFailure, onCustom)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create triggers: %w", err)
 	}
@@ -89,7 +89,7 @@ func (s *jobManagerService) CreateJob(job entity.Job, onSuccess []string, onFail
 }
 
 // UpdateJob updates an existing job and replaces its trigger chains.
-func (s *jobManagerService) UpdateJob(job entity.Job, onSuccess []string, onFailure []string) (*entity.Job, error) {
+func (s *jobManagerService) UpdateJob(job entity.Job, onSuccess []string, onFailure []string, onCustom []entity.CustomTriggerRef) (*entity.Job, error) {
 	existing, err := s.findJob.FindJobByID(job.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find job: %w", err)
@@ -112,7 +112,7 @@ func (s *jobManagerService) UpdateJob(job entity.Job, onSuccess []string, onFail
 		return nil, fmt.Errorf("failed to delete existing triggers: %w", err)
 	}
 
-	err = s.createTriggers(job.ID, onSuccess, onFailure)
+	err = s.createTriggers(job.ID, onSuccess, onFailure, onCustom)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create triggers: %w", err)
 	}
@@ -170,11 +170,11 @@ func (s *jobManagerService) ListJobs() ([]entity.Job, error) {
 }
 
 // GetTriggersForJob returns triggers organized by relationship and outcome.
-func (s *jobManagerService) GetTriggersForJob(jobID string) (onSuccess []entity.JobTrigger, onFailure []entity.JobTrigger, triggeredBy []entity.JobTrigger, err error) {
+func (s *jobManagerService) GetTriggersForJob(jobID string) (onSuccess []entity.JobTrigger, onFailure []entity.JobTrigger, onCustom []entity.JobTrigger, triggeredBy []entity.JobTrigger, err error) {
 	// Find triggers where this job is the source (this job triggers others).
 	sourceTriggers, err := s.findJobTrigger.FindTriggersBySourceJobID(jobID)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to find source triggers: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to find source triggers: %w", err)
 	}
 
 	for _, t := range sourceTriggers {
@@ -183,16 +183,18 @@ func (s *jobManagerService) GetTriggersForJob(jobID string) (onSuccess []entity.
 			onSuccess = append(onSuccess, t)
 		case "failure":
 			onFailure = append(onFailure, t)
+		case "custom":
+			onCustom = append(onCustom, t)
 		}
 	}
 
 	// Find triggers where this job is the target (other jobs trigger this one).
 	triggeredBy, err = s.findJobTrigger.FindTriggersByTargetJobID(jobID)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to find target triggers: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to find target triggers: %w", err)
 	}
 
-	return onSuccess, onFailure, triggeredBy, nil
+	return onSuccess, onFailure, onCustom, triggeredBy, nil
 }
 
 // RunJob starts a new run for a job. Supports retries with history for Claude jobs.
@@ -1253,37 +1255,61 @@ func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun) {
 	}
 
 	for _, trigger := range triggers {
+		shouldFire := false
 		if trigger.TriggerOn == triggerOn {
-			// Build trigger context — prefer structured metadata over raw output
-			var ctx string
-			if metadataSection != "" {
-				ctx = fmt.Sprintf(
-					"## Trigger context\n"+
-						"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
-						"\n### Structured metadata from \"%s\":\n```json\n%s\n```\n",
-					triggerOn, sourceJobName, run.ID, sourceJobName, metadataSection,
-				)
-			} else {
-				ctx = fmt.Sprintf(
-					"## Trigger context\n"+
-						"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
-						"\n### Output from \"%s\":\n```\n%s\n```\n",
-					triggerOn, sourceJobName, run.ID, sourceJobName, sourceOutput,
-				)
-			}
+			shouldFire = true
+		} else if trigger.TriggerOn == "custom" {
+			// Custom triggers fire on any completion — the custom prompt provides evaluation context
+			shouldFire = true
+		}
 
-			// Store context for the new run to pick up
-			newRun, err := s.RunJob(trigger.TargetJobID, run.ID, run.CorrelationID)
-			if err == nil && newRun != nil {
-				s.mu.Lock()
-				// Append continue_pipeline context if present
-				if continueCtx, ok := s.triggerCtx["continue:"+run.ID]; ok {
-					ctx += fmt.Sprintf("\n## Human intervention context\n%s\n", continueCtx)
-					delete(s.triggerCtx, "continue:"+run.ID)
-				}
-				s.triggerCtx[newRun.ID] = ctx
-				s.mu.Unlock()
+		if !shouldFire {
+			continue
+		}
+
+		// Build trigger context — prefer structured metadata over raw output
+		var ctx string
+		if trigger.TriggerOn == "custom" {
+			// Include the custom evaluation prompt as part of the context
+			ctx = fmt.Sprintf(
+				"## Trigger context\n"+
+					"This job was triggered by a custom conditional trigger from job \"%s\" (run: %s).\n"+
+					"The job finished with status: %s.\n"+
+					"\n### Custom trigger condition:\n%s\n",
+				sourceJobName, run.ID, triggerOn, trigger.CustomPrompt,
+			)
+			if metadataSection != "" {
+				ctx += fmt.Sprintf("\n### Structured metadata from \"%s\":\n```json\n%s\n```\n", sourceJobName, metadataSection)
+			} else {
+				ctx += fmt.Sprintf("\n### Output from \"%s\":\n```\n%s\n```\n", sourceJobName, sourceOutput)
 			}
+		} else if metadataSection != "" {
+			ctx = fmt.Sprintf(
+				"## Trigger context\n"+
+					"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
+					"\n### Structured metadata from \"%s\":\n```json\n%s\n```\n",
+				triggerOn, sourceJobName, run.ID, sourceJobName, metadataSection,
+			)
+		} else {
+			ctx = fmt.Sprintf(
+				"## Trigger context\n"+
+					"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
+					"\n### Output from \"%s\":\n```\n%s\n```\n",
+				triggerOn, sourceJobName, run.ID, sourceJobName, sourceOutput,
+			)
+		}
+
+		// Store context for the new run to pick up
+		newRun, err := s.RunJob(trigger.TargetJobID, run.ID, run.CorrelationID)
+		if err == nil && newRun != nil {
+			s.mu.Lock()
+			// Append continue_pipeline context if present
+			if continueCtx, ok := s.triggerCtx["continue:"+run.ID]; ok {
+				ctx += fmt.Sprintf("\n## Human intervention context\n%s\n", continueCtx)
+				delete(s.triggerCtx, "continue:"+run.ID)
+			}
+			s.triggerCtx[newRun.ID] = ctx
+			s.mu.Unlock()
 		}
 	}
 }
@@ -1473,8 +1499,8 @@ func (s *jobManagerService) GetRunOutput(runID string) (string, error) {
 	return run.Result, nil
 }
 
-// createTriggers creates trigger records for on-success and on-failure target job IDs.
-func (s *jobManagerService) createTriggers(sourceJobID string, onSuccess []string, onFailure []string) error {
+// createTriggers creates trigger records for on-success, on-failure, and custom target job IDs.
+func (s *jobManagerService) createTriggers(sourceJobID string, onSuccess []string, onFailure []string, onCustom []entity.CustomTriggerRef) error {
 	for _, targetID := range onSuccess {
 		trigger := entity.JobTrigger{
 			ID:          uuid.New().String(),
@@ -1496,6 +1522,19 @@ func (s *jobManagerService) createTriggers(sourceJobID string, onSuccess []strin
 		}
 		if err := s.saveJobTrigger.SaveJobTrigger(trigger); err != nil {
 			return fmt.Errorf("failed to save failure trigger: %w", err)
+		}
+	}
+
+	for _, ref := range onCustom {
+		trigger := entity.JobTrigger{
+			ID:           uuid.New().String(),
+			SourceJobID:  sourceJobID,
+			TargetJobID:  ref.TargetJobID,
+			TriggerOn:    "custom",
+			CustomPrompt: ref.CustomPrompt,
+		}
+		if err := s.saveJobTrigger.SaveJobTrigger(trigger); err != nil {
+			return fmt.Errorf("failed to save custom trigger: %w", err)
 		}
 	}
 
