@@ -13,10 +13,12 @@ type JobManager interface {
 	ListJobs() ([]entity.Job, error)
 	GetTriggersForJob(jobID string) (onSuccess []entity.JobTrigger, onFailure []entity.JobTrigger, triggeredBy []entity.JobTrigger, err error)
 	RunJob(jobID string, triggeredByRunID string, correlationID ...string) (*entity.JobRun, error)
+	RunJobWithContext(jobID string, context string) (*entity.JobRun, error)
 	RerunJob(jobID string, originalRunID string) (*entity.JobRun, error)
 	CancelRun(runID string) error
 	GetRun(runID string) (*entity.JobRun, error)
 	ListRunsByJob(jobID string) ([]entity.JobRun, error)
+	ListRunsByJobPaginated(jobID string, limit, offset int) ([]entity.JobRun, error)
 	GetRunOutput(runID string) (string, error)
 	ResumeJob(runID string, extraContext string) (*entity.JobRun, error)
 	AdvancePipeline(runID string, targetJobID string, extraContext string) (*entity.JobRun, error)

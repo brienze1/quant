@@ -196,6 +196,16 @@ func (c *jobController) ListRunsByJob(jobID string) ([]dto.JobRunResponse, error
 	return dto.JobRunResponseListFromEntities(runs), nil
 }
 
+// ListRunsByJobPaginated returns a page of runs for a job as response DTOs.
+func (c *jobController) ListRunsByJobPaginated(jobID string, limit, offset int) ([]dto.JobRunResponse, error) {
+	runs, err := c.jobManager.ListRunsByJobPaginated(jobID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.JobRunResponseListFromEntities(runs), nil
+}
+
 // ResumeJob resumes a waiting job run with injected resolution context.
 func (c *jobController) ResumeJob(runID string, context string) (*dto.JobRunResponse, error) {
 	run, err := c.jobManager.ResumeJob(runID, context)

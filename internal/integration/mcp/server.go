@@ -275,7 +275,24 @@ The Quant canvas UI shows running jobs with a pulsing green border and highlight
 		s.handleRunJob,
 	)
 
-	// 6b. rerun_job
+	// 6b. run_job_with_context
+	mcpServer.AddTool(
+		mcp.NewTool("run_job_with_context",
+			mcp.WithDescription(`Start a job immediately, injecting arbitrary context into its prompt — same as run_job but with a context payload that gets prepended to the job's trigger context.
+
+Use this to start a pipeline at any step without depending on a previous run existing. The context string is injected as-is into the job's prompt, so use the same format as upstream job output (e.g. TASK_IDENTIFIER=PLT-1032\nREPO_FOLDERS=wallet-api.worktree.PLT-1032).
+
+Useful for:
+- Retrying a specific stage after fixing a job prompt
+- Starting mid-pipeline for testing a new job
+- Recovering a broken pipeline without re-running expensive upstream jobs`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to run (get from list_jobs)")),
+			mcp.WithString("context", mcp.Required(), mcp.Description("Freeform string injected as trigger context into the job's prompt")),
+		),
+		s.handleRunJobWithContext,
+	)
+
+	// 6c. rerun_job
 	mcpServer.AddTool(
 		mcp.NewTool("rerun_job",
 			mcp.WithDescription(`Rerun a job preserving the trigger context from a previous run.
@@ -1116,6 +1133,25 @@ func (s *QuantMCPServer) handleRunJob(_ context.Context, request mcp.CallToolReq
 	}
 
 	run, err := s.jobManager.RunJob(id, "")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(runToMap(run))
+}
+
+func (s *QuantMCPServer) handleRunJobWithContext(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	ctx, err := requiredString(request, "context")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	run, err := s.jobManager.RunJobWithContext(id, ctx)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

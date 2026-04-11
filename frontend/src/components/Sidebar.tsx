@@ -48,6 +48,8 @@ interface SidebarProps {
   onGitCommit: (sessionId: string, sessionName: string) => void;
   onGitPull: (sessionId: string) => void;
   onGitPush: (sessionId: string) => void;
+  appVersion?: string;
+  onShowChangelog?: () => void;
 }
 
 function SidebarScrollArea({ children }: { children: React.ReactNode }) {
@@ -132,6 +134,8 @@ export function Sidebar({
   onGitCommit,
   onGitPull,
   onGitPush,
+  appVersion,
+  onShowChangelog,
 }: SidebarProps) {
 
   const [contextMenu, setContextMenu] = useState<{
@@ -539,6 +543,22 @@ export function Sidebar({
             >
               +
             </button>
+            {appVersion && (
+              <button
+                onClick={onShowChangelog}
+                className="transition-colors"
+                style={{
+                  color: "var(--q-fg-muted)",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 8,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
+                title="changelog"
+              >
+                {appVersion}
+              </button>
+            )}
           </div>
         </aside>
 
@@ -671,25 +691,44 @@ export function Sidebar({
         </SidebarScrollArea>
 
         {/* bottom bar */}
-        <div className="flex items-center gap-2 p-3" style={{ borderTop: "1px solid var(--q-border)" }}>
-          <button
-            onClick={() => {
-              if (repos.length > 0) {
-                onCreateSession(repos[0].id);
-              }
-            }}
-            className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm lowercase transition-colors"
-            style={{
-              backgroundColor: "var(--q-accent)",
-              color: "var(--q-bg)",
-              fontFamily: "'JetBrains Mono', monospace",
-              fontWeight: 500,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-accent-hover)")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--q-accent)")}
-          >
-            $ new_session
-          </button>
+        <div className="flex flex-col gap-0" style={{ borderTop: "1px solid var(--q-border)" }}>
+          <div className="flex items-center gap-2 p-3 pb-1.5">
+            <button
+              onClick={() => {
+                if (repos.length > 0) {
+                  onCreateSession(repos[0].id);
+                }
+              }}
+              className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm lowercase transition-colors"
+              style={{
+                backgroundColor: "var(--q-accent)",
+                color: "var(--q-bg)",
+                fontFamily: "'JetBrains Mono', monospace",
+                fontWeight: 500,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-accent-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--q-accent)")}
+            >
+              $ new_session
+            </button>
+          </div>
+          {appVersion && (
+            <div className="flex items-center justify-center pb-2">
+              <button
+                onClick={onShowChangelog}
+                className="text-[9px] lowercase transition-colors px-1.5 py-0.5"
+                style={{
+                  color: "var(--q-fg-muted)",
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
+                title="view changelog"
+              >
+                {appVersion}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* context menu overlay */}
