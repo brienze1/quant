@@ -89,6 +89,8 @@ export namespace dto {
 	    autoResumeOnStart: boolean;
 	    autoStopIdle: boolean;
 	    idleTimeoutMinutes: number;
+	    activeSessionId: string;
+	    openSessionIds: string[];
 	    dataDirectory: string;
 	    worktreeDirectory: string;
 	    logDirectory: string;
@@ -128,6 +130,8 @@ export namespace dto {
 	        this.autoResumeOnStart = source["autoResumeOnStart"];
 	        this.autoStopIdle = source["autoStopIdle"];
 	        this.idleTimeoutMinutes = source["idleTimeoutMinutes"];
+	        this.activeSessionId = source["activeSessionId"];
+	        this.openSessionIds = source["openSessionIds"];
 	        this.dataDirectory = source["dataDirectory"];
 	        this.worktreeDirectory = source["worktreeDirectory"];
 	        this.logDirectory = source["logDirectory"];
@@ -599,6 +603,8 @@ export namespace dto {
 	    autoResumeOnStart: boolean;
 	    autoStopIdle: boolean;
 	    idleTimeoutMinutes: number;
+	    activeSessionId: string;
+	    openSessionIds: string[];
 	    dataDirectory: string;
 	    worktreeDirectory: string;
 	    logDirectory: string;
@@ -638,6 +644,8 @@ export namespace dto {
 	        this.autoResumeOnStart = source["autoResumeOnStart"];
 	        this.autoStopIdle = source["autoStopIdle"];
 	        this.idleTimeoutMinutes = source["idleTimeoutMinutes"];
+	        this.activeSessionId = source["activeSessionId"];
+	        this.openSessionIds = source["openSessionIds"];
 	        this.dataDirectory = source["dataDirectory"];
 	        this.worktreeDirectory = source["worktreeDirectory"];
 	        this.logDirectory = source["logDirectory"];
