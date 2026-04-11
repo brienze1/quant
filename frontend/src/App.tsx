@@ -39,6 +39,8 @@ import { CreateJobModal } from "./components/CreateJobModal";
 import AgentsView from "./components/AgentsView";
 import { CreateAgentModal } from "./components/CreateAgentModal";
 import { QuantAssistant } from "./components/QuantAssistant";
+import { ChangelogModal } from "./components/ChangelogModal";
+import type { ChangelogEntry } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -55,7 +57,8 @@ type ModalState =
   | { type: "createJob" }
   | { type: "editJob"; job: Job }
   | { type: "createAgent" }
-  | { type: "editAgent"; agent: Agent };
+  | { type: "editAgent"; agent: Agent }
+  | { type: "changelog" };
 
 type View = "dashboard" | "settings" | "diff" | "jobs" | "agents";
 
@@ -95,6 +98,8 @@ function App() {
   const [quantiModel, setQuantiModel] = useState<string>("claude-sonnet-4-6");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [jobGroups, setJobGroups] = useState<JobGroup[]>([]);
+  const [appVersion, setAppVersion] = useState<string>("");
+  const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[]>([]);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [newClaudeConfigPath, setNewClaudeConfigPath] = useState("");
   const [newMcpConfigPath, setNewMcpConfigPath] = useState("");
@@ -264,6 +269,9 @@ function App() {
 
   useEffect(() => {
     loadAll();
+    // Load app version and changelog
+    api.getVersion().then(setAppVersion).catch(() => setAppVersion(""));
+    api.getChangelog().then((cl) => setChangelogEntries(cl.entries ?? [])).catch(() => {});
     // Set up Quanti directory (writes CLAUDE.md, memory files, runs background consolidation)
     // convID starts empty — first message creates a new Claude conversation,
     // then the quanti:session event gives us the real conversation ID for --resume
@@ -1696,6 +1704,8 @@ function App() {
         onGitCommit={openGitCommitModal}
         onGitPull={openGitPullModal}
         onGitPush={openGitPushModal}
+        appVersion={appVersion}
+        onShowChangelog={() => setModal({ type: "changelog" })}
       />
 
       <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "var(--q-bg)" }}>
@@ -1843,6 +1853,14 @@ function App() {
           currentBranch={modal.currentBranch}
           onSubmit={() => handleGitPush(modal.sessionId)}
           onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+
+      {modal.type === "changelog" && (
+        <ChangelogModal
+          entries={changelogEntries}
+          currentVersion={appVersion}
+          onClose={() => setModal({ type: "none" })}
         />
       )}
 

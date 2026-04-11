@@ -1,0 +1,637 @@
+{
+  "entries": [
+    {
+      "version": "v3.1.7",
+      "date": "2026-04-11",
+      "changes": {
+        "fixes": [
+          "remove persistent cyan border from triage prompt textarea"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.6",
+      "date": "2026-04-11",
+      "changes": {
+        "features": [
+          "add run_job_with_context MCP tool for injecting arbitrary trigger context"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.5",
+      "date": "2026-04-11",
+      "changes": {
+        "fixes": [
+          "restore canvas positions and minimap on workspace switch"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.4",
+      "date": "2026-04-10",
+      "changes": {
+        "features": [
+          "require workspaceId on job methods, add get_current_workspace MCP tool"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.3",
+      "date": "2026-04-10",
+      "changes": {
+        "fixes": [
+          "prune stale worktree when directory was deleted"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.2",
+      "date": "2026-04-10",
+      "changes": {
+        "fixes": [
+          "use git tags instead of releases for version bump",
+          "use PAT for tag push so release workflow triggers"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.1",
+      "date": "2026-04-10",
+      "changes": {
+        "fixes": [
+          "reuse existing worktree instead of failing on duplicate branch",
+          "scope pipeline execution tracking per job group"
+        ],
+        "internal": [
+          "auto-release patch on PR merge to main"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.0",
+      "date": "2026-04-09",
+      "changes": {
+        "features": [
+          "workflow engine with human-in-the-loop and pipeline diagram container",
+          "add VS Code theme import system with CSS variable architecture",
+          "workspace path config UI with browse dialogs and validation",
+          "add workspace-scoped .claude and .mcp.json path configuration"
+        ],
+        "fixes": [
+          "add missing Save/Cancel buttons to create workspace form"
+        ],
+        "internal": [
+          "refactor(main): remove unused notification functions from runtime"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.11",
+      "date": "2026-04-06",
+      "changes": {
+        "features": [
+          "update job and agent requests to include workspaceId and adjust modal rendering"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.10",
+      "date": "2026-04-05",
+      "changes": {
+        "features": [
+          "implement workspace-specific position management and drag-and-drop functionality for job groups"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.9",
+      "date": "2026-04-04",
+      "changes": {
+        "features": [
+          "add agentId and workspaceId to job configuration"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.8",
+      "date": "2026-04-04",
+      "changes": {
+        "internal": [
+          "refactor(jobs-pages-improv): use refs for selected edge and jobs to avoid stale closures"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.7",
+      "date": "2026-04-04",
+      "changes": {
+        "improvements": [
+          "release update"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.6",
+      "date": "2026-04-04",
+      "changes": {
+        "features": [
+          "add functionality to manage Quant MCP server in Claude settings"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.5",
+      "date": "2026-04-04",
+      "changes": {
+        "features": [
+          "implement session workspace update functionality"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.4",
+      "date": "2026-04-04",
+      "changes": {
+        "features": [
+          "add workspace management and pagination for job runs and sessions"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.3",
+      "date": "2026-04-04",
+      "changes": {
+        "features": [
+          "add delete functionality for job groups in JobsView"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.2",
+      "date": "2026-04-04",
+      "changes": {
+        "features": [
+          "enhance MCP server with session and workspace management tools"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.1",
+      "date": "2026-04-04",
+      "changes": {
+        "features": [
+          "add workspace management features and job group interfaces"
+        ]
+      }
+    },
+    {
+      "version": "v3.0.0",
+      "date": "2026-04-03",
+      "changes": {
+        "improvements": [
+          "release update"
+        ]
+      }
+    },
+    {
+      "version": "v2.3.0",
+      "date": "2026-04-03",
+      "changes": {
+        "features": [
+          "add update and upgrade commands to Makefile"
+        ]
+      }
+    },
+    {
+      "version": "v2.2.5",
+      "date": "2026-04-02",
+      "changes": {
+        "features": [
+          "add RerunJob function to job controller"
+        ]
+      }
+    },
+    {
+      "version": "v2.2.4",
+      "date": "2026-04-02",
+      "changes": {
+        "fixes": [
+          "feat/fix jobs page - fix rerun backend"
+        ]
+      }
+    },
+    {
+      "version": "v2.2.3",
+      "date": "2026-04-02",
+      "changes": {
+        "fixes": [
+          "feat/fix jobs page - fix job modal"
+        ]
+      }
+    },
+    {
+      "version": "v2.2.2",
+      "date": "2026-04-02",
+      "changes": {
+        "fixes": [
+          "feat/fix jobs page - fix jobs page"
+        ]
+      }
+    },
+    {
+      "version": "v2.2.1",
+      "date": "2026-04-02",
+      "changes": {
+        "internal": [
+          "refactor(test-jobs): improve fallback model selection logic for jobs"
+        ]
+      }
+    },
+    {
+      "version": "v2.2.0",
+      "date": "2026-04-01",
+      "changes": {
+        "features": [
+          "implement agent management interfaces and persistence"
+        ],
+        "fixes": [
+          "refactor(fix-jobs-ui): enhance job adjacency and layout logic for better visualization"
+        ],
+        "internal": [
+          "refactor(test-jobs): enhance job listing and retrieval with agent details",
+          "refactor(agents): enhance office layout generation and agent interaction"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.16",
+      "date": "2026-03-31",
+      "changes": {
+        "internal": [
+          "refactor(work-job-flow): improve job depth assignment and component grouping logic"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.15",
+      "date": "2026-03-31",
+      "changes": {
+        "fixes": [
+          "ensure cycle-safe BFS for job depth assignment"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.14",
+      "date": "2026-03-30",
+      "changes": {
+        "fixes": [
+          "prevent space key from triggering action in certain input fields"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.13",
+      "date": "2026-03-30",
+      "changes": {
+        "improvements": [
+          "release update"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.12",
+      "date": "2026-03-30",
+      "changes": {
+        "fixes": [
+          "extend evaluation timeout to 5 minutes for session boot and metadata extraction"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.11",
+      "date": "2026-03-30",
+      "changes": {
+        "features": [
+          "add model tracking to job run details"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.10",
+      "date": "2026-03-29",
+      "changes": {
+        "features": [
+          "inject trigger context as environment variable for job runs"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.9",
+      "date": "2026-03-29",
+      "changes": {
+        "features": [
+          "inject trigger context as environment variable for job runs"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.8",
+      "date": "2026-03-29",
+      "changes": {
+        "features": [
+          "enhance job run handling and add metadata prompt to model",
+          "add mouse position tracking for connection preview"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.7",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "add job trigger and pipeline status retrieval tools"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.6",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "add metadata prompt to job request structure"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.5",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "add graceful shutdown with timeout for HTTP server"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.4",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "enhance metadata extraction and auto-refresh functionality"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.3",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "enable bypass and autonomous mode in job creation"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.2",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "update MCP server configuration management in Claude"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.1",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "add functions to manage Quant MCP server settings in Claude"
+        ]
+      }
+    },
+    {
+      "version": "v2.1.0",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "add success, failure, and metadata prompts to job configuration"
+        ]
+      }
+    },
+    {
+      "version": "v2.0.0",
+      "date": "2026-03-28",
+      "changes": {
+        "features": [
+          "implement job management interfaces and persistence logic"
+        ]
+      }
+    },
+    {
+      "version": "v1.2.1",
+      "date": "2026-03-26",
+      "changes": {
+        "internal": [
+          "ci(main): remove Windows build job from release workflow"
+        ]
+      }
+    },
+    {
+      "version": "v1.2.0",
+      "date": "2026-03-26",
+      "changes": {
+        "improvements": [
+          "release update"
+        ]
+      }
+    },
+    {
+      "version": "v1.1.1",
+      "date": "2026-03-26",
+      "changes": {
+        "features": [
+          "add command overrides for per-path CLI configuration"
+        ]
+      }
+    },
+    {
+      "version": "v1.1.0",
+      "date": "2026-03-20",
+      "changes": {
+        "features": [
+          "feat/diff - adding git diff viewer to quant"
+        ]
+      }
+    },
+    {
+      "version": "v1.0.6",
+      "date": "2026-03-20",
+      "changes": {
+        "fixes": [
+          "feat/terminal - Fixed terminal losing state after swithcing sessions"
+        ]
+      }
+    },
+    {
+      "version": "v1.0.5",
+      "date": "2026-03-18",
+      "changes": {
+        "fixes": [
+          "feat/fix-branch-name - fix worktree creation"
+        ]
+      }
+    },
+    {
+      "version": "v1.0.4",
+      "date": "2026-03-18",
+      "changes": {
+        "features": [
+          "feat/shortcuts - add git functions",
+          "feat/shortcuts - add git functions",
+          "add shortcut management for session commands"
+        ],
+        "fixes": [
+          "feat/fix-term - fix terminal issues",
+          "feat/fix-term - fix terminal sessions appearing in left panel"
+        ]
+      }
+    },
+    {
+      "version": "v1.0.3",
+      "date": "2026-03-18",
+      "changes": {
+        "features": [
+          "add custom scrollbar to sidebar and terminal pane",
+          "refactor(main): remove terminal tab from new session modal",
+          "implement embedded terminal management and enhance tab functionality"
+        ]
+      }
+    },
+    {
+      "version": "v1.0.2",
+      "date": "2026-03-16",
+      "changes": {
+        "features": [
+          "add tab management features with context menu support",
+          "implement repo closing and reopening functionality",
+          "update title format and enhance tab scrolling functionality"
+        ]
+      }
+    },
+    {
+      "version": "v1.0.1",
+      "date": "2026-03-16",
+      "changes": {
+        "features": [
+          "add branch existence check in session creation",
+          "add rename task functionality with modal support",
+          "add directory override option for session configuration"
+        ]
+      }
+    },
+    {
+      "version": "v1.0.0",
+      "date": "2026-03-16",
+      "changes": {
+        "features": [
+          "implement newline keybinding configuration"
+        ]
+      }
+    },
+    {
+      "version": "v0.0.7",
+      "date": "2026-03-16",
+      "changes": {
+        "features": [
+          "add auto-update feature and enhance session configuration",
+          "add advanced session options for auto-pull and CLI configuration"
+        ]
+      }
+    },
+    {
+      "version": "v0.0.6",
+      "date": "2026-03-15",
+      "changes": {
+        "improvements": [
+          "chore(main): update Makefile with uninstall and install targets"
+        ]
+      }
+    },
+    {
+      "version": "v0.0.5",
+      "date": "2026-03-15",
+      "changes": {
+        "improvements": [
+          "chore(main): update Makefile with uninstall and install targets"
+        ]
+      }
+    },
+    {
+      "version": "v0.0.4",
+      "date": "2026-03-15",
+      "changes": {
+        "improvements": [
+          "release update"
+        ]
+      }
+    },
+    {
+      "version": "v0.0.3",
+      "date": "2026-03-15",
+      "changes": {
+        "features": [
+          "build(main): add reinstall target for quant package management"
+        ]
+      }
+    },
+    {
+      "version": "v0.0.2",
+      "date": "2026-03-15",
+      "changes": {
+        "internal": [
+          "chore(main): clean up release workflow and remove macOS build steps"
+        ]
+      }
+    },
+    {
+      "version": "v0.0.1",
+      "date": "2026-03-15",
+      "changes": {
+        "features": [
+          "implement session creation lock and auto-pull functionality",
+          "docs(main): update README with additional information",
+          "implement auto-fetch and conditional merge for session repositories",
+          "add config loading and auto-pull functionality for session creation",
+          "add session renaming functionality and improve session type handling",
+          "enhance session output handling and error recovery",
+          "improve auto-scroll behavior during terminal output",
+          "add notification system for session completion",
+          "add session type handling and improve session management",
+          "add config management and database settings",
+          "add auto-scroll toggle for terminal output",
+          "add archive/unarchive functionality for sessions and tasks",
+          "add confirmation for task deletion with associated sessions",
+          "add drag-and-drop functionality for session management",
+          "add MoveSessionModal and TabBar components for session management",
+          "add functionality to move sessions between tasks",
+          "enhance session output tracking and display status",
+          "implement session transition status handling",
+          "add transition status for session management",
+          "add start and resume session functionality",
+          "enhance session management with terminal resizing and output retrieval",
+          "chore(main): add initial project structure and configuration files",
+          "chore(main): add .gitignore to exclude build artifacts and IDE files"
+        ],
+        "fixes": [
+          "mark running sessions as paused on startup"
+        ],
+        "improvements": [
+          "docs(main): update README with product details and installation instructions"
+        ],
+        "internal": [
+          "docs(main): remove obsolete test line from README"
+        ]
+      }
+    }
+  ]
+}

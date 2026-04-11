@@ -333,3 +333,15 @@ export interface PathValidationResult {
   mcpConfigValid: boolean;
   mcpConfigError: string;
 }
+
+// --- Changelog ---
+
+export interface ChangelogEntry {
+  version: string;
+  date: string;
+  changes: Record<string, string[]>;
+}
+
+export interface Changelog {
+  entries: ChangelogEntry[];
+}
