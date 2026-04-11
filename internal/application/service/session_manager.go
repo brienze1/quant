@@ -27,6 +27,8 @@ type sessionManagerService struct {
 	spawnProcess   usecase.SpawnProcess
 	findRepo       usecase.FindRepo
 	manageWorktree usecase.ManageWorktree
+	loadConfig     usecase.LoadConfig
+	saveConfig     usecase.SaveConfig
 }
 
 // NewSessionManagerService creates a new SessionManager service.
@@ -39,6 +41,8 @@ func NewSessionManagerService(
 	spawnProcess usecase.SpawnProcess,
 	findRepo usecase.FindRepo,
 	manageWorktree usecase.ManageWorktree,
+	loadConfig usecase.LoadConfig,
+	saveConfig usecase.SaveConfig,
 ) adapter.SessionManager {
 	return &sessionManagerService{
 		findSession:    findSession,
@@ -48,6 +52,8 @@ func NewSessionManagerService(
 		spawnProcess:   spawnProcess,
 		findRepo:       findRepo,
 		manageWorktree: manageWorktree,
+		loadConfig:     loadConfig,
+		saveConfig:     saveConfig,
 	}
 }
 
@@ -284,6 +290,16 @@ Do the work silently. No commentary needed.`
 	_ = cmd.Run()
 }
 
+// persistActiveSessionID saves the given session ID as the active session in config.
+func (s *sessionManagerService) persistActiveSessionID(id string) {
+	cfg, err := s.loadConfig.LoadConfig()
+	if err != nil || cfg == nil {
+		return
+	}
+	cfg.ActiveSessionID = id
+	_ = s.saveConfig.SaveConfig(cfg)
+}
+
 // repoPathForSession returns the original repo path for a session.
 // When using worktrees the session's Directory is the worktree path, so we look up
 // the repo to get its root path, which is what command overrides should match against.
@@ -330,6 +346,8 @@ func (s *sessionManagerService) StartSession(id string, rows int, cols int) erro
 		return fmt.Errorf("failed to update session: %w", err)
 	}
 
+	s.persistActiveSessionID(id)
+
 	return nil
 }
 
@@ -360,6 +378,8 @@ func (s *sessionManagerService) ResumeSession(id string, rows int, cols int) err
 	if err != nil {
 		return fmt.Errorf("failed to update session: %w", err)
 	}
+
+	s.persistActiveSessionID(id)
 
 	return nil
 }

@@ -268,7 +268,25 @@ function App() {
   }, [fetchShortcuts, fetchJobs, fetchAgents, fetchWorkspaces, fetchJobGroups, fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
 
   useEffect(() => {
-    loadAll();
+    loadAll().then(async () => {
+      // Restore all open session tabs from persisted config
+      try {
+        const cfg = await api.getConfig();
+        const ids = cfg.openSessionIds ?? [];
+        for (const id of ids) {
+          setOpenTabIds((prev) => prev.includes(id) ? prev : [...prev, id]);
+        }
+        if (cfg.activeSessionId && ids.includes(cfg.activeSessionId)) {
+          setActiveTabId(cfg.activeSessionId);
+          setSelectedSessionId(cfg.activeSessionId);
+        } else if (ids.length > 0) {
+          setActiveTabId(ids[0]);
+          setSelectedSessionId(ids[0]);
+        }
+      } catch (err) {
+        console.error("failed to restore active session:", err);
+      }
+    });
     // Load app version and changelog
     api.getVersion().then(setAppVersion).catch(() => setAppVersion(""));
     api.getChangelog().then((cl) => setChangelogEntries(cl.entries ?? [])).catch(() => {});
@@ -282,7 +300,7 @@ function App() {
         return api.startAssistantSession(model);
       })
       .catch((err) => console.error("failed to start quanti:", err));
-  }, [loadAll]);
+  }, [loadAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // Persist active workspace to localStorage and reload data
@@ -329,6 +347,25 @@ function App() {
     fetchAgents();
     fetchJobGroups();
   }, [activeWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist open tabs and active tab to config whenever they change
+  const tabsRestoredRef = useRef(false);
+  useEffect(() => {
+    // Skip until initial restore from config has completed
+    if (!tabsRestoredRef.current) {
+      if (openTabIds.length > 0 || activeTabId) {
+        tabsRestoredRef.current = true;
+      }
+      return;
+    }
+    api.getConfig()
+      .then((cfg) => {
+        cfg.openSessionIds = openTabIds;
+        cfg.activeSessionId = activeTabId ?? "";
+        return api.saveConfig(cfg);
+      })
+      .catch((err) => console.error("failed to persist open tabs:", err));
+  }, [openTabIds, activeTabId]);
 
   // Close workspace dropdown when clicking outside
   useEffect(() => {

@@ -213,6 +213,8 @@ export interface Config {
   autoResumeOnStart: boolean;
   autoStopIdle: boolean;
   idleTimeoutMinutes: number;
+  activeSessionId: string;
+  openSessionIds: string[];
 
   // Storage & Data
   dataDirectory: string;

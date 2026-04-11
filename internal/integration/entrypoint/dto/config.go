@@ -28,12 +28,14 @@ type SaveConfigRequest struct {
 	CommitMessagePrefix string            `json:"commitMessagePrefix"`
 
 	// Sessions
-	UseWorktreeDefault    bool `json:"useWorktreeDefault"`
-	SkipPermissions       bool `json:"skipPermissions"`
-	MaxConcurrentSessions int  `json:"maxConcurrentSessions"`
-	AutoResumeOnStart     bool `json:"autoResumeOnStart"`
-	AutoStopIdle          bool `json:"autoStopIdle"`
-	IdleTimeoutMinutes    int  `json:"idleTimeoutMinutes"`
+	UseWorktreeDefault    bool   `json:"useWorktreeDefault"`
+	SkipPermissions       bool   `json:"skipPermissions"`
+	MaxConcurrentSessions int    `json:"maxConcurrentSessions"`
+	AutoResumeOnStart     bool   `json:"autoResumeOnStart"`
+	AutoStopIdle          bool   `json:"autoStopIdle"`
+	IdleTimeoutMinutes    int    `json:"idleTimeoutMinutes"`
+	ActiveSessionID       string   `json:"activeSessionId"`
+	OpenSessionIDs        []string `json:"openSessionIds"`
 
 	// Storage & Data
 	DataDirectory     string `json:"dataDirectory"`
@@ -75,12 +77,14 @@ type ConfigResponse struct {
 	CommitMessagePrefix string            `json:"commitMessagePrefix"`
 
 	// Sessions
-	UseWorktreeDefault    bool `json:"useWorktreeDefault"`
-	SkipPermissions       bool `json:"skipPermissions"`
-	MaxConcurrentSessions int  `json:"maxConcurrentSessions"`
-	AutoResumeOnStart     bool `json:"autoResumeOnStart"`
-	AutoStopIdle          bool `json:"autoStopIdle"`
-	IdleTimeoutMinutes    int  `json:"idleTimeoutMinutes"`
+	UseWorktreeDefault    bool   `json:"useWorktreeDefault"`
+	SkipPermissions       bool   `json:"skipPermissions"`
+	MaxConcurrentSessions int    `json:"maxConcurrentSessions"`
+	AutoResumeOnStart     bool   `json:"autoResumeOnStart"`
+	AutoStopIdle          bool   `json:"autoStopIdle"`
+	IdleTimeoutMinutes    int    `json:"idleTimeoutMinutes"`
+	ActiveSessionID       string   `json:"activeSessionId"`
+	OpenSessionIDs        []string `json:"openSessionIds"`
 
 	// Storage & Data
 	DataDirectory     string `json:"dataDirectory"`
@@ -128,6 +132,8 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		AutoResumeOnStart:     cfg.AutoResumeOnStart,
 		AutoStopIdle:          cfg.AutoStopIdle,
 		IdleTimeoutMinutes:    cfg.IdleTimeoutMinutes,
+		ActiveSessionID:       cfg.ActiveSessionID,
+		OpenSessionIDs:        cfg.OpenSessionIDs,
 		DataDirectory:         cfg.DataDirectory,
 		WorktreeDirectory:     cfg.WorktreeDirectory,
 		LogDirectory:          cfg.LogDirectory,
@@ -195,6 +201,8 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		AutoResumeOnStart:     r.AutoResumeOnStart,
 		AutoStopIdle:          r.AutoStopIdle,
 		IdleTimeoutMinutes:    r.IdleTimeoutMinutes,
+		ActiveSessionID:       r.ActiveSessionID,
+		OpenSessionIDs:        r.OpenSessionIDs,
 		DataDirectory:         r.DataDirectory,
 		WorktreeDirectory:     r.WorktreeDirectory,
 		LogDirectory:          r.LogDirectory,
