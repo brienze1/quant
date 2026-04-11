@@ -36,16 +36,16 @@ export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   { id: "closeTab", label: "Close current tab", category: "tabs", keys: "Meta+w" },
   { id: "stopSession", label: "Stop active session", category: "session", keys: "Meta+Shift+w" },
 
-  // Workspace
-  { id: "workspace1", label: "Jump to workspace 1", category: "workspace", keys: "Meta+Shift+1" },
-  { id: "workspace2", label: "Jump to workspace 2", category: "workspace", keys: "Meta+Shift+2" },
-  { id: "workspace3", label: "Jump to workspace 3", category: "workspace", keys: "Meta+Shift+3" },
-  { id: "workspace4", label: "Jump to workspace 4", category: "workspace", keys: "Meta+Shift+4" },
-  { id: "workspace5", label: "Jump to workspace 5", category: "workspace", keys: "Meta+Shift+5" },
-  { id: "workspace6", label: "Jump to workspace 6", category: "workspace", keys: "Meta+Shift+6" },
-  { id: "workspace7", label: "Jump to workspace 7", category: "workspace", keys: "Meta+Shift+7" },
-  { id: "workspace8", label: "Jump to workspace 8", category: "workspace", keys: "Meta+Shift+8" },
-  { id: "workspace9", label: "Jump to workspace 9", category: "workspace", keys: "Meta+Shift+9" },
+  // Workspace (Ctrl+N avoids macOS Cmd+Shift+3/4/5 screenshot conflicts)
+  { id: "workspace1", label: "Jump to workspace 1", category: "workspace", keys: "Ctrl+1" },
+  { id: "workspace2", label: "Jump to workspace 2", category: "workspace", keys: "Ctrl+2" },
+  { id: "workspace3", label: "Jump to workspace 3", category: "workspace", keys: "Ctrl+3" },
+  { id: "workspace4", label: "Jump to workspace 4", category: "workspace", keys: "Ctrl+4" },
+  { id: "workspace5", label: "Jump to workspace 5", category: "workspace", keys: "Ctrl+5" },
+  { id: "workspace6", label: "Jump to workspace 6", category: "workspace", keys: "Ctrl+6" },
+  { id: "workspace7", label: "Jump to workspace 7", category: "workspace", keys: "Ctrl+7" },
+  { id: "workspace8", label: "Jump to workspace 8", category: "workspace", keys: "Ctrl+8" },
+  { id: "workspace9", label: "Jump to workspace 9", category: "workspace", keys: "Ctrl+9" },
 
   // Theme
   { id: "themePicker", label: "Open theme picker", category: "theme", keys: "Meta+Shift+t" },
@@ -81,7 +81,8 @@ export function getActiveKeybindings(): KeyBinding[] {
 /** Convert a KeyboardEvent to our key string format */
 export function eventToKeyString(e: KeyboardEvent): string {
   const parts: string[] = [];
-  if (e.metaKey || e.ctrlKey) parts.push("Meta");
+  if (e.metaKey) parts.push("Meta");
+  if (e.ctrlKey && !e.metaKey) parts.push("Ctrl");
   if (e.shiftKey) parts.push("Shift");
   if (e.altKey) parts.push("Alt");
 

@@ -402,10 +402,6 @@ function App() {
       // Skip when an overlay (command palette, theme picker) is open — they handle their own keys
       if (commandPaletteOpenRef.current || themePickerOpenRef.current) return;
 
-      // Skip when terminal (xterm) has focus to avoid conflicts
-      const active = document.activeElement;
-      if (active && active.closest(".xterm")) return;
-
       // Skip when settings view is active and user is recording keybindings
       if (viewRef.current === "settings") return;
 
@@ -413,11 +409,32 @@ function App() {
       const matched = findMatchingAction(e, bindings);
       if (!matched) return;
 
+      // When terminal (xterm) has focus, only allow navigation/palette shortcuts through
+      const active = document.activeElement;
+      if (active && active.closest(".xterm")) {
+        const allowedInTerminal = new Set([
+          "nextTab", "prevTab", "closeTab", "stopSession",
+          "tab1", "tab2", "tab3", "tab4", "tab5", "tab6", "tab7", "tab8", "tab9",
+          "workspace1", "workspace2", "workspace3", "workspace4", "workspace5",
+          "workspace6", "workspace7", "workspace8", "workspace9",
+          "commandPalette", "themePicker",
+        ]);
+        if (!allowedInTerminal.has(matched.id)) return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
 
       const tabs = openTabIdsRef.current;
       const currentTab = activeTabIdRef.current;
+
+      // Focus the terminal in the newly active session after React re-renders
+      function focusTerminalAfterSwitch() {
+        requestAnimationFrame(() => {
+          const textarea = document.querySelector(".xterm textarea") as HTMLElement | null;
+          textarea?.focus();
+        });
+      }
 
       switch (matched.id) {
         case "nextTab": {
@@ -426,6 +443,7 @@ function App() {
           const nextIdx = (idx + 1) % tabs.length;
           setActiveTabId(tabs[nextIdx]);
           setSelectedSessionId(tabs[nextIdx]);
+          focusTerminalAfterSwitch();
           break;
         }
         case "prevTab": {
@@ -434,6 +452,7 @@ function App() {
           const prevIdx = (idx - 1 + tabs.length) % tabs.length;
           setActiveTabId(tabs[prevIdx]);
           setSelectedSessionId(tabs[prevIdx]);
+          focusTerminalAfterSwitch();
           break;
         }
         case "tab1": case "tab2": case "tab3": case "tab4": case "tab5":
@@ -442,6 +461,7 @@ function App() {
           if (n < tabs.length) {
             setActiveTabId(tabs[n]);
             setSelectedSessionId(tabs[n]);
+            focusTerminalAfterSwitch();
           }
           break;
         }
@@ -656,18 +676,20 @@ function App() {
       handleDeleteEmbeddedTerminal(embeddedTermId);
     }
 
-    setOpenTabIds((prev) => {
-      const next = prev.filter((t) => t !== id);
-      return next;
-    });
-    setActiveTabId((prev) => {
-      if (prev !== id) return prev;
-      // Switch to adjacent tab
-      const idx = openTabIds.indexOf(id);
-      if (openTabIds.length <= 1) return null;
-      if (idx === openTabIds.length - 1) return openTabIds[idx - 1];
-      return openTabIds[idx + 1];
-    });
+    const tabs = openTabIdsRef.current;
+    const wasActive = activeTabIdRef.current === id;
+
+    setOpenTabIds((prev) => prev.filter((t) => t !== id));
+
+    if (wasActive) {
+      const idx = tabs.indexOf(id);
+      let nextActive: string | null = null;
+      if (tabs.length > 1) {
+        nextActive = idx === tabs.length - 1 ? tabs[idx - 1] : tabs[idx + 1];
+      }
+      setActiveTabId(nextActive);
+      setSelectedSessionId(nextActive);
+    }
   }
 
   function handleCloseAllTabs() {
