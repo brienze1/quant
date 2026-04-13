@@ -183,6 +183,7 @@ Returns the created job object with the generated ID. Use this ID for run_job, u
 			// Triggers
 			mcp.WithString("onSuccess", mcp.Description("JSON array of job IDs to trigger on success. E.g. '[\"job-id-1\",\"job-id-2\"]'. All listed jobs run in parallel. Use list_jobs to get IDs")),
 			mcp.WithString("onFailure", mcp.Description("JSON array of job IDs to trigger on failure. E.g. '[\"job-id-1\"]'. All listed jobs run in parallel. Use list_jobs to get IDs")),
+			mcp.WithString("onCustom", mcp.Description("JSON array of custom conditional triggers. Each has a per-trigger evaluation prompt. E.g. '[{\"targetJobId\":\"job-uuid\",\"customPrompt\":\"Trigger if the PR has more than 3 approvals\"}]'. Custom triggers fire on any job completion and include the prompt as context")),
 			// Flags
 			mcp.WithBoolean("allowBypass", mcp.Description("Allow --dangerously-skip-permissions flag for claude jobs. Default: true. Set to false to require manual permission grants during execution")),
 			mcp.WithBoolean("autonomousMode", mcp.Description("Run in autonomous mode without stopping to ask the user. Default: true. Set to false for interactive jobs that need human approval")),
@@ -232,6 +233,7 @@ Common workflows:
 			mcp.WithString("envVariables", mcp.Description("JSON object of env vars. E.g. '{\"KEY\":\"value\"}'. Replaces existing env vars")),
 			mcp.WithString("onSuccess", mcp.Description("JSON array of job IDs to trigger on success. E.g. '[\"id1\",\"id2\"]'. Replaces existing triggers")),
 			mcp.WithString("onFailure", mcp.Description("JSON array of job IDs to trigger on failure. E.g. '[\"id1\"]'. Replaces existing triggers")),
+			mcp.WithString("onCustom", mcp.Description("JSON array of custom conditional triggers. E.g. '[{\"targetJobId\":\"job-uuid\",\"customPrompt\":\"Trigger if coverage > 80%\"}]'. Replaces existing custom triggers")),
 			mcp.WithBoolean("allowBypass", mcp.Description("Allow --dangerously-skip-permissions for claude jobs")),
 			mcp.WithBoolean("autonomousMode", mcp.Description("Run without stopping to ask the user")),
 		),
@@ -427,6 +429,7 @@ Each object contains:
 - job_name: human-readable name
 - on_success: array of job names this job triggers on success
 - on_failure: array of job names this job triggers on failure
+- on_custom: array of {job_name, prompt} for custom conditional triggers
 - triggered_by: array of job names that can trigger this job
 
 Only includes jobs that have at least one trigger connection. Use this to:
@@ -989,8 +992,9 @@ func (s *QuantMCPServer) handleCreateJob(_ context.Context, request mcp.CallTool
 
 	onSuccess := stringSliceArg(args, "onSuccess")
 	onFailure := stringSliceArg(args, "onFailure")
+	onCustom := customTriggerSliceArg(args, "onCustom")
 
-	created, err := s.jobManager.CreateJob(job, onSuccess, onFailure)
+	created, err := s.jobManager.CreateJob(job, onSuccess, onFailure, onCustom)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -1091,10 +1095,11 @@ func (s *QuantMCPServer) handleUpdateJob(_ context.Context, request mcp.CallTool
 	// Only update triggers if explicitly provided — nil means "don't change"
 	onSuccess := stringSliceArg(args, "onSuccess")
 	onFailure := stringSliceArg(args, "onFailure")
+	onCustom := customTriggerSliceArg(args, "onCustom")
 
-	// If neither provided, preserve existing triggers
-	if onSuccess == nil && onFailure == nil {
-		existingSuccess, existingFailure, _, _ := s.jobManager.GetTriggersForJob(id)
+	// If none provided, preserve existing triggers
+	if onSuccess == nil && onFailure == nil && onCustom == nil {
+		existingSuccess, existingFailure, existingCustom, _, _ := s.jobManager.GetTriggersForJob(id)
 		onSuccess = make([]string, len(existingSuccess))
 		for i, t := range existingSuccess {
 			onSuccess[i] = t.TargetJobID
@@ -1103,9 +1108,20 @@ func (s *QuantMCPServer) handleUpdateJob(_ context.Context, request mcp.CallTool
 		for i, t := range existingFailure {
 			onFailure[i] = t.TargetJobID
 		}
+		onCustom = make([]entity.CustomTriggerRef, len(existingCustom))
+		for i, t := range existingCustom {
+			onCustom[i] = entity.CustomTriggerRef{TargetJobID: t.TargetJobID, CustomPrompt: t.CustomPrompt}
+		}
+	} else if onCustom == nil {
+		// If success/failure provided but not custom, preserve existing custom triggers
+		_, _, existingCustom, _, _ := s.jobManager.GetTriggersForJob(id)
+		onCustom = make([]entity.CustomTriggerRef, len(existingCustom))
+		for i, t := range existingCustom {
+			onCustom[i] = entity.CustomTriggerRef{TargetJobID: t.TargetJobID, CustomPrompt: t.CustomPrompt}
+		}
 	}
 
-	updated, err := s.jobManager.UpdateJob(*existing, onSuccess, onFailure)
+	updated, err := s.jobManager.UpdateJob(*existing, onSuccess, onFailure, onCustom)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -1353,12 +1369,18 @@ func (s *QuantMCPServer) handleGetTriggers(_ context.Context, _ mcp.CallToolRequ
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	type customTriggerInfo struct {
+		JobName string `json:"job_name"`
+		Prompt  string `json:"prompt"`
+	}
+
 	type triggerInfo struct {
-		JobID       string   `json:"job_id"`
-		JobName     string   `json:"job_name"`
-		OnSuccess   []string `json:"on_success"`
-		OnFailure   []string `json:"on_failure"`
-		TriggeredBy []string `json:"triggered_by"`
+		JobID       string              `json:"job_id"`
+		JobName     string              `json:"job_name"`
+		OnSuccess   []string            `json:"on_success"`
+		OnFailure   []string            `json:"on_failure"`
+		OnCustom    []customTriggerInfo `json:"on_custom,omitempty"`
+		TriggeredBy []string            `json:"triggered_by"`
 	}
 
 	// Build name lookup
@@ -1369,7 +1391,7 @@ func (s *QuantMCPServer) handleGetTriggers(_ context.Context, _ mcp.CallToolRequ
 
 	var result []triggerInfo
 	for _, j := range jobs {
-		onSuccess, onFailure, triggeredBy, err := s.jobManager.GetTriggersForJob(j.ID)
+		onSuccess, onFailure, onCustom, triggeredBy, err := s.jobManager.GetTriggersForJob(j.ID)
 		if err != nil {
 			continue
 		}
@@ -1392,6 +1414,13 @@ func (s *QuantMCPServer) handleGetTriggers(_ context.Context, _ mcp.CallToolRequ
 			}
 			info.OnFailure = append(info.OnFailure, name)
 		}
+		for _, t := range onCustom {
+			name := nameMap[t.TargetJobID]
+			if name == "" {
+				name = t.TargetJobID
+			}
+			info.OnCustom = append(info.OnCustom, customTriggerInfo{JobName: name, Prompt: t.CustomPrompt})
+		}
 		for _, t := range triggeredBy {
 			name := nameMap[t.SourceJobID]
 			if name == "" {
@@ -1401,7 +1430,7 @@ func (s *QuantMCPServer) handleGetTriggers(_ context.Context, _ mcp.CallToolRequ
 		}
 
 		// Only include jobs that have any trigger connections
-		if len(info.OnSuccess) > 0 || len(info.OnFailure) > 0 || len(info.TriggeredBy) > 0 {
+		if len(info.OnSuccess) > 0 || len(info.OnFailure) > 0 || len(info.OnCustom) > 0 || len(info.TriggeredBy) > 0 {
 			result = append(result, info)
 		}
 	}
@@ -2021,7 +2050,7 @@ func (s *QuantMCPServer) handleMoveJobToWorkspace(_ context.Context, request mcp
 	job.WorkspaceID = workspaceID
 
 	// Preserve existing triggers
-	existingSuccess, existingFailure, _, _ := s.jobManager.GetTriggersForJob(jobID)
+	existingSuccess, existingFailure, existingCustom, _, _ := s.jobManager.GetTriggersForJob(jobID)
 	onSuccess := make([]string, len(existingSuccess))
 	for i, t := range existingSuccess {
 		onSuccess[i] = t.TargetJobID
@@ -2030,8 +2059,12 @@ func (s *QuantMCPServer) handleMoveJobToWorkspace(_ context.Context, request mcp
 	for i, t := range existingFailure {
 		onFailure[i] = t.TargetJobID
 	}
+	onCustom := make([]entity.CustomTriggerRef, len(existingCustom))
+	for i, t := range existingCustom {
+		onCustom[i] = entity.CustomTriggerRef{TargetJobID: t.TargetJobID, CustomPrompt: t.CustomPrompt}
+	}
 
-	updated, err := s.jobManager.UpdateJob(*job, onSuccess, onFailure)
+	updated, err := s.jobManager.UpdateJob(*job, onSuccess, onFailure, onCustom)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -2295,7 +2328,7 @@ func (s *QuantMCPServer) handleMoveGroupToWorkspace(_ context.Context, request m
 			continue
 		}
 		job.WorkspaceID = workspaceID
-		onSuccess, onFailure, _, _ := s.jobManager.GetTriggersForJob(jobID)
+		onSuccess, onFailure, onCustom, _, _ := s.jobManager.GetTriggersForJob(jobID)
 		successIDs := make([]string, len(onSuccess))
 		for i, t := range onSuccess {
 			successIDs[i] = t.TargetJobID
@@ -2304,7 +2337,11 @@ func (s *QuantMCPServer) handleMoveGroupToWorkspace(_ context.Context, request m
 		for i, t := range onFailure {
 			failureIDs[i] = t.TargetJobID
 		}
-		_, _ = s.jobManager.UpdateJob(*job, successIDs, failureIDs)
+		customRefs := make([]entity.CustomTriggerRef, len(onCustom))
+		for i, t := range onCustom {
+			customRefs[i] = entity.CustomTriggerRef{TargetJobID: t.TargetJobID, CustomPrompt: t.CustomPrompt}
+		}
+		_, _ = s.jobManager.UpdateJob(*job, successIDs, failureIDs, customRefs)
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf("moved group '%s' and %d jobs to workspace %s", existing.Name, len(existing.JobIDs), workspaceID)), nil
@@ -2643,6 +2680,46 @@ func mapStringArg(args map[string]any, key string) map[string]string {
 			return result
 		}
 	}
+	return nil
+}
+
+func customTriggerSliceArg(args map[string]any, key string) []entity.CustomTriggerRef {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return nil
+	}
+
+	// Handle []any (from native JSON arrays)
+	if arr, ok := v.([]any); ok {
+		result := make([]entity.CustomTriggerRef, 0, len(arr))
+		for _, item := range arr {
+			if m, ok := item.(map[string]any); ok {
+				ref := entity.CustomTriggerRef{}
+				if tid, ok := m["targetJobId"].(string); ok {
+					ref.TargetJobID = tid
+				}
+				if cp, ok := m["customPrompt"].(string); ok {
+					ref.CustomPrompt = cp
+				}
+				if ref.TargetJobID != "" {
+					result = append(result, ref)
+				}
+			}
+		}
+		return result
+	}
+
+	// Handle string (JSON-encoded array from MCP string field)
+	if s, ok := v.(string); ok && s != "" {
+		s = strings.TrimSpace(s)
+		if strings.HasPrefix(s, "[") {
+			var result []entity.CustomTriggerRef
+			if err := json.Unmarshal([]byte(s), &result); err == nil {
+				return result
+			}
+		}
+	}
+
 	return nil
 }
 

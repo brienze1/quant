@@ -377,7 +377,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const [panning, setPanning] = useState<{ startX: number; startY: number; offsetStartX: number; offsetStartY: number } | null>(null);
   const [canvasModalJobId, setCanvasModalJobId] = useState<string | null>(null);
   const [canvasModalTab, setCanvasModalTab] = useState<JobTab>("settings");
-  const [connectingMode, setConnectingMode] = useState<{ type: "success" | "failure"; sourceId?: string } | null>(null);
+  const [connectingMode, setConnectingMode] = useState<{ type: "success" | "failure" | "custom"; sourceId?: string } | null>(null);
+  const [customPromptModal, setCustomPromptModal] = useState<{ sourceId: string; targetId: string } | null>(null);
+  const [customPromptInput, setCustomPromptInput] = useState("");
   const [triggerDropdownOpen, setTriggerDropdownOpen] = useState(false);
   const [groupsSidebarWidth, setGroupsSidebarWidth] = useState(() => {
     try { return parseInt(localStorage.getItem("quant-groups-sidebar-width") || "200", 10); } catch { return 200; }
@@ -565,7 +567,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const [pipelineRuns, setPipelineRuns] = useState<JobRun[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [runningJobIds, setRunningJobIds] = useState<Set<string>>(new Set());
-  const [selectedEdge, setSelectedEdge] = useState<{ sourceId: string; targetId: string; type: "success" | "failure" } | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<{ sourceId: string; targetId: string; type: "success" | "failure" | "custom" } | null>(null);
   const [edgeDeleteHover, setEdgeDeleteHover] = useState(false);
   const [wavePhase, setWavePhase] = useState(0);
   const waveAmplitude = useRef(0);
@@ -1029,6 +1031,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             onFailure: edge.type === "failure"
               ? sourceJob.onFailure.filter((id) => id !== edge.targetId)
               : sourceJob.onFailure,
+            onCustom: edge.type === "custom"
+              ? (sourceJob.onCustom ?? []).filter((ct) => ct.targetJobId !== edge.targetId)
+              : (sourceJob.onCustom ?? []),
           }).then(() => {
             setSelectedEdge(null);
             onRefreshJobs();
@@ -1202,16 +1207,23 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       workspaceId: sourceJob.workspaceId,
       onSuccess: [...sourceJob.onSuccess],
       onFailure: [...sourceJob.onFailure],
+      onCustom: [...(sourceJob.onCustom ?? [])],
     };
 
     if (connectingMode.type === "success") {
       if (!updateReq.onSuccess.includes(jobId)) {
         updateReq.onSuccess.push(jobId);
       }
-    } else {
+    } else if (connectingMode.type === "failure") {
       if (!updateReq.onFailure.includes(jobId)) {
         updateReq.onFailure.push(jobId);
       }
+    } else if (connectingMode.type === "custom") {
+      // Show custom prompt modal instead of creating immediately
+      setCustomPromptModal({ sourceId: connectingMode.sourceId!, targetId: jobId });
+      setCustomPromptInput("");
+      setConnectingMode(null);
+      return;
     }
 
     try {
@@ -1221,6 +1233,53 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       console.error("failed to create connection:", err);
     }
     setConnectingMode(null);
+  }
+
+  async function handleCustomPromptSubmit() {
+    if (!customPromptModal) return;
+    const sourceJob = jobs.find((j) => j.id === customPromptModal.sourceId);
+    if (!sourceJob) return;
+
+    const updateReq: UpdateJobRequest = {
+      id: sourceJob.id,
+      name: sourceJob.name,
+      description: sourceJob.description,
+      type: sourceJob.type,
+      workingDirectory: sourceJob.workingDirectory,
+      scheduleEnabled: sourceJob.scheduleEnabled,
+      scheduleType: sourceJob.scheduleType,
+      cronExpression: sourceJob.cronExpression,
+      scheduleInterval: sourceJob.scheduleInterval,
+      timeoutSeconds: sourceJob.timeoutSeconds,
+      prompt: sourceJob.prompt,
+      allowBypass: sourceJob.allowBypass,
+      autonomousMode: sourceJob.autonomousMode,
+      maxRetries: sourceJob.maxRetries,
+      model: sourceJob.model,
+      overrideRepoCommand: sourceJob.overrideRepoCommand,
+      claudeCommand: sourceJob.claudeCommand,
+      agentId: sourceJob.agentId,
+      successPrompt: sourceJob.successPrompt,
+      failurePrompt: sourceJob.failurePrompt,
+      metadataPrompt: sourceJob.metadataPrompt,
+      triagePrompt: sourceJob.triagePrompt ?? "",
+      interpreter: sourceJob.interpreter,
+      scriptContent: sourceJob.scriptContent,
+      envVariables: sourceJob.envVariables,
+      workspaceId: sourceJob.workspaceId,
+      onSuccess: [...sourceJob.onSuccess],
+      onFailure: [...sourceJob.onFailure],
+      onCustom: [...(sourceJob.onCustom ?? []), { targetJobId: customPromptModal.targetId, customPrompt: customPromptInput }],
+    };
+
+    try {
+      await api.updateJob(updateReq);
+      onRefreshJobs();
+    } catch (err) {
+      console.error("failed to create custom connection:", err);
+    }
+    setCustomPromptModal(null);
+    setCustomPromptInput("");
   }
 
   function handleAutoLayout() {
@@ -1456,6 +1515,12 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         {renderSection("triggers", <>
           {renderKeyValue("on_success", selectedJob.onSuccess)}
           {renderKeyValue("on_failure", selectedJob.onFailure)}
+          {renderKeyValue("on_custom", (selectedJob.onCustom ?? []).length > 0
+            ? (selectedJob.onCustom ?? []).map((ct) => {
+                const j = jobs.find((jj) => jj.id === ct.targetJobId);
+                return `${j?.name ?? ct.targetJobId.slice(0, 8)}: "${ct.customPrompt}"`;
+              }).join("; ")
+            : "")}
           {renderKeyValue("triggered_by", selectedJob.triggeredBy.length > 0
             ? selectedJob.triggeredBy.map((ref) => {
                 const j = jobs.find((jj) => jj.id === ref.jobId);
@@ -1935,11 +2000,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       const sourcePos = nodePositions[job.id];
       if (!sourcePos) continue;
 
-      const drawEdge = (targetId: string, edgeType: "success" | "failure") => {
+      const drawEdge = (targetId: string, edgeType: "success" | "failure" | "custom", customPrompt?: string) => {
         const targetPos = nodePositions[targetId];
         if (!targetPos) return;
 
-        const edgeColor = edgeType === "success" ? "var(--q-accent)" : "var(--q-error)";
+        const edgeColor = edgeType === "success" ? "var(--q-accent)" : edgeType === "custom" ? "#3B82F6" : "var(--q-error)";
         const k = keyIdx++;
         const isSelected = selectedEdge?.sourceId === job.id && selectedEdge?.targetId === targetId && selectedEdge?.type === edgeType;
         const isFlashing = flashingEdges.has(`${job.id}->${targetId}`);
@@ -2120,6 +2185,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       onFailure: edgeType === "failure"
                         ? sourceJob.onFailure.filter((id) => id !== targetId)
                         : sourceJob.onFailure,
+                      onCustom: edgeType === "custom"
+                        ? (sourceJob.onCustom ?? []).filter((ct) => ct.targetJobId !== targetId)
+                        : (sourceJob.onCustom ?? []),
                     });
                     setSelectedEdge(null);
                     setEdgeDeleteHover(false);
@@ -2143,6 +2211,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       }
       for (const targetId of (job.onFailure ?? [])) {
         drawEdge(targetId, "failure");
+      }
+      for (const ct of (job.onCustom ?? [])) {
+        drawEdge(ct.targetJobId, "custom", ct.customPrompt);
       }
     }
 
@@ -2474,6 +2545,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           <defs>
             <marker id="arrow-success" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-accent)"/></marker>
             <marker id="arrow-failure" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-error)"/></marker>
+            <marker id="arrow-custom" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#3B82F6"/></marker>
             <marker id="arrow-selected" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-fg)"/></marker>
             <marker id="arrow-delete" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-error)"/></marker>
             <marker id="arrow-dim" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-fg-muted)"/></marker>
@@ -2522,8 +2594,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               const pCpLen = Math.min(Math.max(pDist * 0.35, 40), 120);
               const sNx = sx - (srcPos.x + NODE_W / 2), sNy = sy - (srcPos.y + NODE_H / 2);
               const sNLen = Math.sqrt(sNx * sNx + sNy * sNy) || 1;
-              const color = connectingMode.type === "success" ? "var(--q-accent)" : "var(--q-error)";
-              const arrowId = connectingMode.type === "success" ? "arrow-success" : "arrow-failure";
+              const color = connectingMode.type === "success" ? "var(--q-accent)" : connectingMode.type === "custom" ? "#3B82F6" : "var(--q-error)";
+              const arrowId = connectingMode.type === "success" ? "arrow-success" : connectingMode.type === "custom" ? "arrow-custom" : "arrow-failure";
               return (
                 <path
                   d={`M ${sx},${sy} C ${sx + (sNx / sNLen) * pCpLen},${sy + (sNy / sNLen) * pCpLen} ${tx},${ty} ${tx},${ty}`}
@@ -3237,6 +3309,30 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   on failure
                   {connectingMode?.type === "failure" && (
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--q-error)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setConnectingMode(connectingMode?.type === "custom" ? null : { type: "custom" });
+                    setTriggerDropdownOpen(false);
+                  }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    width: "100%", padding: "6px 12px",
+                    background: connectingMode?.type === "custom" ? "var(--q-border)" : "none",
+                    border: "none", cursor: "pointer",
+                    color: "#3B82F6", textAlign: "left", fontSize: 11,
+                    fontFamily: font,
+                  }}
+                  onMouseEnter={(e) => { if (connectingMode?.type !== "custom") e.currentTarget.style.backgroundColor = "var(--q-bg-inset)"; }}
+                  onMouseLeave={(e) => { if (connectingMode?.type !== "custom") e.currentTarget.style.backgroundColor = "transparent"; }}
+                >
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#3B82F6", flexShrink: 0 }} />
+                  on custom
+                  {connectingMode?.type === "custom" && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
@@ -4004,6 +4100,68 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           </div>
         );
       })()}
+      {/* Custom prompt modal for creating custom trigger edges */}
+      {customPromptModal && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 99999,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          backgroundColor: "rgba(0,0,0,0.5)",
+        }} onClick={() => { setCustomPromptModal(null); setCustomPromptInput(""); }}>
+          <div style={{
+            backgroundColor: "var(--q-bg-surface)",
+            border: "1px solid var(--q-border)",
+            borderRadius: 8, padding: 20, minWidth: 380, maxWidth: 480,
+            fontFamily: font, boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#3B82F6", marginBottom: 12 }}>
+              custom trigger prompt
+            </div>
+            <div style={{ fontSize: 10, color: "var(--q-fg-secondary)", marginBottom: 8 }}>
+              {(() => {
+                const src = jobs.find((j) => j.id === customPromptModal.sourceId);
+                const tgt = jobs.find((j) => j.id === customPromptModal.targetId);
+                return `${src?.name ?? "source"} → ${tgt?.name ?? "target"}`;
+              })()}
+            </div>
+            <textarea
+              autoFocus
+              value={customPromptInput}
+              onChange={(e) => setCustomPromptInput(e.target.value)}
+              placeholder="e.g. Trigger if all tests pass AND coverage > 80%"
+              style={{
+                width: "100%", minHeight: 80, padding: 8,
+                backgroundColor: "var(--q-bg-inset)", color: "var(--q-fg)",
+                border: "1px solid var(--q-border)", borderRadius: 4,
+                fontFamily: font, fontSize: 11, resize: "vertical",
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  handleCustomPromptSubmit();
+                }
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+              <button
+                onClick={() => { setCustomPromptModal(null); setCustomPromptInput(""); }}
+                style={{
+                  background: "none", border: "1px solid var(--q-border)", borderRadius: 4,
+                  padding: "4px 12px", color: "var(--q-fg-secondary)", cursor: "pointer",
+                  fontFamily: font, fontSize: 10,
+                }}
+              >cancel</button>
+              <button
+                onClick={handleCustomPromptSubmit}
+                disabled={!customPromptInput.trim()}
+                style={{
+                  background: "#3B82F6", border: "none", borderRadius: 4,
+                  padding: "4px 12px", color: "#fff", cursor: customPromptInput.trim() ? "pointer" : "not-allowed",
+                  fontFamily: font, fontSize: 10, opacity: customPromptInput.trim() ? 1 : 0.5,
+                }}
+              >create trigger</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

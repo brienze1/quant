@@ -31,9 +31,10 @@ type CreateJobRequest struct {
 	Interpreter         string            `json:"interpreter"`
 	ScriptContent       string            `json:"scriptContent"`
 	EnvVariables        map[string]string `json:"envVariables"`
-	OnSuccess           []string          `json:"onSuccess"`
-	OnFailure           []string          `json:"onFailure"`
-	WorkspaceID         string            `json:"workspaceId"`
+	OnSuccess           []string               `json:"onSuccess"`
+	OnFailure           []string               `json:"onFailure"`
+	OnCustom            []entity.CustomTriggerRef `json:"onCustom"`
+	WorkspaceID         string                 `json:"workspaceId"`
 }
 
 // UpdateJobRequest represents the request payload for updating an existing job.
@@ -63,9 +64,10 @@ type UpdateJobRequest struct {
 	Interpreter         string            `json:"interpreter"`
 	ScriptContent       string            `json:"scriptContent"`
 	EnvVariables        map[string]string `json:"envVariables"`
-	OnSuccess           []string          `json:"onSuccess"`
-	OnFailure           []string          `json:"onFailure"`
-	WorkspaceID         string            `json:"workspaceId"`
+	OnSuccess           []string               `json:"onSuccess"`
+	OnFailure           []string               `json:"onFailure"`
+	OnCustom            []entity.CustomTriggerRef `json:"onCustom"`
+	WorkspaceID         string                 `json:"workspaceId"`
 }
 
 // JobResponse represents the response payload for job data.
@@ -98,15 +100,23 @@ type JobResponse struct {
 	WorkspaceID         string            `json:"workspaceId"`
 	CreatedAt           string            `json:"createdAt"`
 	UpdatedAt           string            `json:"updatedAt"`
-	OnSuccess           []string          `json:"onSuccess"`
-	OnFailure           []string          `json:"onFailure"`
-	TriggeredBy         []TriggerRef      `json:"triggeredBy"`
+	OnSuccess           []string               `json:"onSuccess"`
+	OnFailure           []string               `json:"onFailure"`
+	OnCustom            []CustomTriggerResponse `json:"onCustom"`
+	TriggeredBy         []TriggerRef           `json:"triggeredBy"`
+}
+
+// CustomTriggerResponse represents a custom trigger in the job response.
+type CustomTriggerResponse struct {
+	TargetJobID  string `json:"targetJobId"`
+	CustomPrompt string `json:"customPrompt"`
 }
 
 // TriggerRef describes a trigger relationship with its type.
 type TriggerRef struct {
-	JobID     string `json:"jobId"`
-	TriggerOn string `json:"triggerOn"` // "success" or "failure"
+	JobID        string `json:"jobId"`
+	TriggerOn    string `json:"triggerOn"`    // "success" | "failure" | "custom"
+	CustomPrompt string `json:"customPrompt"` // only set when TriggerOn == "custom"
 }
 
 // JobRunResponse represents the response payload for job run data.
@@ -128,7 +138,7 @@ type JobRunResponse struct {
 }
 
 // JobResponseFromEntity converts a domain entity to a JobResponse DTO with trigger information.
-func JobResponseFromEntity(job entity.Job, onSuccess []entity.JobTrigger, onFailure []entity.JobTrigger, triggeredBy []entity.JobTrigger) JobResponse {
+func JobResponseFromEntity(job entity.Job, onSuccess []entity.JobTrigger, onFailure []entity.JobTrigger, onCustom []entity.JobTrigger, triggeredBy []entity.JobTrigger) JobResponse {
 	successIDs := make([]string, len(onSuccess))
 	for i, t := range onSuccess {
 		successIDs[i] = t.TargetJobID
@@ -139,9 +149,14 @@ func JobResponseFromEntity(job entity.Job, onSuccess []entity.JobTrigger, onFail
 		failureIDs[i] = t.TargetJobID
 	}
 
+	customTriggers := make([]CustomTriggerResponse, len(onCustom))
+	for i, t := range onCustom {
+		customTriggers[i] = CustomTriggerResponse{TargetJobID: t.TargetJobID, CustomPrompt: t.CustomPrompt}
+	}
+
 	triggeredByRefs := make([]TriggerRef, len(triggeredBy))
 	for i, t := range triggeredBy {
-		triggeredByRefs[i] = TriggerRef{JobID: t.SourceJobID, TriggerOn: t.TriggerOn}
+		triggeredByRefs[i] = TriggerRef{JobID: t.SourceJobID, TriggerOn: t.TriggerOn, CustomPrompt: t.CustomPrompt}
 	}
 
 	return JobResponse{
@@ -175,28 +190,29 @@ func JobResponseFromEntity(job entity.Job, onSuccess []entity.JobTrigger, onFail
 		UpdatedAt:           job.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		OnSuccess:           successIDs,
 		OnFailure:           failureIDs,
+		OnCustom:            customTriggers,
 		TriggeredBy:         triggeredByRefs,
 	}
 }
 
 // JobResponseFromEntityPtr converts a domain entity pointer to a JobResponse DTO pointer.
-func JobResponseFromEntityPtr(job *entity.Job, onSuccess []entity.JobTrigger, onFailure []entity.JobTrigger, triggeredBy []entity.JobTrigger) *JobResponse {
+func JobResponseFromEntityPtr(job *entity.Job, onSuccess []entity.JobTrigger, onFailure []entity.JobTrigger, onCustom []entity.JobTrigger, triggeredBy []entity.JobTrigger) *JobResponse {
 	if job == nil {
 		return nil
 	}
-	response := JobResponseFromEntity(*job, onSuccess, onFailure, triggeredBy)
+	response := JobResponseFromEntity(*job, onSuccess, onFailure, onCustom, triggeredBy)
 	return &response
 }
 
 // JobResponseListFromEntities converts a slice of jobs with their triggers to a slice of JobResponse DTOs.
-func JobResponseListFromEntities(jobs []entity.Job, triggersFn func(jobID string) ([]entity.JobTrigger, []entity.JobTrigger, []entity.JobTrigger, error)) ([]JobResponse, error) {
+func JobResponseListFromEntities(jobs []entity.Job, triggersFn func(jobID string) ([]entity.JobTrigger, []entity.JobTrigger, []entity.JobTrigger, []entity.JobTrigger, error)) ([]JobResponse, error) {
 	responses := make([]JobResponse, len(jobs))
 	for i, job := range jobs {
-		onSuccess, onFailure, triggeredBy, err := triggersFn(job.ID)
+		onSuccess, onFailure, onCustom, triggeredBy, err := triggersFn(job.ID)
 		if err != nil {
 			return nil, err
 		}
-		responses[i] = JobResponseFromEntity(job, onSuccess, onFailure, triggeredBy)
+		responses[i] = JobResponseFromEntity(job, onSuccess, onFailure, onCustom, triggeredBy)
 	}
 	return responses, nil
 }
