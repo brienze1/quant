@@ -8,4 +8,5 @@ import (
 type FindJobGroup interface {
 	FindJobGroupByID(id string) (*entity.JobGroup, error)
 	FindJobGroupsByWorkspace(workspaceID string) ([]entity.JobGroup, error)
+	FindJobGroupByJobID(jobID string) (*entity.JobGroup, error)
 }

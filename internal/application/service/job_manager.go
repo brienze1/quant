@@ -24,6 +24,25 @@ import (
 	"quant/internal/domain/enums/jobtype"
 )
 
+// compactionTokenThreshold is the approximate token count at which we trigger
+// context compaction for a shared chain session (~200k tokens).
+const compactionTokenThreshold = 200_000
+
+// chainSession tracks a shared Claude session across correlated jobs in the same group.
+type chainSession struct {
+	mu             sync.Mutex // serialises execution — one job at a time per session
+	conversationID string     // Claude conversation ID for --resume
+	claudeCommand  string     // the CLI command used (split session if this changes)
+	model          string     // the model used (split session if this changes)
+	totalTokens    int        // cumulative tokens across all runs in this chain session
+}
+
+// chainSessionKey uniquely identifies a chain session: correlation ID + group ID.
+type chainSessionKey struct {
+	correlationID string
+	groupID       string
+}
+
 // jobManagerService implements the adapter.JobManager interface.
 type jobManagerService struct {
 	findJob        usecase.FindJob
@@ -35,10 +54,14 @@ type jobManagerService struct {
 	findJobRun     usecase.FindJobRun
 	saveJobRun     usecase.SaveJobRun
 	findAgent      usecase.FindAgent
+	findJobGroup   usecase.FindJobGroup
 
 	mu           sync.RWMutex
 	runningProcs map[string]*os.Process // runID -> process
 	triggerCtx   map[string]string      // runID -> trigger context for prompt injection
+
+	chainMu       sync.RWMutex
+	chainSessions map[chainSessionKey]*chainSession // active chain sessions
 }
 
 // NewJobManagerService creates a new JobManager service.
@@ -52,6 +75,7 @@ func NewJobManagerService(
 	findJobRun usecase.FindJobRun,
 	saveJobRun usecase.SaveJobRun,
 	findAgent usecase.FindAgent,
+	findJobGroup usecase.FindJobGroup,
 ) adapter.JobManager {
 	return &jobManagerService{
 		findJob:        findJob,
@@ -63,8 +87,10 @@ func NewJobManagerService(
 		findJobRun:     findJobRun,
 		saveJobRun:     saveJobRun,
 		findAgent:      findAgent,
+		findJobGroup:   findJobGroup,
 		runningProcs:   make(map[string]*os.Process),
 		triggerCtx:     make(map[string]string),
+		chainSessions:  make(map[chainSessionKey]*chainSession),
 	}
 }
 
@@ -228,8 +254,28 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correl
 	job.LastRunAt = &now
 	_ = s.updateJob.UpdateJob(*job)
 
+	// Check if this job is in a group — if so, create a chain session for the correlation.
+	// This allows downstream triggered jobs in the same group to share the session.
+	var csKey *chainSessionKey
+	if job.Type == jobtype.Claude && s.findJobGroup != nil {
+		if group, groupErr := s.findJobGroup.FindJobGroupByJobID(jobID); groupErr == nil && group != nil {
+			key := chainSessionKey{correlationID: run.CorrelationID, groupID: group.ID}
+			claudeCmd := job.ClaudeCommand
+			if claudeCmd == "" {
+				claudeCmd = "claude"
+			}
+			s.chainMu.Lock()
+			s.chainSessions[key] = &chainSession{
+				claudeCommand: claudeCmd,
+				model:         job.Model,
+			}
+			s.chainMu.Unlock()
+			csKey = &key
+		}
+	}
+
 	// Execute asynchronously
-	go s.executeWithRetries(job, &run)
+	go s.executeWithRetries(job, &run, csKey)
 
 	return &run, nil
 }
@@ -447,7 +493,12 @@ func (s *jobManagerService) ListRunsByCorrelation(correlationID string) ([]entit
 
 // executeWithRetries runs the job, retrying on failure up to MaxRetries.
 // For Claude jobs, each retry includes the previous attempt's output so Claude can pick up.
-func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobRun) {
+// When csKey is non-nil, the job participates in a shared chain session.
+func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobRun, csKey ...*chainSessionKey) {
+	var activeCSKey *chainSessionKey
+	if len(csKey) > 0 {
+		activeCSKey = csKey[0]
+	}
 	maxAttempts := job.MaxRetries + 1
 	if maxAttempts < 1 {
 		maxAttempts = 1
@@ -468,7 +519,7 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 
 		switch job.Type {
 		case jobtype.Claude:
-			result, execErr = s.executeClaudeJob(job, run, attempt, lastOutput)
+			result, execErr = s.executeClaudeJob(job, run, attempt, lastOutput, activeCSKey)
 		case jobtype.Bash:
 			result, execErr = s.executeBashJob(job, run)
 		default:
@@ -494,7 +545,7 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 				run.Result = result
 				run.FinishedAt = &now
 				_ = s.saveJobRun.UpdateJobRun(*run)
-				s.fireTriggers(job.ID, run)
+				s.fireTriggers(job.ID, run, activeCSKey)
 				return
 			}
 
@@ -559,7 +610,7 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 			}
 
 			_ = s.saveJobRun.UpdateJobRun(*run)
-			s.fireTriggers(job.ID, run)
+			s.fireTriggers(job.ID, run, activeCSKey)
 			return
 		}
 
@@ -569,7 +620,7 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 		run.Result = result
 		run.FinishedAt = &now
 		_ = s.saveJobRun.UpdateJobRun(*run)
-		s.fireTriggers(job.ID, run)
+		s.fireTriggers(job.ID, run, activeCSKey)
 		return
 	}
 
@@ -585,7 +636,7 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 	run.Result = lastOutput
 	run.FinishedAt = &now
 	_ = s.saveJobRun.UpdateJobRun(*run)
-	s.fireTriggers(job.ID, run)
+	s.fireTriggers(job.ID, run, activeCSKey)
 }
 
 // buildClaudePrompt wraps the user's prompt with autonomous job instructions.
@@ -642,7 +693,11 @@ func (s *jobManagerService) buildClaudePrompt(job *entity.Job, run *entity.JobRu
 // executeClaudeJob runs Claude CLI with -p flag (non-interactive, exits when done).
 // Exit code 0 = success, non-zero = failure. All output captured.
 // The prompt is passed via stdin to avoid shell quoting issues with multi-line text.
-func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun, attempt int, previousOutput string) (string, error) {
+//
+// When csKey is non-nil, the job participates in a shared chain session:
+//   - If the chain session already has a conversationID, --resume is used instead of a fresh session.
+//   - After completion, the conversation ID and token count are stored back on the chain session.
+func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun, attempt int, previousOutput string, csKey *chainSessionKey) (string, error) {
 	prompt := s.buildClaudePrompt(job, run, attempt, previousOutput)
 
 	claudeCmd := job.ClaudeCommand
@@ -650,9 +705,26 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 		claudeCmd = "claude"
 	}
 
+	// Look up chain session for possible --resume
+	var cs *chainSession
+	var resumeConvID string
+	if csKey != nil {
+		s.chainMu.RLock()
+		cs = s.chainSessions[*csKey]
+		s.chainMu.RUnlock()
+		if cs != nil && cs.conversationID != "" {
+			resumeConvID = cs.conversationID
+		}
+	}
+
 	// Build CLI args — use stream-json for both live output AND token data
 	var cliArgs []string
-	cliArgs = append(cliArgs, "-p", "-")
+	if resumeConvID != "" {
+		// Continue existing conversation
+		cliArgs = append(cliArgs, "--resume", resumeConvID, "-p", "-")
+	} else {
+		cliArgs = append(cliArgs, "-p", "-")
+	}
 	cliArgs = append(cliArgs, "--output-format", "stream-json", "--verbose")
 	if job.AllowBypass {
 		cliArgs = append(cliArgs, "--dangerously-skip-permissions")
@@ -741,6 +813,15 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 	_ = os.MkdirAll(filepath.Dir(logPath), 0755)
 	logFile, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 
+	// Log session info for debugging
+	if logFile != nil {
+		if resumeConvID != "" {
+			_, _ = logFile.WriteString(fmt.Sprintf("--- resuming session: %s ---\n", resumeConvID))
+		} else if csKey != nil {
+			_, _ = logFile.WriteString("--- starting new chain session ---\n")
+		}
+	}
+
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
@@ -768,8 +849,10 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 
 	// Parse stream-json output line by line
 	// - "assistant" events contain the text content (stream to log)
-	// - "result" event has the final token usage stats
+	// - "result" event has the final token usage stats and session_id for chain continuation
 	var resultText strings.Builder
+	var extractedConvID string
+	var runTokens int
 	outputDone := make(chan struct{})
 
 	go func() {
@@ -817,7 +900,12 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 				if usage != nil {
 					inputTokens, _ := usage["input_tokens"].(float64)
 					outputTokens, _ := usage["output_tokens"].(float64)
-					run.TokensUsed = int(inputTokens + outputTokens)
+					runTokens = int(inputTokens + outputTokens)
+					run.TokensUsed = runTokens
+				}
+				// Extract conversation/session ID for chain continuation
+				if sid, ok := event["session_id"].(string); ok && sid != "" {
+					extractedConvID = sid
 				}
 				// Log and store which model actually ran
 				if model, ok := event["model"].(string); ok && model != "" {
@@ -873,6 +961,17 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 	}
 
 	<-outputDone
+
+	// Update chain session with conversation ID and token count
+	if cs != nil && extractedConvID != "" {
+		cs.conversationID = extractedConvID
+		cs.totalTokens += runTokens
+	}
+
+	// Store conversation ID on the run for visibility
+	if extractedConvID != "" {
+		run.SessionID = extractedConvID
+	}
 
 	result := resultText.String()
 	if stderr.Len() > 0 {
@@ -1219,7 +1318,8 @@ func (s *jobManagerService) executeBashJob(job *entity.Job, run *entity.JobRun) 
 }
 
 // fireTriggers fires trigger chains after a job run completes.
-func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun) {
+// When the source run used a chain session, eligible downstream jobs share that session.
+func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun, sourceCSKey ...*chainSessionKey) {
 	if run.Status == jobrunstatus.Waiting {
 		return
 	}
@@ -1234,11 +1334,25 @@ func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun) {
 		triggerOn = "failure"
 	}
 
-	// Get source job name for context
+	// Get source job for context and group lookup
 	sourceJob, _ := s.findJob.FindJobByID(jobID)
 	sourceJobName := jobID
 	if sourceJob != nil {
 		sourceJobName = sourceJob.Name
+	}
+
+	// Find source job's group (for session sharing decisions)
+	var sourceGroupID string
+	if s.findJobGroup != nil {
+		if sourceGroup, err := s.findJobGroup.FindJobGroupByJobID(jobID); err == nil && sourceGroup != nil {
+			sourceGroupID = sourceGroup.ID
+		}
+	}
+
+	// Resolve the active chain session key from the source run
+	var activeCSKey *chainSessionKey
+	if len(sourceCSKey) > 0 {
+		activeCSKey = sourceCSKey[0]
 	}
 
 	// Extract metadata from the run result (if present)
@@ -1253,36 +1367,238 @@ func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun) {
 	}
 
 	for _, trigger := range triggers {
-		if trigger.TriggerOn == triggerOn {
-			// Build trigger context — prefer structured metadata over raw output
-			var ctx string
-			if metadataSection != "" {
-				ctx = fmt.Sprintf(
-					"## Trigger context\n"+
-						"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
-						"\n### Structured metadata from \"%s\":\n```json\n%s\n```\n",
-					triggerOn, sourceJobName, run.ID, sourceJobName, metadataSection,
-				)
-			} else {
-				ctx = fmt.Sprintf(
-					"## Trigger context\n"+
-						"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
-						"\n### Output from \"%s\":\n```\n%s\n```\n",
-					triggerOn, sourceJobName, run.ID, sourceJobName, sourceOutput,
-				)
-			}
+		if trigger.TriggerOn != triggerOn {
+			continue
+		}
 
-			// Store context for the new run to pick up
-			newRun, err := s.RunJob(trigger.TargetJobID, run.ID, run.CorrelationID)
-			if err == nil && newRun != nil {
-				s.mu.Lock()
-				// Append continue_pipeline context if present
-				if continueCtx, ok := s.triggerCtx["continue:"+run.ID]; ok {
-					ctx += fmt.Sprintf("\n## Human intervention context\n%s\n", continueCtx)
-					delete(s.triggerCtx, "continue:"+run.ID)
+		// Build trigger context — prefer structured metadata over raw output
+		var ctx string
+		if metadataSection != "" {
+			ctx = fmt.Sprintf(
+				"## Trigger context\n"+
+					"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
+					"\n### Structured metadata from \"%s\":\n```json\n%s\n```\n",
+				triggerOn, sourceJobName, run.ID, sourceJobName, metadataSection,
+			)
+		} else {
+			ctx = fmt.Sprintf(
+				"## Trigger context\n"+
+					"This job was triggered by the %s of job \"%s\" (run: %s).\n"+
+					"\n### Output from \"%s\":\n```\n%s\n```\n",
+				triggerOn, sourceJobName, run.ID, sourceJobName, sourceOutput,
+			)
+		}
+
+		// Determine whether this downstream job should share the chain session.
+		// Session sharing requires: same group, same claude command, same model.
+		targetCSKey := s.resolveChainSession(sourceJob, sourceGroupID, trigger.TargetJobID, run.CorrelationID, activeCSKey)
+
+		// Create the downstream run
+		targetJob, _ := s.findJob.FindJobByID(trigger.TargetJobID)
+		if targetJob == nil {
+			continue
+		}
+
+		now := time.Now()
+		newRun := entity.JobRun{
+			ID:            uuid.New().String(),
+			JobID:         trigger.TargetJobID,
+			Status:        jobrunstatus.Running,
+			TriggeredBy:   run.ID,
+			CorrelationID: run.CorrelationID,
+			StartedAt:     now,
+		}
+		if err := s.saveJobRun.SaveJobRun(newRun); err != nil {
+			continue
+		}
+
+		targetJob.LastRunAt = &now
+		_ = s.updateJob.UpdateJob(*targetJob)
+
+		// Store trigger context
+		s.mu.Lock()
+		if continueCtx, ok := s.triggerCtx["continue:"+run.ID]; ok {
+			ctx += fmt.Sprintf("\n## Human intervention context\n%s\n", continueCtx)
+			delete(s.triggerCtx, "continue:"+run.ID)
+		}
+		s.triggerCtx[newRun.ID] = ctx
+		s.mu.Unlock()
+
+		if targetCSKey != nil {
+			// Shared session — execute sequentially under the chain session's mutex.
+			// This ensures only one job uses the session at a time.
+			go func(j *entity.Job, r entity.JobRun, key *chainSessionKey) {
+				s.chainMu.RLock()
+				cs := s.chainSessions[*key]
+				s.chainMu.RUnlock()
+
+				if cs != nil {
+					cs.mu.Lock()
+					defer cs.mu.Unlock()
+
+					// Check if compaction is needed before running
+					if cs.totalTokens >= compactionTokenThreshold {
+						s.triggerCompaction(j, cs)
+					}
 				}
-				s.triggerCtx[newRun.ID] = ctx
-				s.mu.Unlock()
+				s.executeWithRetries(j, &r, key)
+			}(targetJob, newRun, targetCSKey)
+		} else {
+			// No session sharing — run independently (parallel is fine)
+			go s.executeWithRetries(targetJob, &newRun)
+		}
+	}
+}
+
+// resolveChainSession determines whether a downstream job should share a chain session
+// with the source job. Returns a chainSessionKey if sharing is appropriate, nil otherwise.
+//
+// Session sharing decision matrix (from issue #45):
+//   - Same group, same command, same model → continue session
+//   - Same group, different command or model → start new session
+//   - Different group or no group → start new session
+//   - Agent changes do NOT affect the decision (agents are prompt-only)
+func (s *jobManagerService) resolveChainSession(sourceJob *entity.Job, sourceGroupID string, targetJobID string, correlationID string, activeCSKey *chainSessionKey) *chainSessionKey {
+	if sourceGroupID == "" || s.findJobGroup == nil {
+		return nil // source not in a group — no sharing
+	}
+
+	// Check if target job is in the same group
+	targetGroup, err := s.findJobGroup.FindJobGroupByJobID(targetJobID)
+	if err != nil || targetGroup == nil || targetGroup.ID != sourceGroupID {
+		return nil // different group or not grouped
+	}
+
+	targetJob, err := s.findJob.FindJobByID(targetJobID)
+	if err != nil || targetJob == nil {
+		return nil
+	}
+
+	// Resolve effective command and model for comparison
+	sourceCmd := sourceJob.ClaudeCommand
+	if sourceCmd == "" {
+		sourceCmd = "claude"
+	}
+	targetCmd := targetJob.ClaudeCommand
+	if targetCmd == "" {
+		targetCmd = "claude"
+	}
+
+	sourceModel := sourceJob.Model
+	targetModel := targetJob.Model
+
+	if sourceCmd != targetCmd || sourceModel != targetModel {
+		return nil // config divergence — new session
+	}
+
+	key := chainSessionKey{correlationID: correlationID, groupID: sourceGroupID}
+
+	// Ensure a chain session entry exists
+	s.chainMu.Lock()
+	if _, exists := s.chainSessions[key]; !exists {
+		s.chainSessions[key] = &chainSession{
+			claudeCommand: sourceCmd,
+			model:         sourceModel,
+		}
+	}
+	s.chainMu.Unlock()
+
+	// If an active key was passed and it matches, reuse it
+	if activeCSKey != nil && *activeCSKey == key {
+		return activeCSKey
+	}
+
+	return &key
+}
+
+// triggerCompaction sends a /compact message to reset context in a chain session.
+// This runs a one-shot Claude call that compacts the conversation, then continues.
+func (s *jobManagerService) triggerCompaction(job *entity.Job, cs *chainSession) {
+	if cs.conversationID == "" {
+		return
+	}
+
+	claudeCmd := job.ClaudeCommand
+	if claudeCmd == "" {
+		claudeCmd = "claude"
+	}
+
+	// Run a compaction pass: resume the conversation with a compact instruction
+	var cliArgs []string
+	cliArgs = append(cliArgs, "--resume", cs.conversationID, "-p", "-")
+	cliArgs = append(cliArgs, "--output-format", "stream-json", "--verbose")
+	if job.AllowBypass {
+		cliArgs = append(cliArgs, "--dangerously-skip-permissions")
+	}
+	if cs.model != "" && cs.model != "cli default" {
+		cliArgs = append(cliArgs, "--model", cs.model)
+	}
+
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+	parts := make([]string, 0, len(cliArgs)+1)
+	parts = append(parts, claudeCmd)
+	for _, a := range cliArgs {
+		if a == "-" {
+			parts = append(parts, a)
+		} else {
+			parts = append(parts, shellQuote(a))
+		}
+	}
+	cmdStr := strings.Join(parts, " ")
+
+	home, _ := os.UserHomeDir()
+	var rcFile string
+	switch filepath.Base(shell) {
+	case "zsh":
+		rcFile = filepath.Join(home, ".zshrc")
+	case "bash":
+		rcFile = filepath.Join(home, ".bashrc")
+	}
+
+	var fullCmd string
+	if rcFile != "" {
+		fullCmd = fmt.Sprintf("[ -f '%s' ] && . '%s' 2>/dev/null; eval %s", rcFile, rcFile, cmdStr)
+	} else {
+		fullCmd = fmt.Sprintf("eval %s", cmdStr)
+	}
+
+	cmd := exec.Command(shell, "-l", "-c", fullCmd)
+	cmd.Dir = expandPath(job.WorkingDirectory)
+	cmd.Env = append(shellEnv(), "TERM=dumb")
+	cmd.Stdin = strings.NewReader("Summarize the conversation so far into a concise context document. Focus on: what was accomplished, key decisions made, current state, and what needs to happen next. Be thorough but compact.")
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &bytes.Buffer{}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Run() }()
+
+	select {
+	case <-done:
+	case <-time.After(120 * time.Second):
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	}
+
+	// Parse result to extract updated session_id (conversation ID may change after compact)
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		var event map[string]interface{}
+		if json.Unmarshal([]byte(line), &event) != nil {
+			continue
+		}
+		if event["type"] == "result" {
+			if sid, ok := event["session_id"].(string); ok && sid != "" {
+				cs.conversationID = sid
+			}
+			if usage, ok := event["usage"].(map[string]interface{}); ok {
+				inputTokens, _ := usage["input_tokens"].(float64)
+				outputTokens, _ := usage["output_tokens"].(float64)
+				cs.totalTokens = int(inputTokens + outputTokens) // reset to current usage
 			}
 		}
 	}

@@ -150,6 +150,20 @@ func (p *jobGroupPersistence) UpdateJobGroup(group entity.JobGroup) error {
 	return nil
 }
 
+// FindJobGroupByJobID finds the job group that contains the given job ID.
+// Returns nil if the job is not in any group.
+func (p *jobGroupPersistence) FindJobGroupByJobID(jobID string) (*entity.JobGroup, error) {
+	var groupID string
+	err := p.db.QueryRow(`SELECT job_group_id FROM job_group_members WHERE job_id = ? LIMIT 1`, jobID).Scan(&groupID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find job group by job id: %w", err)
+	}
+	return p.FindJobGroupByID(groupID)
+}
+
 // DeleteJobGroup removes a job group by its ID (cascade deletes members).
 func (p *jobGroupPersistence) DeleteJobGroup(id string) error {
 	_, _ = p.db.Exec(`DELETE FROM job_group_members WHERE job_group_id = ?`, id)

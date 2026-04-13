@@ -334,6 +334,7 @@ func (i *Injector) JobManager() appAdapter.JobManager {
 	if i.jobManager == nil {
 		jp := i.JobPersistence()
 		ap := i.AgentPersistence()
+		gp := i.JobGroupPersistence()
 		i.jobManager = service.NewJobManagerService(
 			jp, // FindJob
 			jp, // SaveJob
@@ -344,6 +345,7 @@ func (i *Injector) JobManager() appAdapter.JobManager {
 			jp, // FindJobRun
 			jp, // SaveJobRun
 			ap, // FindAgent (for system prompt building)
+			gp, // FindJobGroup (for chain session sharing)
 		)
 	}
 	return i.jobManager
