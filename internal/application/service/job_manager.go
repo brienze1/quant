@@ -62,6 +62,7 @@ type jobManagerService struct {
 
 	chainMu       sync.RWMutex
 	chainSessions map[chainSessionKey]*chainSession // active chain sessions
+	chainKeys     map[string]*chainSessionKey        // jobID:correlationID -> chain session key for triggered runs
 }
 
 // NewJobManagerService creates a new JobManager service.
@@ -91,6 +92,7 @@ func NewJobManagerService(
 		runningProcs:   make(map[string]*os.Process),
 		triggerCtx:     make(map[string]string),
 		chainSessions:  make(map[chainSessionKey]*chainSession),
+		chainKeys:      make(map[string]*chainSessionKey),
 	}
 }
 
@@ -254,10 +256,19 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correl
 	job.LastRunAt = &now
 	_ = s.updateJob.UpdateJob(*job)
 
-	// Check if this job is in a group — if so, create a chain session for the correlation.
-	// This allows downstream triggered jobs in the same group to share the session.
+	// Check if a chain session key was pre-set by fireTriggers (for downstream jobs in a chain).
+	// Keyed by jobID:correlationID since fireTriggers doesn't know the run ID in advance.
 	var csKey *chainSessionKey
-	if job.Type == jobtype.Claude && s.findJobGroup != nil {
+	chainKeyID := jobID + ":" + run.CorrelationID
+	s.mu.Lock()
+	if key, ok := s.chainKeys[chainKeyID]; ok {
+		csKey = key
+		delete(s.chainKeys, chainKeyID)
+	}
+	s.mu.Unlock()
+
+	// If no pre-set key and this job is in a group, create a chain session (first job in chain).
+	if csKey == nil && job.Type == jobtype.Claude && s.findJobGroup != nil {
 		if group, groupErr := s.findJobGroup.FindJobGroupByJobID(jobID); groupErr == nil && group != nil {
 			key := chainSessionKey{correlationID: run.CorrelationID, groupID: group.ID}
 			claudeCmd := job.ClaudeCommand
@@ -275,7 +286,24 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correl
 	}
 
 	// Execute asynchronously
-	go s.executeWithRetries(job, &run, csKey)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// Write panic info to run log so we can diagnose
+				logPath := runLogPath(run.ID)
+				if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+					fmt.Fprintf(f, "\n\n--- PANIC ---\n%v\n", r)
+					f.Close()
+				}
+				now := time.Now()
+				run.Status = jobrunstatus.Failed
+				run.ErrorMessage = fmt.Sprintf("panic: %v", r)
+				run.FinishedAt = &now
+				_ = s.saveJobRun.UpdateJobRun(run)
+			}
+		}()
+		s.executeWithRetries(job, &run, csKey)
+	}()
 
 	return &run, nil
 }
@@ -968,10 +996,8 @@ func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun
 		cs.totalTokens += runTokens
 	}
 
-	// Store conversation ID on the run for visibility
-	if extractedConvID != "" {
-		run.SessionID = extractedConvID
-	}
+	// Note: extractedConvID is Claude's internal conversation ID, NOT a Quant session ID.
+	// It's stored on the chainSession for --resume but NOT on run.SessionID which has a FK to sessions table.
 
 	result := resultText.String()
 	if stderr.Len() > 0 {
@@ -1393,59 +1419,26 @@ func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun, sourc
 		// Session sharing requires: same group, same claude command, same model.
 		targetCSKey := s.resolveChainSession(sourceJob, sourceGroupID, trigger.TargetJobID, run.CorrelationID, activeCSKey)
 
-		// Create the downstream run
-		targetJob, _ := s.findJob.FindJobByID(trigger.TargetJobID)
-		if targetJob == nil {
-			continue
-		}
-
-		now := time.Now()
-		newRun := entity.JobRun{
-			ID:            uuid.New().String(),
-			JobID:         trigger.TargetJobID,
-			Status:        jobrunstatus.Running,
-			TriggeredBy:   run.ID,
-			CorrelationID: run.CorrelationID,
-			StartedAt:     now,
-		}
-		if err := s.saveJobRun.SaveJobRun(newRun); err != nil {
-			continue
-		}
-
-		targetJob.LastRunAt = &now
-		_ = s.updateJob.UpdateJob(*targetJob)
-
-		// Store trigger context
-		s.mu.Lock()
-		if continueCtx, ok := s.triggerCtx["continue:"+run.ID]; ok {
-			ctx += fmt.Sprintf("\n## Human intervention context\n%s\n", continueCtx)
-			delete(s.triggerCtx, "continue:"+run.ID)
-		}
-		s.triggerCtx[newRun.ID] = ctx
-		s.mu.Unlock()
-
+		// Pre-set chain key BEFORE calling RunJob so it's available when RunJob reads it.
+		// Keyed by jobID:correlationID since we don't know the run ID yet.
 		if targetCSKey != nil {
-			// Shared session — execute sequentially under the chain session's mutex.
-			// This ensures only one job uses the session at a time.
-			go func(j *entity.Job, r entity.JobRun, key *chainSessionKey) {
-				s.chainMu.RLock()
-				cs := s.chainSessions[*key]
-				s.chainMu.RUnlock()
+			chainKeyID := trigger.TargetJobID + ":" + run.CorrelationID
+			s.mu.Lock()
+			s.chainKeys[chainKeyID] = targetCSKey
+			s.mu.Unlock()
+		}
 
-				if cs != nil {
-					cs.mu.Lock()
-					defer cs.mu.Unlock()
-
-					// Check if compaction is needed before running
-					if cs.totalTokens >= compactionTokenThreshold {
-						s.triggerCompaction(j, cs)
-					}
-				}
-				s.executeWithRetries(j, &r, key)
-			}(targetJob, newRun, targetCSKey)
-		} else {
-			// No session sharing — run independently (parallel is fine)
-			go s.executeWithRetries(targetJob, &newRun)
+		// Store context for the new run to pick up
+		newRun, err := s.RunJob(trigger.TargetJobID, run.ID, run.CorrelationID)
+		if err == nil && newRun != nil {
+			s.mu.Lock()
+			// Append continue_pipeline context if present
+			if continueCtx, ok := s.triggerCtx["continue:"+run.ID]; ok {
+				ctx += fmt.Sprintf("\n## Human intervention context\n%s\n", continueCtx)
+				delete(s.triggerCtx, "continue:"+run.ID)
+			}
+			s.triggerCtx[newRun.ID] = ctx
+			s.mu.Unlock()
 		}
 	}
 }
