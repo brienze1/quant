@@ -1,6 +1,24 @@
 {
   "entries": [
     {
+      "version": "v3.1.17",
+      "date": "2026-04-14",
+      "changes": {
+        "features": [
+          "drag whole group by grabbing the group name label on the jobs canvas"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.16",
+      "date": "2026-04-14",
+      "changes": {
+        "fixes": [
+          "prevent canvas position reset and minimap vanish when switching workspaces"
+        ]
+      }
+    },
+    {
       "version": "v3.1.14",
       "date": "2026-04-11",
       "changes": {

@@ -99,17 +99,20 @@ const pulseKeyframes = `
 
 type NodePositions = Record<string, { x: number; y: number }>;
 
-function autoLayout(jobs: Job[]): NodePositions {
+function layoutCluster(
+  clusterJobs: Job[],
+  globalAllIn: Map<string, string[]>,
+): { positions: NodePositions; bbox: { x: number; y: number; w: number; h: number } } {
   const positions: NodePositions = {};
-  if (jobs.length === 0) return positions;
+  if (clusterJobs.length === 0) return { positions, bbox: { x: 0, y: 0, w: 0, h: 0 } };
 
-  const jobIds = new Set(jobs.map((j) => j.id));
+  const jobIds = new Set(clusterJobs.map((j) => j.id));
 
   // Build separate success/failure adjacency
   const successOut = new Map<string, string[]>();
   const allOut = new Map<string, string[]>();
   const allIn = new Map<string, string[]>();
-  for (const job of jobs) {
+  for (const job of clusterJobs) {
     const succs = (job.onSuccess ?? []).filter((t) => jobIds.has(t));
     const fails = (job.onFailure ?? []).filter((t) => jobIds.has(t));
     successOut.set(job.id, succs);
@@ -121,10 +124,10 @@ function autoLayout(jobs: Job[]): NodePositions {
     }
   }
 
-  // Identify side-effect nodes: triggered by 3+ unique sources with no outgoing edges
+  // Identify side-effect nodes: triggered by 3+ unique sources (global) with no outgoing edges
   const sideEffectIds = new Set<string>();
-  for (const job of jobs) {
-    const inc = allIn.get(job.id) ?? [];
+  for (const job of clusterJobs) {
+    const inc = globalAllIn.get(job.id) ?? [];
     const uniqueSources = new Set(inc).size;
     const out = allOut.get(job.id) ?? [];
     if (uniqueSources >= 3 && out.length === 0) {
@@ -136,7 +139,7 @@ function autoLayout(jobs: Job[]): NodePositions {
   const layoutOut = new Map<string, string[]>();
   const layoutSuccessOut = new Map<string, string[]>();
   const layoutIn = new Map<string, string[]>();
-  for (const job of jobs) {
+  for (const job of clusterJobs) {
     if (sideEffectIds.has(job.id)) continue;
     const succs = (job.onSuccess ?? []).filter((t) => jobIds.has(t) && !sideEffectIds.has(t));
     const fails = (job.onFailure ?? []).filter((t) => jobIds.has(t) && !sideEffectIds.has(t));
@@ -150,7 +153,7 @@ function autoLayout(jobs: Job[]): NodePositions {
   }
 
   // Find connected components (undirected, excluding side-effects)
-  const mainJobs = jobs.filter((j) => !sideEffectIds.has(j.id));
+  const mainJobs = clusterJobs.filter((j) => !sideEffectIds.has(j.id));
   const componentOf = new Map<string, number>();
   let componentCount = 0;
   for (const job of mainJobs) {
@@ -175,8 +178,8 @@ function autoLayout(jobs: Job[]): NodePositions {
   const hSpacing = 300;
   const vSpacing = 120;
   const componentGap = 100;
-  const startX = 100;
-  let currentY = 100;
+  const startX = 0;
+  let currentY = 0;
   const positionedSideEffects = new Set<string>();
 
   for (const component of components) {
@@ -240,7 +243,6 @@ function autoLayout(jobs: Job[]): NodePositions {
 
     // Position: spine nodes on top, branch nodes below with a gap
     const sortedDepths = [...levels.keys()].sort((a, b) => a - b);
-    let maxRows = 0;
     for (const d of sortedDepths) {
       const { spine, branch } = levels.get(d)!;
       let row = 0;
@@ -255,13 +257,12 @@ function autoLayout(jobs: Job[]): NodePositions {
         positions[id] = { x: startX + d * hSpacing, y: currentY + row * vSpacing };
         row++;
       }
-      maxRows = Math.max(maxRows, row);
     }
 
     // Phase 4: Position side-effects belonging to THIS component right below it
-    const compSideEffects = jobs.filter((j) => {
+    const compSideEffects = clusterJobs.filter((j) => {
       if (!sideEffectIds.has(j.id) || positionedSideEffects.has(j.id)) return false;
-      const inc = allIn.get(j.id) ?? [];
+      const inc = globalAllIn.get(j.id) ?? [];
       return inc.some((srcId) => compIds.has(srcId));
     });
 
@@ -278,12 +279,14 @@ function autoLayout(jobs: Job[]): NodePositions {
       }
       if (hasBackwardEdges) break;
     }
-    // Extra space for backward edge curves (they dip ~100px below lowest node)
     const backwardEdgeSpace = hasBackwardEdges ? 100 : 0;
 
     if (compSideEffects.length > 0) {
-      const seY = currentY + maxRows * vSpacing + backwardEdgeSpace + 20;
       const compPositions = component.map((j) => positions[j.id]).filter(Boolean);
+      const compMaxY = compPositions.length > 0
+        ? Math.max(...compPositions.map((p) => p.y + NODE_H))
+        : currentY + NODE_H;
+      const seY = compMaxY + backwardEdgeSpace + 20;
       const avgX = compPositions.length > 0
         ? compPositions.reduce((s, p) => s + p.x, 0) / compPositions.length
         : startX;
@@ -293,22 +296,97 @@ function autoLayout(jobs: Job[]): NodePositions {
         positions[compSideEffects[i].id] = { x: seStartX + i * (NODE_W + 60), y: seY };
         positionedSideEffects.add(compSideEffects[i].id);
       }
-      currentY = seY + vSpacing;
-    } else {
-      currentY += maxRows * vSpacing + backwardEdgeSpace;
     }
 
-    currentY += componentGap;
+    // Advance currentY from actual placed positions (fixes overlap)
+    const compAllIds = [
+      ...component.map((j) => j.id),
+      ...compSideEffects.map((j) => j.id),
+    ];
+    const compMaxY = Math.max(
+      ...compAllIds.filter((id) => positions[id]).map((id) => positions[id].y + NODE_H),
+    );
+    currentY = compMaxY + backwardEdgeSpace + componentGap;
   }
 
   // Catch any unpositioned jobs
   const positioned = new Set(Object.keys(positions));
-  const remaining = jobs.filter((j) => !positioned.has(j.id));
+  const remaining = clusterJobs.filter((j) => !positioned.has(j.id));
   for (let i = 0; i < remaining.length; i++) {
     positions[remaining[i].id] = { x: startX + i * (NODE_W + 60), y: currentY };
   }
 
-  return positions;
+  // Compute bounding box from actual positions
+  const allPos = Object.values(positions);
+  if (allPos.length === 0) return { positions, bbox: { x: 0, y: 0, w: NODE_W, h: NODE_H } };
+  const minX = Math.min(...allPos.map((p) => p.x));
+  const minY = Math.min(...allPos.map((p) => p.y));
+  const maxX = Math.max(...allPos.map((p) => p.x + NODE_W));
+  const maxY = Math.max(...allPos.map((p) => p.y + NODE_H));
+  return { positions, bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } };
+}
+
+function autoLayout(jobs: Job[], jobGroups: JobGroup[]): NodePositions {
+  if (jobs.length === 0) return {};
+
+  const jobIds = new Set(jobs.map((j) => j.id));
+  const jobById = new Map(jobs.map((j) => [j.id, j]));
+
+  // Build full-graph allIn for side-effect detection inside layoutCluster
+  const globalAllIn = new Map<string, string[]>();
+  for (const job of jobs) {
+    if (!globalAllIn.has(job.id)) globalAllIn.set(job.id, []);
+    for (const t of [...(job.onSuccess ?? []), ...(job.onFailure ?? [])].filter((t) => jobIds.has(t))) {
+      if (!globalAllIn.has(t)) globalAllIn.set(t, []);
+      globalAllIn.get(t)!.push(job.id);
+    }
+  }
+
+  // Partition jobs into clusters: one per group, then one per ungrouped job
+  const clusters: Job[][] = [];
+  const groupedJobIds = new Set<string>();
+  for (const group of jobGroups) {
+    const clusterJobs = group.jobIds
+      .filter((id) => jobIds.has(id))
+      .map((id) => jobById.get(id)!);
+    if (clusterJobs.length > 0) {
+      clusters.push(clusterJobs);
+      clusterJobs.forEach((j) => groupedJobIds.add(j.id));
+    }
+  }
+  for (const job of jobs) {
+    if (!groupedJobIds.has(job.id)) clusters.push([job]);
+  }
+
+  // Layout each cluster in local coordinates
+  const clusterLayouts = clusters.map((c) => layoutCluster(c, globalAllIn));
+
+  // Pack clusters into a row-wrapping grid
+  const clusterGap = 80;
+  const maxRowWidth = 3000;
+  const startX = 100;
+  const startY = 100;
+  let rowX = startX;
+  let rowY = startY;
+  let rowMaxH = 0;
+  const globalPositions: NodePositions = {};
+
+  for (const { positions: localPos, bbox } of clusterLayouts) {
+    if (rowX > startX && rowX - startX + bbox.w > maxRowWidth) {
+      rowY += rowMaxH + clusterGap;
+      rowX = startX;
+      rowMaxH = 0;
+    }
+    const dx = rowX - bbox.x;
+    const dy = rowY - bbox.y;
+    for (const [id, pos] of Object.entries(localPos)) {
+      globalPositions[id] = { x: pos.x + dx, y: pos.y + dy };
+    }
+    rowX += bbox.w + clusterGap;
+    rowMaxH = Math.max(rowMaxH, bbox.h);
+  }
+
+  return globalPositions;
 }
 
 function positionsKey(workspaceId: string) {
@@ -374,6 +452,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   const [zoom, setZoom] = useState(1);
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState<{ id: string; startX: number; startY: number; nodeStartX: number; nodeStartY: number } | null>(null);
+  const [draggingGroup, setDraggingGroup] = useState<{ groupId: string; startX: number; startY: number; startPositions: Record<string, { x: number; y: number }> } | null>(null);
   const [panning, setPanning] = useState<{ startX: number; startY: number; offsetStartX: number; offsetStartY: number } | null>(null);
   const [canvasModalJobId, setCanvasModalJobId] = useState<string | null>(null);
   const [canvasModalTab, setCanvasModalTab] = useState<JobTab>("settings");
@@ -733,6 +812,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     return map;
   }, [jobGroups]);
 
+  // Clear stale positions immediately on workspace switch so minimap doesn't vanish
+  useEffect(() => {
+    setNodePositions({});
+  }, [activeWorkspaceId]);
+
   const nodeExecData = useMemo(() => {
     const data = new Map<string, { groupKey: string; execRun: JobRun | undefined; isInAnyExec: boolean }>();
     for (const job of jobs) {
@@ -748,23 +832,22 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
     return data;
   }, [jobs, jobGroupMap, selectedExecByGroup, executionsByGroup]);
 
-  // Clear stale positions immediately on workspace switch so minimap doesn't vanish
-  useEffect(() => {
-    setNodePositions({});
-  }, [activeWorkspaceId]);
-
   // Initialize node positions whenever jobs or workspace changes
   useEffect(() => {
     if (jobs.length === 0) {
       setNodePositions({});
       return;
     }
+    // Guard: skip until jobs prop matches the active workspace to avoid
+    // overwriting the new workspace's saved positions with stale job layouts
+    if (jobs.some((j) => j.workspaceId !== activeWorkspaceId)) return;
+
     const saved = loadPositions(activeWorkspaceId);
     const hasAllPositions = jobs.every((j) => saved[j.id]);
     if (hasAllPositions) {
       setNodePositions(saved);
     } else {
-      const layout = autoLayout(jobs);
+      const layout = autoLayout(jobs, jobGroups);
       setNodePositions(layout);
       savePositions(layout, activeWorkspaceId);
     }
@@ -1055,6 +1138,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   // Global mouse handlers for drag, pan, and selection box — stabilized with refs
   const draggingRef = useRef(dragging);
   draggingRef.current = dragging;
+  const draggingGroupRef = useRef(draggingGroup);
+  draggingGroupRef.current = draggingGroup;
   const panningRef = useRef(panning);
   panningRef.current = panning;
   const zoomRef = useRef(zoom);
@@ -1087,6 +1172,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           const over = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
           setDragDeleteHover(over);
         }
+      }
+      const currentDraggingGroup = draggingGroupRef.current;
+      if (currentDraggingGroup) {
+        const dx = (e.clientX - currentDraggingGroup.startX) / currentZoom;
+        const dy = (e.clientY - currentDraggingGroup.startY) / currentZoom;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) didDrag.current = true;
+        setNodePositions((prev) => {
+          const next = { ...prev };
+          for (const [jobId, startPos] of Object.entries(currentDraggingGroup.startPositions)) {
+            next[jobId] = { x: startPos.x + dx, y: startPos.y + dy };
+          }
+          return next;
+        });
       }
       if (currentPanning) {
         const dx = e.clientX - currentPanning.startX;
@@ -1134,6 +1232,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         setDragDeleteHover(false);
         setIsDraggingNode(false);
         setDragging(null);
+        setNodePositions((prev) => {
+          savePositions(prev, activeWorkspaceId);
+          return prev;
+        });
+      }
+      if (draggingGroupRef.current) {
+        setDraggingGroup(null);
         setNodePositions((prev) => {
           savePositions(prev, activeWorkspaceId);
           return prev;
@@ -1224,7 +1329,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   }
 
   function handleAutoLayout() {
-    const layout = autoLayout(jobs);
+    const layout = autoLayout(jobs, jobGroups);
     setNodePositions(layout);
     savePositions(layout, activeWorkspaceId);
   }
@@ -2571,8 +2676,22 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const isDropdownOpen = openDropdownGroup === group.id;
             return (
               <div key={`group-box-${group.id}`} style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px solid var(--q-border)", borderRadius: 8, backgroundColor: "#0f0f0f80", pointerEvents: "none" }}>
-                {/* Group name label */}
-                <span style={{ position: "absolute", top: -12, left: 12, backgroundColor: "var(--q-bg-input)", padding: "0 6px", color: "var(--q-fg-muted)", fontSize: 9, fontFamily: font, whiteSpace: "nowrap" }}>{group.name}</span>
+                {/* Group name label — drag handle for moving the whole group */}
+                <span
+                  style={{ position: "absolute", top: -12, left: 12, backgroundColor: "var(--q-bg-input)", padding: "0 6px", color: "var(--q-fg-muted)", fontSize: 9, fontFamily: font, whiteSpace: "nowrap", pointerEvents: "auto", cursor: draggingGroup?.groupId === group.id ? "grabbing" : "grab", userSelect: "none" }}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.stopPropagation();
+                    didDrag.current = false;
+                    const snap: Record<string, { x: number; y: number }> = {};
+                    for (const jobId of group.jobIds) {
+                      const p = nodePositions[jobId];
+                      if (p) snap[jobId] = { x: p.x, y: p.y };
+                    }
+                    if (Object.keys(snap).length === 0) return;
+                    setDraggingGroup({ groupId: group.id, startX: e.clientX, startY: e.clientY, startPositions: snap });
+                  }}
+                >{group.name}</span>
                 {/* Pipeline header inside box */}
                 {hasExecs && (
                   <div style={{
