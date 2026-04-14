@@ -1,6 +1,28 @@
 {
   "entries": [
     {
+      "version": "v3.1.14",
+      "date": "2026-04-11",
+      "changes": {
+        "fixes": [
+          "workspace shortcut conflict, tab close focus, and terminal keybinding UX"
+        ],
+        "features": [
+          "add keyboard shortcuts, command palette, and theme picker"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.13",
+      "date": "2026-04-11",
+      "changes": {
+        "improvements": [
+          "restore wavy edge animation, only run RAF when edge selected",
+          "optimize Jobs canvas performance for large job counts"
+        ]
+      }
+    },
+    {
       "version": "v3.1.12",
       "date": "2026-04-11",
       "changes": {
@@ -26,13 +48,13 @@
       "version": "v3.1.10",
       "date": "2026-04-11",
       "changes": {
-        "fixes": [
-          "stop wheel events from scrolling canvas when over dropdown",
-          "add infinite scroll pagination to correlation ID dropdown"
-        ],
         "internal": [
           "update .gitignore and remove unnecessary dev flags from package-lock.json",
           "update .gitignore and remove unnecessary dev flags from package-lock.json"
+        ],
+        "fixes": [
+          "stop wheel events from scrolling canvas when over dropdown",
+          "add infinite scroll pagination to correlation ID dropdown"
         ]
       }
     },
@@ -49,11 +71,11 @@
       "version": "v3.1.8",
       "date": "2026-04-11",
       "changes": {
-        "features": [
-          "add changelog with version badge and history modal"
-        ],
         "internal": [
           "update changelog for recent versions and fixes"
+        ],
+        "features": [
+          "add changelog with version badge and history modal"
         ]
       }
     },
@@ -116,12 +138,12 @@
       "version": "v3.1.1",
       "date": "2026-04-10",
       "changes": {
+        "internal": [
+          "auto-release patch on PR merge to main"
+        ],
         "fixes": [
           "reuse existing worktree instead of failing on duplicate branch",
           "scope pipeline execution tracking per job group"
-        ],
-        "internal": [
-          "auto-release patch on PR merge to main"
         ]
       }
     },
@@ -129,17 +151,17 @@
       "version": "v3.1.0",
       "date": "2026-04-09",
       "changes": {
+        "internal": [
+          "remove unused notification functions from runtime"
+        ],
+        "fixes": [
+          "add missing Save/Cancel buttons to create workspace form"
+        ],
         "features": [
           "workflow engine with human-in-the-loop and pipeline diagram container",
           "add VS Code theme import system with CSS variable architecture",
           "workspace path config UI with browse dialogs and validation",
           "add workspace-scoped .claude and .mcp.json path configuration"
-        ],
-        "fixes": [
-          "add missing Save/Cancel buttons to create workspace form"
-        ],
-        "internal": [
-          "remove unused notification functions from runtime"
         ]
       }
     },
@@ -309,13 +331,13 @@
       "version": "v2.2.0",
       "date": "2026-04-01",
       "changes": {
-        "features": [
-          "implement agent management interfaces and persistence"
-        ],
         "internal": [
           "enhance job listing and retrieval with agent details",
           "enhance office layout generation and agent interaction",
           "enhance job adjacency and layout logic for better visualization"
+        ],
+        "features": [
+          "implement agent management interfaces and persistence"
         ]
       }
     },
@@ -540,14 +562,14 @@
       "version": "v1.0.4",
       "date": "2026-03-18",
       "changes": {
+        "fixes": [
+          "feat/fix-term - fix terminal issues",
+          "feat/fix-term - fix terminal sessions appearing in left panel"
+        ],
         "features": [
           "feat/shortcuts - add git functions",
           "feat/shortcuts - add git functions",
           "add shortcut management for session commands"
-        ],
-        "fixes": [
-          "feat/fix-term - fix terminal issues",
-          "feat/fix-term - fix terminal sessions appearing in left panel"
         ]
       }
     },
@@ -656,7 +678,6 @@
       "changes": {
         "features": [
           "implement session creation lock and auto-pull functionality",
-          "docs(main): update README with additional information",
           "implement auto-fetch and conditional merge for session repositories",
           "add config loading and auto-pull functionality for session creation",
           "add session renaming functionality and improve session type handling",
@@ -677,16 +698,15 @@
           "add start and resume session functionality",
           "enhance session management with terminal resizing and output retrieval"
         ],
-        "fixes": [
-          "mark running sessions as paused on startup"
-        ],
-        "improvements": [
-          "docs(main): remove obsolete test line from README",
-          "docs(main): update README with product details and installation instructions"
-        ],
         "internal": [
+          "remove obsolete test line from README",
+          "update README with additional information",
+          "update README with product details and installation instructions",
           "add initial project structure and configuration files",
           "add .gitignore to exclude build artifacts and IDE files"
+        ],
+        "fixes": [
+          "mark running sessions as paused on startup"
         ]
       }
     }
