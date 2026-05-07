@@ -93,6 +93,33 @@ func (p *repoPersistence) FindAllRepos() ([]entity.Repo, error) {
 	return repos, nil
 }
 
+// FindClosedReposByWorkspace retrieves closed repos for a specific workspace,
+// ordered by most recently closed first, with pagination.
+func (p *repoPersistence) FindClosedReposByWorkspace(workspaceID string, limit int, offset int) ([]entity.Repo, error) {
+	query := `SELECT ` + repoColumns + ` FROM repos WHERE closed_at IS NOT NULL AND workspace_id = ? ORDER BY closed_at DESC LIMIT ? OFFSET ?`
+
+	rows, err := p.db.Query(query, workspaceID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find closed repos by workspace: %w", err)
+	}
+	defer rows.Close()
+
+	var repos []entity.Repo
+	for rows.Next() {
+		row, err := scanRepoRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan repo row: %w", err)
+		}
+		repos = append(repos, row.ToEntity())
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating repo rows: %w", err)
+	}
+
+	return repos, nil
+}
+
 // FindReposByWorkspace retrieves all open repos for a specific workspace.
 func (p *repoPersistence) FindReposByWorkspace(workspaceID string) ([]entity.Repo, error) {
 	query := `SELECT ` + repoColumns + ` FROM repos WHERE closed_at IS NULL AND workspace_id = ? ORDER BY created_at DESC`

@@ -85,6 +85,24 @@ func (s *repoManagerService) ListReposByWorkspace(workspaceID string) ([]entity.
 	return repos, nil
 }
 
+// ListClosedReposByWorkspace returns paginated closed repositories for a workspace,
+// ordered by most recently closed first.
+func (s *repoManagerService) ListClosedReposByWorkspace(workspaceID string, limit int, offset int) ([]entity.Repo, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	repos, err := s.findRepo.FindClosedReposByWorkspace(workspaceID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list closed repos: %w", err)
+	}
+
+	return repos, nil
+}
+
 // GetRepo returns a repository by ID.
 func (s *repoManagerService) GetRepo(id string) (*entity.Repo, error) {
 	repo, err := s.findRepo.FindRepoByID(id)

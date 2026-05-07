@@ -57,6 +57,14 @@ export function listReposByWorkspace(workspaceId: string): Promise<Repo[]> {
   return callGo(PKG, REPO_CTRL, "ListReposByWorkspace", workspaceId);
 }
 
+export function listClosedReposByWorkspace(
+  workspaceId: string,
+  limit: number,
+  offset: number
+): Promise<Repo[]> {
+  return callGo(PKG, REPO_CTRL, "ListClosedReposByWorkspace", workspaceId, limit, offset);
+}
+
 export function getRepo(id: string): Promise<Repo> {
   return callGo(PKG, REPO_CTRL, "GetRepo", id);
 }

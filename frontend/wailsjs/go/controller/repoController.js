@@ -14,6 +14,10 @@ export function ListReposByWorkspace(arg1) {
   return window['go']['controller']['repoController']['ListReposByWorkspace'](arg1);
 }
 
+export function ListClosedReposByWorkspace(arg1, arg2, arg3) {
+  return window['go']['controller']['repoController']['ListClosedReposByWorkspace'](arg1, arg2, arg3);
+}
+
 export function OnShutdown(arg1) {
   return window['go']['controller']['repoController']['OnShutdown'](arg1);
 }

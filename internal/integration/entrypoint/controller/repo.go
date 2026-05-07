@@ -68,6 +68,17 @@ func (c *repoController) ListReposByWorkspace(workspaceID string) ([]dto.RepoRes
 	return dto.RepoResponseListFromEntities(repos), nil
 }
 
+// ListClosedReposByWorkspace returns paginated closed repositories for a workspace
+// as response DTOs, ordered by most recently closed first.
+func (c *repoController) ListClosedReposByWorkspace(workspaceID string, limit int, offset int) ([]dto.RepoResponse, error) {
+	repos, err := c.repoManager.ListClosedReposByWorkspace(workspaceID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.RepoResponseListFromEntities(repos), nil
+}
+
 // GetRepo returns a single repo by ID as a response DTO.
 func (c *repoController) GetRepo(id string) (*dto.RepoResponse, error) {
 	repo, err := c.repoManager.GetRepo(id)
