@@ -5,6 +5,7 @@ import { StatusBadge } from "./StatusBadge";
 import { ActionLog } from "./ActionLog";
 import { ContextMenu } from "./ContextMenu";
 import type { MenuItem } from "./ContextMenu";
+import { RecentReposDropdown } from "./RecentReposDropdown";
 import * as api from "../api";
 
 const SIDEBAR_MIN_WIDTH = 200;
@@ -26,6 +27,8 @@ interface SidebarProps {
   onExpandSession: (id: string | null) => void;
   onOpenTab: (id: string) => void;
   onOpenRepo: () => void;
+  onReopenRepo: (repo: Repo) => void;
+  workspaceId: string;
   onCreateTask: (repoId: string) => void;
   onCreateSession: (repoId: string, taskId?: string) => void;
   onRemoveRepo: (repoId: string) => void;
@@ -112,6 +115,8 @@ export function Sidebar({
   onExpandSession,
   onOpenTab,
   onOpenRepo,
+  onReopenRepo,
+  workspaceId,
   onCreateTask,
   onCreateSession,
   onRemoveRepo,
@@ -147,8 +152,23 @@ export function Sidebar({
   const [showArchived, setShowArchived] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const [recentReposAnchor, setRecentReposAnchor] = useState<DOMRect | null>(null);
   const isResizing = useRef(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+
+  const handleOpenRepoButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    setRecentReposAnchor(e.currentTarget.getBoundingClientRect());
+  }, []);
+
+  const handleReopenRecent = useCallback((repo: Repo) => {
+    setRecentReposAnchor(null);
+    onReopenRepo(repo);
+  }, [onReopenRepo]);
+
+  const handleOpenNewPathFromDropdown = useCallback(() => {
+    setRecentReposAnchor(null);
+    onOpenRepo();
+  }, [onOpenRepo]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -510,7 +530,8 @@ export function Sidebar({
             ))}
             <div style={{ width: 24, height: 1, backgroundColor: "var(--q-border)", marginTop: 4, marginBottom: 4 }} />
             <button
-              onClick={onOpenRepo}
+              data-testid="add-repo-button-collapsed"
+              onClick={handleOpenRepoButtonClick}
               className="flex items-center justify-center shrink-0 transition-colors"
               style={{
                 width: 32, height: 32, borderRadius: 4,
@@ -571,6 +592,16 @@ export function Sidebar({
             onClose={() => setContextMenu(null)}
           />
         )}
+
+        {recentReposAnchor && (
+          <RecentReposDropdown
+            workspaceId={workspaceId}
+            anchorRect={recentReposAnchor}
+            onSelect={handleReopenRecent}
+            onOpenNewPath={handleOpenNewPathFromDropdown}
+            onClose={() => setRecentReposAnchor(null)}
+          />
+        )}
       </div>
     );
   }
@@ -603,7 +634,8 @@ export function Sidebar({
           </h1>
           <div className="flex items-center gap-3">
             <button
-              onClick={onOpenRepo}
+              data-testid="add-repo-button"
+              onClick={handleOpenRepoButtonClick}
               className="text-xs lowercase transition-colors"
               style={{ color: "var(--q-fg-secondary)", fontFamily: "'JetBrains Mono', monospace" }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
@@ -738,6 +770,16 @@ export function Sidebar({
             y={contextMenu.y}
             items={contextMenu.items}
             onClose={() => setContextMenu(null)}
+          />
+        )}
+
+        {recentReposAnchor && (
+          <RecentReposDropdown
+            workspaceId={workspaceId}
+            anchorRect={recentReposAnchor}
+            onSelect={handleReopenRecent}
+            onOpenNewPath={handleOpenNewPathFromDropdown}
+            onClose={() => setRecentReposAnchor(null)}
           />
         )}
       </aside>

@@ -744,6 +744,20 @@ function App() {
     }
   }
 
+  async function handleReopenRecentRepo(repo: { name: string; path: string }) {
+    try {
+      setError(null);
+      await api.openRepo({
+        name: repo.name,
+        path: repo.path,
+        workspaceId: activeWorkspaceId,
+      });
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   async function handleCreateTask(req: CreateTaskRequest) {
     try {
       setError(null);
@@ -1893,6 +1907,8 @@ function App() {
         onExpandSession={setExpandedSessionId}
         onOpenTab={handleOpenTab}
         onOpenRepo={() => setModal({ type: "openRepo" })}
+        onReopenRepo={handleReopenRecentRepo}
+        workspaceId={activeWorkspaceId}
         onCreateTask={(repoId) => setModal({ type: "newTask", repoId })}
         onCreateSession={(repoId, taskId) =>
           setModal({ type: "newSession", repoId, taskId })

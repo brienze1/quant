@@ -9,6 +9,8 @@ export function GetRepo(arg1:string):Promise<dto.RepoResponse>;
 
 export function ListReposByWorkspace(arg1:string):Promise<Array<dto.RepoResponse>>;
 
+export function ListClosedReposByWorkspace(arg1:string,arg2:number,arg3:number):Promise<Array<dto.RepoResponse>>;
+
 export function OnShutdown(arg1:context.Context):Promise<void>;
 
 export function OnStartup(arg1:context.Context):Promise<void>;

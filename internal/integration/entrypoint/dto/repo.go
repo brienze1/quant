@@ -20,11 +20,12 @@ type RepoResponse struct {
 	WorkspaceID string `json:"workspaceId"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt"`
+	ClosedAt    string `json:"closedAt,omitempty"`
 }
 
 // RepoResponseFromEntity converts a domain entity to a RepoResponse DTO.
 func RepoResponseFromEntity(repo entity.Repo) RepoResponse {
-	return RepoResponse{
+	resp := RepoResponse{
 		ID:          repo.ID,
 		Name:        repo.Name,
 		Path:        repo.Path,
@@ -32,6 +33,10 @@ func RepoResponseFromEntity(repo entity.Repo) RepoResponse {
 		CreatedAt:   repo.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   repo.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
+	if repo.ClosedAt != nil {
+		resp.ClosedAt = repo.ClosedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	return resp
 }
 
 // RepoResponseFromEntityPtr converts a domain entity pointer to a RepoResponse DTO pointer.

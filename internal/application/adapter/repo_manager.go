@@ -10,6 +10,7 @@ import (
 type RepoManager interface {
 	OpenRepo(name string, path string, workspaceID string) (*entity.Repo, error)
 	ListReposByWorkspace(workspaceID string) ([]entity.Repo, error)
+	ListClosedReposByWorkspace(workspaceID string, limit int, offset int) ([]entity.Repo, error)
 	GetRepo(id string) (*entity.Repo, error)
 	RemoveRepo(id string) error
 }

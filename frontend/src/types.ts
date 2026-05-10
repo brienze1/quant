@@ -5,6 +5,7 @@ export interface Repo {
   workspaceId: string;
   createdAt: string;
   updatedAt: string;
+  closedAt?: string;
 }
 
 export interface Task {

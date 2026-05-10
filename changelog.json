@@ -1,20 +1,33 @@
 {
   "entries": [
     {
-      "version": "v3.1.17",
+      "version": "v3.1.16",
       "date": "2026-04-14",
       "changes": {
+        "internal": [
+          "update changelog for v3.1.15 and v3.1.16"
+        ],
         "features": [
-          "drag whole group by grabbing the group name label on the jobs canvas"
+          "drag whole group by grabbing the group name label"
+        ],
+        "fixes": [
+          "prevent canvas position reset on workspace switch"
         ]
       }
     },
     {
-      "version": "v3.1.16",
-      "date": "2026-04-14",
+      "version": "v3.1.15",
+      "date": "2026-04-13",
       "changes": {
+        "internal": [
+          "update changelog for recent versions and fixes"
+        ],
+        "features": [
+          "add notification management functions to runtime",
+          "share Claude session across correlated jobs in a chain"
+        ],
         "fixes": [
-          "prevent canvas position reset and minimap vanish when switching workspaces"
+          "resolve FK violation and revert fireTriggers to use RunJob"
         ]
       }
     },

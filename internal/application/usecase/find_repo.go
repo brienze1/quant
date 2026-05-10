@@ -10,4 +10,5 @@ type FindRepo interface {
 	FindRepoByPathAndWorkspace(path string, workspaceID string) (*entity.Repo, error)
 	FindAllRepos() ([]entity.Repo, error)
 	FindReposByWorkspace(workspaceID string) ([]entity.Repo, error)
+	FindClosedReposByWorkspace(workspaceID string, limit int, offset int) ([]entity.Repo, error)
 }
