@@ -337,20 +337,29 @@ function App() {
       prevWorkspaceId.current = activeWorkspaceId;
     }
 
-    // Reload repos (which are workspace-scoped) when workspace changes
-    (async () => {
-      const repoList = await fetchRepos(activeWorkspaceId);
-      for (const repo of repoList) {
-        const tasks = await fetchTasksForRepo(repo.id);
-        await fetchSessionsForRepo(repo.id);
-        for (const task of tasks) {
-          await fetchSessionsForTask(task.id);
-        }
-      }
-    })();
-    fetchJobs();
-    fetchAgents();
-    fetchJobGroups();
+    // Reload workspace-scoped data after letting React paint the tab swap
+    // first. Doing this synchronously after setOpenTabIds caused a long
+    // render storm (every fetch resolved with a setState) on top of the
+    // TerminalPane remount, freezing the UI when a session was actively
+    // streaming output. We yield one task, then fan out in parallel.
+    const handle = setTimeout(() => {
+      (async () => {
+        const repoList = await fetchRepos(activeWorkspaceId);
+        await Promise.all(
+          repoList.map(async (repo) => {
+            const [tasks] = await Promise.all([
+              fetchTasksForRepo(repo.id),
+              fetchSessionsForRepo(repo.id),
+            ]);
+            await Promise.all(tasks.map((task) => fetchSessionsForTask(task.id)));
+          })
+        );
+      })().catch((err) => console.error("failed to reload workspace data:", err));
+      fetchJobs();
+      fetchAgents();
+      fetchJobGroups();
+    }, 0);
+    return () => clearTimeout(handle);
   }, [activeWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist open tabs and active tab to config whenever they change

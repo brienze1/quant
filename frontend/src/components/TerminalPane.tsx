@@ -153,18 +153,78 @@ export function TerminalPane({
 
     startedRef.current = false;
 
+    // Tracks whether this effect instance is still mounted. Async callbacks
+    // (getSessionOutput, EventsOn) check this before writing so they don't
+    // touch a disposed terminal after a workspace switch / remount.
+    const alive = { current: true };
+
+    // Chunked replay state. While the initial buffer is being written we queue
+    // any live `session:output` payloads here and flush them in order after
+    // replay completes. This avoids the double-write storm where multi-megabyte
+    // replay blocks the renderer and concurrent live events stack on top.
+    const replayState = { replaying: false };
+    const liveQueue: string[] = [];
+
+    const writeChunked = (full: string, onDone?: () => void) => {
+      if (!alive.current || !termRef.current) return;
+      const chunkSize = 64 * 1024;
+      let offset = 0;
+      replayState.replaying = true;
+      isWritingRef.current = true;
+
+      const writeNext = () => {
+        if (!alive.current || !termRef.current) {
+          replayState.replaying = false;
+          isWritingRef.current = false;
+          return;
+        }
+        if (offset >= full.length) {
+          replayState.replaying = false;
+          if (autoScrollRef.current && termRef.current) {
+            termRef.current.scrollToBottom();
+          }
+          // Drain any live events that arrived during replay.
+          const queued = liveQueue.splice(0, liveQueue.length);
+          if (queued.length > 0 && termRef.current) {
+            termRef.current.write(queued.join(""), () => {
+              if (autoScrollRef.current && termRef.current) {
+                termRef.current.scrollToBottom();
+              }
+              isWritingRef.current = false;
+              onDone?.();
+            });
+          } else {
+            isWritingRef.current = false;
+            onDone?.();
+          }
+          return;
+        }
+        const piece = full.slice(offset, offset + chunkSize);
+        offset += chunkSize;
+        termRef.current.write(piece, () => {
+          // Yield to the browser between chunks so the UI stays responsive.
+          requestAnimationFrame(writeNext);
+        });
+      };
+
+      writeNext();
+    };
+
     if (isArchived) {
       api
         .getSessionOutput(session.id)
         .then((output) => {
-          if (output && termRef.current) {
-            termRef.current.write(output);
-            termRef.current.write("\r\n\x1b[33m// archived session (read-only)\x1b[0m\r\n");
-          }
+          if (!alive.current || !output || !termRef.current) return;
+          writeChunked(output, () => {
+            if (alive.current && termRef.current) {
+              termRef.current.write("\r\n\x1b[33m// archived session (read-only)\x1b[0m\r\n");
+            }
+          });
         })
         .catch(() => {});
 
       return () => {
+        alive.current = false;
         if (termRef.current) {
           termRef.current.dispose();
           termRef.current = null;
@@ -179,22 +239,29 @@ export function TerminalPane({
     const cancelOutput = w.runtime.EventsOn(
       "session:output",
       (data: { sessionId: string; data: string }) => {
-        if (data.sessionId === session.id && termRef.current) {
-          isWritingRef.current = true;
-          termRef.current.write(data.data, () => {
-            if (autoScrollRef.current && termRef.current) {
-              termRef.current.scrollToBottom();
-            }
-            isWritingRef.current = false;
-          });
+        if (!alive.current || data.sessionId !== session.id || !termRef.current) {
+          return;
         }
+        if (replayState.replaying) {
+          // Hold live events until the initial buffer finishes writing.
+          liveQueue.push(data.data);
+          return;
+        }
+        isWritingRef.current = true;
+        termRef.current.write(data.data, () => {
+          if (!alive.current) return;
+          if (autoScrollRef.current && termRef.current) {
+            termRef.current.scrollToBottom();
+          }
+          isWritingRef.current = false;
+        });
       }
     );
 
     const cancelExited = w.runtime.EventsOn(
       "session:exited",
       (data: { sessionId: string }) => {
-        if (data.sessionId === session.id && termRef.current) {
+        if (alive.current && data.sessionId === session.id && termRef.current) {
           termRef.current.write("\r\n\x1b[90m// session exited\x1b[0m\r\n");
         }
       }
@@ -204,15 +271,8 @@ export function TerminalPane({
       api
         .getSessionOutput(session.id)
         .then((output) => {
-          if (output && termRef.current) {
-            isWritingRef.current = true;
-            termRef.current.write(output, () => {
-              if (autoScrollRef.current && termRef.current) {
-                termRef.current.scrollToBottom();
-              }
-              isWritingRef.current = false;
-            });
-          }
+          if (!alive.current || !output || !termRef.current) return;
+          writeChunked(output);
         })
         .catch(() => {});
     }
@@ -231,6 +291,7 @@ export function TerminalPane({
         }
       }, 100);
       return () => {
+        alive.current = false;
         clearTimeout(timer);
         if (cancelOutput) cancelOutput();
         if (cancelExited) cancelExited();
@@ -242,6 +303,7 @@ export function TerminalPane({
     }
 
     return () => {
+      alive.current = false;
       if (cancelOutput) cancelOutput();
       if (cancelExited) cancelExited();
       if (termRef.current) {

@@ -394,14 +394,57 @@ func (m *processManager) Resize(sessionID string, rows uint16, cols uint16) erro
 	return pty.Setsize(cp.ptm, &pty.Winsize{Rows: rows, Cols: cols})
 }
 
-// GetOutput returns the persisted output for a session from disk.
+// maxReplayBytes caps the size of the session output replay returned to the
+// frontend on terminal remount. Larger histories are truncated to the tail so
+// that mounting a TerminalPane never blocks the renderer with a multi-megabyte
+// xterm write. The visible terminal scrollback still grows beyond this via
+// live "session:output" events.
+const maxReplayBytes int64 = 256 * 1024
+
+// GetOutput returns the persisted output for a session from disk. The result
+// is capped at the last maxReplayBytes bytes; if the file is larger, a short
+// grey notice is prepended so the user knows earlier output was elided.
 func (m *processManager) GetOutput(sessionID string) ([]byte, error) {
-	data, err := os.ReadFile(m.outputPath(sessionID))
+	path := m.outputPath(sessionID)
+	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []byte{}, nil
 		}
-		return nil, fmt.Errorf("failed to read output file: %w", err)
+		return nil, fmt.Errorf("failed to open output file: %w", err)
 	}
-	return data, nil
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat output file: %w", err)
+	}
+
+	size := info.Size()
+	if size <= maxReplayBytes {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read output file: %w", err)
+		}
+		return data, nil
+	}
+
+	tail := make([]byte, maxReplayBytes)
+	if _, err := f.ReadAt(tail, size-maxReplayBytes); err != nil {
+		return nil, fmt.Errorf("failed to read output tail: %w", err)
+	}
+
+	// Advance to the next valid utf8 start so we don't slice through a multi-byte
+	// rune. Worst case we drop up to 3 bytes, which is acceptable.
+	start := 0
+	for start < len(tail) && start < 4 && !utf8.RuneStart(tail[start]) {
+		start++
+	}
+	tail = tail[start:]
+
+	notice := []byte("\x1b[90m// [earlier output truncated]\x1b[0m\r\n")
+	out := make([]byte, 0, len(notice)+len(tail))
+	out = append(out, notice...)
+	out = append(out, tail...)
+	return out, nil
 }
