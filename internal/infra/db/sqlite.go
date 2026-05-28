@@ -287,6 +287,18 @@ func runMigrations(db *sql.DB) error {
 		`ALTER TABLE jobs ADD COLUMN triage_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE job_runs ADD COLUMN correlation_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE job_runs ADD COLUMN injected_context TEXT NOT NULL DEFAULT ''`,
+		// --- issue #50: typed metadata pipeline ---
+		// jobs.inputs/outputs hold the declared JobInputSpec/JobOutputSpec
+		// arrays (JSON-encoded). job_runs.metadata holds the produced outputs
+		// after sentinel extraction + passthrough enforcement and is what
+		// downstream triggered jobs receive as inbound. validation_error
+		// records a pre-run input gate or output validation failure for the UI.
+		// We deliberately ride on upstream's correlation_id + injected_context
+		// — no separate correlation_metadata/inbound_metadata columns.
+		`ALTER TABLE jobs     ADD COLUMN inputs            TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE jobs     ADD COLUMN outputs           TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE job_runs ADD COLUMN metadata          TEXT NOT NULL DEFAULT '{}'`,
+		`ALTER TABLE job_runs ADD COLUMN validation_error  TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alterStatements {
 		// Ignore errors from ALTER TABLE since the column may already exist.

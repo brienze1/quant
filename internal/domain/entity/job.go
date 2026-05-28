@@ -40,6 +40,13 @@ type Job struct {
 	ScriptContent string
 	EnvVariables  map[string]string
 
+	// issue #50: typed metadata contract. Inputs are validated against the
+	// job's inbound metadata before it runs (hard fail); Outputs declare what
+	// the job emits via its <quant-output> block ("produced") or copies
+	// verbatim from inbound ("passthrough").
+	Inputs  []JobInputSpec
+	Outputs []JobOutputSpec
+
 	WorkspaceID string
 
 	CreatedAt time.Time

@@ -7,100 +7,109 @@ import (
 
 // CreateJobRequest represents the request payload for creating a new job.
 type CreateJobRequest struct {
-	Name                string            `json:"name"`
-	Description         string            `json:"description"`
-	Type                string            `json:"type"`
-	WorkingDirectory    string            `json:"workingDirectory"`
-	ScheduleEnabled     bool              `json:"scheduleEnabled"`
-	ScheduleType        string            `json:"scheduleType"`
-	CronExpression      string            `json:"cronExpression"`
-	ScheduleInterval    int               `json:"scheduleInterval"`
-	TimeoutSeconds      int               `json:"timeoutSeconds"`
-	Prompt              string            `json:"prompt"`
-	AllowBypass         bool              `json:"allowBypass"`
-	AutonomousMode      bool              `json:"autonomousMode"`
-	MaxRetries          int               `json:"maxRetries"`
-	Model               string            `json:"model"`
-	OverrideRepoCommand string            `json:"overrideRepoCommand"`
-	ClaudeCommand       string            `json:"claudeCommand"`
-	AgentID             string            `json:"agentId"`
-	SuccessPrompt       string            `json:"successPrompt"`
-	FailurePrompt       string            `json:"failurePrompt"`
-	MetadataPrompt      string            `json:"metadataPrompt"`
-	TriagePrompt        string            `json:"triagePrompt"`
-	Interpreter         string            `json:"interpreter"`
-	ScriptContent       string            `json:"scriptContent"`
-	EnvVariables        map[string]string `json:"envVariables"`
-	OnSuccess           []string          `json:"onSuccess"`
-	OnFailure           []string          `json:"onFailure"`
-	WorkspaceID         string            `json:"workspaceId"`
+	Name                string                  `json:"name"`
+	Description         string                  `json:"description"`
+	Type                string                  `json:"type"`
+	WorkingDirectory    string                  `json:"workingDirectory"`
+	ScheduleEnabled     bool                    `json:"scheduleEnabled"`
+	ScheduleType        string                  `json:"scheduleType"`
+	CronExpression      string                  `json:"cronExpression"`
+	ScheduleInterval    int                     `json:"scheduleInterval"`
+	TimeoutSeconds      int                     `json:"timeoutSeconds"`
+	Prompt              string                  `json:"prompt"`
+	AllowBypass         bool                    `json:"allowBypass"`
+	AutonomousMode      bool                    `json:"autonomousMode"`
+	MaxRetries          int                     `json:"maxRetries"`
+	Model               string                  `json:"model"`
+	OverrideRepoCommand string                  `json:"overrideRepoCommand"`
+	ClaudeCommand       string                  `json:"claudeCommand"`
+	AgentID             string                  `json:"agentId"`
+	SuccessPrompt       string                  `json:"successPrompt"`
+	FailurePrompt       string                  `json:"failurePrompt"`
+	MetadataPrompt      string                  `json:"metadataPrompt"`
+	TriagePrompt        string                  `json:"triagePrompt"`
+	Interpreter         string                  `json:"interpreter"`
+	ScriptContent       string                  `json:"scriptContent"`
+	EnvVariables        map[string]string       `json:"envVariables"`
+	// issue #50: typed metadata contract.
+	Inputs              []entity.JobInputSpec  `json:"inputs"`
+	Outputs             []entity.JobOutputSpec `json:"outputs"`
+	OnSuccess           []string                `json:"onSuccess"`
+	OnFailure           []string                `json:"onFailure"`
+	WorkspaceID         string                  `json:"workspaceId"`
 }
 
 // UpdateJobRequest represents the request payload for updating an existing job.
 type UpdateJobRequest struct {
-	ID                  string            `json:"id"`
-	Name                string            `json:"name"`
-	Description         string            `json:"description"`
-	Type                string            `json:"type"`
-	WorkingDirectory    string            `json:"workingDirectory"`
-	ScheduleEnabled     bool              `json:"scheduleEnabled"`
-	ScheduleType        string            `json:"scheduleType"`
-	CronExpression      string            `json:"cronExpression"`
-	ScheduleInterval    int               `json:"scheduleInterval"`
-	TimeoutSeconds      int               `json:"timeoutSeconds"`
-	Prompt              string            `json:"prompt"`
-	AllowBypass         bool              `json:"allowBypass"`
-	AutonomousMode      bool              `json:"autonomousMode"`
-	MaxRetries          int               `json:"maxRetries"`
-	Model               string            `json:"model"`
-	OverrideRepoCommand string            `json:"overrideRepoCommand"`
-	ClaudeCommand       string            `json:"claudeCommand"`
-	AgentID             string            `json:"agentId"`
-	SuccessPrompt       string            `json:"successPrompt"`
-	FailurePrompt       string            `json:"failurePrompt"`
-	MetadataPrompt      string            `json:"metadataPrompt"`
-	TriagePrompt        string            `json:"triagePrompt"`
-	Interpreter         string            `json:"interpreter"`
-	ScriptContent       string            `json:"scriptContent"`
-	EnvVariables        map[string]string `json:"envVariables"`
-	OnSuccess           []string          `json:"onSuccess"`
-	OnFailure           []string          `json:"onFailure"`
-	WorkspaceID         string            `json:"workspaceId"`
+	ID                  string                  `json:"id"`
+	Name                string                  `json:"name"`
+	Description         string                  `json:"description"`
+	Type                string                  `json:"type"`
+	WorkingDirectory    string                  `json:"workingDirectory"`
+	ScheduleEnabled     bool                    `json:"scheduleEnabled"`
+	ScheduleType        string                  `json:"scheduleType"`
+	CronExpression      string                  `json:"cronExpression"`
+	ScheduleInterval    int                     `json:"scheduleInterval"`
+	TimeoutSeconds      int                     `json:"timeoutSeconds"`
+	Prompt              string                  `json:"prompt"`
+	AllowBypass         bool                    `json:"allowBypass"`
+	AutonomousMode      bool                    `json:"autonomousMode"`
+	MaxRetries          int                     `json:"maxRetries"`
+	Model               string                  `json:"model"`
+	OverrideRepoCommand string                  `json:"overrideRepoCommand"`
+	ClaudeCommand       string                  `json:"claudeCommand"`
+	AgentID             string                  `json:"agentId"`
+	SuccessPrompt       string                  `json:"successPrompt"`
+	FailurePrompt       string                  `json:"failurePrompt"`
+	MetadataPrompt      string                  `json:"metadataPrompt"`
+	TriagePrompt        string                  `json:"triagePrompt"`
+	Interpreter         string                  `json:"interpreter"`
+	ScriptContent       string                  `json:"scriptContent"`
+	EnvVariables        map[string]string       `json:"envVariables"`
+	// issue #50: typed metadata contract.
+	Inputs              []entity.JobInputSpec  `json:"inputs"`
+	Outputs             []entity.JobOutputSpec `json:"outputs"`
+	OnSuccess           []string                `json:"onSuccess"`
+	OnFailure           []string                `json:"onFailure"`
+	WorkspaceID         string                  `json:"workspaceId"`
 }
 
 // JobResponse represents the response payload for job data.
 type JobResponse struct {
-	ID                  string            `json:"id"`
-	Name                string            `json:"name"`
-	Description         string            `json:"description"`
-	Type                string            `json:"type"`
-	WorkingDirectory    string            `json:"workingDirectory"`
-	ScheduleEnabled     bool              `json:"scheduleEnabled"`
-	ScheduleType        string            `json:"scheduleType"`
-	CronExpression      string            `json:"cronExpression"`
-	ScheduleInterval    int               `json:"scheduleInterval"`
-	TimeoutSeconds      int               `json:"timeoutSeconds"`
-	Prompt              string            `json:"prompt"`
-	AllowBypass         bool              `json:"allowBypass"`
-	AutonomousMode      bool              `json:"autonomousMode"`
-	MaxRetries          int               `json:"maxRetries"`
-	Model               string            `json:"model"`
-	OverrideRepoCommand string            `json:"overrideRepoCommand"`
-	ClaudeCommand       string            `json:"claudeCommand"`
-	AgentID             string            `json:"agentId"`
-	SuccessPrompt       string            `json:"successPrompt"`
-	FailurePrompt       string            `json:"failurePrompt"`
-	MetadataPrompt      string            `json:"metadataPrompt"`
-	TriagePrompt        string            `json:"triagePrompt"`
-	Interpreter         string            `json:"interpreter"`
-	ScriptContent       string            `json:"scriptContent"`
-	EnvVariables        map[string]string `json:"envVariables"`
-	WorkspaceID         string            `json:"workspaceId"`
-	CreatedAt           string            `json:"createdAt"`
-	UpdatedAt           string            `json:"updatedAt"`
-	OnSuccess           []string          `json:"onSuccess"`
-	OnFailure           []string          `json:"onFailure"`
-	TriggeredBy         []TriggerRef      `json:"triggeredBy"`
+	ID                  string                  `json:"id"`
+	Name                string                  `json:"name"`
+	Description         string                  `json:"description"`
+	Type                string                  `json:"type"`
+	WorkingDirectory    string                  `json:"workingDirectory"`
+	ScheduleEnabled     bool                    `json:"scheduleEnabled"`
+	ScheduleType        string                  `json:"scheduleType"`
+	CronExpression      string                  `json:"cronExpression"`
+	ScheduleInterval    int                     `json:"scheduleInterval"`
+	TimeoutSeconds      int                     `json:"timeoutSeconds"`
+	Prompt              string                  `json:"prompt"`
+	AllowBypass         bool                    `json:"allowBypass"`
+	AutonomousMode      bool                    `json:"autonomousMode"`
+	MaxRetries          int                     `json:"maxRetries"`
+	Model               string                  `json:"model"`
+	OverrideRepoCommand string                  `json:"overrideRepoCommand"`
+	ClaudeCommand       string                  `json:"claudeCommand"`
+	AgentID             string                  `json:"agentId"`
+	SuccessPrompt       string                  `json:"successPrompt"`
+	FailurePrompt       string                  `json:"failurePrompt"`
+	MetadataPrompt      string                  `json:"metadataPrompt"`
+	TriagePrompt        string                  `json:"triagePrompt"`
+	Interpreter         string                  `json:"interpreter"`
+	ScriptContent       string                  `json:"scriptContent"`
+	EnvVariables        map[string]string       `json:"envVariables"`
+	// issue #50: typed metadata contract.
+	Inputs              []entity.JobInputSpec  `json:"inputs"`
+	Outputs             []entity.JobOutputSpec `json:"outputs"`
+	WorkspaceID         string                  `json:"workspaceId"`
+	CreatedAt           string                  `json:"createdAt"`
+	UpdatedAt           string                  `json:"updatedAt"`
+	OnSuccess           []string                `json:"onSuccess"`
+	OnFailure           []string                `json:"onFailure"`
+	TriggeredBy         []TriggerRef            `json:"triggeredBy"`
 }
 
 // TriggerRef describes a trigger relationship with its type.
@@ -120,11 +129,14 @@ type JobRunResponse struct {
 	ModelUsed    string `json:"modelUsed"`
 	DurationMs   int64  `json:"durationMs"`
 	TokensUsed   int    `json:"tokensUsed"`
-	Result          string `json:"result"`
-	ErrorMessage    string `json:"errorMessage"`
-	InjectedContext string `json:"injectedContext"`
-	StartedAt       string `json:"startedAt"`
-	FinishedAt      string `json:"finishedAt"`
+	Result          string         `json:"result"`
+	ErrorMessage    string         `json:"errorMessage"`
+	InjectedContext string         `json:"injectedContext"`
+	// issue #50: produced typed metadata + validation surface.
+	Metadata        map[string]any `json:"metadata"`
+	ValidationError string         `json:"validationError"`
+	StartedAt       string         `json:"startedAt"`
+	FinishedAt      string         `json:"finishedAt"`
 }
 
 // JobResponseFromEntity converts a domain entity to a JobResponse DTO with trigger information.
@@ -170,6 +182,8 @@ func JobResponseFromEntity(job entity.Job, onSuccess []entity.JobTrigger, onFail
 		Interpreter:         job.Interpreter,
 		ScriptContent:       job.ScriptContent,
 		EnvVariables:        job.EnvVariables,
+		Inputs:              job.Inputs,
+		Outputs:             job.Outputs,
 		WorkspaceID:         job.WorkspaceID,
 		CreatedAt:           job.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:           job.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
@@ -221,6 +235,8 @@ func JobRunResponseFromEntity(run entity.JobRun) JobRunResponse {
 		Result:          run.Result,
 		ErrorMessage:    run.ErrorMessage,
 		InjectedContext: run.InjectedContext,
+		Metadata:        run.Metadata,
+		ValidationError: run.ValidationError,
 		StartedAt:       run.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 		FinishedAt:   finishedAt,
 	}

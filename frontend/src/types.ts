@@ -117,12 +117,28 @@ export interface Job {
   interpreter: string;
   scriptContent: string;
   envVariables: Record<string, string>;
+  // issue #50: typed metadata contract.
+  inputs: JobInputSpec[];
+  outputs: JobOutputSpec[];
   onSuccess: string[];
   onFailure: string[];
   triggeredBy: TriggerRef[];
   workspaceId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// issue #50: typed metadata contract specs (mirror entity.JobInputSpec / JobOutputSpec).
+export interface JobInputSpec {
+  key: string;
+  type: "string" | "number" | "boolean" | "object" | "array";
+  required: boolean;
+}
+
+export interface JobOutputSpec {
+  key: string;
+  type: "string" | "number" | "boolean" | "object" | "array";
+  source: "produced" | "passthrough";
 }
 
 export interface TriggerRef {
@@ -155,6 +171,9 @@ export interface CreateJobRequest {
   interpreter: string;
   scriptContent: string;
   envVariables: Record<string, string>;
+  // issue #50: typed metadata contract.
+  inputs?: JobInputSpec[];
+  outputs?: JobOutputSpec[];
   onSuccess: string[];
   onFailure: string[];
   workspaceId?: string;
@@ -177,6 +196,9 @@ export interface JobRun {
   result: string;
   errorMessage: string;
   injectedContext: string;
+  // issue #50: produced typed metadata + validation surface.
+  metadata?: Record<string, unknown>;
+  validationError?: string;
   startedAt: string;
   finishedAt: string;
 }

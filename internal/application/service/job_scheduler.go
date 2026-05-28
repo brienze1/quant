@@ -120,7 +120,7 @@ func (s *jobScheduler) checkAndRunDueJobs() {
 		}
 
 		fmt.Printf("scheduler: running job %s (%s)\n", job.Name, job.ID)
-		_, err := s.jobManager.RunJob(job.ID, "")
+		_, err := s.jobManager.RunJob(job.ID, "", nil)
 		if err != nil {
 			fmt.Printf("scheduler: failed to run job %s: %v\n", job.Name, err)
 		}

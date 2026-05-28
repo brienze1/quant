@@ -175,6 +175,9 @@ Returns the created job object with the generated ID. Use this ID for run_job, u
 			mcp.WithString("failurePrompt", mcp.Description("How to evaluate failure after the main task completes (max 300 chars). E.g. 'Tests failed, build errors, or no PR created'. Used in the evaluation call. Optional")),
 			mcp.WithString("metadataPrompt", mcp.Description("What structured data to extract for triggered downstream jobs (max 500 chars). E.g. 'Extract PR URL, test count, error summary as JSON'. This metadata is passed as context to downstream triggered jobs, saving tokens vs passing raw output. Optional")),
 			mcp.WithString("triagePrompt", mcp.Description("Criteria for putting the job in 'waiting' state (max 500 chars). E.g. 'Missing credentials, ambiguous requirements, or blocked on external decision'. When set, evaluation can return waiting status to pause the pipeline for human input. Optional")),
+			// issue #50: typed metadata contract
+			mcp.WithString("inputs", mcp.Description(`JSON array of input specs. Each entry: {"key":"...","type":"string|number|boolean|object|array","required":true|false}. Example: [{"key":"linearId","type":"string","required":true}]. The pre-run gate validates incoming metadata against this; missing/wrong-typed required input fails the run before the LLM/bash call. Default: [].`)),
+			mcp.WithString("outputs", mcp.Description(`JSON array of output specs. Each entry: {"key":"...","type":"...","source":"produced"|"passthrough"}. "passthrough" copies the key verbatim from inbound; "produced" extracts from the job's <quant-output>{...} block. Output validation fails closed (no garbage propagation). Default: [].`)),
 			// Bash config
 			mcp.WithString("interpreter", mcp.Description("Shell interpreter for bash jobs: '/bin/bash' (default), '/bin/zsh', 'python3', 'node', etc. The scriptContent is piped to this via stdin")),
 			mcp.WithString("scriptContent", mcp.Description("Script content for bash jobs. Piped to the interpreter via stdin. Exit 0 = success (fires onSuccess triggers), non-zero = failure (fires onFailure triggers). Stdout/stderr are captured as run output")),
@@ -227,6 +230,9 @@ Common workflows:
 			mcp.WithString("failurePrompt", mcp.Description("Failure evaluation criteria (max 300 chars)")),
 			mcp.WithString("metadataPrompt", mcp.Description("Metadata extraction instructions (max 500 chars)")),
 			mcp.WithString("triagePrompt", mcp.Description("Criteria for 'waiting' state (max 500 chars). Set to empty string to disable triage")),
+			// issue #50: typed metadata contract. Presence replaces the array; "" or "[]" clears.
+			mcp.WithString("inputs", mcp.Description(`JSON array of input specs (REPLACES existing). Pass "[]" or "" to clear. Each entry: {"key":"...","type":"string|number|boolean|object|array","required":true|false}.`)),
+			mcp.WithString("outputs", mcp.Description(`JSON array of output specs (REPLACES existing). Pass "[]" or "" to clear. Each entry: {"key":"...","type":"...","source":"produced"|"passthrough"}.`)),
 			mcp.WithString("interpreter", mcp.Description("Script interpreter for bash jobs")),
 			mcp.WithString("scriptContent", mcp.Description("Script content for bash jobs")),
 			mcp.WithString("envVariables", mcp.Description("JSON object of env vars. E.g. '{\"KEY\":\"value\"}'. Replaces existing env vars")),
@@ -269,8 +275,11 @@ To monitor execution:
 - get_run_output(runId) — get the live output (updates while running, polled every few seconds)
 - get_pipeline_status(runId) — trace the full cascade of triggered downstream jobs
 
-The Quant canvas UI shows running jobs with a pulsing green border and highlights the active pipeline path in real-time.`),
+The Quant canvas UI shows running jobs with a pulsing green border and highlights the active pipeline path in real-time.
+
+Optionally pass typed inputs (JSON object) — for a root run these become the run's initial metadata and feed the pre-run validation gate against the job's declared inputs spec.`),
 			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to run (get from list_jobs)")),
+			mcp.WithString("inputs", mcp.Description(`Optional JSON object of typed inputs. Example: {"linearId":"MAX-86","stack":"backend"}. Default: {} (empty).`)),
 		),
 		s.handleRunJob,
 	)
@@ -987,6 +996,22 @@ func (s *QuantMCPServer) handleCreateJob(_ context.Context, request mcp.CallTool
 		job.AutonomousMode, _ = v.(bool)
 	}
 
+	// issue #50: typed inputs/outputs (JSON-encoded arrays).
+	if v, ok := args["inputs"].(string); ok && v != "" {
+		var specs []entity.JobInputSpec
+		if err := json.Unmarshal([]byte(v), &specs); err != nil {
+			return mcp.NewToolResultError("invalid inputs JSON: " + err.Error()), nil
+		}
+		job.Inputs = specs
+	}
+	if v, ok := args["outputs"].(string); ok && v != "" {
+		var specs []entity.JobOutputSpec
+		if err := json.Unmarshal([]byte(v), &specs); err != nil {
+			return mcp.NewToolResultError("invalid outputs JSON: " + err.Error()), nil
+		}
+		job.Outputs = specs
+	}
+
 	onSuccess := stringSliceArg(args, "onSuccess")
 	onFailure := stringSliceArg(args, "onFailure")
 
@@ -1088,6 +1113,34 @@ func (s *QuantMCPServer) handleUpdateJob(_ context.Context, request mcp.CallTool
 		existing.EnvVariables = mapStringArg(args, "envVariables")
 	}
 
+	// issue #50: typed inputs/outputs (REPLACES existing array on presence).
+	if v, ok := args["inputs"]; ok {
+		raw, _ := v.(string)
+		var specs []entity.JobInputSpec
+		if strings.TrimSpace(raw) != "" {
+			if err := json.Unmarshal([]byte(raw), &specs); err != nil {
+				return mcp.NewToolResultError("invalid inputs JSON: " + err.Error()), nil
+			}
+		}
+		if specs == nil {
+			specs = []entity.JobInputSpec{}
+		}
+		existing.Inputs = specs
+	}
+	if v, ok := args["outputs"]; ok {
+		raw, _ := v.(string)
+		var specs []entity.JobOutputSpec
+		if strings.TrimSpace(raw) != "" {
+			if err := json.Unmarshal([]byte(raw), &specs); err != nil {
+				return mcp.NewToolResultError("invalid outputs JSON: " + err.Error()), nil
+			}
+		}
+		if specs == nil {
+			specs = []entity.JobOutputSpec{}
+		}
+		existing.Outputs = specs
+	}
+
 	// Only update triggers if explicitly provided — nil means "don't change"
 	onSuccess := stringSliceArg(args, "onSuccess")
 	onFailure := stringSliceArg(args, "onFailure")
@@ -1132,7 +1185,18 @@ func (s *QuantMCPServer) handleRunJob(_ context.Context, request mcp.CallToolReq
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	run, err := s.jobManager.RunJob(id, "")
+	// issue #50: optional typed inputs (JSON object string).
+	var inputs map[string]any
+	if v, ok := request.GetArguments()["inputs"]; ok {
+		raw, _ := v.(string)
+		if strings.TrimSpace(raw) != "" {
+			if err := json.Unmarshal([]byte(raw), &inputs); err != nil {
+				return mcp.NewToolResultError("invalid inputs JSON: " + err.Error()), nil
+			}
+		}
+	}
+
+	run, err := s.jobManager.RunJob(id, "", inputs)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -2433,6 +2497,18 @@ func jobToMap(job *entity.Job) map[string]any {
 	if job.EnvVariables != nil {
 		m["envVariables"] = job.EnvVariables
 	}
+	// issue #50: always emit the typed contract (empty array if unset) so
+	// clients always see the contract field shape.
+	if job.Inputs != nil {
+		m["inputs"] = job.Inputs
+	} else {
+		m["inputs"] = []entity.JobInputSpec{}
+	}
+	if job.Outputs != nil {
+		m["outputs"] = job.Outputs
+	} else {
+		m["outputs"] = []entity.JobOutputSpec{}
+	}
 	return m
 }
 
@@ -2454,9 +2530,20 @@ func runToMap(run *entity.JobRun) map[string]any {
 		"errorMessage":    run.ErrorMessage,
 		"injectedContext": run.InjectedContext,
 		"startedAt":       run.StartedAt,
+		// issue #50: typed metadata + validation surface.
+		"metadata":        ensureMap(run.Metadata),
+		"validationError": run.ValidationError,
 	}
 	if run.FinishedAt != nil {
 		m["finishedAt"] = *run.FinishedAt
+	}
+	return m
+}
+
+// ensureMap returns m or an empty map so the JSON shape is always an object.
+func ensureMap(m map[string]any) map[string]any {
+	if m == nil {
+		return map[string]any{}
 	}
 	return m
 }
