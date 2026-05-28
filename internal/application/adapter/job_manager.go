@@ -12,7 +12,16 @@ type JobManager interface {
 	GetJob(id string) (*entity.Job, error)
 	ListJobs() ([]entity.Job, error)
 	GetTriggersForJob(jobID string) (onSuccess []entity.JobTrigger, onFailure []entity.JobTrigger, triggeredBy []entity.JobTrigger, err error)
-	RunJob(jobID string, triggeredByRunID string, correlationID ...string) (*entity.JobRun, error)
+	// RunJob starts a new run.
+	//   - inputs: typed metadata for the run's pre-run validation gate. For a
+	//     ROOT run (triggeredByRunID == "") this becomes the run's initial
+	//     Metadata (the "inbound" the gate validates against). For a TRIGGERED
+	//     run the gate ignores inputs and reads the parent run's Metadata
+	//     instead — fireTriggers passes the parent's typed metadata through
+	//     upstream's existing trigger/injected_context plumbing, so passing
+	//     nil here is the right default for trigger-paths.
+	//   - correlationID: upstream's pipeline-wide id (variadic, optional).
+	RunJob(jobID string, triggeredByRunID string, inputs map[string]any, correlationID ...string) (*entity.JobRun, error)
 	RunJobWithContext(jobID string, context string) (*entity.JobRun, error)
 	RerunJob(jobID string, originalRunID string) (*entity.JobRun, error)
 	CancelRun(runID string) error

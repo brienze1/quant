@@ -224,7 +224,7 @@ func (s *jobManagerService) GetTriggersForJob(jobID string) (onSuccess []entity.
 }
 
 // RunJob starts a new run for a job. Supports retries with history for Claude jobs.
-func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correlationID ...string) (*entity.JobRun, error) {
+func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, inputs map[string]any, correlationID ...string) (*entity.JobRun, error) {
 	job, err := s.findJob.FindJobByID(jobID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find job: %w", err)
@@ -240,6 +240,20 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correl
 		Status:      jobrunstatus.Running,
 		TriggeredBy: triggeredByRunID,
 		StartedAt:   now,
+	}
+
+	// issue #50: typed metadata pipeline.
+	//   - ROOT run (no triggering parent): inputs ARE the initial inbound the
+	//     pre-run gate will validate against, so we pre-seed run.Metadata
+	//     with them. After execution, finalizeMetadata overwrites Metadata
+	//     with the produced outputs.
+	//   - TRIGGERED run: the gate looks up the parent's Metadata via
+	//     TriggeredBy; we don't pre-seed (inputs is expected to be nil here).
+	if triggeredByRunID == "" && len(inputs) > 0 {
+		run.Metadata = make(map[string]any, len(inputs))
+		for k, v := range inputs {
+			run.Metadata[k] = v
+		}
 	}
 
 	if len(correlationID) > 0 && correlationID[0] != "" {
@@ -285,24 +299,32 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correl
 		}
 	}
 
-	// Execute asynchronously
+	// Execute asynchronously.
+	//
+	// The async goroutine mutates the run (status, metadata, validation error,
+	// finishedAt, ...). To avoid a data race with the synchronous caller — which
+	// serialises the returned run object immediately (e.g. the MCP run_job
+	// handler) — the goroutine operates on its OWN copy and we return a separate
+	// snapshot. All durable state flows through the DB, so the copies never
+	// diverge in a way that matters.
+	asyncRun := run
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				// Write panic info to run log so we can diagnose
-				logPath := runLogPath(run.ID)
+				logPath := runLogPath(asyncRun.ID)
 				if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 					fmt.Fprintf(f, "\n\n--- PANIC ---\n%v\n", r)
 					f.Close()
 				}
 				now := time.Now()
-				run.Status = jobrunstatus.Failed
-				run.ErrorMessage = fmt.Sprintf("panic: %v", r)
-				run.FinishedAt = &now
-				_ = s.saveJobRun.UpdateJobRun(run)
+				asyncRun.Status = jobrunstatus.Failed
+				asyncRun.ErrorMessage = fmt.Sprintf("panic: %v", r)
+				asyncRun.FinishedAt = &now
+				_ = s.saveJobRun.UpdateJobRun(asyncRun)
 			}
 		}()
-		s.executeWithRetries(job, &run, csKey)
+		s.executeWithRetries(job, &asyncRun, csKey)
 	}()
 
 	return &run, nil
@@ -312,7 +334,7 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, correl
 // The context string is prepended to the job's prompt in the same format as trigger context,
 // so existing jobs that parse TASK_IDENTIFIER= etc. work without modification.
 func (s *jobManagerService) RunJobWithContext(jobID string, context string) (*entity.JobRun, error) {
-	run, err := s.RunJob(jobID, "")
+	run, err := s.RunJob(jobID, "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +355,7 @@ func (s *jobManagerService) RerunJob(jobID string, originalRunID string) (*entit
 	originalRun, err := s.findJobRun.FindJobRunByID(originalRunID)
 	if err != nil || originalRun == nil {
 		// Fallback: run without trigger context
-		return s.RunJob(jobID, "")
+		return s.RunJob(jobID, "", nil)
 	}
 
 	cid := originalRun.CorrelationID
@@ -341,13 +363,13 @@ func (s *jobManagerService) RerunJob(jobID string, originalRunID string) (*entit
 	parentRunID := originalRun.TriggeredBy
 	if parentRunID == "" {
 		// Original was manual, just run fresh
-		return s.RunJob(jobID, "", cid)
+		return s.RunJob(jobID, "", nil, cid)
 	}
 
 	// Rebuild trigger context from the parent run
 	parentRun, err := s.findJobRun.FindJobRunByID(parentRunID)
 	if err != nil || parentRun == nil {
-		return s.RunJob(jobID, "")
+		return s.RunJob(jobID, "", nil)
 	}
 
 	parentJob, _ := s.findJob.FindJobByID(parentRun.JobID)
@@ -357,13 +379,17 @@ func (s *jobManagerService) RerunJob(jobID string, originalRunID string) (*entit
 	}
 
 	sourceOutput := parentRun.Result
-	metadataSection := ""
-	if idx := strings.Index(sourceOutput, "\n\n--- metadata ---\n"); idx >= 0 {
-		metadataSection = sourceOutput[idx+len("\n\n--- metadata ---\n"):]
-		sourceOutput = sourceOutput[:idx]
-	}
 	if len(sourceOutput) > 3000 {
 		sourceOutput = sourceOutput[len(sourceOutput)-3000:]
+	}
+	// issue #50: source structured metadata from the parent's typed
+	// Metadata column rather than the legacy "\n\n--- metadata ---\n"
+	// suffix on Result (which we no longer write on success/failure).
+	var metadataSection string
+	if len(parentRun.Metadata) > 0 {
+		if b, mErr := json.Marshal(parentRun.Metadata); mErr == nil {
+			metadataSection = string(b)
+		}
 	}
 
 	triggerOn := "success"
@@ -388,7 +414,7 @@ func (s *jobManagerService) RerunJob(jobID string, originalRunID string) (*entit
 		)
 	}
 
-	newRun, err := s.RunJob(jobID, parentRunID, cid)
+	newRun, err := s.RunJob(jobID, parentRunID, nil, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -497,7 +523,7 @@ func (s *jobManagerService) AdvancePipeline(runID string, targetJobID string, ex
 		return nil, fmt.Errorf("failed to update run: %w", err)
 	}
 
-	newRun, err := s.RunJob(targetJobID, "", run.CorrelationID)
+	newRun, err := s.RunJob(targetJobID, "", nil, run.CorrelationID)
 	if err != nil {
 		return nil, err
 	}
@@ -532,7 +558,36 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 		maxAttempts = 1
 	}
 
+	// issue #50: derive the typed inbound metadata once. For a TRIGGERED run,
+	// the parent's produced Metadata is the contract; for a ROOT run, the
+	// pre-seeded run.Metadata holds the inputs the caller passed to RunJob.
+	// We look up the parent fresh from the DB so we see the value persisted
+	// after the parent's finalizeMetadata (no in-memory map, no race).
+	var inbound map[string]any
+	if run.TriggeredBy != "" {
+		if parent, perr := s.findJobRun.FindJobRunByID(run.TriggeredBy); perr == nil && parent != nil {
+			inbound = parent.Metadata
+		}
+	} else {
+		inbound = run.Metadata
+	}
+
+	// issue #50: pre-run validation gate (hard fail; no LLM/bash invocation).
+	// On failure we still fire downstream triggers so an onFailure triage
+	// cascade can react — matching the upstream exec-error path.
+	if verr := validateInputs(job.Inputs, inbound); verr != nil {
+		now := time.Now()
+		run.Status = jobrunstatus.Failed
+		run.ValidationError = verr.Error()
+		run.ErrorMessage = "input validation failed: " + verr.Error()
+		run.FinishedAt = &now
+		_ = s.saveJobRun.UpdateJobRun(*run)
+		s.fireTriggers(job.ID, run, activeCSKey)
+		return
+	}
+
 	var lastOutput string
+	var lastValidationFeedback string
 	var lastErr error
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -547,7 +602,7 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 
 		switch job.Type {
 		case jobtype.Claude:
-			result, execErr = s.executeClaudeJob(job, run, attempt, lastOutput, activeCSKey)
+			result, execErr = s.executeClaudeJob(job, run, attempt, lastOutput, lastValidationFeedback, activeCSKey)
 		case jobtype.Bash:
 			result, execErr = s.executeBashJob(job, run)
 		default:
@@ -628,25 +683,68 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 					time.Sleep(3 * time.Second)
 					continue
 				}
-			} else {
-				run.Status = jobrunstatus.Success
+				// Final failure — fire onFailure triggers with empty Metadata
+				// (we deliberately don't propagate metadata from a failed task).
+				_ = s.saveJobRun.UpdateJobRun(*run)
+				s.fireTriggers(job.ID, run, activeCSKey)
+				return
 			}
 
-			// Store metadata as JSON in the result for triggered jobs to use
-			if metaJSON, err := json.Marshal(eval.Metadata); err == nil {
-				run.Result = result + "\n\n--- metadata ---\n" + string(metaJSON)
+			// --- issue #50: typed metadata extraction (success path) ---
+			// Sentinel <quant-output>{...}</quant-output> block wins; the LLM
+			// eval metadata is offered as a fallback only when the job
+			// declared a legacy MetadataPrompt. Output-validation errors fail
+			// the run closed so no garbage propagates to downstream jobs.
+			var evalFallback func() (map[string]any, error)
+			if job.MetadataPrompt != "" {
+				captured := eval.Metadata
+				evalFallback = func() (map[string]any, error) { return captured, nil }
 			}
-
+			finalMeta, extractErrs := finalizeMetadata(job.Outputs, result, inbound, evalFallback)
+			if len(extractErrs) > 0 {
+				feedback := joinExtractionErrs(extractErrs)
+				// issue #50: a Claude job that botches its declared output
+				// contract can usually self-correct. Rather than fail closed
+				// immediately, re-prompt with the exact errors and retry — but
+				// only while the retry budget allows. The errors are threaded
+				// into buildClaudePrompt so the agent is told precisely what to
+				// fix (missing key, wrong type, or malformed sentinel JSON).
+				if attempt < maxAttempts {
+					lastOutput = result
+					lastValidationFeedback = feedback
+					lastErr = fmt.Errorf("output validation failed: %s", feedback)
+					time.Sleep(3 * time.Second)
+					continue
+				}
+				run.Status = jobrunstatus.Failed
+				run.ValidationError = "output validation failed: " + feedback
+				run.ErrorMessage = run.ValidationError
+				_ = s.saveJobRun.UpdateJobRun(*run)
+				s.fireTriggers(job.ID, run, activeCSKey)
+				return
+			}
+			run.Metadata = finalMeta
+			run.Status = jobrunstatus.Success
 			_ = s.saveJobRun.UpdateJobRun(*run)
 			s.fireTriggers(job.ID, run, activeCSKey)
 			return
 		}
 
-		// Bash jobs — no evaluation, just success
+		// Bash jobs — issue #50 typed extraction (no LLM-eval fallback).
 		now := time.Now()
-		run.Status = jobrunstatus.Success
 		run.Result = result
 		run.FinishedAt = &now
+		bashMeta, bashErrs := finalizeMetadata(job.Outputs, result, inbound, nil)
+		if len(bashErrs) > 0 {
+			run.Status = jobrunstatus.Failed
+			run.ValidationError = "output validation failed: " + joinExtractionErrs(bashErrs)
+			run.ErrorMessage = run.ValidationError
+			_ = s.saveJobRun.UpdateJobRun(*run)
+			s.fireTriggers(job.ID, run, activeCSKey)
+			return
+		}
+		run.Metadata = bashMeta
+		run.Status = jobrunstatus.Success
 		_ = s.saveJobRun.UpdateJobRun(*run)
 		s.fireTriggers(job.ID, run, activeCSKey)
 		return
@@ -670,7 +768,7 @@ func (s *jobManagerService) executeWithRetries(job *entity.Job, run *entity.JobR
 // buildClaudePrompt wraps the user's prompt with autonomous job instructions.
 // On retries, includes the previous attempt's output for continuity.
 // When triggered by another job, includes the trigger context (source job name, outcome, output).
-func (s *jobManagerService) buildClaudePrompt(job *entity.Job, run *entity.JobRun, attempt int, previousOutput string) string {
+func (s *jobManagerService) buildClaudePrompt(job *entity.Job, run *entity.JobRun, attempt int, previousOutput string, validationFeedback string) string {
 	timeout := job.TimeoutSeconds
 	if timeout <= 0 {
 		timeout = 1800
@@ -712,6 +810,18 @@ func (s *jobManagerService) buildClaudePrompt(job *entity.Job, run *entity.JobRu
 		sb.WriteString("Continue from where the previous attempt left off.\n")
 	}
 
+	// issue #50: the previous attempt ran fine but did not satisfy this job's
+	// declared output contract. Tell the agent exactly what to fix so it can
+	// self-correct on this attempt instead of failing the run.
+	if validationFeedback != "" {
+		sb.WriteString("\n## Output contract not satisfied on the previous attempt\n")
+		sb.WriteString("Your previous response did not satisfy this job's declared output contract:\n")
+		sb.WriteString("  " + validationFeedback + "\n")
+		sb.WriteString("You MUST end your response with exactly one <quant-output>{...}</quant-output> block ")
+		sb.WriteString("containing valid JSON in which every declared produced key is present and correctly typed. ")
+		sb.WriteString("Fix only the problems listed above.\n")
+	}
+
 	sb.WriteString("\n## Task\n")
 	sb.WriteString(job.Prompt)
 
@@ -725,8 +835,8 @@ func (s *jobManagerService) buildClaudePrompt(job *entity.Job, run *entity.JobRu
 // When csKey is non-nil, the job participates in a shared chain session:
 //   - If the chain session already has a conversationID, --resume is used instead of a fresh session.
 //   - After completion, the conversation ID and token count are stored back on the chain session.
-func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun, attempt int, previousOutput string, csKey *chainSessionKey) (string, error) {
-	prompt := s.buildClaudePrompt(job, run, attempt, previousOutput)
+func (s *jobManagerService) executeClaudeJob(job *entity.Job, run *entity.JobRun, attempt int, previousOutput string, validationFeedback string, csKey *chainSessionKey) (string, error) {
+	prompt := s.buildClaudePrompt(job, run, attempt, previousOutput, validationFeedback)
 
 	claudeCmd := job.ClaudeCommand
 	if claudeCmd == "" {
@@ -1381,15 +1491,20 @@ func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun, sourc
 		activeCSKey = sourceCSKey[0]
 	}
 
-	// Extract metadata from the run result (if present)
+	// issue #50: structured metadata for downstream jobs now comes from the
+	// parent's typed Metadata column (set by finalizeMetadata). The legacy
+	// "\n\n--- metadata ---\n" suffix on Result is gone on success/failure
+	// paths; only the upstream "waiting" branch still emits it for UI
+	// display and waiting doesn't reach this fireTriggers path anyway.
 	sourceOutput := run.Result
-	metadataSection := ""
-	if idx := strings.Index(sourceOutput, "\n\n--- metadata ---\n"); idx >= 0 {
-		metadataSection = sourceOutput[idx+len("\n\n--- metadata ---\n"):]
-		sourceOutput = sourceOutput[:idx]
-	}
 	if len(sourceOutput) > 3000 {
 		sourceOutput = sourceOutput[len(sourceOutput)-3000:]
+	}
+	var metadataSection string
+	if len(run.Metadata) > 0 {
+		if b, mErr := json.Marshal(run.Metadata); mErr == nil {
+			metadataSection = string(b)
+		}
 	}
 
 	for _, trigger := range triggers {
@@ -1429,7 +1544,7 @@ func (s *jobManagerService) fireTriggers(jobID string, run *entity.JobRun, sourc
 		}
 
 		// Store context for the new run to pick up
-		newRun, err := s.RunJob(trigger.TargetJobID, run.ID, run.CorrelationID)
+		newRun, err := s.RunJob(trigger.TargetJobID, run.ID, nil, run.CorrelationID)
 		if err == nil && newRun != nil {
 			s.mu.Lock()
 			// Append continue_pipeline context if present

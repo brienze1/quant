@@ -571,6 +571,7 @@ export namespace dto {
 	    workspaceId: string;
 	    createdAt: string;
 	    updatedAt: string;
+	    closedAt?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RepoResponse(source);
@@ -584,6 +585,7 @@ export namespace dto {
 	        this.workspaceId = source["workspaceId"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
+	        this.closedAt = source["closedAt"];
 	    }
 	}
 	export class SaveConfigRequest {

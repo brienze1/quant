@@ -62,6 +62,8 @@ func (c *jobController) CreateJob(request dto.CreateJobRequest) (*dto.JobRespons
 		Interpreter:         request.Interpreter,
 		ScriptContent:       request.ScriptContent,
 		EnvVariables:        request.EnvVariables,
+		Inputs:              request.Inputs,
+		Outputs:             request.Outputs,
 		WorkspaceID:         request.WorkspaceID,
 	}
 
@@ -106,6 +108,8 @@ func (c *jobController) UpdateJob(request dto.UpdateJobRequest) (*dto.JobRespons
 		Interpreter:         request.Interpreter,
 		ScriptContent:       request.ScriptContent,
 		EnvVariables:        request.EnvVariables,
+		Inputs:              request.Inputs,
+		Outputs:             request.Outputs,
 		WorkspaceID:         request.WorkspaceID,
 	}
 
@@ -154,7 +158,7 @@ func (c *jobController) ListJobs() ([]dto.JobResponse, error) {
 
 // RunJob starts a new run for a job.
 func (c *jobController) RunJob(id string) (*dto.JobRunResponse, error) {
-	run, err := c.jobManager.RunJob(id, "")
+	run, err := c.jobManager.RunJob(id, "", nil)
 	if err != nil {
 		return nil, err
 	}

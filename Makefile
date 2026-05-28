@@ -1,4 +1,4 @@
-.PHONY: release release-patch release-minor release-major dev build
+.PHONY: release release-patch release-minor release-major dev build test
 
 # Auto-bump: make release-patch | release-minor | release-major
 # Manual:    make release v=1.0.0
@@ -48,3 +48,9 @@ install:
 update:
 	brew update
 	brew upgrade quant
+
+# Run Go tests with the race detector. issue #50 unit tests for the typed
+# input validator and <quant-output> sentinel extractor live in
+# internal/application/service/*_test.go.
+test:
+	go test -race ./...

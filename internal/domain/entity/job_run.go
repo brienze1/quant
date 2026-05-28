@@ -21,4 +21,11 @@ type JobRun struct {
 	InjectedContext string // context injected via trigger, resume, or pipeline advance
 	StartedAt       time.Time
 	FinishedAt   *time.Time
+
+	// issue #50: typed metadata pipeline. Metadata holds this run's produced
+	// outputs (after <quant-output> extraction + passthrough enforcement) and
+	// is what downstream triggered jobs receive as inbound. ValidationError
+	// records a pre-run input gate or output-validation failure for the UI.
+	Metadata        map[string]any
+	ValidationError string
 }

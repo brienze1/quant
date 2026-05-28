@@ -38,6 +38,9 @@ type JobRow struct {
 	ScriptContent       string
 	EnvVariables        string // JSON
 	WorkspaceID         string
+	// issue #50: typed metadata contract (JSON-encoded arrays of specs).
+	Inputs              string
+	Outputs             string
 	CreatedAt           string
 	UpdatedAt           string
 	LastRunAt           sql.NullString
@@ -57,6 +60,15 @@ func (r JobRow) ToEntity() entity.Job {
 	envVars := make(map[string]string)
 	if r.EnvVariables != "" {
 		_ = json.Unmarshal([]byte(r.EnvVariables), &envVars)
+	}
+
+	var inputs []entity.JobInputSpec
+	if r.Inputs != "" {
+		_ = json.Unmarshal([]byte(r.Inputs), &inputs)
+	}
+	var outputs []entity.JobOutputSpec
+	if r.Outputs != "" {
+		_ = json.Unmarshal([]byte(r.Outputs), &outputs)
 	}
 
 	var lastRunAt *time.Time
@@ -93,6 +105,8 @@ func (r JobRow) ToEntity() entity.Job {
 		ScriptContent:       r.ScriptContent,
 		EnvVariables:        envVars,
 		WorkspaceID:         r.WorkspaceID,
+		Inputs:              inputs,
+		Outputs:             outputs,
 		CreatedAt:           createdAt,
 		UpdatedAt:           updatedAt,
 		LastRunAt:           lastRunAt,
@@ -114,6 +128,15 @@ func JobRowFromEntity(job entity.Job) JobRow {
 	envJSON, _ := json.Marshal(job.EnvVariables)
 	if job.EnvVariables == nil {
 		envJSON = []byte("{}")
+	}
+
+	inputsJSON, _ := json.Marshal(job.Inputs)
+	if job.Inputs == nil {
+		inputsJSON = []byte("[]")
+	}
+	outputsJSON, _ := json.Marshal(job.Outputs)
+	if job.Outputs == nil {
+		outputsJSON = []byte("[]")
 	}
 
 	scheduleEnabled := 0
@@ -157,6 +180,8 @@ func JobRowFromEntity(job entity.Job) JobRow {
 		ScriptContent:       job.ScriptContent,
 		EnvVariables:        string(envJSON),
 		WorkspaceID:         job.WorkspaceID,
+		Inputs:              string(inputsJSON),
+		Outputs:             string(outputsJSON),
 		CreatedAt:           job.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:           job.UpdatedAt.Format(time.RFC3339),
 		LastRunAt:           lastRunAt,

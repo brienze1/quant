@@ -3,6 +3,7 @@ package dto
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"quant/internal/domain/entity"
@@ -22,6 +23,10 @@ type JobRunRow struct {
 	Result          string
 	ErrorMessage    string
 	InjectedContext string
+	// issue #50: produced metadata (after sentinel extraction + passthrough)
+	// and validation failure surface for the UI.
+	Metadata        string // JSON object
+	ValidationError string
 	StartedAt       string
 	FinishedAt   sql.NullString
 }
@@ -46,6 +51,11 @@ func (r JobRunRow) ToEntity() entity.JobRun {
 		sessionID = r.SessionID.String
 	}
 
+	var metadata map[string]any
+	if r.Metadata != "" {
+		_ = json.Unmarshal([]byte(r.Metadata), &metadata)
+	}
+
 	return entity.JobRun{
 		ID:           r.ID,
 		JobID:        r.JobID,
@@ -59,6 +69,8 @@ func (r JobRunRow) ToEntity() entity.JobRun {
 		Result:          r.Result,
 		ErrorMessage:    r.ErrorMessage,
 		InjectedContext: r.InjectedContext,
+		Metadata:        metadata,
+		ValidationError: r.ValidationError,
 		StartedAt:       startedAt,
 		FinishedAt:      finishedAt,
 	}
@@ -81,6 +93,11 @@ func JobRunRowFromEntity(run entity.JobRun) JobRunRow {
 		sessionID = sql.NullString{String: run.SessionID, Valid: true}
 	}
 
+	metaJSON, _ := json.Marshal(run.Metadata)
+	if run.Metadata == nil {
+		metaJSON = []byte("{}")
+	}
+
 	return JobRunRow{
 		ID:            run.ID,
 		JobID:         run.JobID,
@@ -94,6 +111,8 @@ func JobRunRowFromEntity(run entity.JobRun) JobRunRow {
 		Result:          run.Result,
 		ErrorMessage:    run.ErrorMessage,
 		InjectedContext: run.InjectedContext,
+		Metadata:        string(metaJSON),
+		ValidationError: run.ValidationError,
 		StartedAt:       run.StartedAt.Format(time.RFC3339),
 		FinishedAt:   finishedAt,
 	}
