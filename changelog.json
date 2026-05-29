@@ -1,6 +1,54 @@
 {
   "entries": [
     {
+      "version": "v3.1.21",
+      "date": "2026-05-29",
+      "changes": {
+        "internal": [
+          "regenerate changelog for v3.1.17 through v3.1.21"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.20",
+      "date": "2026-05-29",
+      "changes": {
+        "fixes": [
+          "restore SchemaField type so the frontend compiles (#56)"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.19",
+      "date": "2026-05-28",
+      "changes": {
+        "features": [
+          "typed job input/output contracts on the workflow engine"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.18",
+      "date": "2026-05-13",
+      "changes": {
+        "fixes": [
+          "prevent UI freeze when switching workspaces during active sessions"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.17",
+      "date": "2026-05-10",
+      "changes": {
+        "features": [
+          "recent repos dropdown on `+ repo` for fast reopening"
+        ],
+        "internal": [
+          "update changelog for v3.1.15 and v3.1.16"
+        ]
+      }
+    },
+    {
       "version": "v3.1.16",
       "date": "2026-04-14",
       "changes": {
