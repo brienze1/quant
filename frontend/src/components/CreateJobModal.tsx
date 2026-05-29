@@ -1,12 +1,38 @@
 import { useState, useRef, useEffect } from "react";
-import type { Job, JobType, CreateJobRequest, UpdateJobRequest, ScheduleType, Agent } from "../types";
+import type { Job, JobType, CreateJobRequest, UpdateJobRequest, ScheduleType, Agent, SchemaField, JobInputSpec, JobOutputSpec } from "../types";
 import * as api from "../api";
+import { SchemaFieldEditor } from "./SchemaFieldEditor";
 
 const MODEL_OPTIONS = ["cli default", "claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001"];
 const INTERPRETER_OPTIONS = ["/bin/bash", "/bin/sh", "/bin/zsh", "python3"];
 const SCHEDULE_UNIT_OPTIONS = ["minutes", "hours", "days"];
 
-type TabKey = "general" | "schedule" | "session" | "script";
+const SPEC_TYPES = ["string", "number", "boolean", "object", "array"] as const;
+type SpecType = (typeof SPEC_TYPES)[number];
+
+// The editor stores rows with loosely-typed `type`/`source` (raw <select> values);
+// the API contract is strict. Coerce + drop blank-key rows on submit (issue #50).
+function coerceType(t: string): SpecType {
+  return (SPEC_TYPES as readonly string[]).includes(t) ? (t as SpecType) : "string";
+}
+
+function toInputSpecs(rows: SchemaField[]): JobInputSpec[] {
+  return rows
+    .filter((r) => r.key.trim())
+    .map((r) => ({ key: r.key.trim(), type: coerceType(r.type), required: !!r.required }));
+}
+
+function toOutputSpecs(rows: SchemaField[]): JobOutputSpec[] {
+  return rows
+    .filter((r) => r.key.trim())
+    .map((r) => ({
+      key: r.key.trim(),
+      type: coerceType(r.type),
+      source: r.source === "produced" ? "produced" : "passthrough",
+    }));
+}
+
+type TabKey = "general" | "schedule" | "session" | "script" | "contract";
 
 interface Props {
   jobs: Job[];
@@ -86,6 +112,10 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
   const [activeTab, setActiveTab] = useState<TabKey>("general");
   const [scheduleUnit, setScheduleUnit] = useState("minutes");
 
+  // issue #50: typed metadata contract rows (loose-typed for the editor).
+  const [inputs, setInputs] = useState<SchemaField[]>(editJob?.inputs ?? []);
+  const [outputs, setOutputs] = useState<SchemaField[]>(editJob?.outputs ?? []);
+
   // Trigger dropdowns
   const [successDropdownOpen, setSuccessDropdownOpen] = useState(false);
   const [failureDropdownOpen, setFailureDropdownOpen] = useState(false);
@@ -124,7 +154,12 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
         : scheduleUnit === "days"
           ? form.scheduleInterval * 1440
           : form.scheduleInterval;
-    const req: CreateJobRequest = { ...form, scheduleInterval: intervalSeconds };
+    const req: CreateJobRequest = {
+      ...form,
+      scheduleInterval: intervalSeconds,
+      inputs: toInputSpecs(inputs),
+      outputs: toOutputSpecs(outputs),
+    };
     if (isEdit && editJob) {
       onSubmit({ ...req, id: editJob.id } as UpdateJobRequest);
     } else {
@@ -145,6 +180,7 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
     { key: "general", label: "general" },
     { key: "schedule", label: "schedule" },
     { key: form.type === "claude" ? "session" : "script", label: form.type === "claude" ? "session" : "script" },
+    { key: "contract", label: "contract" },
   ];
 
   const availableJobsForSuccess = jobs.filter(
@@ -826,6 +862,43 @@ export function CreateJobModal({ jobs, agents, editJob, onSubmit, onCancel }: Pr
                     + add
                   </button>
                 </div>
+              </div>
+            </>
+          )}
+
+          {/* TAB: Contract (issue #50 typed metadata) */}
+          {activeTab === "contract" && (
+            <>
+              <span
+                style={{
+                  color: "var(--q-fg-muted)",
+                  fontSize: 9,
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}
+              >
+                # inputs — keys consumed from upstream metadata (required ones gate the run)
+              </span>
+              <SchemaFieldEditor kind="input" fields={inputs} onChange={setInputs} />
+
+              <div
+                style={{
+                  borderTop: "1px solid var(--q-border)",
+                  paddingTop: 12,
+                  marginTop: 4,
+                }}
+              >
+                <span
+                  style={{
+                    color: "var(--q-fg-muted)",
+                    fontSize: 9,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    display: "block",
+                    marginBottom: 8,
+                  }}
+                >
+                  # outputs — keys this job produces or forwards (passthrough)
+                </span>
+                <SchemaFieldEditor kind="output" fields={outputs} onChange={setOutputs} />
               </div>
             </>
           )}

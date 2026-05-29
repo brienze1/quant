@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.22",
+      "date": "2026-05-29",
+      "changes": {
+        "features": [
+          "add a contract tab to the job editor for declaring typed inputs/outputs (issue #50 metadata pipeline)"
+        ]
+      }
+    },
+    {
       "version": "v3.1.21",
       "date": "2026-05-29",
       "changes": {
