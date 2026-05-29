@@ -141,6 +141,16 @@ export interface JobOutputSpec {
   source: "produced" | "passthrough";
 }
 
+// Unified row shape used by SchemaFieldEditor for both inputs (required) and
+// outputs (source). type/source are broadened to string because the editor's
+// <select> onChange handlers assign raw e.target.value.
+export interface SchemaField {
+  key: string;
+  type: string;
+  required?: boolean;
+  source?: string;
+}
+
 export interface TriggerRef {
   jobId: string;
   triggerOn: "success" | "failure";
