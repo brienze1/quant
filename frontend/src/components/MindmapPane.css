@@ -113,6 +113,7 @@
 .mindmap-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 5px 8px;
   flex-shrink: 0;
@@ -120,23 +121,35 @@
   border-bottom: 1px solid var(--q-border);
   font-family: 'JetBrains Mono', monospace;
 }
-.mindmap-tool-spacer { flex: 1; }
+.mindmap-tool-spacer { flex: 1; min-width: 0; }
 .mindmap-board-select {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
   height: 22px;
+  max-width: 140px;
   padding: 0 8px;
   font-size: 10px;
+  line-height: 1;
   font-family: 'JetBrains Mono', monospace;
   color: var(--q-fg);
   background: var(--q-bg-hover);
   border: 1px solid var(--q-border);
   outline: none;
   cursor: pointer;
+  text-overflow: ellipsis;
 }
 .mindmap-board-select:focus { border-color: var(--q-accent); }
 .mindmap-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   height: 22px;
   padding: 0 9px;
   font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
   font-family: 'JetBrains Mono', monospace;
   color: var(--q-accent);
   background: var(--q-bg-hover);
