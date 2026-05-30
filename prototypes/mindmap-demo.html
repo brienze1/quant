@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>quant · agent mindmap (prototype)</title>
+
+<!-- React Flow styles -->
+<link rel="stylesheet" href="https://unpkg.com/@xyflow/react@12.3.5/dist/style.css" />
+
+<!-- Single React instance pinned via import map -->
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "@xyflow/react": "https://esm.sh/@xyflow/react@12.3.5?deps=react@18.3.1,react-dom@18.3.1",
+    "dagre": "https://esm.sh/dagre@0.8.5",
+    "htm": "https://esm.sh/htm@3.1.1"
+  }
+}
+</script>
+
+<style>
+  :root {
+    /* Real quant "Quant Dark" tokens — the JS theme switcher overrides these
+       exactly the way quant's ThemeProvider sets them on <html>. */
+    --q-bg: #0A0A0A; --q-bg-subtle: #0D0D0D; --q-bg-elevated: #111111; --q-bg-hover: #1F1F1F;
+    --q-border: #2a2a2a; --q-border-light: #333333;
+    --q-fg: #FAFAFA; --q-fg-secondary: #6B7280; --q-fg-muted: #4B5563;
+    --q-accent: #10B981; --q-cyan: #06B6D4; --q-blue: #3B82F6;
+    --q-warning: #F59E0B; --q-warning-border: #92400E; --q-error: #EF4444;
+  }
+  * { box-sizing: border-box; }
+  html, body, #root { height: 100%; margin: 0; }
+  body {
+    background: var(--q-bg);
+    color: var(--q-fg);
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .topbar {
+    height: 46px; display: flex; align-items: center; gap: 14px;
+    padding: 0 16px; border-bottom: 1px solid var(--q-border);
+    background: var(--q-bg-subtle);
+  }
+  .topbar .title { font-weight: 600; letter-spacing: .2px; }
+  .topbar .title .dim { color: var(--q-fg-muted); font-weight: 500; }
+  .topbar .spacer { flex: 1; }
+  .topbar .pill {
+    font-size: 11px; color: var(--q-fg-secondary);
+    border: 1px solid var(--q-border); border-radius: 999px;
+    padding: 3px 9px; background: var(--q-bg-elevated);
+  }
+  .btn {
+    font: inherit; font-size: 12px; color: var(--q-fg);
+    background: var(--q-bg-elevated); border: 1px solid var(--q-border);
+    border-radius: 7px; padding: 6px 12px; cursor: pointer;
+  }
+  .btn:hover { background: var(--q-bg-hover); }
+  .btn.primary { border-color: var(--q-accent); color: var(--q-accent); }
+
+  .stage { position: absolute; inset: 46px 0 0 0; }
+
+  /* ---- custom node ---- */
+  .node {
+    width: 230px; border-radius: 10px;
+    background: var(--q-bg-elevated);
+    border: 1px solid var(--q-border);
+    box-shadow: 0 1px 0 rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    overflow: hidden;
+    transition: border-color .25s ease, box-shadow .25s ease, transform .25s ease;
+  }
+  .node.root { width: 250px; }
+  .node-head { display: flex; align-items: center; gap: 8px; padding: 9px 11px; }
+  .node-title { font-weight: 600; font-size: 13px; flex: 1; }
+  .node.root .node-title { font-size: 14px; }
+  .node-note {
+    margin: 0 10px 10px 10px; padding: 6px 9px 6px 8px;
+    color: var(--q-fg-secondary); font-size: 11.5px; line-height: 1.4;
+    white-space: pre-wrap;
+    background: color-mix(in srgb, var(--q-blue) 10%, transparent); border-left: 2px solid var(--q-blue);
+    border-radius: 0 6px 6px 0;
+    display: flex; gap: 6px;
+  }
+  .node-note .ico { flex: none; opacity: .8; }
+
+  /* ---- standalone sticky note node ---- */
+  .sticky {
+    width: 210px; border-radius: 10px;
+    background: color-mix(in srgb, var(--q-warning) 14%, var(--q-bg-elevated));
+    border: 1px solid color-mix(in srgb, var(--q-warning) 45%, var(--q-border));
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    padding: 9px 11px 11px;
+    transform: rotate(-1deg);
+  }
+  .sticky .sticky-head {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; letter-spacing: .8px; text-transform: uppercase;
+    font-weight: 700; color: var(--q-warning); margin-bottom: 5px;
+  }
+  .sticky .sticky-body { color: var(--q-fg); font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  /* Subtle tinted badges read well on both light and dark themes
+     (no solid fills that need a per-theme text color). */
+  .badge {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+    padding: 2px 7px; border-radius: 999px; font-weight: 600;
+    color: var(--q-fg-muted); background: color-mix(in srgb, var(--q-fg) 8%, transparent);
+  }
+
+  /* status palettes — all driven by quant theme tokens */
+  .s-planned     .dot { background: transparent; border: 2px solid var(--q-fg-muted); }
+  .s-planned     { border-color: var(--q-border); opacity: .85; }
+
+  .s-in_progress .dot { background: var(--q-cyan); animation: pulse 1.6s infinite; }
+  .s-in_progress { border-color: var(--q-cyan); box-shadow: 0 0 0 1px var(--q-cyan), 0 8px 28px color-mix(in srgb, var(--q-cyan) 22%, transparent); }
+  .s-in_progress .badge { color: var(--q-cyan); background: color-mix(in srgb, var(--q-cyan) 16%, transparent); }
+
+  .s-done        .dot { background: var(--q-accent); }
+  .s-done        { border-color: color-mix(in srgb, var(--q-accent) 45%, var(--q-border)); }
+  .s-done        .badge { color: var(--q-accent); background: color-mix(in srgb, var(--q-accent) 15%, transparent); }
+
+  .s-blocked     .dot { background: var(--q-error); }
+  .s-blocked     { border-color: var(--q-error); }
+  .s-blocked     .badge { color: var(--q-error); background: color-mix(in srgb, var(--q-error) 15%, transparent); }
+
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-cyan) 60%, transparent); }
+    70%  { box-shadow: 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  /* progress bar */
+  .pbar { height: 4px; background: color-mix(in srgb, var(--q-fg) 10%, transparent); }
+  .pbar > i { display: block; height: 100%; background: var(--q-cyan); transition: width .5s ease; }
+  .s-done .pbar > i { background: var(--q-accent); }
+
+  /* legend */
+  .legend {
+    position: absolute; left: 14px; bottom: 14px; z-index: 5;
+    display: flex; gap: 14px; align-items: center;
+    background: var(--q-bg-subtle); border: 1px solid var(--q-border);
+    border-radius: 9px; padding: 8px 12px; font-size: 11px; color: var(--q-fg-secondary);
+  }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 9px; height: 9px; border-radius: 50%; }
+
+  .react-flow__attribution { display: none; }
+  .react-flow__edge-path { stroke: var(--q-border-light); }
+  .react-flow__edge.animated .react-flow__edge-path { stroke: var(--q-cyan); }
+  .react-flow__handle { opacity: 0; }
+  /* controls themed to match (default is white) */
+  .react-flow__controls { box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+  .react-flow__controls-button {
+    background: var(--q-bg-elevated); border-bottom: 1px solid var(--q-border);
+  }
+  .react-flow__controls-button:hover { background: var(--q-bg-hover); }
+  .react-flow__controls-button svg { fill: var(--q-fg); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="module">
+import React, { useState, useCallback, useEffect, useMemo } from "react";
+import { createRoot } from "react-dom/client";
+import { ReactFlow, Background, Controls, Handle, Position, ReactFlowProvider, useReactFlow } from "@xyflow/react";
+import dagre from "dagre";
+import htm from "htm";
+
+const html = htm.bind(React.createElement);
+
+/* ---- quant's real builtin theme palettes (copied from frontend/src/theme/defaults.ts) ----
+   In the real app these vars are already on <html>; the component just uses var(--q-*).
+   Here we apply them ourselves so the demo can switch themes. */
+const THEMES = {
+  "quant-dark": { name: "Quant Dark", type: "dark", vars: {
+    "--q-bg":"#0A0A0A","--q-bg-subtle":"#0D0D0D","--q-bg-elevated":"#111111","--q-bg-hover":"#1F1F1F",
+    "--q-border":"#2a2a2a","--q-border-light":"#333333",
+    "--q-fg":"#FAFAFA","--q-fg-secondary":"#6B7280","--q-fg-muted":"#4B5563",
+    "--q-accent":"#10B981","--q-cyan":"#06B6D4","--q-blue":"#3B82F6",
+    "--q-warning":"#F59E0B","--q-warning-border":"#92400E","--q-error":"#EF4444" } },
+  "solarized-light": { name: "Solarized Light", type: "light", vars: {
+    "--q-bg":"#FDF6E3","--q-bg-subtle":"#F5EDDA","--q-bg-elevated":"#EEE8D5","--q-bg-hover":"#E8E1CC",
+    "--q-border":"#D3CBB7","--q-border-light":"#DDD6C1",
+    "--q-fg":"#657B83","--q-fg-secondary":"#93A1A1","--q-fg-muted":"#93A1A1",
+    "--q-accent":"#2AA198","--q-cyan":"#2AA198","--q-blue":"#268BD2",
+    "--q-warning":"#B58900","--q-warning-border":"#8A6A00","--q-error":"#DC322F" } },
+};
+function applyTheme(id) {
+  const t = THEMES[id]; if (!t) return;
+  const r = document.documentElement;
+  for (const k in t.vars) r.style.setProperty(k, t.vars[k]);
+  r.setAttribute("data-theme-type", t.type);
+}
+
+/* -------------------------------------------------------------------------
+   This is exactly the data shape an agent would push through the MCP tool
+   `mindmap_set_node`: { id, parentId, label, status, note?, progress? }
+   ------------------------------------------------------------------------- */
+const STATUS_LABEL = { planned: "planned", in_progress: "building", done: "done", blocked: "blocked" };
+
+// The full graph the agent intends to build (revealed progressively below).
+const CATALOG = {
+  root:    { label: "Build: Live Mindmap Feature", parent: null,   root: true },
+  mcp:     { label: "MCP tools (Go)",              parent: "root", note: "expose drawing API to the agent" },
+  t_set:   { label: "mindmap_set_node",            parent: "mcp" },
+  t_rm:    { label: "mindmap_remove_node",         parent: "mcp" },
+  t_get:   { label: "mindmap_get",                 parent: "mcp" },
+  db:      { label: "Persistence",                 parent: "root" },
+  db_tbl:  { label: "session_mindmaps table",      parent: "db",   note: "JSON blob keyed by session_id" },
+  live:    { label: "Live updates",                parent: "root" },
+  evt:     { label: 'event "mindmap:updated"',     parent: "live", note: "Wails emit → React subscribes" },
+  ui:      { label: "React view",                  parent: "root" },
+  view:    { label: "MindmapView.tsx",             parent: "ui",   note: "@xyflow/react v12 + dagre auto-layout; subscribes to the mindmap:updated Wails event and refetches." },
+  nodecmp: { label: "Status node component",       parent: "ui",   note: "themed with --q-* tokens" },
+  // standalone sticky notes the agent pins into the map
+  decision:{ kind: "note", parent: "ui",   text: "Chose dagre over elkjs — elk is more configurable but heavier; dagre is a drop-in and fast enough for a tree layout." },
+  todo:    { kind: "note", parent: "live", text: "TODO: events need the Wails ctx — inject a shared emitter, mirroring processManager.SetContext()." },
+};
+
+// Timeline the agent "performs" — each frame is one MCP call's effect.
+const TIMELINE = [
+  { id: "root",   status: "in_progress" },
+  { id: "mcp",    status: "planned" },
+  { id: "db",     status: "planned" },
+  { id: "live",   status: "planned" },
+  { id: "ui",     status: "planned" },
+  { id: "mcp",    status: "in_progress", progress: 10 },
+  { id: "t_set",  status: "in_progress", progress: 40 },
+  { id: "t_set",  status: "done",        progress: 100 },
+  { id: "t_rm",   status: "done",        progress: 100 },
+  { id: "t_get",  status: "done",        progress: 100 },
+  { id: "mcp",    status: "done",        progress: 100 },
+  { id: "db",     status: "in_progress", progress: 30 },
+  { id: "db_tbl", status: "in_progress", progress: 50, note: "writing migration…" },
+  { id: "db_tbl", status: "done",        progress: 100, note: "CREATE TABLE IF NOT EXISTS" },
+  { id: "db",     status: "done",        progress: 100 },
+  { id: "live",   status: "in_progress", progress: 40 },
+  { id: "todo" },
+  { id: "evt",    status: "blocked",     note: "needs wails runtime ctx in MCP layer" },
+  { id: "evt",    status: "in_progress", progress: 70, note: "ctx injected via app bootstrap" },
+  { id: "evt",    status: "done",        progress: 100, note: "Wails emit → React subscribes" },
+  { id: "live",   status: "done",        progress: 100 },
+  { id: "ui",     status: "in_progress", progress: 20 },
+  { id: "decision" },
+  { id: "view",   status: "in_progress", progress: 55 },
+  { id: "nodecmp",status: "done",        progress: 100 },
+  { id: "view",   status: "done",        progress: 100 },
+  { id: "ui",     status: "done",        progress: 100 },
+  { id: "root",   status: "done",        progress: 100 },
+];
+
+const NODE_W = 230, NODE_W_ROOT = 250, NODE_W_NOTE = 210;
+function nodeWidth(d) { return d.kind === "note" ? NODE_W_NOTE : d.root ? NODE_W_ROOT : NODE_W; }
+function nodeHeight(d) {
+  if (d.kind === "note") return 42 + Math.ceil((d.text || "").length / 26) * 17;
+  let h = 42;
+  if (d.note) h += 14 + Math.ceil(d.note.length / 28) * 16;
+  if (d.progress != null && d.progress >= 0) h += 6;
+  return h;
+}
+
+function layout(nodes, edges) {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: "LR", nodesep: 22, ranksep: 80, marginx: 30, marginy: 30 });
+  g.setDefaultEdgeLabel(() => ({}));
+  nodes.forEach((n) =>
+    g.setNode(n.id, { width: nodeWidth(n.data), height: nodeHeight(n.data) })
+  );
+  edges.forEach((e) => g.setEdge(e.source, e.target));
+  dagre.layout(g);
+  return nodes.map((n) => {
+    const p = g.node(n.id);
+    return { ...n, position: { x: p.x - p.width / 2, y: p.y - p.height / 2 }, targetPosition: "left", sourcePosition: "right" };
+  });
+}
+
+function StatusNode({ data }) {
+  return html`
+    <div className=${"node s-" + data.status + (data.root ? " root" : "")}>
+      <${Handle} type="target" position=${Position.Left} />
+      <div className="node-head">
+        <span className="dot"></span>
+        <span className="node-title">${data.label}</span>
+        <span className="badge">${STATUS_LABEL[data.status]}</span>
+      </div>
+      ${data.note && html`<div className="node-note"><span className="ico">📝</span><span>${data.note}</span></div>`}
+      ${data.progress != null && html`<div className="pbar"><i style=${{ width: data.progress + "%" }}></i></div>`}
+      <${Handle} type="source" position=${Position.Right} />
+    </div>`;
+}
+function NoteNode({ data }) {
+  return html`
+    <div className="sticky">
+      <${Handle} type="target" position=${Position.Left} />
+      <div className="sticky-head"><span>📌</span><span>note</span></div>
+      <div className="sticky-body">${data.text}</div>
+      <${Handle} type="source" position=${Position.Right} />
+    </div>`;
+}
+const nodeTypes = { status: StatusNode, note: NoteNode };
+
+function Graph() {
+  const [step, setStep] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [state, setState] = useState({}); // id -> {status, progress, note}
+  const [themeId, setThemeId] = useState("quant-dark");
+  const { fitView } = useReactFlow();
+
+  useEffect(() => { applyTheme(themeId); }, [themeId]);
+
+  // advance the simulated agent
+  useEffect(() => {
+    if (!playing || step >= TIMELINE.length) return;
+    const t = setTimeout(() => {
+      const f = TIMELINE[step];
+      setState((s) => ({ ...s, [f.id]: { ...(s[f.id] || {}), ...f } }));
+      setStep((n) => n + 1);
+    }, step === 0 ? 250 : 750);
+    return () => clearTimeout(t);
+  }, [step, playing]);
+
+  const { nodes, edges } = useMemo(() => {
+    const live = Object.keys(state);
+    const ns = live.map((id) => ({
+      id, type: CATALOG[id].kind === "note" ? "note" : "status",
+      position: { x: 0, y: 0 },
+      data: { ...CATALOG[id], status: state[id].status, progress: state[id].progress, note: state[id].note ?? CATALOG[id].note },
+    }));
+    const es = live
+      .filter((id) => CATALOG[id].parent && live.includes(CATALOG[id].parent))
+      .map((id) => {
+        const animated = state[id].status === "in_progress" || state[CATALOG[id].parent]?.status === "in_progress";
+        return { id: CATALOG[id].parent + "->" + id, source: CATALOG[id].parent, target: id, type: "smoothstep", animated };
+      });
+    return { nodes: layout(ns, es), edges: es };
+  }, [state]);
+
+  useEffect(() => { const t = setTimeout(() => fitView({ duration: 400, padding: 0.18 }), 60); return () => clearTimeout(t); }, [nodes.length]);
+
+  const replay = useCallback(() => { setState({}); setStep(0); setPlaying(true); }, []);
+  const done = step >= TIMELINE.length;
+
+  return html`
+    <div className="topbar">
+      <div className="title">quant <span className="dim">/ session</span> · mindmap</div>
+      <span className="pill">${done ? "agent idle" : "agent drawing…"}</span>
+      <div className="spacer"></div>
+      <select className="btn" value=${themeId} onChange=${(e) => setThemeId(e.target.value)} title="quant theme">
+        ${Object.entries(THEMES).map(([id, t]) => html`<option key=${id} value=${id}>${t.name}</option>`)}
+      </select>
+      <button className="btn" onClick=${() => setPlaying((p) => !p)}>${playing ? "Pause" : "Resume"}</button>
+      <button className="btn primary" onClick=${replay}>↻ Replay build</button>
+    </div>
+    <div className="stage">
+      <${ReactFlow}
+        nodes=${nodes} edges=${edges} nodeTypes=${nodeTypes}
+        fitView minZoom=${0.3} maxZoom=${1.5}
+        proOptions=${{ hideAttribution: true }}
+        nodesDraggable=${true} nodesConnectable=${false} elementsSelectable=${true}>
+        <${Background} color="var(--q-border-light)" gap=${22} size=${1} />
+        <${Controls} showInteractive=${false} />
+      <//>
+      <div className="legend">
+        <div className="item"><span className="sw" style=${{ border: "2px solid var(--q-fg-muted)" }}></span>planned</div>
+        <div className="item"><span className="sw" style=${{ background: "var(--q-cyan)" }}></span>building</div>
+        <div className="item"><span className="sw" style=${{ background: "var(--q-accent)" }}></span>done</div>
+        <div className="item"><span className="sw" style=${{ background: "var(--q-error)" }}></span>blocked</div>
+      </div>
+    </div>`;
+}
+
+createRoot(document.getElementById("root")).render(
+  html`<${ReactFlowProvider}><${Graph} /><//>`
+);
+</script>
+</body>
+</html>

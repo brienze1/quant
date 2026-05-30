@@ -24,6 +24,7 @@ import type {
   CreateJobGroupRequest,
   UpdateJobGroupRequest,
   PathValidationResult,
+  MindmapNode,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -439,6 +440,39 @@ export function browseMcpConfigFile(): Promise<string> {
 
 export function validateWorkspacePaths(claudeRoot: string, mcpRoot: string): Promise<PathValidationResult> {
   return callGo(PKG, WORKSPACE_CTRL, "ValidatePaths", claudeRoot, mcpRoot);
+}
+
+// --- Mindmap ---
+
+const MINDMAP_CTRL = "mindmapController";
+
+export function getMindmap(sessionId: string, board: string): Promise<MindmapNode[]> {
+  return callGo(PKG, MINDMAP_CTRL, "GetMindmap", sessionId, board);
+}
+
+export function setMindmapNode(
+  sessionId: string,
+  board: string,
+  node: MindmapNode
+): Promise<MindmapNode> {
+  return callGo(PKG, MINDMAP_CTRL, "SetMindmapNode", sessionId, board, node);
+}
+
+export function removeMindmapNode(
+  sessionId: string,
+  board: string,
+  id: string,
+  subtree: boolean
+): Promise<void> {
+  return callGo(PKG, MINDMAP_CTRL, "RemoveMindmapNode", sessionId, board, id, subtree);
+}
+
+export function clearMindmapBoard(sessionId: string, board: string): Promise<void> {
+  return callGo(PKG, MINDMAP_CTRL, "ClearMindmapBoard", sessionId, board);
+}
+
+export function listBoards(sessionId: string): Promise<string[]> {
+  return callGo(PKG, MINDMAP_CTRL, "ListBoards", sessionId);
 }
 
 // --- Changelog ---

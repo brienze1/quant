@@ -172,6 +172,8 @@ func (p *sessionPersistence) Delete(id string) error {
 		return fmt.Errorf("session not found: %s", id)
 	}
 
+	_, _ = p.db.Exec(`DELETE FROM mindmap_nodes WHERE scope_type = 'session' AND scope_id = ?`, id)
+
 	return nil
 }
 

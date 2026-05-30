@@ -369,6 +369,20 @@ export interface PathValidationResult {
   mcpConfigError: string;
 }
 
+// --- Mindmap ---
+
+export interface MindmapNode {
+  id: string;
+  parentId: string;
+  kind: string;
+  label: string;
+  text: string;
+  status: string;
+  note: string;
+  progress: number;
+  board: string;
+}
+
 // --- Changelog ---
 
 export interface ChangelogEntry {

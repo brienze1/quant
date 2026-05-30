@@ -8,6 +8,7 @@ import (
 	"quant/internal/application/service"
 	intAdapter "quant/internal/integration/adapter"
 	"quant/internal/integration/entrypoint/controller"
+	"quant/internal/integration/events"
 	"quant/internal/integration/keybindings"
 	"quant/internal/integration/loginitem"
 	"quant/internal/integration/notification"
@@ -53,6 +54,10 @@ type Injector struct {
 	jobGroupPersistence  intAdapter.JobGroupPersistence
 	jobGroupManager      appAdapter.JobGroupManager
 	jobGroupController   intAdapter.JobGroupController
+	mindmapPersistence   intAdapter.MindmapPersistence
+	mindmapManager       appAdapter.MindmapManager
+	mindmapController    intAdapter.MindmapController
+	eventEmitter         *events.Emitter
 }
 
 // NewInjector creates a new dependency injector with the given database connection.
@@ -303,11 +308,11 @@ func (i *Injector) WorkspaceManager() appAdapter.WorkspaceManager {
 	if i.workspaceManager == nil {
 		wp := i.WorkspacePersistence()
 		i.workspaceManager = service.NewWorkspaceManagerService(
-			wp,                 // FindWorkspace
-			wp,                 // SaveWorkspace
-			wp,                 // UpdateWorkspace
-			wp,                 // DeleteWorkspace
-			i.ConfigManager(),  // ConfigManager
+			wp,                // FindWorkspace
+			wp,                // SaveWorkspace
+			wp,                // UpdateWorkspace
+			wp,                // DeleteWorkspace
+			i.ConfigManager(), // ConfigManager
 		)
 	}
 	return i.workspaceManager
@@ -400,6 +405,44 @@ func (i *Injector) JobGroupController() intAdapter.JobGroupController {
 		i.jobGroupController = controller.NewJobGroupController(i.JobGroupManager())
 	}
 	return i.jobGroupController
+}
+
+// EventEmitter returns the singleton event emitter instance.
+func (i *Injector) EventEmitter() *events.Emitter {
+	if i.eventEmitter == nil {
+		i.eventEmitter = events.NewEmitter()
+	}
+	return i.eventEmitter
+}
+
+// MindmapPersistence returns the singleton MindmapPersistence instance.
+func (i *Injector) MindmapPersistence() intAdapter.MindmapPersistence {
+	if i.mindmapPersistence == nil {
+		i.mindmapPersistence = persistence.NewMindmapPersistence(i.db)
+	}
+	return i.mindmapPersistence
+}
+
+// MindmapManager returns the singleton MindmapManager service instance.
+func (i *Injector) MindmapManager() appAdapter.MindmapManager {
+	if i.mindmapManager == nil {
+		mp := i.MindmapPersistence()
+		i.mindmapManager = service.NewMindmapManagerService(
+			mp,               // FindMindmapNode
+			mp,               // SaveMindmapNode
+			mp,               // DeleteMindmapNode
+			i.EventEmitter(), // EventEmitter
+		)
+	}
+	return i.mindmapManager
+}
+
+// MindmapController returns the singleton MindmapController instance.
+func (i *Injector) MindmapController() intAdapter.MindmapController {
+	if i.mindmapController == nil {
+		i.mindmapController = controller.NewMindmapController(i.MindmapManager())
+	}
+	return i.mindmapController
 }
 
 // ChangelogController returns the singleton ChangelogController instance.

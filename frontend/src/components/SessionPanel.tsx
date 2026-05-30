@@ -3,6 +3,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { Session, Task, Config } from "../types";
 import { StatusDot } from "./StatusDot";
 import { TerminalPane } from "./TerminalPane";
+import { MindmapPane } from "./MindmapPane";
 import * as api from "../api";
 
 type SplitLayout = "horizontal" | "vertical";
@@ -50,9 +51,20 @@ export function SessionPanel({
     dividerPercent: 55,
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  // Mindmap pane visibility is a sticky preference (persisted), so it stays open
+  // when switching between session tabs and across app restarts.
+  const [showMindmap, setShowMindmap] = useState(
+    () => localStorage.getItem("quant.mindmapPaneOpen") === "1"
+  );
+  // The mindmap split is independent of the terminal split: it has its own
+  // layout (default vertical so the mindmap docks on the right) and divider.
+  const [mindmapLayout, setMindmapLayout] = useState<SplitLayout>("vertical");
+  const [mindmapDividerPercent, setMindmapDividerPercent] = useState(55);
   const menuRef = useRef<HTMLDivElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null!)
+  const mindmapContainerRef = useRef<HTMLDivElement>(null!)
   const isDragging = useRef(false);
+  const isDraggingMindmap = useRef(false);
 
   const isArchived = displayStatus === "archived";
   const isPaused = displayStatus === "paused";
@@ -71,8 +83,15 @@ export function SessionPanel({
       open: terminalPaneOpen && !!(embeddedTerminalSession || prev.terminalSession),
       terminalSession: embeddedTerminalSession || null,
     }));
+    // NOTE: do not reset showMindmap here — it's a sticky preference (see below)
+    // so the mindmap pane persists across session-tab switches.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);
+
+  // Persist the mindmap pane preference whenever it changes.
+  useEffect(() => {
+    localStorage.setItem("quant.mindmapPaneOpen", showMindmap ? "1" : "0");
+  }, [showMindmap]);
 
   // Close menu on click outside
   useEffect(() => {
@@ -120,6 +139,40 @@ export function SessionPanel({
     };
   }, [splitState.layout]);
 
+  // Mindmap split divider drag handling (independent of the terminal split).
+  const handleMindmapDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingMindmap.current = true;
+    document.body.style.cursor = mindmapLayout === "horizontal" ? "row-resize" : "col-resize";
+    document.body.style.userSelect = "none";
+  }, [mindmapLayout]);
+
+  useEffect(() => {
+    function handleMouseMove(e: MouseEvent) {
+      if (!isDraggingMindmap.current || !mindmapContainerRef.current) return;
+      const rect = mindmapContainerRef.current.getBoundingClientRect();
+      let percent: number;
+      if (mindmapLayout === "horizontal") {
+        percent = ((e.clientY - rect.top) / rect.height) * 100;
+      } else {
+        percent = ((e.clientX - rect.left) / rect.width) * 100;
+      }
+      setMindmapDividerPercent(Math.min(80, Math.max(20, percent)));
+    }
+    function handleMouseUp() {
+      if (!isDraggingMindmap.current) return;
+      isDraggingMindmap.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [mindmapLayout]);
+
   async function handleOpenTerminal() {
     if (splitState.open) return;
     const existing = splitState.terminalSession || embeddedTerminalSession;
@@ -148,6 +201,19 @@ export function SessionPanel({
       layout: prev.layout === "horizontal" ? "vertical" : "horizontal",
     }));
   }
+
+  // The terminal split's secondary pane (the embedded terminal) is open only
+  // when a terminal session exists and the user has toggled it open.
+  const terminalSecondaryOpen = splitState.open && !!splitState.terminalSession;
+  // The mindmap occupies the OUTER split's secondary pane, fully independent
+  // from the terminal split — so both can be shown at the same time.
+  const mindmapSplitState: SplitState = {
+    open: showMindmap,
+    terminalSession: null,
+    layout: mindmapLayout,
+    dividerPercent: mindmapDividerPercent,
+  };
+  const terminalSplitState: SplitState = { ...splitState, open: terminalSecondaryOpen };
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: "var(--q-bg)" }}>
@@ -227,7 +293,29 @@ export function SessionPanel({
             </button>
           )}
 
-          {/* Layout toggle (only when split is open) */}
+          {/* Mindmap button */}
+          {!isArchived && (
+            <button
+              onClick={() => setShowMindmap((v) => !v)}
+              className="flex items-center gap-1 px-2 py-1 text-[11px]"
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                color: showMindmap ? "var(--q-bg)" : "var(--q-accent)",
+                backgroundColor: showMindmap ? "var(--q-accent)" : "var(--q-bg-hover)",
+                border: `1px solid ${showMindmap ? "var(--q-accent)" : "var(--q-border)"}`,
+              }}
+              onMouseEnter={(e) => {
+                if (!showMindmap) e.currentTarget.style.backgroundColor = "var(--q-border)";
+              }}
+              onMouseLeave={(e) => {
+                if (!showMindmap) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+              }}
+            >
+              <span>mindmap</span>
+            </button>
+          )}
+
+          {/* Terminal split layout toggle (only when the terminal split is open) */}
           {splitState.open && (
             <div className="flex items-center gap-0.5">
               <LayoutIcon
@@ -239,6 +327,22 @@ export function SessionPanel({
                 type="vertical"
                 active={splitState.layout === "vertical"}
                 onClick={() => setSplitState(prev => ({ ...prev, layout: "vertical" }))}
+              />
+            </div>
+          )}
+
+          {/* Mindmap split layout toggle (only when the mindmap is shown) */}
+          {showMindmap && (
+            <div className="flex items-center gap-0.5">
+              <LayoutIcon
+                type="horizontal"
+                active={mindmapLayout === "horizontal"}
+                onClick={() => setMindmapLayout("horizontal")}
+              />
+              <LayoutIcon
+                type="vertical"
+                active={mindmapLayout === "vertical"}
+                onClick={() => setMindmapLayout("vertical")}
               />
             </div>
           )}
@@ -275,47 +379,72 @@ export function SessionPanel({
         </div>
       </div>
 
-      {/* Split container */}
+      {/* Outer split: the whole terminal block on the primary side, the
+          mindmap docked as its own secondary pane. Both splits are
+          independent, so the embedded terminal and the mindmap can show at
+          the same time without overlapping. */}
       <SplitContainer
-        splitContainerRef={splitContainerRef}
-        splitState={splitState}
-        onDividerMouseDown={handleDividerMouseDown}
+        splitContainerRef={mindmapContainerRef}
+        splitState={mindmapSplitState}
+        onDividerMouseDown={handleMindmapDividerMouseDown}
         primaryPane={
-          <>
-            {splitState.open && (
-              <PaneHeader
-                label={session.sessionType === "claude" ? "claude" : "terminal"}
-                dotColor={session.sessionType === "claude" ? "var(--q-accent)" : "var(--q-cyan)"}
-              />
-            )}
-            <TerminalPane
-              session={session}
-              isArchived={isArchived}
-              onStart={onStart}
-              onResume={onResume}
-              termConfig={termConfig}
-              autoScroll={autoScroll}
-              onAutoScrollChange={setAutoScroll}
-            />
-          </>
+          /* Inner split: session output (primary) + optional embedded terminal */
+          <SplitContainer
+            splitContainerRef={splitContainerRef}
+            splitState={terminalSplitState}
+            onDividerMouseDown={handleDividerMouseDown}
+            primaryPane={
+              <>
+                {terminalSecondaryOpen && (
+                  <PaneHeader
+                    label={session.sessionType === "claude" ? "claude" : "terminal"}
+                    dotColor={session.sessionType === "claude" ? "var(--q-accent)" : "var(--q-cyan)"}
+                  />
+                )}
+                <TerminalPane
+                  session={session}
+                  isArchived={isArchived}
+                  onStart={onStart}
+                  onResume={onResume}
+                  termConfig={termConfig}
+                  autoScroll={autoScroll}
+                  onAutoScrollChange={setAutoScroll}
+                />
+              </>
+            }
+            secondaryPane={
+              splitState.open && splitState.terminalSession ? (
+                <>
+                  <PaneHeader
+                    label="terminal"
+                    dotColor="var(--q-cyan)"
+                    onClose={handleCloseTerminal}
+                  />
+                  <TerminalPane
+                    session={splitState.terminalSession}
+                    isArchived={false}
+                    onStart={onStart}
+                    onResume={onResume}
+                    termConfig={termConfig}
+                    autoScroll={true}
+                    onAutoScrollChange={() => {}}
+                  />
+                </>
+              ) : null
+            }
+          />
         }
         secondaryPane={
-          splitState.open && splitState.terminalSession ? (
+          showMindmap ? (
             <>
               <PaneHeader
-                label="terminal"
-                dotColor="var(--q-cyan)"
-                onClose={handleCloseTerminal}
+                label="mindmap"
+                dotColor="var(--q-accent)"
+                onClose={() => setShowMindmap(false)}
               />
-              <TerminalPane
-                session={splitState.terminalSession}
-                isArchived={false}
-                onStart={onStart}
-                onResume={onResume}
-                termConfig={termConfig}
-                autoScroll={true}
-                onAutoScrollChange={() => {}}
-              />
+              <div className="flex-1 min-h-0">
+                <MindmapPane sessionId={session.id} />
+              </div>
             </>
           ) : null
         }
