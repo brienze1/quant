@@ -433,6 +433,9 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [editIsNew, setEditIsNew] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
+  // Native window.prompt() is not implemented in the Wails WKWebView, so board
+  // creation uses an in-app modal instead.
+  const [creatingBoard, setCreatingBoard] = useState(false);
 
   // Reset board selection when the session changes.
   useEffect(() => {
@@ -724,9 +727,8 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
     [nodes, sessionId, activeBoard]
   );
 
-  function addBoard() {
-    const name = window.prompt("board name");
-    if (!name) return;
+  function submitBoard(name: string) {
+    setCreatingBoard(false);
     const trimmed = name.trim();
     if (!trimmed) return;
     setBoards((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
@@ -795,7 +797,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
             </option>
           ))}
         </select>
-        <button type="button" className="mindmap-tool-btn" onClick={addBoard}>
+        <button type="button" className="mindmap-tool-btn" onClick={() => setCreatingBoard(true)}>
           + board
         </button>
         <div className="mindmap-tool-spacer" />
@@ -865,6 +867,76 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
       {menu && ctxNode && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
       )}
+
+      {creatingBoard && (
+        <BoardNameModal onSubmit={submitBoard} onCancel={() => setCreatingBoard(false)} />
+      )}
+    </div>
+  );
+}
+
+function BoardNameModal({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
+      onClick={onCancel}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit(name);
+        }}
+        className="w-full max-w-xs p-6 flex flex-col gap-4"
+        style={{
+          backgroundColor: "var(--q-bg)",
+          border: "1px solid var(--q-border)",
+          fontFamily: "'JetBrains Mono', monospace",
+        }}
+      >
+        <label className="block text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>
+          // new board
+        </label>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="board name"
+          className="nodrag px-2 py-1.5 text-xs"
+          style={{
+            backgroundColor: "var(--q-bg-hover)",
+            border: "1px solid var(--q-border)",
+            color: "var(--q-fg)",
+            fontFamily: "'JetBrains Mono', monospace",
+            outline: "none",
+          }}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1 text-[11px]"
+            style={{ color: "var(--q-fg-secondary)", border: "1px solid var(--q-border)", backgroundColor: "transparent" }}
+          >
+            cancel
+          </button>
+          <button
+            type="submit"
+            className="px-3 py-1 text-[11px]"
+            style={{ color: "var(--q-bg)", backgroundColor: "var(--q-accent)", border: "1px solid var(--q-accent)" }}
+          >
+            create
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
