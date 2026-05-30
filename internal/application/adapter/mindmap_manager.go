@@ -10,4 +10,5 @@ type MindmapManager interface {
 	ClearMindmap(scopeType, scopeID, board string) error
 	GetMindmap(scopeType, scopeID, board string) ([]entity.MindmapNode, error)
 	ListBoards(scopeType, scopeID string) ([]string, error)
+	MoveBoard(scopeType, fromScopeID, board, toScopeID string) (string, error)
 }

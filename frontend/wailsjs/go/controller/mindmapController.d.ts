@@ -9,6 +9,8 @@ export function GetMindmap(arg1:string,arg2:string):Promise<Array<dto.MindmapNod
 
 export function ListBoards(arg1:string):Promise<Array<string>>;
 
+export function MoveBoard(arg1:string,arg2:string,arg3:string):Promise<string>;
+
 export function OnShutdown(arg1:context.Context):Promise<void>;
 
 export function OnStartup(arg1:context.Context):Promise<void>;

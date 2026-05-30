@@ -82,6 +82,10 @@ function App() {
   const tabsByWorkspace = useRef<Record<string, { openTabIds: string[]; activeTabId: string | null; selectedSessionId: string | null }>>({});
 
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  // Mindmap boards per session (backend, non-empty boards) for the sidebar tree.
+  const [boardsBySession, setBoardsBySession] = useState<Record<string, string[]>>({});
+  // Active mindmap board per session, kept reactive so the sidebar highlight updates.
+  const [activeBoardBySession, setActiveBoardBySession] = useState<Record<string, string>>({});
   const [transitionStatus, setTransitionStatus] = useState<Record<string, "starting" | "stopping" | "resuming">>({});
   const [activeOutputIds, setActiveOutputIds] = useState<Set<string>>(new Set());
   const outputTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -548,6 +552,41 @@ function App() {
   useEffect(() => {
     if (expandedSessionId) fetchActions(expandedSessionId);
   }, [expandedSessionId, fetchActions]);
+
+  // Fetch a session's mindmap boards when it is expanded in the sidebar tree.
+  useEffect(() => {
+    if (!expandedSessionId) return;
+    const id = expandedSessionId;
+    api
+      .listBoards(id)
+      .then((boards) => {
+        setBoardsBySession((prev) => ({ ...prev, [id]: Array.isArray(boards) ? boards : [] }));
+      })
+      .catch(() => {});
+  }, [expandedSessionId]);
+
+  // Keep a session's board list fresh when mindmap nodes change. A board only
+  // appears in listBoards once it has >=1 node, so we union the event's board.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w?.runtime?.EventsOn) return;
+    const cancel = w.runtime.EventsOn(
+      "mindmap:updated",
+      (d: { sessionId?: string; board?: string }) => {
+        if (!d?.sessionId || !d.board) return;
+        const { sessionId, board } = d;
+        setBoardsBySession((prev) => {
+          const existing = prev[sessionId];
+          // Only track sessions we already know about (i.e. expanded at least once).
+          if (!existing) return prev;
+          if (existing.includes(board)) return prev;
+          return { ...prev, [sessionId]: [...existing, board] };
+        });
+      }
+    );
+    return () => cancel && cancel();
+  }, []);
 
   // Track PTY output activity to distinguish "running" vs "waiting"
   useEffect(() => {
@@ -1058,6 +1097,38 @@ function App() {
       await api.moveSessionToTask(sessionId, targetTaskId);
       setModal({ type: "none" });
       await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  // Open a session and switch its mindmap pane to the chosen board.
+  function handleSelectBoard(sessionId: string, board: string) {
+    handleOpenTab(sessionId);
+    localStorage.setItem("quant.mindmapBoard." + sessionId, board);
+    setActiveBoardBySession((prev) => ({ ...prev, [sessionId]: board }));
+    // Ensure the mindmap pane is visible (SessionPanel reads this on the event).
+    localStorage.setItem("quant.mindmapPaneOpen", "1");
+    window.dispatchEvent(
+      new CustomEvent("quant:mindmap-select-board", { detail: { sessionId, board } })
+    );
+  }
+
+  // Move a board from one session to another (mirrors session-onto-task move).
+  async function handleMoveBoard(board: string, fromSessionId: string, toSessionId: string) {
+    if (fromSessionId === toSessionId) return;
+    try {
+      setError(null);
+      await api.moveMindmapBoard(fromSessionId, board, toSessionId);
+      const [fromBoards, toBoards] = await Promise.all([
+        api.listBoards(fromSessionId),
+        api.listBoards(toSessionId),
+      ]);
+      setBoardsBySession((prev) => ({
+        ...prev,
+        [fromSessionId]: Array.isArray(fromBoards) ? fromBoards : [],
+        [toSessionId]: Array.isArray(toBoards) ? toBoards : [],
+      }));
     } catch (err) {
       setError(String(err));
     }
@@ -1934,6 +2005,10 @@ function App() {
         onRenameTask={handleRenameTask}
         onRenameSession={handleRenameSession}
         onDropSession={(sessionId, targetTaskId) => handleMoveSessionSelect(sessionId, targetTaskId)}
+        boardsBySession={boardsBySession}
+        activeBoardBySession={activeBoardBySession}
+        onSelectBoard={handleSelectBoard}
+        onMoveBoard={handleMoveBoard}
         onError={(msg) => setError(msg)}
         onOpenSettings={() => setView("settings")}
         onOpenJobs={() => { fetchJobs(); setView("jobs"); }}

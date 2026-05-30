@@ -445,6 +445,18 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
     laidOutSig.current = "";
   }, [sessionId]);
 
+  // Allow the sidebar (or anything else) to switch this session's active board.
+  useEffect(() => {
+    const onSelectBoard = (e: Event) => {
+      const detail = (e as CustomEvent<{ sessionId: string; board: string }>).detail;
+      if (!detail || detail.sessionId !== sessionId || !detail.board) return;
+      setActiveBoard(detail.board);
+      setBoards((prev) => (prev.includes(detail.board) ? prev : [...prev, detail.board]));
+    };
+    window.addEventListener("quant:mindmap-select-board", onSelectBoard);
+    return () => window.removeEventListener("quant:mindmap-select-board", onSelectBoard);
+  }, [sessionId]);
+
   // Persist the active board.
   useEffect(() => {
     localStorage.setItem(boardKey, activeBoard);

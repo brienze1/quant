@@ -14,6 +14,10 @@ export function ListBoards(arg1) {
   return window['go']['controller']['mindmapController']['ListBoards'](arg1);
 }
 
+export function MoveBoard(arg1, arg2, arg3) {
+  return window['go']['controller']['mindmapController']['MoveBoard'](arg1, arg2, arg3);
+}
+
 export function OnShutdown(arg1) {
   return window['go']['controller']['mindmapController']['OnShutdown'](arg1);
 }

@@ -159,3 +159,69 @@ func (p *mindmapPersistence) DistinctBoards(scopeType, scopeID string) ([]string
 	}
 	return boards, rows.Err()
 }
+
+// MoveBoard moves every node of a board from one scope to another, renaming the
+// board on collision so node ids never clash with the target PK. Returns the final board name.
+func (p *mindmapPersistence) MoveBoard(scopeType, fromScopeID, board, toScopeID string) (string, error) {
+	if fromScopeID == toScopeID {
+		return "", fmt.Errorf("cannot move mindmap board to the same session")
+	}
+	if board == "" {
+		board = "default"
+	}
+
+	// The collision check and the move must be atomic so concurrent session
+	// writes can't race between the COUNT and the UPDATE.
+	tx, err := p.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin mindmap board move: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Compute a collision-free target board name against the target scope.
+	const maxCollisionAttempts = 1000
+	finalBoard := board
+	for attempt := 0; ; attempt++ {
+		if attempt > maxCollisionAttempts {
+			return "", fmt.Errorf("failed to find a free mindmap board name after %d attempts", maxCollisionAttempts)
+		}
+		var count int
+		if err := tx.QueryRow(
+			`SELECT COUNT(*) FROM mindmap_nodes WHERE scope_type = ? AND scope_id = ? AND board = ?`,
+			scopeType, toScopeID, finalBoard,
+		).Scan(&count); err != nil {
+			return "", fmt.Errorf("failed to check mindmap board collision: %w", err)
+		}
+		if count == 0 {
+			break
+		}
+		switch attempt {
+		case 0:
+			finalBoard = board + " (moved)"
+		default:
+			finalBoard = fmt.Sprintf("%s (moved %d)", board, attempt+1)
+		}
+	}
+
+	result, err := tx.Exec(
+		`UPDATE mindmap_nodes SET scope_id = ?, board = ? WHERE scope_type = ? AND scope_id = ? AND board = ?`,
+		toScopeID, finalBoard, scopeType, fromScopeID, board,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to move mindmap board: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("failed to read moved mindmap board rows: %w", err)
+	}
+	if affected == 0 {
+		return "", fmt.Errorf("mindmap board not found: %s", board)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit mindmap board move: %w", err)
+	}
+
+	return finalBoard, nil
+}

@@ -15,4 +15,5 @@ type MindmapController interface {
 	RemoveMindmapNode(sessionID, board, id string, subtree bool) error
 	ClearMindmapBoard(sessionID, board string) error
 	ListBoards(sessionID string) ([]string, error)
+	MoveBoard(sessionID, board, toSessionID string) (string, error)
 }

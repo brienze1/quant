@@ -43,6 +43,10 @@ interface SidebarProps {
   onMoveSession?: (sessionId: string, repoId: string) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
+  boardsBySession?: Record<string, string[]>;
+  activeBoardBySession?: Record<string, string>;
+  onSelectBoard?: (sessionId: string, board: string) => void;
+  onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   onError?: (msg: string) => void;
   onOpenSettings?: () => void;
   onOpenJobs?: () => void;
@@ -131,6 +135,10 @@ export function Sidebar({
   onMoveSession,
   onDoubleClickSession,
   onDropSession,
+  boardsBySession,
+  activeBoardBySession,
+  onSelectBoard,
+  onMoveBoard,
   onError,
   onOpenSettings,
   onOpenJobs,
@@ -714,6 +722,10 @@ export function Sidebar({
               onSessionContextMenu={openSessionContextMenu}
               onDoubleClickSession={onDoubleClickSession}
               onDropSession={onDropSession}
+              boardsBySession={boardsBySession}
+              activeBoardBySession={activeBoardBySession}
+              onSelectBoard={onSelectBoard}
+              onMoveBoard={onMoveBoard}
               onError={onError}
               showSeparator={idx < repos.length - 1}
               filterSessions={filterSessions}
@@ -836,6 +848,10 @@ function RepoNode({
   onSessionContextMenu,
   onDoubleClickSession,
   onDropSession,
+  boardsBySession,
+  activeBoardBySession,
+  onSelectBoard,
+  onMoveBoard,
   onError,
   showSeparator,
   filterSessions,
@@ -859,6 +875,10 @@ function RepoNode({
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
+  boardsBySession?: Record<string, string[]>;
+  activeBoardBySession?: Record<string, string>;
+  onSelectBoard?: (sessionId: string, board: string) => void;
+  onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   onError?: (msg: string) => void;
   showSeparator: boolean;
   filterSessions: (sessions: Session[]) => Session[];
@@ -921,6 +941,10 @@ function RepoNode({
               onSessionContextMenu={onSessionContextMenu}
               onDoubleClickSession={onDoubleClickSession}
               onDropSession={onDropSession}
+              boardsBySession={boardsBySession}
+              activeBoardBySession={activeBoardBySession}
+              onSelectBoard={onSelectBoard}
+              onMoveBoard={onMoveBoard}
               onError={onError}
               repoId={repo.id}
               showArchived={showArchived}
@@ -969,6 +993,10 @@ function TaskNode({
   onSessionContextMenu,
   onDoubleClickSession,
   onDropSession,
+  boardsBySession,
+  activeBoardBySession,
+  onSelectBoard,
+  onMoveBoard,
   onError,
   repoId,
   showArchived,
@@ -988,6 +1016,10 @@ function TaskNode({
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
+  boardsBySession?: Record<string, string[]>;
+  activeBoardBySession?: Record<string, string>;
+  onSelectBoard?: (sessionId: string, board: string) => void;
+  onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   onError?: (msg: string) => void;
   repoId: string;
   showArchived: boolean;
@@ -996,12 +1028,17 @@ function TaskNode({
   const [isDragOver, setIsDragOver] = useState(false);
 
   function handleDragOver(e: React.DragEvent) {
+    // Only react to session drags (they carry "sessionId"); ignore board drags
+    // (which carry "boardName") so the two drop targets never interfere.
+    if (!e.dataTransfer.types.includes("sessionid")) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setIsDragOver(true);
   }
 
-  function handleDragLeave() {
+  function handleDragLeave(e: React.DragEvent) {
+    // Ignore leave events fired when moving between child elements.
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setIsDragOver(false);
   }
 
@@ -1074,6 +1111,10 @@ function TaskNode({
               onOpenTab={onOpenTab}
               onSessionContextMenu={onSessionContextMenu}
               onDoubleClickSession={onDoubleClickSession}
+              boards={boardsBySession?.[session.id] ?? []}
+              activeBoard={activeBoardBySession?.[session.id]}
+              onSelectBoard={onSelectBoard}
+              onMoveBoard={onMoveBoard}
               depth={2}
             />
           ))}
@@ -1110,6 +1151,10 @@ function SessionNode({
   onOpenTab,
   onSessionContextMenu,
   onDoubleClickSession,
+  boards,
+  activeBoard,
+  onSelectBoard,
+  onMoveBoard,
   depth,
 }: {
   session: Session;
@@ -1123,6 +1168,10 @@ function SessionNode({
   onOpenTab: (id: string) => void;
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
+  boards: string[];
+  activeBoard?: string;
+  onSelectBoard?: (sessionId: string, board: string) => void;
+  onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   depth: number;
 }) {
   const isActive = activeSessionId === session.id;
@@ -1130,6 +1179,39 @@ function SessionNode({
   const paddingLeft = 16 + depth * 16;
   const hasWorktree = !!session.worktreePath;
   const isArchived = !!session.archivedAt;
+  const [isBoardDragOver, setIsBoardDragOver] = useState(false);
+
+  // Board drop target: only reacts to board drags (which carry "boardName");
+  // session drags (which carry "sessionId") are ignored so the two never clash.
+  function handleBoardDragOver(e: React.DragEvent) {
+    // Boards can't be dropped onto archived/terminal sessions.
+    if (isArchived || session.sessionType === "terminal") return;
+    if (!e.dataTransfer.types.includes("boardname")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setIsBoardDragOver(true);
+  }
+
+  function handleBoardDragLeave(e: React.DragEvent) {
+    // Ignore leave events fired when moving between child elements.
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsBoardDragOver(false);
+  }
+
+  function handleBoardDrop(e: React.DragEvent) {
+    // Boards can't be dropped onto archived/terminal sessions.
+    if (isArchived || session.sessionType === "terminal") return;
+    if (!e.dataTransfer.types.includes("boardname")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsBoardDragOver(false);
+    const boardName = e.dataTransfer.getData("boardName");
+    const boardSessionId = e.dataTransfer.getData("boardSessionId");
+    if (!boardName || !boardSessionId) return;
+    if (boardSessionId === session.id) return; // same session, no-op
+    if (onMoveBoard) onMoveBoard(boardName, boardSessionId, session.id);
+  }
 
   function handleClick() {
     onSelectSession(session.id);
@@ -1177,7 +1259,11 @@ function SessionNode({
   }
 
   return (
-    <div>
+    <div
+      onDragOver={handleBoardDragOver}
+      onDragLeave={handleBoardDragLeave}
+      onDrop={handleBoardDrop}
+    >
       <button
         draggable={!isArchived}
         onDragStart={handleDragStart}
@@ -1187,7 +1273,8 @@ function SessionNode({
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-xs transition-colors"
         style={{
           paddingLeft: `${paddingLeft}px`,
-          backgroundColor: isActive ? "var(--q-bg-hover)" : "transparent",
+          backgroundColor: isBoardDragOver ? "var(--q-bg-hover)" : isActive ? "var(--q-bg-hover)" : "transparent",
+          borderLeft: isBoardDragOver ? "2px solid var(--q-accent)" : "2px solid transparent",
           fontFamily: "'JetBrains Mono', monospace",
           opacity: isArchived ? 0.6 : 1,
         }}
@@ -1237,6 +1324,81 @@ function SessionNode({
       {isExpanded && actions.length > 0 && (
         <ActionLog actions={actions} maxVisible={8} />
       )}
+
+      {isExpanded && boards.length > 0 && (
+        <div>
+          {[...boards].sort((a, b) => a.localeCompare(b)).map((board) => (
+            <BoardNode
+              key={board}
+              board={board}
+              sessionId={session.id}
+              activeBoard={activeBoard}
+              depth={depth + 1}
+              onSelectBoard={onSelectBoard}
+            />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function BoardNode({
+  board,
+  sessionId,
+  activeBoard,
+  depth,
+  onSelectBoard,
+}: {
+  board: string;
+  sessionId: string;
+  activeBoard?: string;
+  depth: number;
+  onSelectBoard?: (sessionId: string, board: string) => void;
+}) {
+  const paddingLeft = 16 + depth * 16;
+  // Prefer the reactive active-board prop; fall back to localStorage on first
+  // render (before any selection has updated the prop for this session).
+  const effectiveActiveBoard =
+    activeBoard ?? localStorage.getItem("quant.mindmapBoard." + sessionId) ?? "default";
+  const isActive = effectiveActiveBoard === board;
+
+  function handleDragStart(e: React.DragEvent) {
+    e.dataTransfer.setData("boardName", board);
+    e.dataTransfer.setData("boardSessionId", sessionId);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  return (
+    <button
+      draggable
+      onDragStart={handleDragStart}
+      onClick={() => onSelectBoard && onSelectBoard(sessionId, board)}
+      className="w-full flex items-center gap-1.5 px-3 py-1 text-left text-[11px] transition-colors"
+      style={{
+        paddingLeft: `${paddingLeft}px`,
+        backgroundColor: isActive ? "var(--q-bg-hover)" : "transparent",
+        fontFamily: "'JetBrains Mono', monospace",
+      }}
+      onMouseEnter={(e) => {
+        if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
+      }}
+    >
+      <span className="shrink-0" style={{ color: "var(--q-accent)" }}>
+        &
+      </span>
+      <span
+        className="overflow-hidden whitespace-nowrap flex-1"
+        style={{
+          color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {board}
+      </span>
+    </button>
   );
 }

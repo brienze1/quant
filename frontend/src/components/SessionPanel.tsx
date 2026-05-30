@@ -93,6 +93,17 @@ export function SessionPanel({
     localStorage.setItem("quant.mindmapPaneOpen", showMindmap ? "1" : "0");
   }, [showMindmap]);
 
+  // When a board is selected (e.g. from the sidebar) for this session, ensure
+  // the mindmap pane is visible.
+  useEffect(() => {
+    const onSelectBoard = (e: Event) => {
+      const detail = (e as CustomEvent<{ sessionId: string; board: string }>).detail;
+      if (detail?.sessionId === session.id) setShowMindmap(true);
+    };
+    window.addEventListener("quant:mindmap-select-board", onSelectBoard);
+    return () => window.removeEventListener("quant:mindmap-select-board", onSelectBoard);
+  }, [session.id]);
+
   // Close menu on click outside
   useEffect(() => {
     if (!menuOpen) return;

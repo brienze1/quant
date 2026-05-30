@@ -190,6 +190,24 @@ func (s *mindmapManagerService) ListBoards(scopeType, scopeID string) ([]string,
 	return s.findMindmapNode.DistinctBoards(scopeType, scopeID)
 }
 
+// MoveBoard moves every node of a board from one session to another and emits
+// snapshots for both the source and target panes. Returns the final board name.
+func (s *mindmapManagerService) MoveBoard(scopeType, fromScopeID, board, toScopeID string) (string, error) {
+	if board == "" {
+		board = "default"
+	}
+
+	finalBoard, err := s.findMindmapNode.MoveBoard(scopeType, fromScopeID, board, toScopeID)
+	if err != nil {
+		return "", fmt.Errorf("failed to move mindmap board: %w", err)
+	}
+
+	s.emitSnapshot(scopeType, fromScopeID, board)
+	s.emitSnapshot(scopeType, toScopeID, finalBoard)
+
+	return finalBoard, nil
+}
+
 // emitSnapshot loads the current nodes for the scope/board and emits them in the frontend JSON shape.
 func (s *mindmapManagerService) emitSnapshot(scopeType, scopeID, board string) {
 	if s.emitter == nil {

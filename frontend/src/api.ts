@@ -475,6 +475,14 @@ export function listBoards(sessionId: string): Promise<string[]> {
   return callGo(PKG, MINDMAP_CTRL, "ListBoards", sessionId);
 }
 
+export function moveMindmapBoard(
+  sessionId: string,
+  board: string,
+  toSessionId: string
+): Promise<string> {
+  return callGo(PKG, MINDMAP_CTRL, "MoveBoard", sessionId, board, toSessionId);
+}
+
 // --- Changelog ---
 
 const CHANGELOG_CTRL = "changelogController";

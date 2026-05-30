@@ -71,3 +71,8 @@ func (c *mindmapController) ClearMindmapBoard(sessionID, board string) error {
 func (c *mindmapController) ListBoards(sessionID string) ([]string, error) {
 	return c.mindmapManager.ListBoards("session", sessionID)
 }
+
+// MoveBoard moves a board's nodes from one session to another, returning the final board name.
+func (c *mindmapController) MoveBoard(sessionID, board, toSessionID string) (string, error) {
+	return c.mindmapManager.MoveBoard("session", sessionID, defaultBoard(board), toSessionID)
+}
