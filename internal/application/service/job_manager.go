@@ -333,8 +333,14 @@ func (s *jobManagerService) RunJob(jobID string, triggeredByRunID string, inputs
 // RunJobWithContext starts a new run for a job, injecting arbitrary context into its prompt.
 // The context string is prepended to the job's prompt in the same format as trigger context,
 // so existing jobs that parse TASK_IDENTIFIER= etc. work without modification.
-func (s *jobManagerService) RunJobWithContext(jobID string, context string) (*entity.JobRun, error) {
-	run, err := s.RunJob(jobID, "", nil)
+//
+// issue #50: inputs carries typed metadata that feeds the pre-run validation
+// gate (a root run pre-seeds run.Metadata from it; see RunJob). This is what
+// lets a job entered OUTSIDE a trigger edge — orchestrator kickoff, retry,
+// self-heal re-fire — satisfy `required` inputs. The context arg remains
+// prompt-only and never reaches the gate. Pass nil inputs for prompt-only use.
+func (s *jobManagerService) RunJobWithContext(jobID string, context string, inputs map[string]any) (*entity.JobRun, error) {
+	run, err := s.RunJob(jobID, "", inputs)
 	if err != nil {
 		return nil, err
 	}

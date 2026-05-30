@@ -294,9 +294,12 @@ Use this to start a pipeline at any step without depending on a previous run exi
 Useful for:
 - Retrying a specific stage after fixing a job prompt
 - Starting mid-pipeline for testing a new job
-- Recovering a broken pipeline without re-running expensive upstream jobs`),
+- Recovering a broken pipeline without re-running expensive upstream jobs
+
+The 'context' string is PROMPT-ONLY — it is not parsed into structured metadata and does NOT satisfy a job's pre-run validation gate. When the target job declares required inputs and you are entering it OUTSIDE a trigger edge (orchestrator kickoff, retry, self-heal re-fire), ALSO pass 'inputs' (a JSON object): for a root run these become the run's initial metadata and feed the gate, exactly like run_job. Pass both to give the agent human-readable context AND satisfy the contract.`),
 			mcp.WithString("id", mcp.Required(), mcp.Description("Job ID to run (get from list_jobs)")),
-			mcp.WithString("context", mcp.Required(), mcp.Description("Freeform string injected as trigger context into the job's prompt")),
+			mcp.WithString("context", mcp.Required(), mcp.Description("Freeform string injected as trigger context into the job's prompt (prompt-only; does not feed the validation gate)")),
+			mcp.WithString("inputs", mcp.Description(`Optional JSON object of typed inputs that feed the pre-run validation gate. Example: {"linearId":"MAX-86","stack":"backend"}. Use when the target job declares required inputs. Default: none.`)),
 		),
 		s.handleRunJobWithContext,
 	)
@@ -1215,7 +1218,21 @@ func (s *QuantMCPServer) handleRunJobWithContext(_ context.Context, request mcp.
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	run, err := s.jobManager.RunJobWithContext(id, ctx)
+	// issue #50: optional typed inputs (JSON object string) that feed the
+	// pre-run validation gate. The 'context' arg above is prompt-only and does
+	// NOT satisfy required inputs; pass 'inputs' to kickoff/retry/self-heal a
+	// job that declares them. Mirrors handleRunJob's parsing.
+	var inputs map[string]any
+	if v, ok := request.GetArguments()["inputs"]; ok {
+		raw, _ := v.(string)
+		if strings.TrimSpace(raw) != "" {
+			if err := json.Unmarshal([]byte(raw), &inputs); err != nil {
+				return mcp.NewToolResultError("invalid inputs JSON: " + err.Error()), nil
+			}
+		}
+	}
+
+	run, err := s.jobManager.RunJobWithContext(id, ctx, inputs)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
