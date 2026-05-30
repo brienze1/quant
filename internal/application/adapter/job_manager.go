@@ -22,7 +22,13 @@ type JobManager interface {
 	//     nil here is the right default for trigger-paths.
 	//   - correlationID: upstream's pipeline-wide id (variadic, optional).
 	RunJob(jobID string, triggeredByRunID string, inputs map[string]any, correlationID ...string) (*entity.JobRun, error)
-	RunJobWithContext(jobID string, context string) (*entity.JobRun, error)
+	// RunJobWithContext starts a ROOT run with prompt-injected context.
+	//   - context: freeform string prepended to the prompt only (does NOT feed
+	//     the validation gate).
+	//   - inputs: typed metadata that DOES feed the pre-run validation gate,
+	//     same semantics as RunJob's inputs for a root run. Pass nil when the
+	//     target job declares no required inputs.
+	RunJobWithContext(jobID string, context string, inputs map[string]any) (*entity.JobRun, error)
 	RerunJob(jobID string, originalRunID string) (*entity.JobRun, error)
 	CancelRun(runID string) error
 	GetRun(runID string) (*entity.JobRun, error)
