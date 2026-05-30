@@ -17,6 +17,7 @@ type MindmapNode struct {
 	Text      string
 	Status    string
 	Note      string
+	Color     string
 	Progress  int
 	SortOrder int
 	CreatedAt time.Time

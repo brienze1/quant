@@ -20,13 +20,13 @@ func NewMindmapPersistence(db *sql.DB) adapter.MindmapPersistence {
 	return &mindmapPersistence{db: db}
 }
 
-const mindmapNodeColumns = `id, scope_type, scope_id, board, parent_id, kind, label, text, status, note, progress, sort_order, created_at, updated_at`
+const mindmapNodeColumns = `id, scope_type, scope_id, board, parent_id, kind, label, text, status, note, color, progress, sort_order, created_at, updated_at`
 
 func scanMindmapNodeRow(scanner interface{ Scan(...any) error }) (pdto.MindmapNodeRow, error) {
 	var row pdto.MindmapNodeRow
 	err := scanner.Scan(
 		&row.ID, &row.ScopeType, &row.ScopeID, &row.Board, &row.ParentID, &row.Kind, &row.Label, &row.Text,
-		&row.Status, &row.Note, &row.Progress, &row.SortOrder, &row.CreatedAt, &row.UpdatedAt,
+		&row.Status, &row.Note, &row.Color, &row.Progress, &row.SortOrder, &row.CreatedAt, &row.UpdatedAt,
 	)
 	return row, err
 }
@@ -71,9 +71,9 @@ func (p *mindmapPersistence) SaveMindmapNode(node entity.MindmapNode) error {
 	row := pdto.MindmapNodeRowFromEntity(node)
 
 	_, err := p.db.Exec(
-		`INSERT OR REPLACE INTO mindmap_nodes (`+mindmapNodeColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT OR REPLACE INTO mindmap_nodes (`+mindmapNodeColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		row.ID, row.ScopeType, row.ScopeID, row.Board, row.ParentID, row.Kind, row.Label, row.Text,
-		row.Status, row.Note, row.Progress, row.SortOrder, row.CreatedAt, row.UpdatedAt,
+		row.Status, row.Note, row.Color, row.Progress, row.SortOrder, row.CreatedAt, row.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save mindmap node: %w", err)
@@ -221,6 +221,77 @@ func (p *mindmapPersistence) MoveBoard(scopeType, fromScopeID, board, toScopeID 
 
 	if err := tx.Commit(); err != nil {
 		return "", fmt.Errorf("failed to commit mindmap board move: %w", err)
+	}
+
+	return finalBoard, nil
+}
+
+// RenameBoard renames a board within the same scope, renaming on collision so
+// node ids never clash with an existing board's PK. Returns the final board name.
+func (p *mindmapPersistence) RenameBoard(scopeType, scopeID, oldName, newName string) (string, error) {
+	if oldName == "" {
+		oldName = "default"
+	}
+	if newName == "" {
+		newName = "default"
+	}
+	if oldName == newName {
+		return newName, nil
+	}
+
+	// The collision check and the rename must be atomic so concurrent writes
+	// can't race between the COUNT and the UPDATE.
+	tx, err := p.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin mindmap board rename: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Compute a collision-free target board name against this scope.
+	const maxCollisionAttempts = 1000
+	finalBoard := newName
+	for attempt := 0; ; attempt++ {
+		if attempt > maxCollisionAttempts {
+			return "", fmt.Errorf("failed to find a free mindmap board name after %d attempts", maxCollisionAttempts)
+		}
+		var count int
+		if err := tx.QueryRow(
+			`SELECT COUNT(*) FROM mindmap_nodes WHERE scope_type = ? AND scope_id = ? AND board = ?`,
+			scopeType, scopeID, finalBoard,
+		).Scan(&count); err != nil {
+			return "", fmt.Errorf("failed to check mindmap board collision: %w", err)
+		}
+		if count == 0 {
+			break
+		}
+		finalBoard = fmt.Sprintf("%s (%d)", newName, attempt+2)
+	}
+
+	result, err := tx.Exec(
+		`UPDATE mindmap_nodes SET board = ? WHERE scope_type = ? AND scope_id = ? AND board = ?`,
+		finalBoard, scopeType, scopeID, oldName,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to rename mindmap board: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("failed to read renamed mindmap board rows: %w", err)
+	}
+	if affected == 0 {
+		// An empty board (shown in the UI but with no persisted nodes yet) is
+		// indistinguishable from a missing one. Renaming it is harmless — there
+		// is nothing to update and the UI tracks the name locally — so treat it
+		// as a benign no-op and return the requested name.
+		if err := tx.Commit(); err != nil {
+			return "", fmt.Errorf("failed to commit mindmap board rename: %w", err)
+		}
+		return newName, nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit mindmap board rename: %w", err)
 	}
 
 	return finalBoard, nil

@@ -47,6 +47,7 @@ interface SidebarProps {
   activeBoardBySession?: Record<string, string>;
   onSelectBoard?: (sessionId: string, board: string) => void;
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
+  onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
   onError?: (msg: string) => void;
   onOpenSettings?: () => void;
   onOpenJobs?: () => void;
@@ -139,6 +140,7 @@ export function Sidebar({
   activeBoardBySession,
   onSelectBoard,
   onMoveBoard,
+  onRenameBoard,
   onError,
   onOpenSettings,
   onOpenJobs,
@@ -726,6 +728,7 @@ export function Sidebar({
               activeBoardBySession={activeBoardBySession}
               onSelectBoard={onSelectBoard}
               onMoveBoard={onMoveBoard}
+              onRenameBoard={onRenameBoard}
               onError={onError}
               showSeparator={idx < repos.length - 1}
               filterSessions={filterSessions}
@@ -852,6 +855,7 @@ function RepoNode({
   activeBoardBySession,
   onSelectBoard,
   onMoveBoard,
+  onRenameBoard,
   onError,
   showSeparator,
   filterSessions,
@@ -879,6 +883,7 @@ function RepoNode({
   activeBoardBySession?: Record<string, string>;
   onSelectBoard?: (sessionId: string, board: string) => void;
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
+  onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
   onError?: (msg: string) => void;
   showSeparator: boolean;
   filterSessions: (sessions: Session[]) => Session[];
@@ -945,6 +950,7 @@ function RepoNode({
               activeBoardBySession={activeBoardBySession}
               onSelectBoard={onSelectBoard}
               onMoveBoard={onMoveBoard}
+              onRenameBoard={onRenameBoard}
               onError={onError}
               repoId={repo.id}
               showArchived={showArchived}
@@ -997,6 +1003,7 @@ function TaskNode({
   activeBoardBySession,
   onSelectBoard,
   onMoveBoard,
+  onRenameBoard,
   onError,
   repoId,
   showArchived,
@@ -1020,6 +1027,7 @@ function TaskNode({
   activeBoardBySession?: Record<string, string>;
   onSelectBoard?: (sessionId: string, board: string) => void;
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
+  onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
   onError?: (msg: string) => void;
   repoId: string;
   showArchived: boolean;
@@ -1115,6 +1123,7 @@ function TaskNode({
               activeBoard={activeBoardBySession?.[session.id]}
               onSelectBoard={onSelectBoard}
               onMoveBoard={onMoveBoard}
+              onRenameBoard={onRenameBoard}
               depth={2}
             />
           ))}
@@ -1155,6 +1164,7 @@ function SessionNode({
   activeBoard,
   onSelectBoard,
   onMoveBoard,
+  onRenameBoard,
   depth,
 }: {
   session: Session;
@@ -1172,6 +1182,7 @@ function SessionNode({
   activeBoard?: string;
   onSelectBoard?: (sessionId: string, board: string) => void;
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
+  onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
   depth: number;
 }) {
   const isActive = activeSessionId === session.id;
@@ -1335,6 +1346,7 @@ function SessionNode({
               activeBoard={activeBoard}
               depth={depth + 1}
               onSelectBoard={onSelectBoard}
+              onRenameBoard={onRenameBoard}
             />
           ))}
         </div>
@@ -1349,12 +1361,14 @@ function BoardNode({
   activeBoard,
   depth,
   onSelectBoard,
+  onRenameBoard,
 }: {
   board: string;
   sessionId: string;
   activeBoard?: string;
   depth: number;
   onSelectBoard?: (sessionId: string, board: string) => void;
+  onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
 }) {
   const paddingLeft = 16 + depth * 16;
   // Prefer the reactive active-board prop; fall back to localStorage on first
@@ -1363,42 +1377,121 @@ function BoardNode({
     activeBoard ?? localStorage.getItem("quant.mindmapBoard." + sessionId) ?? "default";
   const isActive = effectiveActiveBoard === board;
 
+  // Right-click context menu + inline rename (no native prompt() in WKWebView).
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(board);
+
   function handleDragStart(e: React.DragEvent) {
     e.dataTransfer.setData("boardName", board);
     e.dataTransfer.setData("boardSessionId", sessionId);
     e.dataTransfer.effectAllowed = "move";
   }
 
+  function startRename() {
+    setMenu(null);
+    setDraft(board);
+    setRenaming(true);
+  }
+
+  function commitRename() {
+    const next = draft.trim();
+    setRenaming(false);
+    if (!next || next === board) return;
+    if (onRenameBoard) onRenameBoard(sessionId, board, next);
+  }
+
+  if (renaming) {
+    return (
+      <div
+        className="w-full flex items-center gap-1.5 px-3 py-1"
+        style={{ paddingLeft: `${paddingLeft}px`, fontFamily: "'JetBrains Mono', monospace" }}
+      >
+        <span className="shrink-0" style={{ color: "var(--q-accent)" }}>
+          &
+        </span>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitRename();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setRenaming(false);
+            }
+          }}
+          className="flex-1 min-w-0 px-1 py-0.5 text-[11px]"
+          style={{
+            backgroundColor: "var(--q-bg-hover)",
+            border: "1px solid var(--q-accent)",
+            color: "var(--q-fg)",
+            fontFamily: "'JetBrains Mono', monospace",
+            outline: "none",
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
-    <button
-      draggable
-      onDragStart={handleDragStart}
-      onClick={() => onSelectBoard && onSelectBoard(sessionId, board)}
-      className="w-full flex items-center gap-1.5 px-3 py-1 text-left text-[11px] transition-colors"
-      style={{
-        paddingLeft: `${paddingLeft}px`,
-        backgroundColor: isActive ? "var(--q-bg-hover)" : "transparent",
-        fontFamily: "'JetBrains Mono', monospace",
-      }}
-      onMouseEnter={(e) => {
-        if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
-      }}
-    >
-      <span className="shrink-0" style={{ color: "var(--q-accent)" }}>
-        &
-      </span>
-      <span
-        className="overflow-hidden whitespace-nowrap flex-1"
+    <>
+      <button
+        draggable
+        onDragStart={handleDragStart}
+        onClick={() => onSelectBoard && onSelectBoard(sessionId, board)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setMenu({ x: e.clientX, y: e.clientY });
+        }}
+        className="w-full flex items-center gap-1.5 px-3 py-1 text-left text-[11px] transition-colors"
         style={{
-          color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
-          textOverflow: "ellipsis",
+          paddingLeft: `${paddingLeft}px`,
+          backgroundColor: isActive ? "var(--q-bg-hover)" : "transparent",
+          fontFamily: "'JetBrains Mono', monospace",
+        }}
+        onMouseEnter={(e) => {
+          if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
         }}
       >
-        {board}
-      </span>
-    </button>
+        <span className="shrink-0" style={{ color: "var(--q-accent)" }}>
+          &
+        </span>
+        <span
+          className="overflow-hidden whitespace-nowrap flex-1"
+          style={{
+            color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {board}
+        </span>
+      </button>
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={[
+            { type: "label", text: board },
+            {
+              type: "item",
+              icon: "✎",
+              iconColor: "var(--q-accent)",
+              label: "rename",
+              onClick: startRename,
+            },
+          ]}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </>
   );
 }

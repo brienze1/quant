@@ -14,6 +14,7 @@ type MindmapNodeResponse struct {
 	Text     string `json:"text"`
 	Status   string `json:"status"`
 	Note     string `json:"note"`
+	Color    string `json:"color"`
 	Progress int    `json:"progress"`
 	Board    string `json:"board"`
 }
@@ -28,6 +29,7 @@ type MindmapNodeRequest struct {
 	Text     string `json:"text"`
 	Status   string `json:"status"`
 	Note     string `json:"note"`
+	Color    string `json:"color"`
 	Progress int    `json:"progress"`
 	Board    string `json:"board"`
 }
@@ -43,6 +45,7 @@ func (r MindmapNodeRequest) ToEntity() entity.MindmapNode {
 		Text:     r.Text,
 		Status:   r.Status,
 		Note:     r.Note,
+		Color:    r.Color,
 		Progress: r.Progress,
 	}
 }
@@ -57,6 +60,7 @@ func MindmapNodeResponseFromEntity(n entity.MindmapNode) MindmapNodeResponse {
 		Text:     n.Text,
 		Status:   n.Status,
 		Note:     n.Note,
+		Color:    n.Color,
 		Progress: n.Progress,
 		Board:    n.Board,
 	}

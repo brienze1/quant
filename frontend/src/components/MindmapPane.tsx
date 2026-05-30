@@ -21,6 +21,7 @@ import {
   setMindmapNode,
   removeMindmapNode,
   listBoards,
+  renameBoard,
 } from "../api";
 import { ContextMenu } from "./ContextMenu";
 import type { MenuItem } from "./ContextMenu";
@@ -34,6 +35,18 @@ const STATUS_LABEL: Record<string, string> = {
 
 const STATUS_OPTIONS = ["planned", "in_progress", "done", "blocked"];
 
+// Fixed, theme-friendly swatch palette. WKWebView has no <input type=color>, so
+// per-note color is chosen from these presets (plus a "none" choice that clears).
+const COLOR_SWATCHES = [
+  { value: "#f59e0b", label: "amber" },
+  { value: "#3b82f6", label: "blue" },
+  { value: "#10b981", label: "green" },
+  { value: "#ef4444", label: "red" },
+  { value: "#8b5cf6", label: "purple" },
+  { value: "#ec4899", label: "pink" },
+  { value: "#14b8a6", label: "teal" },
+];
+
 // Data carried on each React Flow node.
 interface NodeData {
   label: string;
@@ -44,6 +57,7 @@ interface NodeData {
   kind: string;
   root: boolean;
   pinned: boolean;
+  color: string;
   // Right-click handler injected per render so the node can open the menu.
   onContext?: (e: React.MouseEvent, id: string) => void;
   [key: string]: unknown;
@@ -101,19 +115,42 @@ function layout(nodes: FlowNode[], edges: Edge[], sizes?: SizeMap): FlowNode[] {
 }
 
 function StatusNode({ id, data }: NodeProps<FlowNode>) {
+  // Per-node color tints the whole node body + border; status (dot/badge/
+  // progress/ring) is left untouched so the planned/building/done/blocked
+  // semantics stay readable. Empty color = pure CSS status styling.
+  const colorStyle: React.CSSProperties | undefined = data.color
+    ? {
+        borderColor: data.color,
+        background: `color-mix(in srgb, ${data.color} 14%, var(--q-bg-elevated))`,
+      }
+    : undefined;
+  const headStyle: React.CSSProperties | undefined = data.color
+    ? { background: `color-mix(in srgb, ${data.color} 16%, var(--q-bg-elevated))` }
+    : undefined;
   return (
     <div
       className={"node s-" + data.status + (data.root ? " root" : "")}
+      style={colorStyle}
       onContextMenu={(e) => data.onContext?.(e, id)}
     >
       <Handle type="target" position={Position.Left} />
-      <div className="node-head">
+      <div className="node-head" style={headStyle}>
         <span className="dot" />
         <span className="node-title">{data.label}</span>
         <span className="badge">{STATUS_LABEL[data.status] ?? data.status}</span>
       </div>
       {data.note && (
-        <div className="node-note">
+        <div
+          className="node-note"
+          style={
+            data.color
+              ? {
+                  borderLeftColor: data.color,
+                  background: `color-mix(in srgb, ${data.color} 10%, transparent)`,
+                }
+              : undefined
+          }
+        >
           <span className="ico">📝</span>
           <span>{data.note}</span>
         </div>
@@ -129,8 +166,16 @@ function StatusNode({ id, data }: NodeProps<FlowNode>) {
 }
 
 function NoteNode({ id, data }: NodeProps<FlowNode>) {
+  // Per-note color tints the sticky bg + border; empty falls back to the CSS
+  // var(--q-warning) styling defined in MindmapPane.css.
+  const colorStyle: React.CSSProperties | undefined = data.color
+    ? {
+        background: `color-mix(in srgb, ${data.color} 14%, var(--q-bg-elevated))`,
+        border: `1px solid color-mix(in srgb, ${data.color} 45%, var(--q-border))`,
+      }
+    : undefined;
   return (
-    <div className="sticky" onContextMenu={(e) => data.onContext?.(e, id)}>
+    <div className="sticky" style={colorStyle} onContextMenu={(e) => data.onContext?.(e, id)}>
       <Handle type="target" position={Position.Left} />
       <div className="sticky-head">
         <span>📌</span>
@@ -159,6 +204,7 @@ function buildGraph(data: MindmapNode[]): { rawNodes: FlowNode[]; rawEdges: Edge
       kind: n.kind,
       root: n.parentId === "",
       pinned: false,
+      color: n.color ?? "",
     },
   }));
   const statusById = new Map(data.map((n) => [n.id, n.status]));
@@ -186,6 +232,7 @@ function flowToMindmap(n: FlowNode, parentId: string, board: string): MindmapNod
     status: n.data.status,
     note: n.data.note,
     progress: n.data.progress,
+    color: n.data.color,
     board,
   };
 }
@@ -201,6 +248,7 @@ interface EditDraft {
   note: string;
   progress: number;
   parentId: string;
+  color: string;
 }
 
 function EditNodeModal({
@@ -220,7 +268,7 @@ function EditNodeModal({
   const set = <K extends keyof EditDraft>(k: K, v: EditDraft[K]) =>
     setD((prev) => ({ ...prev, [k]: v }));
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent | React.MouseEvent) {
     e.preventDefault();
     if (d.kind === "note") {
       if (!d.text.trim()) return;
@@ -343,6 +391,46 @@ function EditNodeModal({
           </>
         )}
 
+        {/* color swatches (no native <input type=color> in WKWebView) */}
+        <div className="block">
+          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>color</span>
+          <div className="mt-1 flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => set("color", "")}
+              title="default / none"
+              className="flex items-center justify-center text-[10px]"
+              style={{
+                width: 22,
+                height: 22,
+                color: "var(--q-fg-secondary)",
+                backgroundColor: "var(--q-bg-hover)",
+                border: `1px solid ${d.color === "" ? "var(--q-accent)" : "var(--q-border)"}`,
+                outline: d.color === "" ? "1px solid var(--q-accent)" : "none",
+              }}
+            >
+              ×
+            </button>
+            {COLOR_SWATCHES.map((sw) => (
+              <button
+                key={sw.value}
+                type="button"
+                onClick={() => set("color", sw.value)}
+                title={sw.label}
+                style={{
+                  width: 22,
+                  height: 22,
+                  backgroundColor: sw.value,
+                  border: `1px solid ${d.color === sw.value ? "var(--q-fg)" : "transparent"}`,
+                  outline: d.color === sw.value ? "2px solid var(--q-accent)" : "none",
+                  outlineOffset: 1,
+                  cursor: "pointer",
+                }}
+              />
+            ))}
+          </div>
+        </div>
+
         {/* parent */}
         <label className="block">
           <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>parent</span>
@@ -367,6 +455,10 @@ function EditNodeModal({
           </button>
           <button
             type="submit"
+            onClick={(e) => {
+              e.preventDefault();
+              handleSubmit(e);
+            }}
             className="px-4 py-2 text-xs lowercase transition-colors"
             style={{ backgroundColor: "var(--q-accent)", color: "var(--q-bg)", fontWeight: 500 }}
           >
@@ -436,6 +528,8 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
   // Native window.prompt() is not implemented in the Wails WKWebView, so board
   // creation uses an in-app modal instead.
   const [creatingBoard, setCreatingBoard] = useState(false);
+  // The board currently being renamed (null = no rename modal open).
+  const [renamingBoard, setRenamingBoard] = useState<string | null>(null);
 
   // Reset board selection when the session changes.
   useEffect(() => {
@@ -462,15 +556,14 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
     localStorage.setItem(boardKey, activeBoard);
   }, [boardKey, activeBoard]);
 
-  // Refresh the list of boards (unioned with the active board so it always appears).
+  // Refresh the list of boards. The server list is authoritative for removals
+  // (so renames/deletes propagate); we only keep activeBoard so a brand-new
+  // empty board (not yet persisted) still shows.
   const refreshBoards = useCallback(() => {
     listBoards(sessionId)
       .then((list) => {
         if (!Array.isArray(list)) return;
-        setBoards((prev) => {
-          const merged = new Set<string>(["default", ...list, ...prev, activeBoard]);
-          return Array.from(merged);
-        });
+        setBoards(Array.from(new Set<string>(["default", ...list, activeBoard])));
       })
       .catch(() => {});
   }, [sessionId, activeBoard]);
@@ -546,6 +639,8 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
             label: editing ? old.data.label : n.data.label,
             note: editing ? old.data.note : n.data.note,
             text: editing ? old.data.text : n.data.text,
+            // Color is user-owned while editing; otherwise reconcile from snapshot.
+            color: editing ? old.data.color : n.data.color,
           },
         };
       });
@@ -620,6 +715,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
       note: "",
       progress: 0,
       parentId,
+      color: "",
     });
     setEditIsNew(true);
     setMenu(null);
@@ -638,6 +734,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
       note: n.data.note,
       progress: n.data.progress ?? 0,
       parentId: parentOf(id),
+      color: n.data.color ?? "",
     });
     setEditIsNew(false);
     setMenu(null);
@@ -659,6 +756,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
       status: d.status,
       note: d.note,
       progress: d.progress,
+      color: d.color,
       board: activeBoard,
     };
     editingIds.current.delete(d.id);
@@ -747,6 +845,32 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
     setActiveBoard(trimmed);
   }
 
+  // Rename a board: call the backend, then use the RETURNED final name to update
+  // local state optimistically (the backend also emits mindmap:updated).
+  function submitRename(newName: string) {
+    const oldName = renamingBoard;
+    setRenamingBoard(null);
+    if (!oldName) return;
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return;
+    renameBoard(sessionId, oldName, trimmed)
+      .then((final) => {
+        const name = final || trimmed;
+        setBoards((prev) => prev.map((b) => (b === oldName ? name : b)));
+        if (activeBoard === oldName) {
+          setActiveBoard(name);
+          localStorage.setItem("quant.mindmapBoard." + sessionId, name);
+        }
+        // Notify App (sidebar) so its boardsBySession refreshes off the old name.
+        window.dispatchEvent(
+          new CustomEvent("quant:mindmap-select-board", {
+            detail: { sessionId, board: name },
+          })
+        );
+      })
+      .catch(() => {});
+  }
+
   // Parent options for the edit form (exclude the node being edited).
   const parentOptions = nodes
     .filter((n) => n.id !== editDraft?.id)
@@ -809,6 +933,14 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          className="mindmap-tool-btn"
+          title="rename active board"
+          onClick={() => setRenamingBoard(activeBoard)}
+        >
+          rename
+        </button>
         <button type="button" className="mindmap-tool-btn" onClick={() => setCreatingBoard(true)}>
           + board
         </button>
@@ -829,6 +961,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
               note: "",
               progress: 0,
               parentId: "",
+              color: "",
             });
             setEditIsNew(true);
           }}
@@ -881,20 +1014,34 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
       )}
 
       {creatingBoard && (
-        <BoardNameModal onSubmit={submitBoard} onCancel={() => setCreatingBoard(false)} />
+        <BoardNameModal mode="create" onSubmit={submitBoard} onCancel={() => setCreatingBoard(false)} />
+      )}
+
+      {renamingBoard != null && (
+        <BoardNameModal
+          mode="rename"
+          currentName={renamingBoard}
+          onSubmit={submitRename}
+          onCancel={() => setRenamingBoard(null)}
+        />
       )}
     </div>
   );
 }
 
 function BoardNameModal({
+  mode = "create",
+  currentName = "",
   onSubmit,
   onCancel,
 }: {
+  mode?: "create" | "rename";
+  currentName?: string;
   onSubmit: (name: string) => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(mode === "rename" ? currentName : "");
+  const isRename = mode === "rename";
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
@@ -915,13 +1062,13 @@ function BoardNameModal({
         }}
       >
         <label className="block text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>
-          // new board
+          // {isRename ? "rename board" : "new board"}
         </label>
         <input
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="board name"
+          placeholder={isRename ? "new board name" : "board name"}
           className="nodrag px-2 py-1.5 text-xs"
           style={{
             backgroundColor: "var(--q-bg-hover)",
@@ -942,10 +1089,14 @@ function BoardNameModal({
           </button>
           <button
             type="submit"
+            onClick={(e) => {
+              e.preventDefault();
+              onSubmit(name);
+            }}
             className="px-3 py-1 text-[11px]"
             style={{ color: "var(--q-bg)", backgroundColor: "var(--q-accent)", border: "1px solid var(--q-accent)" }}
           >
-            create
+            {isRename ? "rename" : "create"}
           </button>
         </div>
       </form>

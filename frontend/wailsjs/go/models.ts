@@ -584,6 +584,7 @@ export namespace dto {
 	    text: string;
 	    status: string;
 	    note: string;
+	    color: string;
 	    progress: number;
 	    board: string;
 	
@@ -600,6 +601,7 @@ export namespace dto {
 	        this.text = source["text"];
 	        this.status = source["status"];
 	        this.note = source["note"];
+	        this.color = source["color"];
 	        this.progress = source["progress"];
 	        this.board = source["board"];
 	    }
@@ -612,6 +614,7 @@ export namespace dto {
 	    text: string;
 	    status: string;
 	    note: string;
+	    color: string;
 	    progress: number;
 	    board: string;
 	
@@ -628,6 +631,7 @@ export namespace dto {
 	        this.text = source["text"];
 	        this.status = source["status"];
 	        this.note = source["note"];
+	        this.color = source["color"];
 	        this.progress = source["progress"];
 	        this.board = source["board"];
 	    }

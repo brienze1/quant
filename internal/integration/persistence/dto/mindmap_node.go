@@ -19,6 +19,7 @@ type MindmapNodeRow struct {
 	Text      string
 	Status    string
 	Note      string
+	Color     string
 	Progress  int
 	SortOrder int
 	CreatedAt string
@@ -41,6 +42,7 @@ func (r MindmapNodeRow) ToEntity() entity.MindmapNode {
 		Text:      r.Text,
 		Status:    r.Status,
 		Note:      r.Note,
+		Color:     r.Color,
 		Progress:  r.Progress,
 		SortOrder: r.SortOrder,
 		CreatedAt: createdAt,
@@ -61,6 +63,7 @@ func MindmapNodeRowFromEntity(node entity.MindmapNode) MindmapNodeRow {
 		Text:      node.Text,
 		Status:    node.Status,
 		Note:      node.Note,
+		Color:     node.Color,
 		Progress:  node.Progress,
 		SortOrder: node.SortOrder,
 		CreatedAt: node.CreatedAt.Format(time.RFC3339),

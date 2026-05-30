@@ -10,4 +10,5 @@ type FindMindmapNode interface {
 	FindMindmapNodeByID(scopeType, scopeID, board, id string) (*entity.MindmapNode, error)
 	DistinctBoards(scopeType, scopeID string) ([]string, error)
 	MoveBoard(scopeType, fromScopeID, board, toScopeID string) (string, error)
+	RenameBoard(scopeType, scopeID, oldName, newName string) (string, error)
 }

@@ -11,4 +11,5 @@ type MindmapManager interface {
 	GetMindmap(scopeType, scopeID, board string) ([]entity.MindmapNode, error)
 	ListBoards(scopeType, scopeID string) ([]string, error)
 	MoveBoard(scopeType, fromScopeID, board, toScopeID string) (string, error)
+	RenameBoard(scopeType, scopeID, oldName, newName string) (string, error)
 }

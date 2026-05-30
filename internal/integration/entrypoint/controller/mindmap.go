@@ -76,3 +76,8 @@ func (c *mindmapController) ListBoards(sessionID string) ([]string, error) {
 func (c *mindmapController) MoveBoard(sessionID, board, toSessionID string) (string, error) {
 	return c.mindmapManager.MoveBoard("session", sessionID, defaultBoard(board), toSessionID)
 }
+
+// RenameBoard renames a board within a session, returning the final board name.
+func (c *mindmapController) RenameBoard(sessionID, oldName, newName string) (string, error) {
+	return c.mindmapManager.RenameBoard("session", sessionID, defaultBoard(oldName), newName)
+}

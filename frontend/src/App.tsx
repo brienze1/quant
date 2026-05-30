@@ -573,13 +573,20 @@ function App() {
     if (!w?.runtime?.EventsOn) return;
     const cancel = w.runtime.EventsOn(
       "mindmap:updated",
-      (d: { sessionId?: string; board?: string }) => {
+      (d: { sessionId?: string; board?: string; nodes?: unknown }) => {
         if (!d?.sessionId || !d.board) return;
-        const { sessionId, board } = d;
+        const { sessionId, board, nodes } = d;
+        const isEmpty = Array.isArray(nodes) && nodes.length === 0;
         setBoardsBySession((prev) => {
           const existing = prev[sessionId];
           // Only track sessions we already know about (i.e. expanded at least once).
           if (!existing) return prev;
+          // An empty board (e.g. the old name after a rename) should be pruned
+          // from the sidebar, but never the "default" board.
+          if (isEmpty && board !== "default") {
+            if (!existing.includes(board)) return prev;
+            return { ...prev, [sessionId]: existing.filter((b) => b !== board) };
+          }
           if (existing.includes(board)) return prev;
           return { ...prev, [sessionId]: [...existing, board] };
         });
@@ -1129,6 +1136,32 @@ function App() {
         [fromSessionId]: Array.isArray(fromBoards) ? fromBoards : [],
         [toSessionId]: Array.isArray(toBoards) ? toBoards : [],
       }));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  // Rename a board for a session (mirrors handleMoveBoard's refresh pattern).
+  async function handleRenameBoard(sessionId: string, oldName: string, newName: string) {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return;
+    try {
+      setError(null);
+      const final = await api.renameBoard(sessionId, oldName, trimmed);
+      const boards = await api.listBoards(sessionId);
+      setBoardsBySession((prev) => ({
+        ...prev,
+        [sessionId]: Array.isArray(boards) ? boards : [],
+      }));
+      // If the renamed board was the active one, keep the selection in sync.
+      const active = localStorage.getItem("quant.mindmapBoard." + sessionId);
+      if (active === oldName) {
+        localStorage.setItem("quant.mindmapBoard." + sessionId, final);
+        setActiveBoardBySession((prev) => ({ ...prev, [sessionId]: final }));
+        window.dispatchEvent(
+          new CustomEvent("quant:mindmap-select-board", { detail: { sessionId, board: final } })
+        );
+      }
     } catch (err) {
       setError(String(err));
     }
@@ -2009,6 +2042,7 @@ function App() {
         activeBoardBySession={activeBoardBySession}
         onSelectBoard={handleSelectBoard}
         onMoveBoard={handleMoveBoard}
+        onRenameBoard={handleRenameBoard}
         onError={(msg) => setError(msg)}
         onOpenSettings={() => setView("settings")}
         onOpenJobs={() => { fetchJobs(); setView("jobs"); }}

@@ -16,4 +16,5 @@ type MindmapController interface {
 	ClearMindmapBoard(sessionID, board string) error
 	ListBoards(sessionID string) ([]string, error)
 	MoveBoard(sessionID, board, toSessionID string) (string, error)
+	RenameBoard(sessionID, oldName, newName string) (string, error)
 }

@@ -208,6 +208,27 @@ func (s *mindmapManagerService) MoveBoard(scopeType, fromScopeID, board, toScope
 	return finalBoard, nil
 }
 
+// RenameBoard renames a board within the same scope and emits snapshots for both
+// the old and new board names. Returns the final board name.
+func (s *mindmapManagerService) RenameBoard(scopeType, scopeID, oldName, newName string) (string, error) {
+	if oldName == "" {
+		oldName = "default"
+	}
+	if newName == "" {
+		newName = "default"
+	}
+
+	finalBoard, err := s.findMindmapNode.RenameBoard(scopeType, scopeID, oldName, newName)
+	if err != nil {
+		return "", fmt.Errorf("failed to rename mindmap board: %w", err)
+	}
+
+	s.emitSnapshot(scopeType, scopeID, oldName)
+	s.emitSnapshot(scopeType, scopeID, finalBoard)
+
+	return finalBoard, nil
+}
+
 // emitSnapshot loads the current nodes for the scope/board and emits them in the frontend JSON shape.
 func (s *mindmapManagerService) emitSnapshot(scopeType, scopeID, board string) {
 	if s.emitter == nil {
@@ -229,6 +250,7 @@ func (s *mindmapManagerService) emitSnapshot(scopeType, scopeID, board string) {
 			"text":     n.Text,
 			"status":   n.Status,
 			"note":     n.Note,
+			"color":    n.Color,
 			"progress": n.Progress,
 		})
 	}

@@ -30,6 +30,10 @@ export function RemoveMindmapNode(arg1, arg2, arg3, arg4) {
   return window['go']['controller']['mindmapController']['RemoveMindmapNode'](arg1, arg2, arg3, arg4);
 }
 
+export function RenameBoard(arg1, arg2, arg3) {
+  return window['go']['controller']['mindmapController']['RenameBoard'](arg1, arg2, arg3);
+}
+
 export function SetMindmapNode(arg1, arg2, arg3) {
   return window['go']['controller']['mindmapController']['SetMindmapNode'](arg1, arg2, arg3);
 }

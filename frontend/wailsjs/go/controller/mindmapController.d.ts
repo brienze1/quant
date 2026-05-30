@@ -17,4 +17,6 @@ export function OnStartup(arg1:context.Context):Promise<void>;
 
 export function RemoveMindmapNode(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<void>;
 
+export function RenameBoard(arg1:string,arg2:string,arg3:string):Promise<string>;
+
 export function SetMindmapNode(arg1:string,arg2:string,arg3:dto.MindmapNodeRequest):Promise<dto.MindmapNodeResponse>;

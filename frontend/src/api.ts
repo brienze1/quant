@@ -483,6 +483,14 @@ export function moveMindmapBoard(
   return callGo(PKG, MINDMAP_CTRL, "MoveBoard", sessionId, board, toSessionId);
 }
 
+export function renameBoard(
+  sessionId: string,
+  oldName: string,
+  newName: string
+): Promise<string> {
+  return callGo(PKG, MINDMAP_CTRL, "RenameBoard", sessionId, oldName, newName);
+}
+
 // --- Changelog ---
 
 const CHANGELOG_CTRL = "changelogController";

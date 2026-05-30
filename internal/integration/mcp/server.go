@@ -922,6 +922,7 @@ Example flow: run_job("health-check") → get_pipeline_status(runId) shows:
 			mcp.WithString("parentId", mcp.Description("Id of the parent node to nest under. Omit or empty for a root node.")),
 			mcp.WithString("status", mcp.Description("Node status: planned | in_progress | done | blocked. Defaults to planned."), mcp.Enum("planned", "in_progress", "done", "blocked")),
 			mcp.WithString("note", mcp.Description("Short note for a decision or detail, shown on the node.")),
+			mcp.WithString("color", mcp.Description("Hex color like #10B981 for a note/node; omit to use the theme default.")),
 			mcp.WithNumber("progress", mcp.Description("Progress 0-100 to show a progress bar. Omit for no bar.")),
 			mcp.WithString("kind", mcp.Description("Node kind: node | note. Defaults to node. Use note for a free-floating sticky."), mcp.Enum("node", "note")),
 			mcp.WithString("text", mcp.Description("Sticky body text (for kind=note).")),
@@ -1637,6 +1638,7 @@ func mindmapNodeToMap(n *entity.MindmapNode) map[string]any {
 		"text":     n.Text,
 		"status":   n.Status,
 		"note":     n.Note,
+		"color":    n.Color,
 		"progress": n.Progress,
 		"board":    n.Board,
 	}
@@ -1675,6 +1677,7 @@ func (s *QuantMCPServer) handleMindmapSetNode(ctx context.Context, request mcp.C
 		Text:     stringArg(args, "text"),
 		Status:   stringArg(args, "status"),
 		Note:     stringArg(args, "note"),
+		Color:    stringArg(args, "color"),
 		Progress: progress,
 	}
 

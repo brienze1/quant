@@ -381,6 +381,7 @@ export interface MindmapNode {
   note: string;
   progress: number;
   board: string;
+  color?: string;
 }
 
 // --- Changelog ---
