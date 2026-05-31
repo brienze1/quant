@@ -23,6 +23,12 @@ import (
 // DefaultPort is the preferred MCP server port.
 const DefaultPort = 52945
 
+// ctxKey is a private type for context keys set by this package, avoiding collisions.
+type ctxKey string
+
+// sessionCtxKey holds the session id extracted from the X-Quant-Session request header.
+const sessionCtxKey ctxKey = "quant-session"
+
 // QuantMCPServer wraps an MCP server that exposes job, agent, session, workspace, and repo management tools.
 type QuantMCPServer struct {
 	jobManager       appAdapter.JobManager
@@ -31,6 +37,7 @@ type QuantMCPServer struct {
 	workspaceManager appAdapter.WorkspaceManager
 	repoManager      appAdapter.RepoManager
 	jobGroupManager  appAdapter.JobGroupManager
+	mindmapManager   appAdapter.MindmapManager
 	httpServer       *http.Server
 	listener         net.Listener
 	port             int
@@ -38,7 +45,7 @@ type QuantMCPServer struct {
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
 // It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager) *QuantMCPServer {
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
 	s := &QuantMCPServer{
@@ -48,11 +55,16 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 		workspaceManager: workspaceManager,
 		repoManager:      repoManager,
 		jobGroupManager:  jobGroupManager,
+		mindmapManager:   mindmapManager,
 	}
 
 	s.registerTools(mcpServer)
 
-	streamable := server.NewStreamableHTTPServer(mcpServer)
+	// Extract the per-session id from the X-Quant-Session header into the request
+	// context so mindmap tools can scope their writes to the calling session.
+	streamable := server.NewStreamableHTTPServer(mcpServer, server.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
+		return context.WithValue(ctx, sessionCtxKey, r.Header.Get("X-Quant-Session"))
+	}))
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", streamable)
@@ -899,6 +911,57 @@ Example flow: run_job("health-check") → get_pipeline_status(runId) shows:
 		),
 		s.handleGetPipelineStatus,
 	)
+
+	// ---------------------------------------------------------------------------
+	// Mindmap tools — draw a live mindmap the user watches as you work.
+	// ---------------------------------------------------------------------------
+
+	// mindmap_set_node
+	mcpServer.AddTool(
+		mcp.NewTool("mindmap_set_node",
+			mcp.WithDescription(`Draw/update one node on the live mindmap the user is watching for THIS session. Call this throughout a task to show what you are building: add a node per component or step, set status as you progress (planned -> in_progress -> done/blocked), attach a short note for decisions, and set progress 0-100. The user sees it update live. Reuse the same id to update an existing node; set parentId to nest a node under another. Use kind="note" for a free-floating sticky whose body is in text. Use the optional 'board' to keep separate maps per topic/workstream; omit for the default board.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Stable node id. Reuse the same id to update the node; pick a short slug like \"auth\" or \"step-1\".")),
+			mcp.WithString("label", mcp.Description("Short title shown on the node (for kind=node).")),
+			mcp.WithString("parentId", mcp.Description("Id of the parent node to nest under. Omit or empty for a root node.")),
+			mcp.WithString("status", mcp.Description("Node status: planned | in_progress | done | blocked. Defaults to planned."), mcp.Enum("planned", "in_progress", "done", "blocked")),
+			mcp.WithString("note", mcp.Description("Short note for a decision or detail, shown on the node.")),
+			mcp.WithString("color", mcp.Description("Hex color like #10B981 for a note/node; omit to use the theme default.")),
+			mcp.WithNumber("progress", mcp.Description("Progress 0-100 to show a progress bar. Omit for no bar.")),
+			mcp.WithString("kind", mcp.Description("Node kind: node | note. Defaults to node. Use note for a free-floating sticky."), mcp.Enum("node", "note")),
+			mcp.WithString("text", mcp.Description("Sticky body text (for kind=note).")),
+			mcp.WithString("board", mcp.Description("Named board to draw on. Use a board per topic/workstream to keep separate maps. Omit for the default board.")),
+		),
+		s.handleMindmapSetNode,
+	)
+
+	// mindmap_remove_node
+	mcpServer.AddTool(
+		mcp.NewTool("mindmap_remove_node",
+			mcp.WithDescription(`Remove a node from the live mindmap for THIS session. Set subtree=true to also remove all of the node's descendants. The user sees the mindmap update live. Use the optional 'board' to target a specific board; omit for the default board.`),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Id of the node to remove.")),
+			mcp.WithBoolean("subtree", mcp.Description("If true, also remove all descendant nodes. Defaults to false.")),
+			mcp.WithString("board", mcp.Description("Named board to remove from. Omit for the default board.")),
+		),
+		s.handleMindmapRemoveNode,
+	)
+
+	// mindmap_clear
+	mcpServer.AddTool(
+		mcp.NewTool("mindmap_clear",
+			mcp.WithDescription(`Clear the entire live mindmap for THIS session, removing all nodes. Use when starting a fresh plan. Use the optional 'board' to clear a specific board; omit for the default board.`),
+			mcp.WithString("board", mcp.Description("Named board to clear. Omit for the default board.")),
+		),
+		s.handleMindmapClear,
+	)
+
+	// mindmap_get
+	mcpServer.AddTool(
+		mcp.NewTool("mindmap_get",
+			mcp.WithDescription(`Get all nodes currently on the live mindmap for THIS session. Use to read back the plan before updating it. Use the optional 'board' to read a specific board; omit for the default board.`),
+			mcp.WithString("board", mcp.Description("Named board to read. Omit for the default board.")),
+		),
+		s.handleMindmapGet,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -1561,6 +1624,129 @@ func (s *QuantMCPServer) handleGetPipelineStatus(_ context.Context, request mcp.
 	}
 
 	return marshalResult(steps)
+}
+
+// ---------------------------------------------------------------------------
+// Mindmap handlers
+// ---------------------------------------------------------------------------
+
+// scopeFromCtx resolves the mindmap scope for the calling request. If the
+// X-Quant-Session header was set, the mindmap is scoped to that session.
+// Otherwise it falls back to the current workspace, then to a "default" scope.
+func (s *QuantMCPServer) scopeFromCtx(ctx context.Context) (scopeType, scopeID string) {
+	if sid, ok := ctx.Value(sessionCtxKey).(string); ok && sid != "" {
+		return "session", sid
+	}
+	if s.workspaceManager != nil {
+		if ws, err := s.workspaceManager.GetCurrentWorkspace(); err == nil && ws != nil && ws.ID != "" {
+			return "workspace", ws.ID
+		}
+	}
+	return "workspace", "default"
+}
+
+// mindmapNodeToMap maps a MindmapNode to the camelCase frontend JSON shape.
+func mindmapNodeToMap(n *entity.MindmapNode) map[string]any {
+	return map[string]any{
+		"id":       n.ID,
+		"parentId": n.ParentID,
+		"kind":     n.Kind,
+		"label":    n.Label,
+		"text":     n.Text,
+		"status":   n.Status,
+		"note":     n.Note,
+		"color":    n.Color,
+		"progress": n.Progress,
+		"board":    n.Board,
+	}
+}
+
+// mindmapBoardArg reads the optional board argument, defaulting to "default".
+func mindmapBoardArg(args map[string]any) string {
+	board := stringArg(args, "board")
+	if board == "" {
+		board = "default"
+	}
+	return board
+}
+
+func (s *QuantMCPServer) handleMindmapSetNode(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := request.GetArguments()
+	scopeType, scopeID := s.scopeFromCtx(ctx)
+	board := mindmapBoardArg(args)
+
+	// Default progress to -1 (no progress bar) unless the caller provided one.
+	progress := -1
+	if v, ok := args["progress"]; ok && v != nil {
+		progress = toInt(v)
+	}
+
+	node := entity.MindmapNode{
+		ID:       id,
+		ParentID: stringArg(args, "parentId"),
+		Kind:     stringArg(args, "kind"),
+		Label:    stringArg(args, "label"),
+		Text:     stringArg(args, "text"),
+		Status:   stringArg(args, "status"),
+		Note:     stringArg(args, "note"),
+		Color:    stringArg(args, "color"),
+		Progress: progress,
+	}
+
+	saved, err := s.mindmapManager.SetNode(scopeType, scopeID, board, node)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(mindmapNodeToMap(&saved))
+}
+
+func (s *QuantMCPServer) handleMindmapRemoveNode(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := requiredString(request, "id")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := request.GetArguments()
+	scopeType, scopeID := s.scopeFromCtx(ctx)
+	board := mindmapBoardArg(args)
+	subtree := boolArg(args, "subtree")
+
+	if err := s.mindmapManager.RemoveNode(scopeType, scopeID, board, id, subtree); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{"removed": id, "subtree": subtree, "board": board})
+}
+
+func (s *QuantMCPServer) handleMindmapClear(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	scopeType, scopeID := s.scopeFromCtx(ctx)
+	board := mindmapBoardArg(request.GetArguments())
+
+	if err := s.mindmapManager.ClearMindmap(scopeType, scopeID, board); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{"cleared": true, "board": board})
+}
+
+func (s *QuantMCPServer) handleMindmapGet(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	scopeType, scopeID := s.scopeFromCtx(ctx)
+	board := mindmapBoardArg(request.GetArguments())
+
+	nodes, _ := s.mindmapManager.GetMindmap(scopeType, scopeID, board)
+
+	result := make([]map[string]any, 0, len(nodes))
+	for i := range nodes {
+		result = append(result, mindmapNodeToMap(&nodes[i]))
+	}
+
+	return marshalResult(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -2534,16 +2720,16 @@ func runToMap(run *entity.JobRun) map[string]any {
 		return nil
 	}
 	m := map[string]any{
-		"id":           run.ID,
-		"jobId":        run.JobID,
-		"status":       run.Status,
-		"triggeredBy":   run.TriggeredBy,
-		"correlationId": run.CorrelationID,
-		"sessionId":    run.SessionID,
-		"modelUsed":    run.ModelUsed,
-		"durationMs":   run.DurationMs,
-		"tokensUsed":   run.TokensUsed,
-		"result":       run.Result,
+		"id":              run.ID,
+		"jobId":           run.JobID,
+		"status":          run.Status,
+		"triggeredBy":     run.TriggeredBy,
+		"correlationId":   run.CorrelationID,
+		"sessionId":       run.SessionID,
+		"modelUsed":       run.ModelUsed,
+		"durationMs":      run.DurationMs,
+		"tokensUsed":      run.TokensUsed,
+		"result":          run.Result,
 		"errorMessage":    run.ErrorMessage,
 		"injectedContext": run.InjectedContext,
 		"startedAt":       run.StartedAt,

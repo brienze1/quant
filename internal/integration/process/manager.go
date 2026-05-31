@@ -218,6 +218,9 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 	if noFlicker {
 		baseEnv = append(baseEnv, "CLAUDE_CODE_NO_FLICKER=1")
 	}
+	// Carry the session id so the child claude process can scope its mindmap
+	// MCP calls (the quant MCP server reads this via the X-Quant-Session header).
+	baseEnv = append(baseEnv, fmt.Sprintf("QUANT_SESSION_ID=%s", sessionID))
 	cmd.Env = baseEnv
 
 	ptm, err := pty.Start(cmd)

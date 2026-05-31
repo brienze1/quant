@@ -1,6 +1,17 @@
 {
   "entries": [
     {
+      "version": "v3.1.24",
+      "date": "2026-05-31",
+      "changes": {
+        "features": [
+          "live per-session mindmap pane the agent and user can draw on — nodes with status/notes/progress plus sticky notes, beside the terminal",
+          "named mindmap boards listed under each session in the sidebar; click to open, drag a board onto another session to move it",
+          "rename a mindmap board and pick per-node colors"
+        ]
+      }
+    },
+    {
       "version": "v3.1.22",
       "date": "2026-05-29",
       "changes": {

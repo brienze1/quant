@@ -130,6 +130,11 @@ func injectQuantMCP(port int) {
 	mcpServers["quant"] = map[string]interface{}{
 		"type": "http",
 		"url":  fmt.Sprintf("http://localhost:%d/mcp", port),
+		// Claude Code expands ${QUANT_SESSION_ID} per session from the spawned
+		// process env, so each session's mindmap MCP calls are scoped to it.
+		"headers": map[string]interface{}{
+			"X-Quant-Session": "${QUANT_SESSION_ID}",
+		},
 	}
 	config["mcpServers"] = mcpServers
 	out, err := json.MarshalIndent(config, "", "  ")
@@ -214,11 +219,12 @@ func Run(assets embed.FS, changelogData []byte) error {
 	agentCtrl := injector.AgentController()
 	workspaceCtrl := injector.WorkspaceController()
 	jobGroupCtrl := injector.JobGroupController()
+	mindmapCtrl := injector.MindmapController()
 	changelogCtrl := injector.ChangelogController()
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
-	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager())
+	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager())
 	mcpPort := mcpServer.Port()
 	fmt.Printf("[quant] MCP server on port %d → http://localhost:%d/mcp\n", mcpPort, mcpPort)
 	if mcpPort != quantmcp.DefaultPort {
@@ -250,6 +256,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 10, A: 1},
 		OnStartup: func(ctx context.Context) {
 			processManager.SetContext(ctx)
+			injector.EventEmitter().SetContext(ctx)
 			sessionCtrl.OnStartup(ctx)
 			repoCtrl.OnStartup(ctx)
 			taskCtrl.OnStartup(ctx)
@@ -259,6 +266,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			agentCtrl.OnStartup(ctx)
 			workspaceCtrl.OnStartup(ctx)
 			jobGroupCtrl.OnStartup(ctx)
+			mindmapCtrl.OnStartup(ctx)
 			changelogCtrl.OnStartup(ctx)
 		},
 		OnShutdown: func(ctx context.Context) {
@@ -271,6 +279,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			agentCtrl.OnShutdown(ctx)
 			workspaceCtrl.OnShutdown(ctx)
 			jobGroupCtrl.OnShutdown(ctx)
+			mindmapCtrl.OnShutdown(ctx)
 			changelogCtrl.OnShutdown(ctx)
 			jobScheduler.Stop()
 			_ = mcpServer.Stop()
@@ -288,6 +297,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			agentCtrl,
 			workspaceCtrl,
 			jobGroupCtrl,
+			mindmapCtrl,
 			changelogCtrl,
 		},
 	})

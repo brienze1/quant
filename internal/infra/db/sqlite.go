@@ -252,6 +252,47 @@ func runMigrations(db *sql.DB) error {
 		return fmt.Errorf("failed to create job_group_members table: %w", err)
 	}
 
+	mindmapNodesTable := `
+	CREATE TABLE IF NOT EXISTS mindmap_nodes (
+		id TEXT NOT NULL,
+		scope_type TEXT NOT NULL,
+		scope_id TEXT NOT NULL,
+		board TEXT NOT NULL DEFAULT 'default',
+		parent_id TEXT DEFAULT '',
+		kind TEXT NOT NULL DEFAULT 'node',
+		label TEXT NOT NULL DEFAULT '',
+		text TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'planned',
+		note TEXT NOT NULL DEFAULT '',
+		color TEXT NOT NULL DEFAULT '',
+		progress INTEGER DEFAULT -1,
+		sort_order INTEGER DEFAULT 0,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		PRIMARY KEY (scope_type, scope_id, board, id)
+	);`
+
+	_, err = db.Exec(mindmapNodesTable)
+	if err != nil {
+		return fmt.Errorf("failed to create mindmap_nodes table: %w", err)
+	}
+
+	// Migrate existing mindmap_nodes tables that predate the board dimension.
+	// SQLite cannot ALTER a primary key, so rebuild the table when the board
+	// column is absent, preserving existing rows under the 'default' board.
+	if err := migrateMindmapNodesBoard(db); err != nil {
+		// Keep startup resilient: log and continue.
+		fmt.Printf("warning: mindmap_nodes board migration failed: %v\n", err)
+	}
+
+	// Add the per-node color column when absent. color is not part of the PK so a
+	// plain ADD COLUMN is correct (no table rebuild). Runs after the board
+	// migration so the rebuilt table is in place before we inspect it.
+	if err := migrateMindmapNodesColor(db); err != nil {
+		// Keep startup resilient: log and continue.
+		fmt.Printf("warning: mindmap_nodes color migration failed: %v\n", err)
+	}
+
 	// Ensure the "Default" workspace always exists.
 	var defaultCount int
 	_ = db.QueryRow(`SELECT COUNT(*) FROM workspaces WHERE name = 'Default'`).Scan(&defaultCount)
@@ -305,5 +346,131 @@ func runMigrations(db *sql.DB) error {
 		_, _ = db.Exec(stmt)
 	}
 
+	return nil
+}
+
+// migrateMindmapNodesBoard upgrades a pre-board mindmap_nodes table to include
+// the board column in its primary key, without losing data. It is a no-op when
+// the board column already exists (fresh installs, or already-migrated DBs).
+func migrateMindmapNodesBoard(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(mindmap_nodes)`)
+	if err != nil {
+		return fmt.Errorf("failed to read mindmap_nodes table info: %w", err)
+	}
+	defer rows.Close()
+
+	hasTable := false
+	hasBoard := false
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			typ     string
+			notNull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return fmt.Errorf("failed to scan mindmap_nodes column info: %w", err)
+		}
+		hasTable = true
+		if name == "board" {
+			hasBoard = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate mindmap_nodes column info: %w", err)
+	}
+
+	// Nothing to do: either the table doesn't exist yet (CREATE handled it with
+	// the new schema) or it already has the board column.
+	if !hasTable || hasBoard {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin mindmap_nodes migration tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmts := []string{
+		`CREATE TABLE mindmap_nodes_new (
+			id TEXT NOT NULL,
+			scope_type TEXT NOT NULL,
+			scope_id TEXT NOT NULL,
+			board TEXT NOT NULL DEFAULT 'default',
+			parent_id TEXT DEFAULT '',
+			kind TEXT NOT NULL DEFAULT 'node',
+			label TEXT NOT NULL DEFAULT '',
+			text TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'planned',
+			note TEXT NOT NULL DEFAULT '',
+			color TEXT NOT NULL DEFAULT '',
+			progress INTEGER DEFAULT -1,
+			sort_order INTEGER DEFAULT 0,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (scope_type, scope_id, board, id)
+		)`,
+		`INSERT INTO mindmap_nodes_new (id, scope_type, scope_id, board, parent_id, kind, label, text, status, note, color, progress, sort_order, created_at, updated_at)
+			SELECT id, scope_type, scope_id, 'default', parent_id, kind, label, text, status, note, '', progress, sort_order, created_at, updated_at FROM mindmap_nodes`,
+		`DROP TABLE mindmap_nodes`,
+		`ALTER TABLE mindmap_nodes_new RENAME TO mindmap_nodes`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("failed to rebuild mindmap_nodes for board migration: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit mindmap_nodes migration: %w", err)
+	}
+	return nil
+}
+
+// migrateMindmapNodesColor adds the per-node color column when it is absent. It
+// is a no-op when the column already exists (fresh installs, or already-migrated
+// DBs). color is not part of the primary key, so a plain ADD COLUMN suffices.
+func migrateMindmapNodesColor(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(mindmap_nodes)`)
+	if err != nil {
+		return fmt.Errorf("failed to read mindmap_nodes table info: %w", err)
+	}
+	defer rows.Close()
+
+	hasTable := false
+	hasColor := false
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			typ     string
+			notNull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return fmt.Errorf("failed to scan mindmap_nodes column info: %w", err)
+		}
+		hasTable = true
+		if name == "color" {
+			hasColor = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate mindmap_nodes column info: %w", err)
+	}
+
+	// Nothing to do: either the table doesn't exist yet (CREATE handled it with
+	// the new schema) or it already has the color column.
+	if !hasTable || hasColor {
+		return nil
+	}
+
+	if _, err := db.Exec(`ALTER TABLE mindmap_nodes ADD COLUMN color TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("failed to add mindmap_nodes color column: %w", err)
+	}
 	return nil
 }

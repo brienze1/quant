@@ -241,6 +241,8 @@ export namespace dto {
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
+	    inputs: entity.JobInputSpec[];
+	    outputs: entity.JobOutputSpec[];
 	    onSuccess: string[];
 	    onFailure: string[];
 	    workspaceId: string;
@@ -275,10 +277,30 @@ export namespace dto {
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
+	        this.inputs = this.convertValues(source["inputs"], entity.JobInputSpec);
+	        this.outputs = this.convertValues(source["outputs"], entity.JobOutputSpec);
 	        this.onSuccess = source["onSuccess"];
 	        this.onFailure = source["onFailure"];
 	        this.workspaceId = source["workspaceId"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class CreateRepoRequest {
 	    name: string;
@@ -444,6 +466,8 @@ export namespace dto {
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
+	    inputs: entity.JobInputSpec[];
+	    outputs: entity.JobOutputSpec[];
 	    workspaceId: string;
 	    createdAt: string;
 	    updatedAt: string;
@@ -482,6 +506,8 @@ export namespace dto {
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
+	        this.inputs = this.convertValues(source["inputs"], entity.JobInputSpec);
+	        this.outputs = this.convertValues(source["outputs"], entity.JobOutputSpec);
 	        this.workspaceId = source["workspaceId"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
@@ -521,6 +547,8 @@ export namespace dto {
 	    result: string;
 	    errorMessage: string;
 	    injectedContext: string;
+	    metadata: Record<string, any>;
+	    validationError: string;
 	    startedAt: string;
 	    finishedAt: string;
 	
@@ -542,8 +570,70 @@ export namespace dto {
 	        this.result = source["result"];
 	        this.errorMessage = source["errorMessage"];
 	        this.injectedContext = source["injectedContext"];
+	        this.metadata = source["metadata"];
+	        this.validationError = source["validationError"];
 	        this.startedAt = source["startedAt"];
 	        this.finishedAt = source["finishedAt"];
+	    }
+	}
+	export class MindmapNodeRequest {
+	    id: string;
+	    parentId: string;
+	    kind: string;
+	    label: string;
+	    text: string;
+	    status: string;
+	    note: string;
+	    color: string;
+	    progress: number;
+	    board: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MindmapNodeRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.parentId = source["parentId"];
+	        this.kind = source["kind"];
+	        this.label = source["label"];
+	        this.text = source["text"];
+	        this.status = source["status"];
+	        this.note = source["note"];
+	        this.color = source["color"];
+	        this.progress = source["progress"];
+	        this.board = source["board"];
+	    }
+	}
+	export class MindmapNodeResponse {
+	    id: string;
+	    parentId: string;
+	    kind: string;
+	    label: string;
+	    text: string;
+	    status: string;
+	    note: string;
+	    color: string;
+	    progress: number;
+	    board: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MindmapNodeResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.parentId = source["parentId"];
+	        this.kind = source["kind"];
+	        this.label = source["label"];
+	        this.text = source["text"];
+	        this.status = source["status"];
+	        this.note = source["note"];
+	        this.color = source["color"];
+	        this.progress = source["progress"];
+	        this.board = source["board"];
 	    }
 	}
 	export class PathValidationResult {
@@ -846,6 +936,8 @@ export namespace dto {
 	    interpreter: string;
 	    scriptContent: string;
 	    envVariables: Record<string, string>;
+	    inputs: entity.JobInputSpec[];
+	    outputs: entity.JobOutputSpec[];
 	    onSuccess: string[];
 	    onFailure: string[];
 	    workspaceId: string;
@@ -881,10 +973,30 @@ export namespace dto {
 	        this.interpreter = source["interpreter"];
 	        this.scriptContent = source["scriptContent"];
 	        this.envVariables = source["envVariables"];
+	        this.inputs = this.convertValues(source["inputs"], entity.JobInputSpec);
+	        this.outputs = this.convertValues(source["outputs"], entity.JobOutputSpec);
 	        this.onSuccess = source["onSuccess"];
 	        this.onFailure = source["onFailure"];
 	        this.workspaceId = source["workspaceId"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class UpdateWorkspaceRequest {
 	    id: string;
@@ -976,6 +1088,39 @@ export namespace entity {
 		    }
 		    return a;
 		}
+	}
+	
+	export class JobInputSpec {
+	    key: string;
+	    type: string;
+	    required: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new JobInputSpec(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.type = source["type"];
+	        this.required = source["required"];
+	    }
+	}
+	export class JobOutputSpec {
+	    key: string;
+	    type: string;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new JobOutputSpec(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.type = source["type"];
+	        this.source = source["source"];
+	    }
 	}
 
 }
