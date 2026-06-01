@@ -34,6 +34,7 @@ interface SidebarProps {
   onRemoveRepo: (repoId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onStopSession?: (sessionId: string) => void;
   onArchiveSession: (sessionId: string) => void;
   onUnarchiveSession: (sessionId: string) => void;
   onArchiveTask: (taskId: string) => void;
@@ -127,6 +128,7 @@ export function Sidebar({
   onRemoveRepo,
   onDeleteTask,
   onDeleteSession,
+  onStopSession,
   onArchiveSession,
   onUnarchiveSession,
   onArchiveTask,
@@ -342,6 +344,19 @@ export function Sidebar({
     ];
 
     if (!isArchived) {
+      // Stop (terminate) the running session — the menu equivalent of the
+      // Meta+Shift+W shortcut, which a browser intercepts and never delivers.
+      if (displaySt === "running" && onStopSession) {
+        items.push({
+          type: "item",
+          icon: "■",
+          iconColor: "var(--q-error)",
+          label: "stop session",
+          labelColor: "var(--q-error)",
+          onClick: () => onStopSession(session.id),
+        });
+        items.push({ type: "separator" });
+      }
       items.push({
         type: "item",
         icon: "$",

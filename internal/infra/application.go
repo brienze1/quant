@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,8 +18,10 @@ import (
 
 	"quant/internal/infra/db"
 	"quant/internal/infra/dependency"
+	"quant/internal/integration/entrypoint/controller"
 	quantmcp "quant/internal/integration/mcp"
 	"quant/internal/integration/persistence"
+	"quant/internal/integration/remote"
 )
 
 // discoverClaudeConfigDirs finds all Claude config directories.
@@ -246,6 +249,29 @@ func Run(assets embed.FS, changelogData []byte) error {
 	jobScheduler := injector.JobScheduler()
 	jobScheduler.Start()
 
+	// Remote access: optional browser transport behind a Cloudflare quick tunnel.
+	// Off by default; the same bound controllers are reused over HTTP/WS so the
+	// React app runs unmodified in a browser via the injected window.go shim.
+	assetsSub, _ := fs.Sub(assets, "frontend/dist")
+	remoteControllers := map[string]interface{}{
+		"sessionController":   sessionCtrl,
+		"repoController":      repoCtrl,
+		"taskController":      taskCtrl,
+		"actionController":    actionCtrl,
+		"configController":    configCtrl,
+		"jobController":       jobCtrl,
+		"agentController":     agentCtrl,
+		"workspaceController": workspaceCtrl,
+		"jobGroupController":  jobGroupCtrl,
+		"mindmapController":   mindmapCtrl,
+		"changelogController": changelogCtrl,
+	}
+	remoteManager := remote.NewManager(assetsSub, remoteControllers, injector.ConfigPersistence())
+	remoteCtrl := controller.NewRemoteController(remoteManager)
+	// remoteController is intentionally NOT added to remoteControllers: tunnel
+	// control (enable/disable, passcode regen) must not be reachable through the
+	// tunnel itself. It is bound to Wails below for the desktop UI only.
+
 	err = wails.Run(&options.App{
 		Title:  ">_ quant",
 		Width:  1440,
@@ -268,6 +294,11 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl.OnStartup(ctx)
 			mindmapCtrl.OnStartup(ctx)
 			changelogCtrl.OnStartup(ctx)
+			remoteCtrl.OnStartup(ctx)
+			// Auto-resume remote access if it was enabled before the last shutdown.
+			// Runs after controllers have their context set, since RPC dispatch
+			// invokes those same controller methods.
+			remoteManager.StartIfEnabled()
 		},
 		OnShutdown: func(ctx context.Context) {
 			sessionCtrl.OnShutdown(ctx)
@@ -281,6 +312,8 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl.OnShutdown(ctx)
 			mindmapCtrl.OnShutdown(ctx)
 			changelogCtrl.OnShutdown(ctx)
+			remoteCtrl.OnShutdown(ctx)
+			remoteManager.Stop()
 			jobScheduler.Stop()
 			_ = mcpServer.Stop()
 			if os.Getenv("QUANT_SKIP_MCP_INJECT") != "1" {
@@ -299,6 +332,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl,
 			mindmapCtrl,
 			changelogCtrl,
+			remoteCtrl,
 		},
 	})
 	if err != nil {

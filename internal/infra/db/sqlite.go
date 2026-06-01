@@ -8,18 +8,16 @@ import (
 	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"quant/internal/infra/paths"
 )
 
 // NewSQLiteConnection creates and returns a new SQLite database connection.
-// The database file is stored in the user's home directory under .quant/.
+// The database file is stored under the quant home directory (honors
+// QUANT_HOME so tests / isolated instances can redirect off ~/.quant).
 func NewSQLiteConnection() (*sql.DB, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	dbDir := filepath.Join(homeDir, ".quant")
-	err = os.MkdirAll(dbDir, 0755)
+	dbDir := paths.QuantHome()
+	err := os.MkdirAll(dbDir, 0755)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}

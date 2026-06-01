@@ -1,6 +1,16 @@
 {
   "entries": [
     {
+      "version": "v3.1.25",
+      "date": "2026-06-01",
+      "changes": {
+        "features": [
+          "remote access: reach quant from any browser, anywhere, via a Cloudflare quick tunnel guarded by a generated passcode — toggle it in Settings → remote access (off by default)",
+          "stop a running session straight from its right-click menu in the sidebar (also covers the Cmd+Shift+W action, which a browser can't intercept)"
+        ]
+      }
+    },
+    {
       "version": "v3.1.24",
       "date": "2026-05-31",
       "changes": {

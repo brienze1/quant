@@ -12,12 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"quant/internal/application/adapter"
 	"quant/internal/domain/entity"
 	intadapter "quant/internal/integration/adapter"
 	"quant/internal/integration/entrypoint/dto"
+	"quant/internal/integration/remote"
 )
 
 // sessionController implements the integration adapter.SessionController interface.
@@ -328,7 +327,7 @@ func (c *sessionController) QuantiChat(convID string, message string, model stri
 			if subtype, _ := event["subtype"].(string); subtype == "init" {
 				if sessionID, ok := event["session_id"].(string); ok && sessionID != "" {
 					if c.ctx != nil {
-						wailsRuntime.EventsEmit(c.ctx, "quanti:session", sessionID)
+						remote.Emit(c.ctx, "quanti:session", sessionID)
 					}
 				}
 			}
@@ -350,7 +349,7 @@ func (c *sessionController) QuantiChat(convID string, message string, model stri
 					if text != "" {
 						fullResponse.WriteString(text)
 						if c.ctx != nil {
-							wailsRuntime.EventsEmit(c.ctx, "quanti:token", text)
+							remote.Emit(c.ctx, "quanti:token", text)
 						}
 					}
 				}
@@ -361,7 +360,7 @@ func (c *sessionController) QuantiChat(convID string, message string, model stri
 			if result, ok := event["result"].(string); ok && fullResponse.Len() == 0 {
 				fullResponse.WriteString(result)
 				if c.ctx != nil {
-					wailsRuntime.EventsEmit(c.ctx, "quanti:token", result)
+					remote.Emit(c.ctx, "quanti:token", result)
 				}
 			}
 		}
@@ -374,13 +373,13 @@ func (c *sessionController) QuantiChat(convID string, message string, model stri
 		}
 		// Still emit done event even on error
 		if c.ctx != nil {
-			wailsRuntime.EventsEmit(c.ctx, "quanti:done", nil)
+			remote.Emit(c.ctx, "quanti:done", nil)
 		}
 		return "", fmt.Errorf("claude failed: %s", errText)
 	}
 
 	if c.ctx != nil {
-		wailsRuntime.EventsEmit(c.ctx, "quanti:done", nil)
+		remote.Emit(c.ctx, "quanti:done", nil)
 	}
 
 	return strings.TrimSpace(fullResponse.String()), nil
