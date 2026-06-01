@@ -58,6 +58,11 @@ type SaveConfigRequest struct {
 	AssistantModel   string            `json:"assistantModel"`
 	EnvVariables     map[string]string `json:"envVariables"`
 	CommandOverrides map[string]string `json:"commandOverrides"`
+
+	// Remote Access
+	RemoteAccessEnabled  bool   `json:"remoteAccessEnabled"`
+	RemoteAccessPort     int    `json:"remoteAccessPort"`
+	RemoteAccessPasscode string `json:"remoteAccessPasscode"`
 }
 
 // ConfigResponse represents the response payload for configuration data.
@@ -107,6 +112,11 @@ type ConfigResponse struct {
 	AssistantModel   string            `json:"assistantModel"`
 	EnvVariables     map[string]string `json:"envVariables"`
 	CommandOverrides map[string]string `json:"commandOverrides"`
+
+	// Remote Access
+	RemoteAccessEnabled  bool   `json:"remoteAccessEnabled"`
+	RemoteAccessPort     int    `json:"remoteAccessPort"`
+	RemoteAccessPasscode string `json:"remoteAccessPasscode"`
 }
 
 // ConfigResponseFromEntity converts a domain entity to a ConfigResponse DTO.
@@ -150,6 +160,9 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		AssistantModel:        cfg.AssistantModel,
 		EnvVariables:          cfg.EnvVariables,
 		CommandOverrides:      cfg.CommandOverrides,
+		RemoteAccessEnabled:   cfg.RemoteAccessEnabled,
+		RemoteAccessPort:      cfg.RemoteAccessPort,
+		RemoteAccessPasscode:  cfg.RemoteAccessPasscode,
 	}
 }
 
@@ -219,5 +232,8 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		AssistantModel:        r.AssistantModel,
 		EnvVariables:          envVariables,
 		CommandOverrides:      commandOverrides,
+		RemoteAccessEnabled:   r.RemoteAccessEnabled,
+		RemoteAccessPort:      r.RemoteAccessPort,
+		RemoteAccessPasscode:  r.RemoteAccessPasscode,
 	}
 }

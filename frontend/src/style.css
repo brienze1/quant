@@ -11,6 +11,20 @@
     color: var(--q-fg, #FAFAFA);
     font-family: 'JetBrains Mono', monospace;
   }
+
+  /* Touch/small screens (e.g. accessing quant remotely from a phone): the
+     desktop layout is taller/wider than the viewport, so release the fixed
+     viewport lock and allow scrolling. Scoped to coarse pointers so the
+     desktop webview is unaffected. Stopgap — the dashboard is not yet fully
+     responsive. */
+  @media (pointer: coarse) {
+    html, body, #root {
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      height: auto;
+      min-height: 100%;
+    }
+  }
 }
 
 

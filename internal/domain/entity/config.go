@@ -57,6 +57,12 @@ type Config struct {
 	AssistantModel   string            `json:"assistantModel"`
 	EnvVariables     map[string]string `json:"envVariables"`
 	CommandOverrides map[string]string `json:"commandOverrides"`
+
+	// Remote Access — expose the UI in a browser via a Cloudflare quick tunnel,
+	// guarded by a generated passcode. Off by default; see internal/integration/remote.
+	RemoteAccessEnabled  bool   `json:"remoteAccessEnabled"`
+	RemoteAccessPort     int    `json:"remoteAccessPort"`
+	RemoteAccessPasscode string `json:"remoteAccessPasscode"`
 }
 
 // NewDefaultConfig returns a Config populated with sensible default values.
@@ -108,5 +114,11 @@ func NewDefaultConfig() Config {
 		AssistantModel:   "claude-sonnet-4-6",
 		EnvVariables:     make(map[string]string),
 		CommandOverrides: make(map[string]string),
+
+		// Remote Access — disabled until the user opts in. Port 0 = auto-pick a
+		// free port; passcode is generated on first enable.
+		RemoteAccessEnabled:  false,
+		RemoteAccessPort:     0,
+		RemoteAccessPasscode: "",
 	}
 }

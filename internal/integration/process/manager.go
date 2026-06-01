@@ -12,9 +12,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/creack/pty"
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"quant/internal/integration/adapter"
+	"quant/internal/integration/remote"
 )
 
 // claudeProcess holds the running process and its PTY master.
@@ -292,7 +292,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 
 					// Send to frontend via Wails event.
 					if m.ctx != nil {
-						wailsRuntime.EventsEmit(m.ctx, "session:output", map[string]string{
+						remote.Emit(m.ctx, "session:output", map[string]string{
 							"sessionId": sessionID,
 							"data":      string(data),
 						})
@@ -326,7 +326,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 			newPid, err := m.Spawn(sessionID, sessionType, directory, repoPath, "", skipPermissions, model, extraCliArgs, rows, cols, noFlicker)
 			if err == nil && m.ctx != nil {
 				// Notify frontend of the new PID via a restart event.
-				wailsRuntime.EventsEmit(m.ctx, "session:restarted", map[string]interface{}{
+				remote.Emit(m.ctx, "session:restarted", map[string]interface{}{
 					"sessionId": sessionID,
 					"pid":       newPid,
 				})
@@ -336,7 +336,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 
 		// Notify frontend that the process exited.
 		if m.ctx != nil {
-			wailsRuntime.EventsEmit(m.ctx, "session:exited", map[string]string{
+			remote.Emit(m.ctx, "session:exited", map[string]string{
 				"sessionId": sessionID,
 			})
 		}
