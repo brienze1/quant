@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"quant/internal/domain/entity"
+	"quant/internal/infra/paths"
 	"quant/internal/integration/adapter"
 )
 
@@ -19,13 +20,10 @@ type configPersistence struct {
 // NewConfigPersistence creates a new JSON file config persistence implementation.
 // Returns the adapter.ConfigPersistence interface, not the concrete type.
 func NewConfigPersistence() adapter.ConfigPersistence {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir = "."
-	}
-
+	// Honor QUANT_HOME (via paths) so isolated instances / tests don't share the
+	// real ~/.quant/config.json — matching the database path resolution.
 	return &configPersistence{
-		filePath: filepath.Join(homeDir, ".quant", "config.json"),
+		filePath: filepath.Join(paths.QuantHome(), "config.json"),
 	}
 }
 

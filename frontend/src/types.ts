@@ -271,6 +271,24 @@ export interface Config {
   assistantModel: string;
   envVariables: Record<string, string>;
   commandOverrides: Record<string, string>;
+
+  // Remote Access
+  remoteAccessEnabled: boolean;
+  remoteAccessPort: number;
+  remoteAccessPasscode: string;
+}
+
+// --- Remote Access ---
+
+// RemoteStatus mirrors the Go remote.Status struct returned by remoteController.
+export interface RemoteStatus {
+  enabled: boolean;
+  url: string;
+  passcode: string;
+  port: number;
+  clients: number;
+  cloudflaredInstalled: boolean;
+  error: string;
 }
 
 // --- Agents ---

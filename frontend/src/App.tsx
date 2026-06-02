@@ -2062,6 +2062,7 @@ function App() {
         onRemoveRepo={handleRemoveRepo}
         onDeleteTask={handleDeleteTask}
         onDeleteSession={handleDelete}
+        onStopSession={handleStop}
         onArchiveSession={handleArchiveSession}
         onUnarchiveSession={handleUnarchiveSession}
         onArchiveTask={handleArchiveTask}

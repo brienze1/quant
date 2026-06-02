@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Config, Repo, Shortcut } from "../types";
+import type { Config, Repo, Shortcut, RemoteStatus } from "../types";
 import * as api from "../api";
 import { ThemeSettings } from "./ThemeSettings";
 import { KeybindingsTab } from "./KeybindingsTab";
 
-type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "quanti" | "themes" | "keybindings";
+type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "quanti" | "remote" | "themes" | "keybindings";
 
 const NAV_ITEMS: { key: SettingsTab; label: string; icon: string }[] = [
   { key: "general", label: "general", icon: "settings" },
@@ -16,6 +16,7 @@ const NAV_ITEMS: { key: SettingsTab; label: string; icon: string }[] = [
   { key: "terminal", label: "terminal", icon: "monitor" },
   { key: "claude", label: "claude cli", icon: "bot" },
   { key: "quanti", label: "quanti", icon: "message-square" },
+  { key: "remote", label: "remote access", icon: "globe" },
 ];
 
 const FONT_OPTIONS = ["JetBrains Mono", "Fira Code", "Source Code Pro", "Cascadia Code", "Menlo", "Monaco", "Consolas"];
@@ -28,6 +29,11 @@ interface Props {
 }
 
 const font = "'JetBrains Mono', monospace";
+
+// True when the app is served over the remote tunnel (browser), not the Wails
+// desktop webview. The remote-access controls are desktop-only.
+const isRemote = typeof window !== "undefined" && (window as { __quantRemote?: boolean }).__quantRemote === true;
+const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((n) => !(isRemote && n.key === "remote"));
 
 export function Settings({ repos, onBack }: Props) {
   const [tab, setTab] = useState<SettingsTab>("general");
@@ -99,7 +105,7 @@ export function Settings({ repos, onBack }: Props) {
 
         {/* Nav Items */}
         <div className="flex flex-col gap-0.5 py-3">
-          {NAV_ITEMS.map((item) => {
+          {VISIBLE_NAV_ITEMS.map((item) => {
             const active = tab === item.key;
             return (
               <button
@@ -166,6 +172,7 @@ export function Settings({ repos, onBack }: Props) {
           {tab === "terminal" && <TerminalTab config={config} update={update} />}
           {tab === "claude" && <ClaudeTab config={config} update={update} />}
           {tab === "quanti" && <QuantiTab config={config} update={update} />}
+          {tab === "remote" && <RemoteTab />}
         </div>
       </div>
     </div>
@@ -816,6 +823,197 @@ interface TabProps {
   update: <K extends keyof Config>(key: K, value: Config[K]) => void;
 }
 
+// --- Remote Access Tab ---
+
+const CLOUDFLARED_GUIDE = "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/";
+
+function RemoteTab() {
+  // Remote access is controlled from the desktop app only — its controller is
+  // deliberately not reachable over the tunnel. Show a friendly note instead of
+  // calling it (which would fail with "unknown controller").
+  if (isRemote) {
+    return (
+      <Section title="remote access" description="manage remote access from the quant desktop app">
+        <p style={{ color: "var(--q-fg-secondary)", fontSize: 12 }}>
+          you are connected remotely. enabling, disabling, and the passcode are managed from the
+          desktop app for security.
+        </p>
+      </Section>
+    );
+  }
+  return <RemoteTabControls />;
+}
+
+function RemoteTabControls() {
+  const [status, setStatus] = useState<RemoteStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await api.getRemoteAccessStatus());
+    } catch (err) {
+      setError(String(err));
+    }
+  }, []);
+
+  // Load once, then poll so the public URL (which arrives a moment after the
+  // tunnel starts) and the connected-client count stay current.
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 3000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  async function run(fn: () => Promise<RemoteStatus>) {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await fn());
+    } catch (err) {
+      setError(String(err));
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const enabled = status?.enabled ?? false;
+  const installed = status?.cloudflaredInstalled ?? true;
+
+  return (
+    <>
+      <Section
+        title="remote access"
+        description="expose this quant in a browser via a Cloudflare quick tunnel, guarded by a passcode. anyone with the URL and passcode can drive your sessions — treat the passcode like a password."
+      >
+        {!installed && (
+          <div
+            className="flex flex-col"
+            style={{ gap: 8, padding: 12, border: "1px solid var(--q-border)", backgroundColor: "var(--q-bg-input)", fontSize: 11, color: "var(--q-fg-secondary)" }}
+          >
+            <span style={{ color: "var(--q-fg)" }}>cloudflared is required and was not found.</span>
+            <span>install it, then re-check:</span>
+            <CodeLine text="brew install cloudflared" />
+            <CodeLine text="winget install --id Cloudflare.cloudflared" />
+            <a href={CLOUDFLARED_GUIDE} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+              installation guide →
+            </a>
+            <div>
+              <SmallButton label="re-check" onClick={() => run(() => api.getRemoteAccessStatus())} disabled={busy} />
+            </div>
+          </div>
+        )}
+
+        <SettingRow
+          label="enable remote access"
+          description={installed ? "start the local server and a public Cloudflare tunnel" : "install cloudflared first"}
+          right={
+            <Toggle
+              checked={enabled}
+              onChange={(v) => run(() => (v ? api.enableRemoteAccess() : api.disableRemoteAccess()))}
+            />
+          }
+        />
+
+        {enabled && (
+          <>
+            <SettingRow
+              label="public url"
+              description="open this anywhere; it changes each time you re-enable"
+              right={
+                status?.url ? (
+                  <div className="flex items-center gap-2">
+                    <a href={status.url} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)", fontSize: 12 }}>
+                      {status.url}
+                    </a>
+                    <CopyButton text={status.url} />
+                  </div>
+                ) : (
+                  <span style={{ color: "var(--q-fg-dimmed)", fontSize: 12 }}>starting tunnel…</span>
+                )
+              }
+            />
+            <SettingRow
+              label="passcode"
+              description="required to unlock the remote session"
+              right={
+                <div className="flex items-center gap-2">
+                  <span style={{ fontFamily: font, fontSize: 13, letterSpacing: 2, color: "var(--q-fg)" }}>
+                    {status?.passcode || "—"}
+                  </span>
+                  <CopyButton text={status?.passcode || ""} />
+                  <SmallButton label="regenerate" onClick={() => run(() => api.regenerateRemotePasscode())} disabled={busy} />
+                </div>
+              }
+            />
+            <SettingRow
+              label="connected clients"
+              description="active browser sessions"
+              right={<span style={{ color: "var(--q-fg)", fontSize: 12 }}>{status?.clients ?? 0}</span>}
+            />
+          </>
+        )}
+
+        {status?.error && enabled && (
+          <span style={{ color: "var(--q-error)", fontSize: 11 }}>{status.error}</span>
+        )}
+        {error && <span style={{ color: "var(--q-error)", fontSize: 11 }}>{error}</span>}
+      </Section>
+    </>
+  );
+}
+
+function CodeLine({ text }: { text: string }) {
+  return (
+    <div className="flex items-center justify-between" style={{ gap: 8, padding: "4px 8px", backgroundColor: "var(--q-bg)", border: "1px solid var(--q-border)" }}>
+      <code style={{ fontFamily: font, fontSize: 11, color: "var(--q-fg)" }}>{text}</code>
+      <CopyButton text={text} />
+    </div>
+  );
+}
+
+function SmallButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="px-2"
+      style={{
+        height: 26,
+        fontSize: 10,
+        color: disabled ? "var(--q-fg-dimmed)" : "var(--q-fg-secondary)",
+        border: "1px solid var(--q-border)",
+        backgroundColor: "transparent",
+        cursor: disabled ? "default" : "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function copyText(text: string) {
+  if (text && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  return (
+    <SmallButton
+      label={copied ? "✓ copied" : "copy"}
+      onClick={() => {
+        copyText(text);
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1500);
+      }}
+    />
+  );
+}
+
 // --- Reusable UI Components ---
 
 function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -1318,6 +1516,14 @@ function navIcon(name: string): React.ReactNode {
       return (
         <svg {...props}>
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      );
+    case "globe":
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="10" />
+          <line x1="2" y1="12" x2="22" y2="12" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
       );
     default:

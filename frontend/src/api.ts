@@ -25,6 +25,7 @@ import type {
   UpdateJobGroupRequest,
   PathValidationResult,
   MindmapNode,
+  RemoteStatus,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -508,4 +509,24 @@ export function getChangelog(): Promise<Changelog> {
 
 export function getVersion(): Promise<string> {
   return callGo(PKG, CHANGELOG_CTRL, "GetVersion");
+}
+
+// --- Remote Access ---
+
+const REMOTE_CTRL = "remoteController";
+
+export function getRemoteAccessStatus(): Promise<RemoteStatus> {
+  return callGo(PKG, REMOTE_CTRL, "GetRemoteAccessStatus");
+}
+
+export function enableRemoteAccess(): Promise<RemoteStatus> {
+  return callGo(PKG, REMOTE_CTRL, "EnableRemoteAccess");
+}
+
+export function disableRemoteAccess(): Promise<RemoteStatus> {
+  return callGo(PKG, REMOTE_CTRL, "DisableRemoteAccess");
+}
+
+export function regenerateRemotePasscode(): Promise<RemoteStatus> {
+  return callGo(PKG, REMOTE_CTRL, "RegenerateRemotePasscode");
 }

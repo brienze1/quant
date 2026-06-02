@@ -108,6 +108,9 @@ export namespace dto {
 	    assistantModel: string;
 	    envVariables: Record<string, string>;
 	    commandOverrides: Record<string, string>;
+	    remoteAccessEnabled: boolean;
+	    remoteAccessPort: number;
+	    remoteAccessPasscode: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConfigResponse(source);
@@ -150,6 +153,9 @@ export namespace dto {
 	        this.assistantModel = source["assistantModel"];
 	        this.envVariables = source["envVariables"];
 	        this.commandOverrides = source["commandOverrides"];
+	        this.remoteAccessEnabled = source["remoteAccessEnabled"];
+	        this.remoteAccessPort = source["remoteAccessPort"];
+	        this.remoteAccessPasscode = source["remoteAccessPasscode"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -716,6 +722,9 @@ export namespace dto {
 	    assistantModel: string;
 	    envVariables: Record<string, string>;
 	    commandOverrides: Record<string, string>;
+	    remoteAccessEnabled: boolean;
+	    remoteAccessPort: number;
+	    remoteAccessPasscode: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SaveConfigRequest(source);
@@ -758,6 +767,9 @@ export namespace dto {
 	        this.assistantModel = source["assistantModel"];
 	        this.envVariables = source["envVariables"];
 	        this.commandOverrides = source["commandOverrides"];
+	        this.remoteAccessEnabled = source["remoteAccessEnabled"];
+	        this.remoteAccessPort = source["remoteAccessPort"];
+	        this.remoteAccessPasscode = source["remoteAccessPasscode"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1124,6 +1136,35 @@ export namespace entity {
 	        this.key = source["key"];
 	        this.type = source["type"];
 	        this.source = source["source"];
+	    }
+	}
+
+}
+
+export namespace remote {
+	
+	export class Status {
+	    enabled: boolean;
+	    url: string;
+	    passcode: string;
+	    port: number;
+	    clients: number;
+	    cloudflaredInstalled: boolean;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.url = source["url"];
+	        this.passcode = source["passcode"];
+	        this.port = source["port"];
+	        this.clients = source["clients"];
+	        this.cloudflaredInstalled = source["cloudflaredInstalled"];
+	        this.error = source["error"];
 	    }
 	}
 
