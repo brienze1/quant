@@ -18,13 +18,15 @@ import (
 type configController struct {
 	ctx           context.Context
 	configManager adapter.ConfigManager
+	emitter       adapter.EventEmitter
 }
 
 // NewConfigController creates a new config controller.
 // Returns the intadapter.ConfigController interface, not the concrete type.
-func NewConfigController(configManager adapter.ConfigManager) intadapter.ConfigController {
+func NewConfigController(configManager adapter.ConfigManager, emitter adapter.EventEmitter) intadapter.ConfigController {
 	return &configController{
 		configManager: configManager,
+		emitter:       emitter,
 	}
 }
 
@@ -52,6 +54,26 @@ func (c *configController) GetConfig() (*dto.ConfigResponse, error) {
 func (c *configController) SaveConfig(request dto.SaveConfigRequest) error {
 	cfg := request.ToEntity()
 	return c.configManager.SaveConfig(&cfg)
+}
+
+// SetMindmapPaneOpen persists the global mindmap pane open/close flag and broadcasts
+// the change to all clients via the "mindmap:pane" event so they stay in sync.
+func (c *configController) SetMindmapPaneOpen(open bool) error {
+	cfg, err := c.configManager.GetConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg.MindmapPaneOpen = open
+	if err := c.configManager.SaveConfig(cfg); err != nil {
+		return err
+	}
+
+	if c.emitter != nil {
+		c.emitter.Emit("mindmap:pane", map[string]any{"open": open})
+	}
+
+	return nil
 }
 
 // ResetDatabase truncates all database tables.

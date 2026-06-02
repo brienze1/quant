@@ -93,6 +93,10 @@ function App() {
   const [embeddedTerminalMap, setEmbeddedTerminalMap] = useState<Record<string, string>>({});
   // Track which sessions have the terminal pane open: parentSessionId -> boolean
   const [terminalPaneOpenMap, setTerminalPaneOpenMap] = useState<Record<string, boolean>>({});
+  // Mindmap pane open/closed is a single GLOBAL flag (unlike the per-session
+  // terminal pane): it is config-backed and synced across all tabs and remote
+  // clients via the "mindmap:pane" event.
+  const [mindmapPaneOpen, setMindmapPaneOpen] = useState(false);
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -156,6 +160,16 @@ function App() {
   function handleTerminalPaneOpenChange(open: boolean) {
     if (!activeSession) return;
     setTerminalPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
+  }
+
+  // Toggle the global mindmap pane: update locally for instant feedback, then
+  // persist via the backend, which broadcasts "mindmap:pane" so other tabs and
+  // remote clients converge on the same value.
+  function handleMindmapPaneOpenChange(open: boolean) {
+    setMindmapPaneOpen(open);
+    api.setMindmapPaneOpen(open).catch((err) =>
+      console.error("failed to persist mindmap pane state:", err)
+    );
   }
 
   // --- data fetching ---
@@ -292,6 +306,10 @@ function App() {
           setActiveTabId(ids[0]);
           setSelectedSessionId(ids[0]);
         }
+        // Hydrate the global mindmap pane flag from config. Mark hydration as
+        // done so the event handler can safely treat later updates as remote.
+        setMindmapPaneOpen(!!cfg.mindmapPaneOpen);
+        mindmapPaneHydratedRef.current = true;
       } catch (err) {
         console.error("failed to restore active session:", err);
       }
@@ -365,6 +383,10 @@ function App() {
     }, 0);
     return () => clearTimeout(handle);
   }, [activeWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Guards the initial hydration of the global mindmap pane flag from config,
+  // so the startup read doesn't trigger a write-back (mirrors tabsRestoredRef).
+  const mindmapPaneHydratedRef = useRef(false);
 
   // Persist open tabs and active tab to config whenever they change
   const tabsRestoredRef = useRef(false);
@@ -592,6 +614,19 @@ function App() {
         });
       }
     );
+    return () => cancel && cancel();
+  }, []);
+
+  // Keep the global mindmap pane flag in sync across every tab and remote
+  // client. The handler is idempotent: it SETS state to the received value and
+  // never toggles, so duplicate/echo events can't flip the pane out of sync.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w?.runtime?.EventsOn) return;
+    const cancel = w.runtime.EventsOn("mindmap:pane", (d: { open?: boolean }) => {
+      setMindmapPaneOpen(!!(d && d.open));
+    });
     return () => cancel && cancel();
   }, []);
 
@@ -1114,11 +1149,9 @@ function App() {
     handleOpenTab(sessionId);
     localStorage.setItem("quant.mindmapBoard." + sessionId, board);
     setActiveBoardBySession((prev) => ({ ...prev, [sessionId]: board }));
-    // Ensure the mindmap pane is visible (SessionPanel reads this on the event).
-    localStorage.setItem("quant.mindmapPaneOpen", "1");
-    window.dispatchEvent(
-      new CustomEvent("quant:mindmap-select-board", { detail: { sessionId, board } })
-    );
+    // The mindmap pane open flag is global now: route the OPEN action through
+    // the shared handler so it persists and syncs across tabs/remote clients.
+    handleMindmapPaneOpenChange(true);
   }
 
   // Move a board from one session to another (mirrors session-onto-task move).
@@ -2104,6 +2137,8 @@ function App() {
             embeddedTerminalSession={activeEmbeddedTerminalSession}
             terminalPaneOpen={activeTerminalPaneOpen}
             onTerminalPaneOpenChange={handleTerminalPaneOpenChange}
+            mindmapPaneOpen={mindmapPaneOpen}
+            onMindmapPaneOpenChange={handleMindmapPaneOpenChange}
             onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}
           />
         ) : (

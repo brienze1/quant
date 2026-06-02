@@ -13,6 +13,7 @@ type ConfigController interface {
 	OnShutdown(ctx context.Context)
 	GetConfig() (*dto.ConfigResponse, error)
 	SaveConfig(request dto.SaveConfigRequest) error
+	SetMindmapPaneOpen(open bool) error
 	ResetDatabase() error
 	ClearSessionLogs() error
 	BrowseDirectory() (string, error)

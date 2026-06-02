@@ -26,6 +26,10 @@ interface Props {
   embeddedTerminalSession?: Session | null;
   terminalPaneOpen?: boolean;
   onTerminalPaneOpenChange?: (open: boolean) => void;
+  // Mindmap pane open/closed is a single GLOBAL flag owned by App (config-backed,
+  // synced across tabs and remote clients) — not a per-session preference.
+  mindmapPaneOpen: boolean;
+  onMindmapPaneOpenChange: (open: boolean) => void;
   onCreateEmbeddedTerminal: (parentSession: Session) => Promise<Session>;
 }
 
@@ -40,6 +44,8 @@ export function SessionPanel({
   embeddedTerminalSession,
   terminalPaneOpen = false,
   onTerminalPaneOpenChange,
+  mindmapPaneOpen,
+  onMindmapPaneOpenChange,
   onCreateEmbeddedTerminal,
 }: Props) {
   const [autoScroll, setAutoScroll] = useState(true);
@@ -51,11 +57,6 @@ export function SessionPanel({
     dividerPercent: 55,
   });
   const [menuOpen, setMenuOpen] = useState(false);
-  // Mindmap pane visibility is a sticky preference (persisted), so it stays open
-  // when switching between session tabs and across app restarts.
-  const [showMindmap, setShowMindmap] = useState(
-    () => localStorage.getItem("quant.mindmapPaneOpen") === "1"
-  );
   // The mindmap split is independent of the terminal split: it has its own
   // layout (default vertical so the mindmap docks on the right) and divider.
   const [mindmapLayout, setMindmapLayout] = useState<SplitLayout>("vertical");
@@ -83,25 +84,9 @@ export function SessionPanel({
       open: terminalPaneOpen && !!(embeddedTerminalSession || prev.terminalSession),
       terminalSession: embeddedTerminalSession || null,
     }));
-    // NOTE: do not reset showMindmap here — it's a sticky preference (see below)
-    // so the mindmap pane persists across session-tab switches.
+    // NOTE: the mindmap pane open flag is now a global, App-owned value, so
+    // there is nothing session-scoped to reset here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id]);
-
-  // Persist the mindmap pane preference whenever it changes.
-  useEffect(() => {
-    localStorage.setItem("quant.mindmapPaneOpen", showMindmap ? "1" : "0");
-  }, [showMindmap]);
-
-  // When a board is selected (e.g. from the sidebar) for this session, ensure
-  // the mindmap pane is visible.
-  useEffect(() => {
-    const onSelectBoard = (e: Event) => {
-      const detail = (e as CustomEvent<{ sessionId: string; board: string }>).detail;
-      if (detail?.sessionId === session.id) setShowMindmap(true);
-    };
-    window.addEventListener("quant:mindmap-select-board", onSelectBoard);
-    return () => window.removeEventListener("quant:mindmap-select-board", onSelectBoard);
   }, [session.id]);
 
   // Close menu on click outside
@@ -219,7 +204,7 @@ export function SessionPanel({
   // The mindmap occupies the OUTER split's secondary pane, fully independent
   // from the terminal split — so both can be shown at the same time.
   const mindmapSplitState: SplitState = {
-    open: showMindmap,
+    open: mindmapPaneOpen,
     terminalSession: null,
     layout: mindmapLayout,
     dividerPercent: mindmapDividerPercent,
@@ -307,19 +292,19 @@ export function SessionPanel({
           {/* Mindmap button */}
           {!isArchived && (
             <button
-              onClick={() => setShowMindmap((v) => !v)}
+              onClick={() => onMindmapPaneOpenChange(!mindmapPaneOpen)}
               className="flex items-center gap-1 px-2 py-1 text-[11px]"
               style={{
                 fontFamily: "'JetBrains Mono', monospace",
-                color: showMindmap ? "var(--q-bg)" : "var(--q-accent)",
-                backgroundColor: showMindmap ? "var(--q-accent)" : "var(--q-bg-hover)",
-                border: `1px solid ${showMindmap ? "var(--q-accent)" : "var(--q-border)"}`,
+                color: mindmapPaneOpen ? "var(--q-bg)" : "var(--q-accent)",
+                backgroundColor: mindmapPaneOpen ? "var(--q-accent)" : "var(--q-bg-hover)",
+                border: `1px solid ${mindmapPaneOpen ? "var(--q-accent)" : "var(--q-border)"}`,
               }}
               onMouseEnter={(e) => {
-                if (!showMindmap) e.currentTarget.style.backgroundColor = "var(--q-border)";
+                if (!mindmapPaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
               }}
               onMouseLeave={(e) => {
-                if (!showMindmap) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                if (!mindmapPaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
               }}
             >
               <span>mindmap</span>
@@ -343,7 +328,7 @@ export function SessionPanel({
           )}
 
           {/* Mindmap split layout toggle (only when the mindmap is shown) */}
-          {showMindmap && (
+          {mindmapPaneOpen && (
             <div className="flex items-center gap-0.5">
               <LayoutIcon
                 type="horizontal"
@@ -446,12 +431,12 @@ export function SessionPanel({
           />
         }
         secondaryPane={
-          showMindmap ? (
+          mindmapPaneOpen ? (
             <>
               <PaneHeader
                 label="mindmap"
                 dotColor="var(--q-accent)"
-                onClose={() => setShowMindmap(false)}
+                onClose={() => onMindmapPaneOpenChange(false)}
               />
               <div className="flex-1 min-h-0">
                 <MindmapPane sessionId={session.id} />

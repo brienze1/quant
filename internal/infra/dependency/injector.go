@@ -260,7 +260,7 @@ func (i *Injector) ConfigManager() appAdapter.ConfigManager {
 // ConfigController returns the singleton ConfigController instance.
 func (i *Injector) ConfigController() intAdapter.ConfigController {
 	if i.configController == nil {
-		i.configController = controller.NewConfigController(i.ConfigManager())
+		i.configController = controller.NewConfigController(i.ConfigManager(), i.EventEmitter())
 	}
 	return i.configController
 }
