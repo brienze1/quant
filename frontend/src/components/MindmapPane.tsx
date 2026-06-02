@@ -517,6 +517,32 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
   const nodesInitialized = useNodesInitialized();
   const laidOutSig = useRef("");
 
+  // Full-screen overlay toggle for the whole pane.
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Exit fullscreen on Escape.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
+  // Re-frame the graph after the pane resizes (entering/leaving fullscreen).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (getNodes().length === 0) return;
+      try {
+        fitView({ duration: 300, padding: 0.18 });
+      } catch {
+        // no-op: fitView can throw if the flow isn't ready yet.
+      }
+    }, 60);
+    return () => clearTimeout(t);
+  }, [fullscreen, fitView, getNodes]);
+
   // Co-authoring: ids whose label/note/text the user currently owns (open in the
   // edit form). We keep local values for these instead of the agent's snapshot.
   const editingIds = useRef<Set<string>>(new Set());
@@ -920,7 +946,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
   const boardOptions = Array.from(new Set([...boards, activeBoard]));
 
   return (
-    <div className="mindmap-pane">
+    <div className={"mindmap-pane" + (fullscreen ? " mindmap-pane--fullscreen" : "")}>
       <div className="mindmap-toolbar">
         <select
           className="mindmap-board-select"
@@ -967,6 +993,14 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
           }}
         >
           + note
+        </button>
+        <button
+          type="button"
+          className="mindmap-tool-btn"
+          title="Fullscreen (Esc to exit)"
+          onClick={() => setFullscreen((v) => !v)}
+        >
+          {fullscreen ? "🗗" : "⛶"}
         </button>
       </div>
 

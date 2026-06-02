@@ -957,10 +957,20 @@ Example flow: run_job("health-check") → get_pipeline_status(runId) shows:
 	// mindmap_get
 	mcpServer.AddTool(
 		mcp.NewTool("mindmap_get",
-			mcp.WithDescription(`Get all nodes currently on the live mindmap for THIS session. Use to read back the plan before updating it. Use the optional 'board' to read a specific board; omit for the default board.`),
+			mcp.WithDescription(`Get all nodes currently on the live mindmap. Reads THIS session's board by default; pass 'sessionId' to read another session's board (read-only) — e.g. to look at a plan another agent is drawing. Use mindmap_list_boards to discover which sessions have boards. Use the optional 'board' to read a specific board; omit for the default board.`),
 			mcp.WithString("board", mcp.Description("Named board to read. Omit for the default board.")),
+			mcp.WithString("sessionId", mcp.Description("Read another session's mindmap by its session id (read-only). Omit to read THIS session's mindmap.")),
 		),
 		s.handleMindmapGet,
+	)
+
+	// mindmap_list_boards
+	mcpServer.AddTool(
+		mcp.NewTool("mindmap_list_boards",
+			mcp.WithDescription(`List every session that has a mindmap, with its board names. Use this to discover other sessions' boards, then read one with mindmap_get(sessionId, board). Only sessions with at least one board are returned. Optionally filter by 'workspaceId'.`),
+			mcp.WithString("workspaceId", mcp.Description("Only include sessions in this workspace. Omit to list across all workspaces.")),
+		),
+		s.handleMindmapListBoards,
 	)
 }
 
@@ -1736,14 +1746,54 @@ func (s *QuantMCPServer) handleMindmapClear(ctx context.Context, request mcp.Cal
 }
 
 func (s *QuantMCPServer) handleMindmapGet(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
 	scopeType, scopeID := s.scopeFromCtx(ctx)
-	board := mindmapBoardArg(request.GetArguments())
+	// An explicit sessionId reads another session's board (read-only).
+	if sid := stringArg(args, "sessionId"); sid != "" {
+		scopeType, scopeID = "session", sid
+	}
+	board := mindmapBoardArg(args)
 
 	nodes, _ := s.mindmapManager.GetMindmap(scopeType, scopeID, board)
 
 	result := make([]map[string]any, 0, len(nodes))
 	for i := range nodes {
 		result = append(result, mindmapNodeToMap(&nodes[i]))
+	}
+
+	return marshalResult(result)
+}
+
+// handleMindmapListBoards enumerates every session that has at least one mindmap
+// board, so a caller can discover and then read another session's board via
+// mindmap_get(sessionId, board).
+func (s *QuantMCPServer) handleMindmapListBoards(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessions, err := s.sessionManager.ListSessions()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	wsFilter := stringArg(request.GetArguments(), "workspaceId")
+	_, currentID := s.scopeFromCtx(ctx)
+
+	result := make([]map[string]any, 0, len(sessions))
+	for i := range sessions {
+		sess := &sessions[i]
+		if wsFilter != "" && sess.WorkspaceID != wsFilter {
+			continue
+		}
+		boards, err := s.mindmapManager.ListBoards("session", sess.ID)
+		if err != nil || len(boards) == 0 {
+			continue
+		}
+		result = append(result, map[string]any{
+			"sessionId":   sess.ID,
+			"sessionName": sess.Name,
+			"status":      sess.Status,
+			"workspaceId": sess.WorkspaceID,
+			"boards":      boards,
+			"isCurrent":   sess.ID == currentID,
+		})
 	}
 
 	return marshalResult(result)

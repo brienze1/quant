@@ -259,6 +259,13 @@ export function saveConfig(config: Config): Promise<void> {
   return callGo(PKG, CONFIG_CTRL, "SaveConfig", config);
 }
 
+// Lift the mindmap pane open/close flag to a single global, config-backed
+// value. The backend persists it and emits a "mindmap:pane" event so every
+// session tab and remote client stays in sync.
+export function setMindmapPaneOpen(open: boolean): Promise<void> {
+  return callGo(PKG, CONFIG_CTRL, "SetMindmapPaneOpen", open);
+}
+
 export function resetDatabase(): Promise<void> {
   return callGo(PKG, CONFIG_CTRL, "ResetDatabase");
 }
