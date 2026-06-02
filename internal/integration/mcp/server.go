@@ -930,6 +930,7 @@ Example flow: run_job("health-check") → get_pipeline_status(runId) shows:
 			mcp.WithString("kind", mcp.Description("Node kind: node | note. Defaults to node. Use note for a free-floating sticky."), mcp.Enum("node", "note")),
 			mcp.WithString("text", mcp.Description("Sticky body text (for kind=note).")),
 			mcp.WithString("board", mcp.Description("Named board to draw on. Use a board per topic/workstream to keep separate maps. Omit for the default board.")),
+			mcp.WithString("sessionId", mcp.Description("Draw on ANOTHER session's mindmap by its session id. Omit to draw on THIS session's mindmap. Use mindmap_list_boards to discover sessions.")),
 		),
 		s.handleMindmapSetNode,
 	)
@@ -941,6 +942,7 @@ Example flow: run_job("health-check") → get_pipeline_status(runId) shows:
 			mcp.WithString("id", mcp.Required(), mcp.Description("Id of the node to remove.")),
 			mcp.WithBoolean("subtree", mcp.Description("If true, also remove all descendant nodes. Defaults to false.")),
 			mcp.WithString("board", mcp.Description("Named board to remove from. Omit for the default board.")),
+			mcp.WithString("sessionId", mcp.Description("Remove from ANOTHER session's mindmap by its session id. Omit to target THIS session's mindmap.")),
 		),
 		s.handleMindmapRemoveNode,
 	)
@@ -950,6 +952,7 @@ Example flow: run_job("health-check") → get_pipeline_status(runId) shows:
 		mcp.NewTool("mindmap_clear",
 			mcp.WithDescription(`Clear the entire live mindmap for THIS session, removing all nodes. Use when starting a fresh plan. Use the optional 'board' to clear a specific board; omit for the default board.`),
 			mcp.WithString("board", mcp.Description("Named board to clear. Omit for the default board.")),
+			mcp.WithString("sessionId", mcp.Description("Clear ANOTHER session's mindmap board by its session id. Omit to target THIS session's mindmap.")),
 		),
 		s.handleMindmapClear,
 	)
@@ -1655,6 +1658,16 @@ func (s *QuantMCPServer) scopeFromCtx(ctx context.Context) (scopeType, scopeID s
 	return "workspace", "default"
 }
 
+// scopeForArgs resolves the mindmap scope for a request. An explicit "sessionId"
+// argument targets another session (cross-session read or write); otherwise it
+// falls back to the caller's own scope from the request context.
+func (s *QuantMCPServer) scopeForArgs(ctx context.Context, args map[string]any) (scopeType, scopeID string) {
+	if sid := stringArg(args, "sessionId"); sid != "" {
+		return "session", sid
+	}
+	return s.scopeFromCtx(ctx)
+}
+
 // mindmapNodeToMap maps a MindmapNode to the camelCase frontend JSON shape.
 func mindmapNodeToMap(n *entity.MindmapNode) map[string]any {
 	return map[string]any{
@@ -1687,7 +1700,7 @@ func (s *QuantMCPServer) handleMindmapSetNode(ctx context.Context, request mcp.C
 	}
 
 	args := request.GetArguments()
-	scopeType, scopeID := s.scopeFromCtx(ctx)
+	scopeType, scopeID := s.scopeForArgs(ctx, args)
 	board := mindmapBoardArg(args)
 
 	// Default progress to -1 (no progress bar) unless the caller provided one.
@@ -1723,7 +1736,7 @@ func (s *QuantMCPServer) handleMindmapRemoveNode(ctx context.Context, request mc
 	}
 
 	args := request.GetArguments()
-	scopeType, scopeID := s.scopeFromCtx(ctx)
+	scopeType, scopeID := s.scopeForArgs(ctx, args)
 	board := mindmapBoardArg(args)
 	subtree := boolArg(args, "subtree")
 
@@ -1735,8 +1748,9 @@ func (s *QuantMCPServer) handleMindmapRemoveNode(ctx context.Context, request mc
 }
 
 func (s *QuantMCPServer) handleMindmapClear(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	scopeType, scopeID := s.scopeFromCtx(ctx)
-	board := mindmapBoardArg(request.GetArguments())
+	args := request.GetArguments()
+	scopeType, scopeID := s.scopeForArgs(ctx, args)
+	board := mindmapBoardArg(args)
 
 	if err := s.mindmapManager.ClearMindmap(scopeType, scopeID, board); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -1747,11 +1761,7 @@ func (s *QuantMCPServer) handleMindmapClear(ctx context.Context, request mcp.Cal
 
 func (s *QuantMCPServer) handleMindmapGet(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
-	scopeType, scopeID := s.scopeFromCtx(ctx)
-	// An explicit sessionId reads another session's board (read-only).
-	if sid := stringArg(args, "sessionId"); sid != "" {
-		scopeType, scopeID = "session", sid
-	}
+	scopeType, scopeID := s.scopeForArgs(ctx, args)
 	board := mindmapBoardArg(args)
 
 	nodes, _ := s.mindmapManager.GetMindmap(scopeType, scopeID, board)
