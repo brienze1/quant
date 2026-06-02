@@ -96,6 +96,7 @@
 
 /* full-height container */
 .mindmap-pane { width: 100%; height: 100%; position: relative; display: flex; flex-direction: column; }
+.mindmap-pane--fullscreen { position: fixed; inset: 0; z-index: 9999; background: var(--q-bg); }
 .mindmap-canvas { flex: 1; min-height: 0; position: relative; }
 .mindmap-empty {
   width: 100%;
