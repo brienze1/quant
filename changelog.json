@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.27",
+      "date": "2026-06-02",
+      "changes": {
+        "features": [
+          "agents can now edit another session's mindmap over MCP: mindmap_set_node, mindmap_remove_node and mindmap_clear take an optional sessionId, so an orchestrator agent can draw on or tidy a worker session's board (omit it to keep editing your own)"
+        ]
+      }
+    },
+    {
       "version": "v3.1.26",
       "date": "2026-06-02",
       "changes": {
