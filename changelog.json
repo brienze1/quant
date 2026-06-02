@@ -1,6 +1,17 @@
 {
   "entries": [
     {
+      "version": "v3.1.26",
+      "date": "2026-06-02",
+      "changes": {
+        "features": [
+          "open the mindmap full screen — a maximize button in the toolbar expands it to fill the window, Esc to exit",
+          "the mindmap pane now opens and closes everywhere at once: toggle it in one session and every tab (and any connected browser) follows, while the terminal pane stays per-session",
+          "agents can read another session's mindmap over MCP: mindmap_get takes an optional sessionId, and a new mindmap_list_boards tool lists which sessions have boards"
+        ]
+      }
+    },
+    {
       "version": "v3.1.25",
       "date": "2026-06-01",
       "changes": {
