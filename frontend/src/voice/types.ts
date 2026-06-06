@@ -187,6 +187,13 @@ export interface IAudioService {
   /** Current input level 0..1 (peak/RMS) from the input analyser, 0 if none. */
   getInputLevel(): number;
 
+  /**
+   * Resume the AudioContext. Call from a user-gesture handler — WKWebView/
+   * autoplay policies keep a gesture-less context suspended, which leaves the
+   * input analyser flat (dead level meter). No-op if not created or running.
+   */
+  resumeContext(): Promise<void>;
+
   /** Release the mic + audio resources. */
   dispose(): Promise<void>;
 }

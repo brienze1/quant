@@ -442,6 +442,25 @@ export class AudioService implements IAudioService {
     return ctx;
   }
 
+  /**
+   * Resume the shared AudioContext. MUST be called from within a user-gesture
+   * handler: WKWebView (and browser autoplay policies) keep a context created
+   * without a gesture in the "suspended" state, which means the input analyser
+   * never receives samples and the live level meter reads flat zero. The pane
+   * wires this to the first pointer/key interaction. No-op if not yet created
+   * or already running.
+   */
+  async resumeContext(): Promise<void> {
+    const ctx = this.audioCtx;
+    if (ctx && ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
+
   /** Build the input analyser graph on the given stream (shared by init/preview). */
   private buildInputGraph(ctx: AudioContext, stream: MediaStream): void {
     const analyser = ctx.createAnalyser();

@@ -202,9 +202,21 @@ export function VoicePane({ sessionId, className, style }: Props) {
     };
     raf = requestAnimationFrame(tick);
 
+    // WKWebView (and browser autoplay policies) keep an AudioContext created
+    // without a user gesture in the "suspended" state, which leaves the input
+    // analyser flat → the live meter and the orb's listening level read zero.
+    // Resume on the first real interaction anywhere in the window.
+    const unlock = () => {
+      void service.resumeContext();
+    };
+    window.addEventListener("pointerdown", unlock, { capture: true });
+    window.addEventListener("keydown", unlock, { capture: true });
+
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
+      window.removeEventListener("pointerdown", unlock, { capture: true });
+      window.removeEventListener("keydown", unlock, { capture: true });
       offDevices();
       service.stopInputPreview();
       offBridge();
@@ -221,6 +233,9 @@ export function VoicePane({ sessionId, className, style }: Props) {
     if (!svc) return;
     const next = deviceId || null;
     setSelectedDevice(next);
+    // This click is a user gesture — unlock the (possibly suspended) context so
+    // the meter starts moving on the newly selected device.
+    void svc.resumeContext();
     void svc.setInputDevice(next).catch(() => {});
   };
 
@@ -232,6 +247,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
     void (async () => {
       try {
         await svc.startInputPreview();
+        await svc.resumeContext();
         const [list, labels] = await Promise.all([
           svc.listInputDevices(),
           svc.hasDeviceLabels(),
