@@ -59,5 +59,7 @@
           {{end}}
         </array>
         {{end}}
+        <key>NSMicrophoneUsageDescription</key>
+        <string>Quant needs microphone access to use voice features in the integrated terminal.</string>
     </dict>
 </plist>

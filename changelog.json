@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.28",
+      "date": "2026-06-06",
+      "changes": {
+        "fixes": [
+          "voice tools now work in the integrated terminal on macOS — the app declares microphone access so the system prompts for permission (previously you could hear audio play back but speech was never captured)"
+        ]
+      }
+    },
+    {
       "version": "v3.1.27",
       "date": "2026-06-02",
       "changes": {
