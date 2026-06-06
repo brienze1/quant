@@ -176,14 +176,44 @@ function App() {
     );
   }
 
+  // Tracks which sessions have already had their voice loop kicked off, so we
+  // never inject the persona twice for one (session, open) cycle. Cleared for a
+  // session when its voice pane is closed, so re-opening re-kicks (intended).
+  const voiceStartedRef = useRef<Set<string>>(new Set());
+
   // Toggle the global voice pane (mirrors handleMindmapPaneOpenChange): update
   // locally for instant feedback, then persist via the backend, which broadcasts
   // "voice:pane" so other tabs and remote clients converge on the same value.
+  //
+  // UX = enter-voice: when the user opens the pane, kick the session the pane is
+  // showing (activeSession) into the voice conversation loop exactly once. This
+  // is the only user-initiated open path — config hydration on startup and the
+  // cross-tab "voice:pane" event call setVoicePaneOpen directly and intentionally
+  // do NOT kick, so a persisted-open pane doesn't spuriously inject on launch.
   function handleVoicePaneOpenChange(open: boolean) {
     setVoicePaneOpen(open);
     api.setVoicePaneOpen(open).catch((err) =>
       console.error("failed to persist voice pane state:", err)
     );
+
+    const sessionId = activeSession?.id;
+    if (open) {
+      if (sessionId && !voiceStartedRef.current.has(sessionId)) {
+        voiceStartedRef.current.add(sessionId);
+        api.startVoiceSession(sessionId).catch((err) => {
+          // No running agent / process for this session, etc. Clear the guard so
+          // re-opening retries, and surface it as a non-fatal error.
+          voiceStartedRef.current.delete(sessionId);
+          console.error("failed to start voice session:", err);
+          setError(
+            "Couldn't start voice mode — make sure the session has a running agent."
+          );
+        });
+      }
+    } else if (sessionId) {
+      // Pane closed for this session: allow a future open to re-kick.
+      voiceStartedRef.current.delete(sessionId);
+    }
   }
 
   // --- data fetching ---

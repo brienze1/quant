@@ -587,3 +587,16 @@ export function voiceResult(
 ): Promise<void> {
   return callGo(PKG, VOICE_CTRL, "VoiceResult", requestId, transcript, errMsg);
 }
+
+/**
+ * Kick a running session into voice mode. Injects the voice-mode persona/kickoff
+ * message into the session (auto-submitted Go-side), after which the agent drives
+ * the spoken conversation loop via the voice_* MCP tools. Called once when the
+ * voice pane is opened for a session (see App.tsx handleVoicePaneOpenChange).
+ *
+ * Rejects if the session has no running agent/process (surface in the pane's
+ * error indicator, or ignore — re-opening the pane re-kicks).
+ */
+export function startVoiceSession(sessionId: string): Promise<void> {
+  return callGo(PKG, VOICE_CTRL, "StartVoiceSession", sessionId);
+}

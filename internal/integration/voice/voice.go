@@ -40,6 +40,37 @@ const (
 	defaultTimeout      = 60 * time.Second
 )
 
+// kickoffSubmitDelay is the pause between writing the persona message to a
+// session's PTY and writing the Enter keystroke that submits it. The Claude CLI
+// TUI treats a carriage return arriving in the same write as the message text as
+// a multi-line newline rather than a submit; delivering Enter as a separate
+// keystroke after a short delay lets the TUI process the pasted text first so the
+// return is read as a submit. Mirrors the MCP send_message auto-submit primitive.
+const kickoffSubmitDelay = 120 * time.Millisecond
+
+// VoicePersona is the kickoff message injected (as a normal, auto-submitted user
+// message) into a session when its voice pane is opened. It does NOT change the
+// session's system prompt — it simply instructs the running agent to switch into
+// a spoken, hands-free conversation driven by the MCP voice tools. The wording
+// references voice_speak / voice_listen / voice_converse exactly as registered in
+// internal/integration/mcp/server.go.
+const VoicePersona = "You are now in VOICE MODE. Communicate by speaking, not by writing text in the terminal. " +
+	"To talk with the user, call the MCP voice tools: voice_speak(text) to say something, " +
+	"voice_listen() to hear the user's reply, or voice_converse(text) to say something and immediately " +
+	"listen for the reply (prefer this for back-and-forth). " +
+	"Keep replies short, natural, and speech-friendly: no markdown, no code blocks, no bullet lists, no emoji — you are talking out loud. " +
+	"Start now: greet the user briefly with voice_converse, then keep the conversation going — " +
+	"after each user turn, think, then reply with voice_converse (or voice_speak if you do not expect a reply). " +
+	"Continue until the user says goodbye or the voice pane is closed."
+
+// SessionMessenger is the minimal slice of the session manager that the voice
+// kickoff needs: writing raw input to a running session's PTY. Keeping it narrow
+// avoids the voice package depending on the full session manager surface and
+// makes StartVoiceSession trivially mockable in tests.
+type SessionMessenger interface {
+	SendMessage(id string, message string) error
+}
+
 // voiceController is the concrete Wails-bound controller. It is kept unexported
 // to match the other controllers' binding convention (the binding key derives
 // from the struct type name → "voiceController").
@@ -48,6 +79,7 @@ type voiceController struct {
 	configManager adapter.ConfigManager
 	client        *http.Client
 	bridge        *Bridge
+	sessions      SessionMessenger
 }
 
 // NewVoiceController constructs the voice STT/TTS proxy controller. It reads the
@@ -57,11 +89,15 @@ type voiceController struct {
 // The bridge connects the MCP voice tools (Go) to the frontend audio pipeline;
 // VoiceResult forwards frontend replies into it. Pass nil only in tests that do
 // not exercise VoiceResult.
-func NewVoiceController(configManager adapter.ConfigManager, bridge *Bridge) *voiceController {
+//
+// sessions is used by StartVoiceSession to inject the voice-mode kickoff message
+// into a running session; pass nil only in tests that do not exercise it.
+func NewVoiceController(configManager adapter.ConfigManager, bridge *Bridge, sessions SessionMessenger) *voiceController {
 	return &voiceController{
 		configManager: configManager,
 		client:        &http.Client{Timeout: defaultTimeout},
 		bridge:        bridge,
+		sessions:      sessions,
 	}
 }
 
@@ -83,6 +119,42 @@ func (c *voiceController) VoiceResult(requestId string, transcript string, errMs
 		Done:       errMsg == "",
 		Err:        errMsg,
 	})
+	return nil
+}
+
+// StartVoiceSession kicks a running session into the voice conversation loop by
+// injecting the VoicePersona message and auto-submitting it (Enter delivered as a
+// separate keystroke, mirroring the MCP send_message primitive so the Claude CLI
+// TUI reads it as a submit, not a multi-line newline). The agent then drives the
+// loop itself via the voice_* MCP tools, bridged to the frontend audio pipeline.
+//
+// This is intentionally done Go-side rather than from JS: the auto-submit timing
+// and PTY write live next to the other session-input code and work identically
+// over the native and remote transports.
+//
+// It returns a clear error if no agent/process is running for the session (the
+// underlying SendMessage reports "no process running for session: <id>") so the
+// caller can surface it without crashing.
+func (c *voiceController) StartVoiceSession(sessionId string) error {
+	if c.sessions == nil {
+		return fmt.Errorf("voice session manager not initialized")
+	}
+	if strings.TrimSpace(sessionId) == "" {
+		return fmt.Errorf("sessionId is required")
+	}
+
+	if err := c.sessions.SendMessage(sessionId, VoicePersona); err != nil {
+		return fmt.Errorf("failed to start voice session %s: %w", sessionId, err)
+	}
+
+	// Submit the message: the CLI TUI treats a carriage return in the same write
+	// as the text as a newline, so deliver Enter as a discrete keystroke after a
+	// short delay (same approach as the MCP send_message auto-submit).
+	time.Sleep(kickoffSubmitDelay)
+	if err := c.sessions.SendMessage(sessionId, "\r"); err != nil {
+		return fmt.Errorf("voice persona typed but submit (Enter) failed for session %s: %w", sessionId, err)
+	}
+
 	return nil
 }
 

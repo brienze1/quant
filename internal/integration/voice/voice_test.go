@@ -28,8 +28,63 @@ func (s *stubConfigManager) SendNotification(string, string) error {
 }
 
 func newController(cfg entity.VoiceConfig) *voiceController {
-	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{Voice: cfg}}, nil)
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{Voice: cfg}}, nil, nil)
 	return c
+}
+
+// stubMessenger records the messages StartVoiceSession writes to a session's PTY.
+type stubMessenger struct {
+	calls   []struct{ id, message string }
+	failOn  string // if non-empty, SendMessage(failOn-id, ...) returns an error
+	failErr error
+}
+
+func (s *stubMessenger) SendMessage(id, message string) error {
+	if s.failOn != "" && id == s.failOn {
+		return s.failErr
+	}
+	s.calls = append(s.calls, struct{ id, message string }{id, message})
+	return nil
+}
+
+func TestStartVoiceSessionInjectsPersonaAndSubmits(t *testing.T) {
+	msgr := &stubMessenger{}
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, msgr)
+
+	if err := c.StartVoiceSession("sess-1"); err != nil {
+		t.Fatalf("StartVoiceSession: %v", err)
+	}
+
+	if len(msgr.calls) != 2 {
+		t.Fatalf("expected 2 SendMessage calls (persona + Enter), got %d: %+v", len(msgr.calls), msgr.calls)
+	}
+	if msgr.calls[0].id != "sess-1" || msgr.calls[0].message != VoicePersona {
+		t.Errorf("first call should inject VoicePersona into sess-1, got id=%q message=%q", msgr.calls[0].id, msgr.calls[0].message)
+	}
+	if msgr.calls[1].id != "sess-1" || msgr.calls[1].message != "\r" {
+		t.Errorf("second call should submit (Enter) for sess-1, got id=%q message=%q", msgr.calls[1].id, msgr.calls[1].message)
+	}
+}
+
+func TestStartVoiceSessionPropagatesSendError(t *testing.T) {
+	wantErr := io.ErrUnexpectedEOF
+	msgr := &stubMessenger{failOn: "sess-x", failErr: wantErr}
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, msgr)
+
+	err := c.StartVoiceSession("sess-x")
+	if err == nil {
+		t.Fatal("expected error when the session has no running process, got nil")
+	}
+	if !strings.Contains(err.Error(), "sess-x") {
+		t.Errorf("error should name the session, got: %v", err)
+	}
+}
+
+func TestStartVoiceSessionRequiresSessionID(t *testing.T) {
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, &stubMessenger{})
+	if err := c.StartVoiceSession("  "); err == nil {
+		t.Fatal("expected error for blank sessionId, got nil")
+	}
 }
 
 func TestTranscribeMultipartAndAuth(t *testing.T) {

@@ -231,7 +231,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 	// between the voice controller (which resolves) and the MCP server (which
 	// requests).
 	voiceBridge := voice.NewBridge(remote.Emit)
-	voiceCtrl := voice.NewVoiceController(injector.ConfigManager(), voiceBridge)
+	voiceCtrl := voice.NewVoiceController(injector.ConfigManager(), voiceBridge, injector.SessionManager())
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
