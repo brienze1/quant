@@ -1,6 +1,17 @@
 {
   "entries": [
     {
+      "version": "v3.1.30",
+      "date": "2026-06-06",
+      "changes": {
+        "features": [
+          "voice mode — talk to a session hands-free and hear it talk back: open the new voice pane on a session (green 'voice' toggle in the header) and an audio-reactive orb visualizes the conversation while you speak naturally; silence detection handles turn-taking, and you can talk over a reply to interrupt it (barge-in)",
+          "Settings → Voice: enable voice with just an OpenAI-compatible API key (cloud, zero install), or point at your own local whisper/kokoro engines; pick the voice and speaking speed, and use 'Test voice' to hear it (the key is stored locally and never sent to the browser)",
+          "agents can drive a spoken conversation through new MCP tools voice_listen, voice_speak and voice_converse, scoped to their own session"
+        ]
+      }
+    },
+    {
       "version": "v3.1.29",
       "date": "2026-06-06",
       "changes": {
