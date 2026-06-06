@@ -42,7 +42,6 @@ import { QuantAssistant } from "./components/QuantAssistant";
 import { ChangelogModal } from "./components/ChangelogModal";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { ThemeQuickPicker } from "./components/ThemeQuickPicker";
-import { MicProbe } from "./components/MicProbe"; // ⚠️ SPIKE PROBE — voice de-risk, safe to remove
 import { getActiveKeybindings, findMatchingAction, formatKeyCombo } from "./keybindings";
 import type { ChangelogEntry } from "./types";
 
@@ -2005,7 +2004,6 @@ function App() {
   // (sessions/terminals keep running in the background)
   return (
     <>
-      <MicProbe />{/* ⚠️ SPIKE PROBE — getUserMedia/WKWebView de-risk, safe to remove */}
       {renderQuantiOverlay()}
 
       {view === "jobs" && (

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>quant · voice orb</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --bg:#0A0A0A; --bgInput:#0F0F0F; --border:#2a2a2a; --fg:#FAFAFA;
+    --fg2:#6B7280; --muted:#4B5563; --accent:#10B981; --cyan:#06B6D4; --warn:#F59E0B;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--fg);font-family:'JetBrains Mono',monospace;overflow:hidden}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+
+  .frame{position:fixed;inset:0;pointer-events:none}
+  .hdr{position:absolute;top:0;left:0;right:0;height:34px;display:flex;align-items:center;gap:10px;
+       padding:0 14px;border-bottom:1px solid var(--border);background:rgba(10,10,10,.6);backdrop-filter:blur(4px)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .hdr .name{font-size:13px;font-weight:700}
+  .hdr .tag{font-size:9px;color:var(--accent)}
+  .hdr .spacer{flex:1}
+  .hdr .meta{font-size:10px;color:var(--muted)}
+
+  .statelabel{position:absolute;top:54%;left:0;right:0;text-align:center;font-size:13px;letter-spacing:2px;
+       text-transform:uppercase;color:var(--fg2);font-weight:600}
+  .statelabel b{color:var(--accent)}
+  .sub{position:absolute;top:calc(54% + 24px);left:0;right:0;text-align:center;font-size:11px;color:var(--muted)}
+
+  .controls{position:absolute;left:0;right:0;bottom:26px;display:flex;justify-content:center;gap:8px;pointer-events:auto}
+  .btn{font-family:inherit;font-size:11px;color:var(--fg2);background:var(--bgInput);border:1px solid var(--border);
+       border-radius:2px;padding:7px 12px;cursor:pointer;transition:.15s}
+  .btn:hover{background:#1F1F1F;color:var(--fg)}
+  .btn.on{color:var(--accent);border-color:var(--accent)}
+  .mic{position:absolute;right:14px;bottom:26px;pointer-events:auto}
+  .mic .btn{color:var(--accent);border-color:#155e4a}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="frame">
+  <div class="hdr">
+    <span class="dot"></span><span class="name">backend-refactor</span>
+    <span class="tag">[voice]</span>
+    <span class="spacer"></span>
+    <span class="meta" id="meta">am_onyx · 1.2× · whisper</span>
+  </div>
+  <div class="statelabel">state: <b id="state">listening</b></div>
+  <div class="sub" id="sub">▸ hearing you</div>
+  <div class="controls">
+    <button class="btn" data-s="idle">idle</button>
+    <button class="btn on" data-s="listening">listening</button>
+    <button class="btn" data-s="thinking">thinking</button>
+    <button class="btn" data-s="speaking">speaking</button>
+  </div>
+  <div class="mic"><button class="btn" id="micbtn">◉ enable mic</button></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.z = 4.2;
+
+const COL = {
+  green:{a:new THREE.Color('#052e22'), b:new THREE.Color('#10B981')},
+  cyan :{a:new THREE.Color('#06283a'), b:new THREE.Color('#06B6D4')},
+  amber:{a:new THREE.Color('#2a1c06'), b:new THREE.Color('#F59E0B')},
+  dim  :{a:new THREE.Color('#08130f'), b:new THREE.Color('#0b6e54')},
+};
+
+const uniforms = {
+  uTime:{value:0}, uAudio:{value:0}, uAmp:{value:0.12}, uFreq:{value:1.6},
+  uColA:{value:COL.green.a.clone()}, uColB:{value:COL.green.b.clone()}, uExpand:{value:0}
+};
+
+const vert = `
+uniform float uTime, uAudio, uAmp, uFreq, uExpand;
+varying float vN; varying vec3 vNormal, vView;
+// simplex noise (Ashima)
+vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x,289.0);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+  i=mod(i,289.0);
+  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=1.0/7.0; vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+void main(){
+  float t=uTime*0.45;
+  float amp=uAmp+uAudio*0.85;
+  float n=snoise(normal*uFreq + vec3(t)) ;
+  n+=0.5*snoise(normal*uFreq*2.3 + vec3(t*1.4));
+  float disp=n*amp;
+  vN=n;
+  vec3 pos=position+normal*disp;
+  pos*=1.0+uExpand*0.18+uAudio*0.12;
+  vNormal=normalize(normalMatrix*normal);
+  vec4 mv=modelViewMatrix*vec4(pos,1.0);
+  vView=normalize(-mv.xyz);
+  gl_Position=projectionMatrix*mv;
+}`;
+const frag = `
+precision highp float;
+uniform vec3 uColA, uColB; uniform float uAudio;
+varying float vN; varying vec3 vNormal, vView;
+void main(){
+  float fres=pow(1.0-max(dot(normalize(vView),normalize(vNormal)),0.0),2.3);
+  vec3 base=mix(uColA,uColB,smoothstep(-0.6,0.8,vN));
+  vec3 col=base+uColB*fres*0.7;
+  col+=uColB*uAudio*0.28;
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+const geo = new THREE.IcosahedronGeometry(1.2, 48);
+const mat = new THREE.ShaderMaterial({uniforms, vertexShader:vert, fragmentShader:frag});
+const orb = new THREE.Mesh(geo, mat);
+scene.add(orb);
+
+// faint particle halo
+const N=900, pg=new THREE.BufferGeometry(), pp=new Float32Array(N*3);
+for(let i=0;i<N;i++){const r=1.7+Math.random()*0.9, th=Math.acos(2*Math.random()-1), ph=Math.random()*6.283;
+  pp[i*3]=r*Math.sin(th)*Math.cos(ph); pp[i*3+1]=r*Math.sin(th)*Math.sin(ph); pp[i*3+2]=r*Math.cos(th);}
+pg.setAttribute('position', new THREE.BufferAttribute(pp,3));
+const pmat=new THREE.PointsMaterial({color:new THREE.Color('#10B981'),size:0.018,transparent:true,opacity:0.5});
+const halo=new THREE.Points(pg,pmat); scene.add(halo);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.5, 0.5, 0.32);
+composer.addPass(bloom);
+
+// ---- state machine ----
+let state='listening', target={amp:0.12,freq:1.9,expand:0.2,col:COL.green,halo:COL.green.b,rot:0.18};
+const SUB={idle:'· standby',listening:'▸ hearing you',thinking:'⠿ processing…',speaking:'◂ speaking'};
+function setState(s){
+  state=s;
+  document.getElementById('state').textContent=s;
+  document.getElementById('state').style.color = s==='speaking'?'#06B6D4':(s==='thinking'?'#F59E0B':(s==='idle'?'#6B7280':'#10B981'));
+  document.getElementById('sub').textContent=SUB[s];
+  document.querySelectorAll('.controls .btn').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
+  if(s==='idle')   target={amp:0.07,freq:1.4,expand:0.0,col:COL.dim ,halo:COL.dim.b ,rot:0.08};
+  if(s==='listening')target={amp:0.13,freq:1.9,expand:0.25,col:COL.green,halo:COL.green.b,rot:0.18};
+  if(s==='thinking') target={amp:0.10,freq:2.8,expand:0.12,col:COL.amber,halo:COL.amber.b,rot:0.55};
+  if(s==='speaking') target={amp:0.18,freq:2.2,expand:0.4,col:COL.cyan ,halo:COL.cyan.b ,rot:0.22};
+}
+document.querySelectorAll('.controls .btn').forEach(b=>b.onclick=()=>setState(b.dataset.s));
+setState('listening');
+
+// ---- audio ----
+let analyser=null, data=null, micOn=false;
+document.getElementById('micbtn').onclick=async()=>{
+  if(micOn) return;
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const ac=new (window.AudioContext||window.webkitAudioContext)();
+    const src=ac.createMediaStreamSource(stream);
+    analyser=ac.createAnalyser(); analyser.fftSize=512; analyser.smoothingTimeConstant=0.8;
+    data=new Uint8Array(analyser.frequencyBinCount); src.connect(analyser);
+    micOn=true; document.getElementById('micbtn').textContent='◉ mic live';
+    document.getElementById('micbtn').classList.add('on');
+    setState('listening');
+  }catch(e){ document.getElementById('micbtn').textContent='mic denied'; }
+};
+function micLevel(){
+  if(!analyser) return 0;
+  analyser.getByteFrequencyData(data);
+  let s=0; for(let i=0;i<data.length;i++) s+=data[i];
+  return Math.min(1,(s/data.length)/90);
+}
+
+// ---- loop ----
+const clock=new THREE.Clock(); let audioS=0;
+function lerp(a,b,t){return a+(b-a)*t;}
+function tick(){
+  const dt=clock.getDelta(), t=clock.elapsedTime;
+  // audio source: real mic when listening+on, else simulated envelope per state
+  let raw;
+  if(micOn && state==='listening') raw=micLevel();
+  else if(state==='speaking') raw=0.45+0.4*Math.abs(Math.sin(t*7.0))*Math.abs(Math.sin(t*2.3));
+  else if(state==='thinking') raw=0.12+0.12*Math.sin(t*9.0);
+  else if(state==='listening') raw=0.18+0.16*Math.abs(Math.sin(t*3.1));
+  else raw=0.04+0.03*Math.sin(t*1.2);
+  audioS=lerp(audioS,raw,0.12);
+  uniforms.uAudio.value=audioS;
+  uniforms.uAmp.value=lerp(uniforms.uAmp.value,target.amp,0.05);
+  uniforms.uFreq.value=lerp(uniforms.uFreq.value,target.freq,0.05);
+  uniforms.uExpand.value=lerp(uniforms.uExpand.value,target.expand,0.05);
+  uniforms.uColA.value.lerp(target.col.a,0.06);
+  uniforms.uColB.value.lerp(target.col.b,0.06);
+  pmat.color.lerp(target.halo,0.06);
+  pmat.opacity=0.22+audioS*0.35;
+  bloom.strength=lerp(bloom.strength,0.32+audioS*0.7,0.08);
+  uniforms.uTime.value=t;
+  orb.rotation.y+=dt*target.rot; orb.rotation.x+=dt*target.rot*0.35;
+  halo.rotation.y-=dt*target.rot*0.5; halo.scale.setScalar(1+audioS*0.18+uniforms.uExpand.value*0.1);
+  composer.render();
+  requestAnimationFrame(tick);
+}
+tick();
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
