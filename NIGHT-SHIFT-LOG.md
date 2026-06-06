@@ -19,7 +19,14 @@ Workspace: `.claude/worktrees/feat-voice` (branch `feat/voice`). Started from `e
 - [x] WI-3.3 — structured voice session persona + kickoff (commit c902494). enter-voice UX; hydration-safe guard; gating note for P4.
 - [x] WI-4.2 + WI-4.3 — Settings "Voice" tab + onboarding/provider defaults (commit c8b9503). masked-key UX, Test Voice, gating on enabled.
 - [x] P5 — polish (orb flare, barge-in, error/empty states, VAD tuning, x-platform docs) (commit 0c17089). tsc+vite green.
-- [ ] P6 — E2E tests (WI-6.1), changelog (WI-6.2), PR (WI-6.3)
+- [x] P6 WI-6.1 — E2E suite GREEN (commit 5a8d946): Playwright 11 passed (fake-audio listen/speak/barge-in + orb visual ×8), Go voice+e2e green incl TestVoiceToolsRoundTrip. Real Silero VAD confirmed endpointing the fixture WAV.
+- [x] P6 WI-6.2 — changelog v3.1.30 (commit 6271702).
+- [x] LOCAL-ONLY — separate STT/TTS endpoints + optional auth (commit 820915c). User wants local models only (Whisper STT + Kokoro TTS, no OpenAI). Config: provider=local, sttBaseUrl(whisper), ttsBaseUrl=http://localhost:8880, ttsModel=kokoro, voice=am_onyx, no key.
+- [ ] P6 WI-6.3 — PR (GabiHert acct, no co-author). PENDING.
+- [ ] LIVE TALK-TEST — sandboxed wails dev; waiting on user's Whisper URL + Kokoro running.
+
+## Build complete summary
+Full Voice feature built, committed on feat/voice, all automated tests green. Commits: ed1da2f, 4ad78fc, 39053d4, d2c8ec9, c902494, c8b9503, 0c17089, 6271702, 5a8d946, 820915c. Remaining: live hands-on test (needs user Whisper URL + Kokoro) then open PR.
 
 ## Decisions / findings (newest first)
 - 2026-06-06: Night shift started. Combining WI-4.1+2.1 (Go config+proxy) into one agent for coherent ownership; rest sequenced to avoid same-file conflicts in the shared worktree.
