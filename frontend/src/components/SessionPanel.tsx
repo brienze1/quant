@@ -360,27 +360,37 @@ export function SessionPanel({
             </button>
           )}
 
-          {/* Voice button (mirrors the mindmap toggle; green control). */}
-          {!isArchived && (
-            <button
-              onClick={() => onVoicePaneOpenChange(!voicePaneOpen)}
-              className="flex items-center gap-1 px-2 py-1 text-[11px]"
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                color: voicePaneOpen ? "var(--q-bg)" : "var(--q-term-green)",
-                backgroundColor: voicePaneOpen ? "var(--q-term-green)" : "var(--q-bg-hover)",
-                border: `1px solid ${voicePaneOpen ? "var(--q-term-green)" : "var(--q-border)"}`,
-              }}
-              onMouseEnter={(e) => {
-                if (!voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
-              }}
-              onMouseLeave={(e) => {
-                if (!voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
-            >
-              <span>voice</span>
-            </button>
-          )}
+          {/* Voice button (mirrors the mindmap toggle; green control).
+              Gated on config.voice.enabled — when voice is disabled in Settings
+              the toggle is inert (disabled + dimmed) with an explanatory tooltip,
+              so the pane/kickoff can never fire for an unconfigured feature. */}
+          {!isArchived && (() => {
+            const voiceEnabled = termConfig?.voice?.enabled ?? false;
+            return (
+              <button
+                onClick={() => { if (voiceEnabled) onVoicePaneOpenChange(!voicePaneOpen); }}
+                disabled={!voiceEnabled}
+                title={voiceEnabled ? "toggle voice pane" : "Enable voice in Settings"}
+                className="flex items-center gap-1 px-2 py-1 text-[11px]"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: voicePaneOpen ? "var(--q-bg)" : "var(--q-term-green)",
+                  backgroundColor: voicePaneOpen ? "var(--q-term-green)" : "var(--q-bg-hover)",
+                  border: `1px solid ${voicePaneOpen ? "var(--q-term-green)" : "var(--q-border)"}`,
+                  opacity: voiceEnabled ? 1 : 0.4,
+                  cursor: voiceEnabled ? "pointer" : "not-allowed",
+                }}
+                onMouseEnter={(e) => {
+                  if (voiceEnabled && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
+                }}
+                onMouseLeave={(e) => {
+                  if (voiceEnabled && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                }}
+              >
+                <span>voice</span>
+              </button>
+            );
+          })()}
 
           {/* Terminal split layout toggle (only when the terminal split is open) */}
           {splitState.open && (

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Config, Repo, Shortcut, RemoteStatus } from "../types";
 import * as api from "../api";
+import type { VoiceConfig } from "../types";
 import { ThemeSettings } from "./ThemeSettings";
 import { KeybindingsTab } from "./KeybindingsTab";
 
-type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "quanti" | "remote" | "themes" | "keybindings";
+type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "quanti" | "voice" | "remote" | "themes" | "keybindings";
 
 const NAV_ITEMS: { key: SettingsTab; label: string; icon: string }[] = [
   { key: "general", label: "general", icon: "settings" },
@@ -16,6 +17,7 @@ const NAV_ITEMS: { key: SettingsTab; label: string; icon: string }[] = [
   { key: "terminal", label: "terminal", icon: "monitor" },
   { key: "claude", label: "claude cli", icon: "bot" },
   { key: "quanti", label: "quanti", icon: "message-square" },
+  { key: "voice", label: "voice", icon: "mic" },
   { key: "remote", label: "remote access", icon: "globe" },
 ];
 
@@ -172,6 +174,7 @@ export function Settings({ repos, onBack }: Props) {
           {tab === "terminal" && <TerminalTab config={config} update={update} />}
           {tab === "claude" && <ClaudeTab config={config} update={update} />}
           {tab === "quanti" && <QuantiTab config={config} update={update} />}
+          {tab === "voice" && <VoiceTab config={config} update={update} />}
           {tab === "remote" && <RemoteTab />}
         </div>
       </div>
@@ -1526,6 +1529,15 @@ function navIcon(name: string): React.ReactNode {
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
       );
+    case "mic":
+      return (
+        <svg {...props}>
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" y1="19" x2="12" y2="23" />
+          <line x1="8" y1="23" x2="16" y2="23" />
+        </svg>
+      );
     default:
       return "*";
   }
@@ -1676,6 +1688,258 @@ function QuantiTab({ config, update }: TabProps) {
             )}
           </div>
         </div>
+      </Section>
+    </>
+  );
+}
+
+// --- Voice Tab ---
+
+// Sensible defaults for a fresh config (WI-4.3): new users land on cloud (the
+// "auto" provider needs only an API key — zero local install). These also guard
+// against an older persisted config that predates the voice sub-object.
+const VOICE_DEFAULTS: VoiceConfig = {
+  enabled: false,
+  provider: "auto",
+  baseUrl: "",
+  sttModel: "",
+  ttsModel: "",
+  voice: "am_onyx",
+  speed: 1.2,
+  hasApiKey: false,
+};
+
+const VOICE_PROVIDER_OPTIONS = ["auto", "local", "cloud"];
+
+// Real, sensible help targets (WI-4.3): link install guides — never auto-download.
+const OPENAI_AUDIO_DOCS = "https://platform.openai.com/docs/guides/text-to-speech";
+const WHISPER_HELP = "https://github.com/speaches-ai/speaches"; // OpenAI-compatible local Whisper (formerly faster-whisper-server)
+const KOKORO_HELP = "https://github.com/remsky/Kokoro-FastAPI"; // OpenAI-compatible local Kokoro TTS (am_onyx voice)
+
+function VoiceTab({ config, update }: TabProps) {
+  // Hydrate from config, falling back to defaults so the tab renders sensibly
+  // for a brand-new / legacy config without a voice sub-object.
+  const voice: VoiceConfig = { ...VOICE_DEFAULTS, ...(config.voice ?? {}) };
+
+  // The DTO masks the stored key: config.voice.apiKey is never populated from
+  // Go-side; config.voice.hasApiKey reports whether one is saved. We keep the
+  // typed-but-unsaved key in local state and only send it on commit. An empty
+  // submit preserves the stored key (handled Go-side in SaveConfig).
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+
+  const [testState, setTestState] = useState<"idle" | "playing" | "ok" | "error">("idle");
+  const [testMsg, setTestMsg] = useState<string>("");
+
+  function updateVoice<K extends keyof VoiceConfig>(key: K, value: VoiceConfig[K]) {
+    update("voice", { ...voice, [key]: value });
+  }
+
+  function commitApiKey() {
+    // Only send when the user actually typed something; an empty field leaves
+    // the stored key untouched (Go-side preserves it on an empty incoming key).
+    if (apiKeyDraft.length === 0) return;
+    update("voice", { ...voice, apiKey: apiKeyDraft, hasApiKey: true });
+    setApiKeyDraft("");
+  }
+
+  async function testVoice() {
+    setTestState("playing");
+    setTestMsg("synthesizing…");
+    try {
+      const res = await api.synthesize("Voice is working.", voice.voice || "", voice.speed || 0);
+      const audio = new Audio(`data:${res.contentType || "audio/mpeg"};base64,${res.audioB64}`);
+      audio.onended = () => { setTestState("ok"); setTestMsg("played ✓"); };
+      audio.onerror = () => { setTestState("error"); setTestMsg("playback failed"); };
+      await audio.play();
+      setTestState("ok");
+      setTestMsg("playing ✓");
+    } catch (err) {
+      setTestState("error");
+      setTestMsg(String(err instanceof Error ? err.message : err));
+    }
+  }
+
+  return (
+    <>
+      <Section
+        title="voice"
+        description="talk to a session hands-free; it talks back. STT/TTS run through a local Go proxy so your api key never reaches the browser."
+      >
+        <SettingRow
+          label="enable voice"
+          description="turn on the voice pane toggle in the session header"
+          right={<Toggle checked={voice.enabled} onChange={(v) => updateVoice("enabled", v)} />}
+        />
+        <SettingRow
+          label="provider"
+          description="auto = local engines if present, else cloud · local = your own whisper/kokoro · cloud = OpenAI-compatible api"
+          right={
+            <SelectInput
+              value={voice.provider}
+              options={VOICE_PROVIDER_OPTIONS}
+              onChange={(v) => updateVoice("provider", v as VoiceConfig["provider"])}
+              width={200}
+            />
+          }
+        />
+      </Section>
+
+      <Section
+        title="getting started"
+        description="cloud is the zero-install path; local engines are optional for power users"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11, color: "var(--q-fg-secondary)" }}>
+          <span>
+            <span style={{ color: "var(--q-accent)" }}>cloud:</span>{" "}
+            paste an OpenAI-compatible api key below, leave base url blank, and flip "enable voice" on.{" "}
+            <a href={OPENAI_AUDIO_DOCS} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+              openai audio docs →
+            </a>
+          </span>
+          <span>
+            <span style={{ color: "var(--q-accent)" }}>local engines:</span>{" "}
+            run your own STT/TTS and point base url at them — no binaries are downloaded for you.{" "}
+            <a href={WHISPER_HELP} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+              whisper (speaches) →
+            </a>{" "}
+            <a href={KOKORO_HELP} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+              kokoro tts →
+            </a>
+          </span>
+        </div>
+      </Section>
+
+      <Section title="credentials" description="the api key is stored locally on this machine and is never sent to the browser">
+        <SettingRow
+          label="api key"
+          description={
+            voice.hasApiKey
+              ? "a key is saved — type to replace it, or leave blank to keep it"
+              : "OpenAI-compatible api key (required for the cloud provider)"
+          }
+          right={
+            <input
+              type="password"
+              value={apiKeyDraft}
+              onChange={(e) => setApiKeyDraft(e.target.value)}
+              onBlur={commitApiKey}
+              onKeyDown={(e) => { if (e.key === "Enter") commitApiKey(); }}
+              placeholder={voice.hasApiKey ? "•••• saved" : "sk-…"}
+              className="px-3 focus:outline-none"
+              style={{
+                width: 280,
+                height: 32,
+                backgroundColor: "var(--q-bg-input)",
+                border: "1px solid var(--q-border)",
+                color: "var(--q-fg)",
+                fontSize: 12,
+                fontFamily: font,
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+              onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+            />
+          }
+        />
+      </Section>
+
+      <Section title="advanced" description="override the endpoint and model names — defaults work for OpenAI cloud">
+        <SettingRow
+          label="base url"
+          description="leave blank for OpenAI cloud (https://api.openai.com). for local: kokoro http://localhost:8880 · whisper http://localhost:2022"
+          right={
+            <TextInput
+              value={voice.baseUrl}
+              onChange={(v) => updateVoice("baseUrl", v)}
+              width={280}
+              placeholder="https://api.openai.com"
+            />
+          }
+        />
+        <SettingRow
+          label="stt model"
+          description="speech-to-text model (transcription)"
+          right={
+            <TextInput
+              value={voice.sttModel}
+              onChange={(v) => updateVoice("sttModel", v)}
+              width={200}
+              placeholder="whisper-1"
+            />
+          }
+        />
+        <SettingRow
+          label="tts model"
+          description="text-to-speech model (synthesis)"
+          right={
+            <TextInput
+              value={voice.ttsModel}
+              onChange={(v) => updateVoice("ttsModel", v)}
+              width={200}
+              placeholder="tts-1"
+            />
+          }
+        />
+        <SettingRow
+          label="voice"
+          description="the spoken voice name (default am_onyx)"
+          right={
+            <TextInput
+              value={voice.voice}
+              onChange={(v) => updateVoice("voice", v)}
+              width={200}
+              placeholder="am_onyx"
+            />
+          }
+        />
+        <SettingRow
+          label="speed"
+          description="playback rate, 0.5–2.0 (default 1.2)"
+          right={
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={0.5}
+                max={2.0}
+                step={0.1}
+                value={voice.speed}
+                onChange={(e) => updateVoice("speed", parseFloat(e.target.value))}
+                style={{ width: 160, accentColor: "var(--q-accent)" }}
+              />
+              <span style={{ color: "var(--q-fg)", fontSize: 12, width: 32 }}>{voice.speed.toFixed(1)}x</span>
+            </div>
+          }
+        />
+      </Section>
+
+      <Section title="test" description="synthesize a short phrase and play it through your speakers">
+        <SettingRow
+          label="test voice"
+          description="speaks “Voice is working.” using the current voice + speed"
+          right={
+            <div className="flex items-center gap-3">
+              <SmallButton
+                label={testState === "playing" ? "…" : "test voice"}
+                onClick={testVoice}
+                disabled={testState === "playing"}
+              />
+              {testMsg && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color:
+                      testState === "error"
+                        ? "var(--q-error)"
+                        : testState === "ok"
+                        ? "var(--q-term-green)"
+                        : "var(--q-fg-secondary)",
+                  }}
+                >
+                  {testMsg}
+                </span>
+              )}
+            </div>
+          }
+        />
       </Section>
     </>
   );

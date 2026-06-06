@@ -16,9 +16,8 @@ Workspace: `.claude/worktrees/feat-voice` (branch `feat/voice`). Started from `e
 - [x] WI-2.2 — frontend audioService (getUserMedia + vad-web + playback) (commit 4ad78fc). tsc+vite green. Injectable transport for mocks; window.__voiceService exposed. NOTE: public/vad assets = 41M (trim unused ort wasm variants at ship).
 - [x] WI-2.3 + WI-2.4 — Go<->frontend voice bridge + MCP voice tools (commit 39053d4). PROOF-OF-LIFE: e2e TestVoiceToolsRoundTrip green (listen/speak/converse over MCP-HTTP w/ X-Quant-Session). bridge unit tests green.
 - [x] WI-3.1 + WI-3.2 — VoicePane component + pane toggle/global state (commit d2c8ec9). tsc+vite+go green. Transcript via registerVoiceBridge callbacks {onUserTranscript,onAgentSpeak}. Dock layout stacks voice+mindmap.
-- [ ] WI-3.3 — structured voice session persona + kickoff
-- [ ] WI-4.2 — Settings "Voice" tab
-- [ ] WI-4.3 — onboarding/provider defaults
+- [x] WI-3.3 — structured voice session persona + kickoff (commit c902494). enter-voice UX; hydration-safe guard; gating note for P4.
+- [ ] WI-4.2 + WI-4.3 — Settings "Voice" tab + onboarding/provider defaults
 - [ ] P5 — polish (orb flare, barge-in, states, VAD tuning)
 - [ ] P6 — tests, changelog, PR
 
