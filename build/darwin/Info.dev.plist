@@ -64,5 +64,7 @@
             <key>NSAllowsLocalNetworking</key>
             <true/>
         </dict>
+        <key>NSMicrophoneUsageDescription</key>
+        <string>Quant needs microphone access to use voice features in the integrated terminal.</string>
     </dict>
 </plist>
