@@ -562,3 +562,21 @@ export function synthesize(
 ): Promise<VoiceSpeechResult> {
   return callGo(PKG, VOICE_CTRL, "Synthesize", text, voice, speed);
 }
+
+/**
+ * Report the result of a voice request back to the Go voice bridge, unblocking
+ * the MCP voice tool (voice_listen / voice_speak / voice_converse) that is
+ * waiting on it. Called by the frontend voice bridge (voiceBridge.ts) after it
+ * has run audioService.listen() or .speak() for an incoming "voice:request".
+ *
+ * @param requestId correlation id from the "voice:request" event
+ * @param transcript the recognized text for a "listen" request ("" for speak)
+ * @param errMsg non-empty on failure; "" on success
+ */
+export function voiceResult(
+  requestId: string,
+  transcript: string,
+  errMsg: string,
+): Promise<void> {
+  return callGo(PKG, VOICE_CTRL, "VoiceResult", requestId, transcript, errMsg);
+}

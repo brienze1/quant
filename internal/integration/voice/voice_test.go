@@ -28,7 +28,7 @@ func (s *stubConfigManager) SendNotification(string, string) error {
 }
 
 func newController(cfg entity.VoiceConfig) *voiceController {
-	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{Voice: cfg}})
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{Voice: cfg}}, nil)
 	return c
 }
 

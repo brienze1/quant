@@ -18,6 +18,7 @@ import (
 
 	appAdapter "quant/internal/application/adapter"
 	"quant/internal/domain/entity"
+	"quant/internal/integration/voice"
 )
 
 // DefaultPort is the preferred MCP server port.
@@ -38,6 +39,7 @@ type QuantMCPServer struct {
 	repoManager      appAdapter.RepoManager
 	jobGroupManager  appAdapter.JobGroupManager
 	mindmapManager   appAdapter.MindmapManager
+	voiceBridge      *voice.Bridge
 	httpServer       *http.Server
 	listener         net.Listener
 	port             int
@@ -45,7 +47,7 @@ type QuantMCPServer struct {
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
 // It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager) *QuantMCPServer {
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, voiceBridge *voice.Bridge) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
 	s := &QuantMCPServer{
@@ -56,6 +58,7 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 		repoManager:      repoManager,
 		jobGroupManager:  jobGroupManager,
 		mindmapManager:   mindmapManager,
+		voiceBridge:      voiceBridge,
 	}
 
 	s.registerTools(mcpServer)
@@ -740,6 +743,37 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("newName", mcp.Required(), mcp.Description("New name for the session")),
 		),
 		s.handleRenameSession,
+	)
+
+	// -----------------------------------------------------------------------
+	// Voice tools — spoken conversation via the frontend audio pipeline.
+	// These bridge to the webview audio I/O over the voice:request event bus
+	// and are scoped to the calling session via the X-Quant-Session header.
+	// -----------------------------------------------------------------------
+
+	mcpServer.AddTool(
+		mcp.NewTool("voice_listen",
+			mcp.WithDescription(`Listen to the user and return what they said as text.
+
+Captures one spoken utterance from the user (mic capture + voice-activity detection + speech-to-text run in the voice pane) and returns the transcript. Use this in a voice conversation to hear the user's reply. Blocks until the user finishes speaking or the listen times out. If it times out (no voice pane open, or the user said nothing), an error is returned — you can retry.`),
+		),
+		s.handleVoiceListen,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("voice_speak",
+			mcp.WithDescription(`Speak the given text aloud to the user (text-to-speech played in the voice pane). Returns once playback completes. Keep the text concise and speech-friendly (no markdown, no code blocks). Use this to reply in a voice conversation.`),
+			mcp.WithString("text", mcp.Required(), mcp.Description("The text to speak aloud. Plain, conversational, speech-friendly.")),
+		),
+		s.handleVoiceSpeak,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("voice_converse",
+			mcp.WithDescription(`Speak the given text aloud, then immediately listen for the user's reply — one combined turn. Returns the user's transcript. This is sugar for voice_speak(text) followed by voice_listen(); use it to keep a back-and-forth conversation flowing in a single call.`),
+			mcp.WithString("text", mcp.Required(), mcp.Description("The text to speak before listening. Plain, conversational, speech-friendly.")),
+		),
+		s.handleVoiceConverse,
 	)
 
 	// -----------------------------------------------------------------------
@@ -2282,6 +2316,79 @@ func (s *QuantMCPServer) handleRenameSession(_ context.Context, request mcp.Call
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s renamed to '%s'", id, newName)), nil
+}
+
+// ---------------------------------------------------------------------------
+// Voice handlers
+// ---------------------------------------------------------------------------
+
+// sessionFromCtx extracts the calling session id from the X-Quant-Session
+// header (placed in ctx by the HTTP context func). Voice tools require it so the
+// request is routed to the right voice pane.
+func sessionFromCtx(ctx context.Context) string {
+	if sid, ok := ctx.Value(sessionCtxKey).(string); ok {
+		return sid
+	}
+	return ""
+}
+
+func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.voiceBridge == nil {
+		return mcp.NewToolResultError("voice bridge not available"), nil
+	}
+	sessionID := sessionFromCtx(ctx)
+	if sessionID == "" {
+		return mcp.NewToolResultError("voice_listen requires a session context (X-Quant-Session) — call it from a hosted session"), nil
+	}
+
+	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", voice.ListenTimeout)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(reply.Transcript), nil
+}
+
+func (s *QuantMCPServer) handleVoiceSpeak(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.voiceBridge == nil {
+		return mcp.NewToolResultError("voice bridge not available"), nil
+	}
+	sessionID := sessionFromCtx(ctx)
+	if sessionID == "" {
+		return mcp.NewToolResultError("voice_speak requires a session context (X-Quant-Session) — call it from a hosted session"), nil
+	}
+	text, err := requiredString(request, "text")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, voice.SpeakTimeout); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText("spoken"), nil
+}
+
+func (s *QuantMCPServer) handleVoiceConverse(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.voiceBridge == nil {
+		return mcp.NewToolResultError("voice bridge not available"), nil
+	}
+	sessionID := sessionFromCtx(ctx)
+	if sessionID == "" {
+		return mcp.NewToolResultError("voice_converse requires a session context (X-Quant-Session) — call it from a hosted session"), nil
+	}
+	text, err := requiredString(request, "text")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Speak first, then listen for the reply — one combined turn.
+	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, voice.SpeakTimeout); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", voice.ListenTimeout)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(reply.Transcript), nil
 }
 
 // ---------------------------------------------------------------------------

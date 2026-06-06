@@ -47,16 +47,43 @@ type voiceController struct {
 	ctx           context.Context
 	configManager adapter.ConfigManager
 	client        *http.Client
+	bridge        *Bridge
 }
 
 // NewVoiceController constructs the voice STT/TTS proxy controller. It reads the
 // voice configuration (provider, base URL, models, API key, voice/speed) from the
 // config manager at call time, so settings changes take effect without a restart.
-func NewVoiceController(configManager adapter.ConfigManager) *voiceController {
+//
+// The bridge connects the MCP voice tools (Go) to the frontend audio pipeline;
+// VoiceResult forwards frontend replies into it. Pass nil only in tests that do
+// not exercise VoiceResult.
+func NewVoiceController(configManager adapter.ConfigManager, bridge *Bridge) *voiceController {
 	return &voiceController{
 		configManager: configManager,
 		client:        &http.Client{Timeout: defaultTimeout},
+		bridge:        bridge,
 	}
+}
+
+// VoiceResult is called by the frontend voice bridge once it has completed a
+// voice request (a transcript for "listen", or playback completion for "speak").
+// It resolves the matching in-flight bridge.Request so the waiting MCP voice
+// tool handler can return. requestId correlates the reply with the original
+// "voice:request" event; an empty errMsg means success. Unknown/duplicate
+// requestIds are ignored safely.
+//
+// It returns a single error (nil) to satisfy the remote-transport contract,
+// which keeps only the last non-error return value.
+func (c *voiceController) VoiceResult(requestId string, transcript string, errMsg string) error {
+	if c.bridge == nil {
+		return fmt.Errorf("voice bridge not initialized")
+	}
+	c.bridge.Resolve(requestId, VoiceReply{
+		Transcript: transcript,
+		Done:       errMsg == "",
+		Err:        errMsg,
+	})
+	return nil
 }
 
 // OnStartup is called when the Wails app starts; the context is saved for later use.

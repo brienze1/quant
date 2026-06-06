@@ -225,11 +225,17 @@ func Run(assets embed.FS, changelogData []byte) error {
 	jobGroupCtrl := injector.JobGroupController()
 	mindmapCtrl := injector.MindmapController()
 	changelogCtrl := injector.ChangelogController()
-	voiceCtrl := voice.NewVoiceController(injector.ConfigManager())
+	// Voice bridge connects the MCP voice tools (Go) to the frontend audio
+	// pipeline: a tool emits "voice:request" via remote.Emit (native webview +
+	// remote browser clients) and blocks until VoiceResult resolves it. Shared
+	// between the voice controller (which resolves) and the MCP server (which
+	// requests).
+	voiceBridge := voice.NewBridge(remote.Emit)
+	voiceCtrl := voice.NewVoiceController(injector.ConfigManager(), voiceBridge)
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
-	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager())
+	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager(), voiceBridge)
 	mcpPort := mcpServer.Port()
 	fmt.Printf("[quant] MCP server on port %d → http://localhost:%d/mcp\n", mcpPort, mcpPort)
 	if mcpPort != quantmcp.DefaultPort {
