@@ -1702,6 +1702,8 @@ const VOICE_DEFAULTS: VoiceConfig = {
   enabled: false,
   provider: "auto",
   baseUrl: "",
+  sttBaseUrl: "",
+  ttsBaseUrl: "",
   sttModel: "",
   ttsModel: "",
   voice: "am_onyx",
@@ -1734,11 +1736,15 @@ function VoiceTab({ config, update }: TabProps) {
     update("voice", { ...voice, [key]: value });
   }
 
-  // WI-5.5: surface "not configured" inline — enabled with a cloud/auto provider
-  // but no saved key and no custom base url means the pane can't work yet.
-  const needsKey = voice.provider !== "local";
-  const hasUrl = !!(voice.baseUrl && voice.baseUrl.trim());
-  const notConfigured = voice.enabled && needsKey && !voice.hasApiKey && !hasUrl;
+  // Surface "not configured" inline. Local needs both STT + TTS URLs (no key
+  // required). Cloud/auto needs either a saved key or some configured URL.
+  const hasSttUrl = !!(voice.sttBaseUrl?.trim() || voice.baseUrl?.trim());
+  const hasTtsUrl = !!(voice.ttsBaseUrl?.trim() || voice.baseUrl?.trim());
+  const notConfigured =
+    voice.enabled &&
+    (voice.provider === "local"
+      ? !hasSttUrl || !hasTtsUrl
+      : !voice.hasApiKey && !hasSttUrl && !hasTtsUrl);
 
   function commitApiKey() {
     // Only send when the user actually typed something; an empty field leaves
@@ -1789,7 +1795,9 @@ function VoiceTab({ config, update }: TabProps) {
           >
             <span style={{ color: "var(--q-warning)", fontWeight: 700 }}>voice not configured — </span>
             <span style={{ color: "var(--q-fg-secondary)" }}>
-              add an API key below (or set a local base url) so the voice pane can transcribe and speak.
+              {voice.provider === "local"
+                ? "set both the STT (Whisper) URL and TTS (Kokoro) URL below — no api key needed."
+                : "add an API key below (or set the STT/TTS urls) so the voice pane can transcribe and speak."}
             </span>
           </div>
         )}
@@ -1809,36 +1817,37 @@ function VoiceTab({ config, update }: TabProps) {
 
       <Section
         title="getting started"
-        description="cloud is the zero-install path; local engines are optional for power users"
+        description="local self-hosted engines are the recommended, private, zero-cost path"
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11, color: "var(--q-fg-secondary)" }}>
           <span>
-            <span style={{ color: "var(--q-accent)" }}>cloud:</span>{" "}
-            paste an OpenAI-compatible api key below, leave base url blank, and flip "enable voice" on.{" "}
-            <a href={OPENAI_AUDIO_DOCS} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
-              openai audio docs →
-            </a>
-          </span>
-          <span>
-            <span style={{ color: "var(--q-accent)" }}>local engines:</span>{" "}
-            run your own STT/TTS and point base url at them — no binaries are downloaded for you.{" "}
+            <span style={{ color: "var(--q-accent)" }}>local (recommended):</span>{" "}
+            run Whisper + Kokoro-FastAPI and point the STT/TTS urls below at them — no api key needed.
+            set provider to "local", STT url to http://localhost:2022, TTS url to http://localhost:8880.{" "}
             <a href={WHISPER_HELP} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
               whisper (speaches) →
             </a>{" "}
             <a href={KOKORO_HELP} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
-              kokoro tts →
+              kokoro-fastapi →
+            </a>
+          </span>
+          <span>
+            <span style={{ color: "var(--q-accent)" }}>cloud:</span>{" "}
+            paste an OpenAI-compatible api key below, leave the urls blank, and flip "enable voice" on.{" "}
+            <a href={OPENAI_AUDIO_DOCS} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+              openai audio docs →
             </a>
           </span>
         </div>
       </Section>
 
-      <Section title="credentials" description="the api key is stored locally on this machine and is never sent to the browser">
+      <Section title="credentials" description="optional for local engines · the api key is stored locally on this machine and is never sent to the browser">
         <SettingRow
           label="api key"
           description={
             voice.hasApiKey
               ? "a key is saved — type to replace it, or leave blank to keep it"
-              : "OpenAI-compatible api key (required for the cloud provider)"
+              : "OpenAI-compatible api key — required for cloud, optional/blank for local engines"
           }
           right={
             <input
@@ -1865,10 +1874,34 @@ function VoiceTab({ config, update }: TabProps) {
         />
       </Section>
 
-      <Section title="advanced" description="override the endpoint and model names — defaults work for OpenAI cloud">
+      <Section title="endpoints" description="STT and TTS run as separate servers on different ports — point each at its own engine. blank = fall back to the legacy base url, then the cloud default">
         <SettingRow
-          label="base url"
-          description="leave blank for OpenAI cloud (https://api.openai.com). for local: kokoro http://localhost:8880 · whisper http://localhost:2022"
+          label="STT (Whisper) URL"
+          description="speech-to-text endpoint · local: http://localhost:2022 · blank for cloud"
+          right={
+            <TextInput
+              value={voice.sttBaseUrl}
+              onChange={(v) => updateVoice("sttBaseUrl", v)}
+              width={280}
+              placeholder="http://localhost:2022"
+            />
+          }
+        />
+        <SettingRow
+          label="TTS (Kokoro) URL"
+          description="text-to-speech endpoint · local: http://localhost:8880 · blank for cloud"
+          right={
+            <TextInput
+              value={voice.ttsBaseUrl}
+              onChange={(v) => updateVoice("ttsBaseUrl", v)}
+              width={280}
+              placeholder="http://localhost:8880"
+            />
+          }
+        />
+        <SettingRow
+          label="base url (legacy)"
+          description="optional shared fallback for both STT + TTS when the urls above are blank. leave empty for OpenAI cloud (https://api.openai.com)"
           right={
             <TextInput
               value={voice.baseUrl}

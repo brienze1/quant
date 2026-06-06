@@ -314,7 +314,7 @@ func TestBaseURLsAutoFallthrough(t *testing.T) {
 	defer failing.Close()
 
 	vc := entity.VoiceConfig{Provider: "auto", BaseURL: failing.URL}.WithDefaults()
-	urls := baseURLs(vc)
+	urls := baseURLs(vc, opSTT)
 	if len(urls) < 2 || urls[0] != strings.TrimRight(failing.URL, "/") {
 		t.Fatalf("auto base URL order = %v, want failing base first", urls)
 	}
@@ -343,16 +343,144 @@ func TestIsLocal(t *testing.T) {
 
 func TestBaseURLsProviderModes(t *testing.T) {
 	// local: configured base only.
-	if got := baseURLs(entity.VoiceConfig{Provider: "local", BaseURL: "http://localhost:1/"}); len(got) != 1 || got[0] != "http://localhost:1" {
+	if got := baseURLs(entity.VoiceConfig{Provider: "local", BaseURL: "http://localhost:1/"}, opSTT); len(got) != 1 || got[0] != "http://localhost:1" {
 		t.Errorf("local mode = %v", got)
 	}
 	// cloud with no base: default cloud.
-	if got := baseURLs(entity.VoiceConfig{Provider: "cloud"}); len(got) != 1 || got[0] != defaultCloudBaseURL {
+	if got := baseURLs(entity.VoiceConfig{Provider: "cloud"}, opSTT); len(got) != 1 || got[0] != defaultCloudBaseURL {
 		t.Errorf("cloud default = %v", got)
 	}
 	// auto with local base: [local, cloud].
-	got := baseURLs(entity.VoiceConfig{Provider: "auto", BaseURL: "http://localhost:9/"})
+	got := baseURLs(entity.VoiceConfig{Provider: "auto", BaseURL: "http://localhost:9/"}, opSTT)
 	if len(got) != 2 || got[0] != "http://localhost:9" || got[1] != defaultCloudBaseURL {
 		t.Errorf("auto local mode = %v", got)
+	}
+}
+
+// TestBaseURLsPerOperation asserts STT and TTS resolve from their own URLs first,
+// then fall back to the shared legacy BaseURL, then the provider default.
+func TestBaseURLsPerOperation(t *testing.T) {
+	// Operation-specific URLs take precedence over the shared BaseURL.
+	vc := entity.VoiceConfig{
+		Provider:   "local",
+		BaseURL:    "http://shared:1",
+		STTBaseURL: "http://localhost:2022/",
+		TTSBaseURL: "http://localhost:8880/",
+	}
+	if got := baseURLs(vc, opSTT); len(got) != 1 || got[0] != "http://localhost:2022" {
+		t.Errorf("STT URL = %v, want [http://localhost:2022]", got)
+	}
+	if got := baseURLs(vc, opTTS); len(got) != 1 || got[0] != "http://localhost:8880" {
+		t.Errorf("TTS URL = %v, want [http://localhost:8880]", got)
+	}
+
+	// Fallback to the shared legacy BaseURL when the specific one is empty.
+	fb := entity.VoiceConfig{Provider: "local", BaseURL: "http://shared:1/"}
+	if got := baseURLs(fb, opSTT); len(got) != 1 || got[0] != "http://shared:1" {
+		t.Errorf("STT fallback to BaseURL = %v", got)
+	}
+	if got := baseURLs(fb, opTTS); len(got) != 1 || got[0] != "http://shared:1" {
+		t.Errorf("TTS fallback to BaseURL = %v", got)
+	}
+
+	// local provider with no URL at all → nil (clear error surfaced by caller).
+	if got := baseURLs(entity.VoiceConfig{Provider: "local"}, opSTT); got != nil {
+		t.Errorf("local with no URL should yield nil, got %v", got)
+	}
+}
+
+// TestTranscribeAndSynthesizeHitSeparateURLs proves that under "local", STT goes
+// to STTBaseURL and TTS goes to TTSBaseURL — two distinct servers.
+func TestTranscribeAndSynthesizeHitSeparateURLs(t *testing.T) {
+	var sttHit, ttsHit bool
+
+	stt := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sttHit = true
+		if r.URL.Path != "/v1/audio/transcriptions" {
+			t.Errorf("STT server got unexpected path: %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, "hi from whisper")
+	}))
+	defer stt.Close()
+
+	tts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ttsHit = true
+		if r.URL.Path != "/v1/audio/speech" {
+			t.Errorf("TTS server got unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("MP3"))
+	}))
+	defer tts.Close()
+
+	c := newController(entity.VoiceConfig{
+		Provider:   "local",
+		STTBaseURL: stt.URL,
+		TTSBaseURL: tts.URL,
+	})
+
+	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if transcript != "hi from whisper" {
+		t.Errorf("transcript = %q", transcript)
+	}
+	if _, err := c.Synthesize("hello", "", 0); err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+	if !sttHit {
+		t.Error("STT server was not hit by Transcribe")
+	}
+	if !ttsHit {
+		t.Error("TTS server was not hit by Synthesize")
+	}
+}
+
+// TestNoAuthHeaderWhenKeyEmpty asserts that an empty API key sends NO
+// Authorization header (local servers may reject an empty bearer), while a set
+// key sends the bearer header.
+func TestNoAuthHeaderWhenKeyEmpty(t *testing.T) {
+	var hadAuthHeader bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, hadAuthHeader = r.Header["Authorization"]
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("MP3"))
+	}))
+	defer srv.Close()
+
+	// Empty key → no header.
+	c := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL})
+	if _, err := c.Synthesize("hi", "", 0); err != nil {
+		t.Fatalf("Synthesize (no key): %v", err)
+	}
+	if hadAuthHeader {
+		t.Error("Authorization header should be absent when API key is empty")
+	}
+
+	// Non-empty key → header present.
+	hadAuthHeader = false
+	c2 := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL, APIKey: "sk-x"})
+	if _, err := c2.Synthesize("hi", "", 0); err != nil {
+		t.Fatalf("Synthesize (with key): %v", err)
+	}
+	if !hadAuthHeader {
+		t.Error("Authorization header should be present when API key is set")
+	}
+}
+
+// TestLocalMissingURLClearError asserts the local-provider missing-URL errors
+// name the exact Settings field to fill in.
+func TestLocalMissingURLClearError(t *testing.T) {
+	c := newController(entity.VoiceConfig{Provider: "local"})
+
+	_, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
+	if err == nil || !strings.Contains(err.Error(), "STT (Whisper) URL") {
+		t.Errorf("Transcribe local-missing error = %v, want it to name STT (Whisper) URL", err)
+	}
+
+	_, err = c.Synthesize("hi", "", 0)
+	if err == nil || !strings.Contains(err.Error(), "TTS (Kokoro) URL") {
+		t.Errorf("Synthesize local-missing error = %v, want it to name TTS (Kokoro) URL", err)
 	}
 }

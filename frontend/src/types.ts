@@ -289,7 +289,13 @@ export interface Config {
 export interface VoiceConfig {
   enabled: boolean;
   provider: "auto" | "local" | "cloud";
+  // baseUrl is the legacy single endpoint, kept as a back-compat fallback for
+  // both STT and TTS when the per-operation URLs below are empty.
   baseUrl: string;
+  // Separate self-hosted STT/TTS endpoints (e.g. Whisper :2022, Kokoro :8880).
+  // Empty = fall back to baseUrl, then the provider default. Not secrets.
+  sttBaseUrl: string;
+  ttsBaseUrl: string;
   apiKey?: string;
   hasApiKey?: boolean;
   sttModel: string;

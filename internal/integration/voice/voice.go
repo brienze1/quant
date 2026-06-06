@@ -202,14 +202,46 @@ func isLocal(rawURL string) bool {
 	return false
 }
 
-// baseURLs builds the ordered list of provider base URLs to try, based on the
-// configured provider mode:
-//   - "local": the configured BaseURL only.
-//   - "cloud": the configured BaseURL if set, else the default cloud endpoint.
-//   - "auto" (default): the configured BaseURL first if it is local, then cloud.
-func baseURLs(vc entity.VoiceConfig) []string {
+// op identifies which speech operation a base-URL list is being built for, so
+// errors can name the exact Settings field the user must fill in.
+type op int
+
+const (
+	opSTT op = iota
+	opTTS
+)
+
+func (o op) field() string {
+	if o == opTTS {
+		return "TTS (Kokoro) URL"
+	}
+	return "STT (Whisper) URL"
+}
+
+// resolveBase picks the operation-specific base URL, falling back to the legacy
+// shared BaseURL: sttBaseUrl/ttsBaseUrl → baseUrl. Returns "" if none is set.
+func resolveBase(vc entity.VoiceConfig, o op) string {
 	trim := func(s string) string { return strings.TrimRight(strings.TrimSpace(s), "/") }
-	base := trim(vc.BaseURL)
+	specific := vc.STTBaseURL
+	if o == opTTS {
+		specific = vc.TTSBaseURL
+	}
+	if s := trim(specific); s != "" {
+		return s
+	}
+	return trim(vc.BaseURL)
+}
+
+// baseURLs builds the ordered list of provider base URLs to try for one
+// operation (STT or TTS), based on the configured provider mode:
+//   - "local": the operation-specific local URL ONLY (no cloud fallback). If
+//     unset, returns nil (caller surfaces a clear error naming the field).
+//   - "cloud": the operation-specific/legacy URL if set, else the default cloud
+//     endpoint.
+//   - "auto" (default): the operation-specific/legacy URL first if set, then the
+//     cloud default as a fallback.
+func baseURLs(vc entity.VoiceConfig, o op) []string {
+	base := resolveBase(vc, o)
 
 	switch vc.Provider {
 	case "local":
@@ -224,15 +256,10 @@ func baseURLs(vc entity.VoiceConfig) []string {
 		return []string{defaultCloudBaseURL}
 	default: // "auto"
 		var urls []string
-		if base != "" && isLocal(base) {
+		if base != "" {
 			urls = append(urls, base)
 		}
 		urls = append(urls, defaultCloudBaseURL)
-		// If a non-local base URL was configured under auto, prefer it over cloud
-		// default but still keep cloud as a fallback.
-		if base != "" && !isLocal(base) {
-			urls = append([]string{base}, urls...)
-		}
 		return dedupe(urls)
 	}
 }
@@ -306,9 +333,9 @@ func (c *voiceController) Transcribe(audioB64 string, mime string) (string, erro
 	}
 	filename := filenameForMIME(mime)
 
-	urls := baseURLs(vc)
+	urls := baseURLs(vc, opSTT)
 	if len(urls) == 0 {
-		return "", fmt.Errorf("no transcription provider configured")
+		return "", fmt.Errorf("voice provider is set to \"local\" but no %s is configured — set it in Settings → Voice", opSTT.field())
 	}
 
 	var lastErr error
@@ -446,9 +473,9 @@ func (c *voiceController) Synthesize(text string, voice string, speed float64) (
 		return SpeechResult{}, err
 	}
 
-	urls := baseURLs(vc)
+	urls := baseURLs(vc, opTTS)
 	if len(urls) == 0 {
-		return SpeechResult{}, fmt.Errorf("no speech provider configured")
+		return SpeechResult{}, fmt.Errorf("voice provider is set to \"local\" but no %s is configured — set it in Settings → Voice", opTTS.field())
 	}
 
 	var lastErr error

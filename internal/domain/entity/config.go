@@ -11,14 +11,22 @@ type Shortcut struct {
 // The APIKey is stored Go-side only and is never exposed to the frontend / remote
 // clients — the DTO masks it (see internal/integration/entrypoint/dto/config.go).
 type VoiceConfig struct {
-	Enabled  bool    `json:"enabled"`
-	Provider string  `json:"provider"` // "auto" | "local" | "cloud"
-	BaseURL  string  `json:"baseUrl"`
-	APIKey   string  `json:"apiKey"`
-	STTModel string  `json:"sttModel"`
-	TTSModel string  `json:"ttsModel"`
-	Voice    string  `json:"voice"` // default "am_onyx"
-	Speed    float64 `json:"speed"` // default 1.2
+	Enabled  bool   `json:"enabled"`
+	Provider string `json:"provider"` // "auto" | "local" | "cloud"
+	// BaseURL is the legacy single endpoint used for BOTH STT and TTS. It is kept
+	// as a back-compat fallback: when STTBaseURL / TTSBaseURL are empty the proxy
+	// falls back to BaseURL, then to the provider default.
+	BaseURL string `json:"baseUrl"`
+	// STTBaseURL / TTSBaseURL let local self-hosted engines run as separate servers
+	// on different ports (e.g. Whisper http://localhost:2022, Kokoro http://localhost:8880).
+	// Empty means "fall back to BaseURL, then provider default". Not secrets — not masked.
+	STTBaseURL string  `json:"sttBaseUrl"`
+	TTSBaseURL string  `json:"ttsBaseUrl"`
+	APIKey     string  `json:"apiKey"`
+	STTModel   string  `json:"sttModel"`
+	TTSModel   string  `json:"ttsModel"`
+	Voice      string  `json:"voice"` // default "am_onyx"
+	Speed      float64 `json:"speed"` // default 1.2
 }
 
 // WithDefaults returns a copy of the voice config with sensible defaults applied
