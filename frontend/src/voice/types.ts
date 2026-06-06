@@ -62,6 +62,37 @@ export interface AudioServiceOptions {
   speed?: number;
   /** Enable barge-in: pause TTS when VAD detects speech during playback. */
   bargeIn?: boolean;
+  /**
+   * VAD endpointing knobs (WI-5.6). All optional — sensible conversational
+   * defaults are used when omitted. These map onto @ricky0123/vad-web's
+   * FrameProcessorOptions. A single `sensitivity` 0..1 can also be supplied to
+   * derive the positive/negative thresholds without setting them individually.
+   */
+  vad?: VadTuning;
+}
+
+/**
+ * VAD endpointing tuning (WI-5.6). Higher `sensitivity` triggers on quieter /
+ * less-certain speech (more eager, more false positives); lower is stricter.
+ * Individual thresholds, if given, win over `sensitivity`.
+ */
+export interface VadTuning {
+  /**
+   * Convenience 0..1 knob (default 0.5). Maps to a positive speech threshold of
+   * ~0.6 (at 0.5) and a negative threshold 0.15 below it (Silero's convention).
+   * Higher = more sensitive. Ignored for any threshold set explicitly below.
+   */
+  sensitivity?: number;
+  /** Silero score above which a frame counts as speech (0..1). */
+  positiveSpeechThreshold?: number;
+  /** Silero score below which a frame counts as silence (0..1). */
+  negativeSpeechThreshold?: number;
+  /** Grace period (ms) of silence before firing speech-end (endpointing). */
+  redemptionMs?: number;
+  /** Audio (ms) prepended to the captured utterance so it isn't clipped. */
+  preSpeechPadMs?: number;
+  /** Minimum speech (ms); shorter blips fire onVADMisfire instead of end. */
+  minSpeechMs?: number;
 }
 
 /** Public surface of the audio service. */

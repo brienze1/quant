@@ -64,7 +64,9 @@ void main(){
   float disp=n*amp;
   vN=n;
   vec3 pos=position+normal*disp;
-  pos*=1.0+uExpand*0.18+uAudio*0.12;
+  // WI-5.1: trim the audio-driven geometry expansion (0.12→0.10) so the loud
+  // speaking peaks don't push the mesh past the pane frame. uExpand term kept.
+  pos*=1.0+uExpand*0.18+uAudio*0.10;
   vNormal=normalize(normalMatrix*normal);
   vec4 mv=modelViewMatrix*vec4(pos,1.0);
   vView=normalize(-mv.xyz);
@@ -103,7 +105,10 @@ const TARGETS: Record<VoiceOrbState, StateTarget> = {
   idle: { amp: 0.07, freq: 1.4, expand: 0.0, rot: 0.08, role: "dim" },
   listening: { amp: 0.13, freq: 1.9, expand: 0.25, expandLight: 0.14, rot: 0.18, role: "accent" },
   thinking: { amp: 0.1, freq: 2.8, expand: 0.12, rot: 0.55, role: "think" },
-  speaking: { amp: 0.18, freq: 2.2, expand: 0.4, rot: 0.22, role: "speak" },
+  // WI-5.1: speaking is the flare. Reined in ~12-15% from the prototype values
+  // (amp 0.18→0.155, expand 0.40→0.34) so the bloom + geometry expansion stay
+  // inside the pane frame while keeping the dramatic look.
+  speaking: { amp: 0.155, freq: 2.2, expand: 0.34, rot: 0.22, role: "speak" },
 };
 
 function lerp(a: number, b: number, t: number) {
@@ -345,7 +350,10 @@ export default function VoiceOrb({
       pmat.color.lerp(target.halo, 0.06);
       pmat.opacity = 0.22 + audioS * 0.35;
 
-      const bloomBase = isLight ? 0.4 + audioS * 1.15 : 0.32 + audioS * 0.7;
+      // WI-5.1: dial back the audio-driven bloom strength ~12% (light 1.15→1.0,
+      // dark 0.7→0.6) so the speaking flare's bloom no longer overflows the
+      // pane frame. Idle/listening base strength is unchanged.
+      const bloomBase = isLight ? 0.4 + audioS * 1.0 : 0.32 + audioS * 0.6;
       bloom.strength = lerp(bloom.strength, bloomBase, 0.08);
 
       uniforms.uTime.value = t;

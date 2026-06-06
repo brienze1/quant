@@ -1734,6 +1734,12 @@ function VoiceTab({ config, update }: TabProps) {
     update("voice", { ...voice, [key]: value });
   }
 
+  // WI-5.5: surface "not configured" inline — enabled with a cloud/auto provider
+  // but no saved key and no custom base url means the pane can't work yet.
+  const needsKey = voice.provider !== "local";
+  const hasUrl = !!(voice.baseUrl && voice.baseUrl.trim());
+  const notConfigured = voice.enabled && needsKey && !voice.hasApiKey && !hasUrl;
+
   function commitApiKey() {
     // Only send when the user actually typed something; an empty field leaves
     // the stored key untouched (Go-side preserves it on an empty incoming key).
@@ -1770,6 +1776,23 @@ function VoiceTab({ config, update }: TabProps) {
           description="turn on the voice pane toggle in the session header"
           right={<Toggle checked={voice.enabled} onChange={(v) => updateVoice("enabled", v)} />}
         />
+        {notConfigured && (
+          <div
+            style={{
+              margin: "4px 0 0",
+              padding: "8px 10px",
+              border: "1px solid var(--q-warning)",
+              backgroundColor: "var(--q-bg-input)",
+              fontSize: 11,
+              lineHeight: 1.45,
+            }}
+          >
+            <span style={{ color: "var(--q-warning)", fontWeight: 700 }}>voice not configured — </span>
+            <span style={{ color: "var(--q-fg-secondary)" }}>
+              add an API key below (or set a local base url) so the voice pane can transcribe and speak.
+            </span>
+          </div>
+        )}
         <SettingRow
           label="provider"
           description="auto = local engines if present, else cloud · local = your own whisper/kokoro · cloud = OpenAI-compatible api"

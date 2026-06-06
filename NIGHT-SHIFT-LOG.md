@@ -17,8 +17,8 @@ Workspace: `.claude/worktrees/feat-voice` (branch `feat/voice`). Started from `e
 - [x] WI-2.3 + WI-2.4 — Go<->frontend voice bridge + MCP voice tools (commit 39053d4). PROOF-OF-LIFE: e2e TestVoiceToolsRoundTrip green (listen/speak/converse over MCP-HTTP w/ X-Quant-Session). bridge unit tests green.
 - [x] WI-3.1 + WI-3.2 — VoicePane component + pane toggle/global state (commit d2c8ec9). tsc+vite+go green. Transcript via registerVoiceBridge callbacks {onUserTranscript,onAgentSpeak}. Dock layout stacks voice+mindmap.
 - [x] WI-3.3 — structured voice session persona + kickoff (commit c902494). enter-voice UX; hydration-safe guard; gating note for P4.
-- [ ] WI-4.2 + WI-4.3 — Settings "Voice" tab + onboarding/provider defaults
-- [ ] P5 — polish (orb flare, barge-in, states, VAD tuning)
+- [x] WI-4.2 + WI-4.3 — Settings "Voice" tab + onboarding/provider defaults (commit c8b9503). masked-key UX, Test Voice, gating on enabled.
+- [ ] P5 — polish (orb flare, barge-in, states, VAD tuning, x-platform docs)
 - [ ] P6 — tests, changelog, PR
 
 ## Decisions / findings (newest first)

@@ -15,6 +15,7 @@ import * as api from "../api";
 import type {
   AudioServiceOptions,
   IAudioService,
+  VadTuning,
   VoiceError,
   VoiceErrorCb,
   VoiceServiceState,
@@ -24,6 +25,47 @@ import type {
 
 const DEFAULT_VAD_ASSET_PATH = "/vad/";
 const DEFAULT_MAX_LISTEN_MS = 30_000;
+
+// VAD endpointing defaults (WI-5.6), tuned for conversational turn-taking:
+// a slightly-strict positive threshold to avoid triggering on room noise, an
+// ~800ms redemption so natural mid-sentence pauses don't cut the user off, a
+// short pre-speech pad so the first phoneme isn't clipped, and a min-speech
+// floor so coughs/clicks misfire instead of being transcribed.
+const VAD_DEFAULTS: Required<Omit<VadTuning, "sensitivity">> = {
+  positiveSpeechThreshold: 0.6,
+  negativeSpeechThreshold: 0.45,
+  redemptionMs: 800,
+  preSpeechPadMs: 160,
+  minSpeechMs: 250,
+};
+
+/**
+ * Resolve the VAD tuning into the concrete FrameProcessorOptions subset that
+ * @ricky0123/vad-web accepts. Explicit thresholds win; otherwise `sensitivity`
+ * (0..1, default 0.5) derives them around the default positive threshold.
+ */
+function resolveVadOptions(tuning: VadTuning | undefined) {
+  const t = tuning ?? {};
+  let positive = t.positiveSpeechThreshold;
+  let negative = t.negativeSpeechThreshold;
+  if (positive === undefined && t.sensitivity !== undefined) {
+    const s = Math.max(0, Math.min(1, t.sensitivity));
+    // sensitivity 0→0.85 (strict), 0.5→0.6 (default), 1→0.35 (eager).
+    positive = 0.85 - s * 0.5;
+  }
+  if (positive === undefined) positive = VAD_DEFAULTS.positiveSpeechThreshold;
+  if (negative === undefined) {
+    // Silero convention: 0.15 below positive (clamped to a sane floor).
+    negative = Math.max(0.2, positive - 0.15);
+  }
+  return {
+    positiveSpeechThreshold: positive,
+    negativeSpeechThreshold: negative,
+    redemptionMs: t.redemptionMs ?? VAD_DEFAULTS.redemptionMs,
+    preSpeechPadMs: t.preSpeechPadMs ?? VAD_DEFAULTS.preSpeechPadMs,
+    minSpeechMs: t.minSpeechMs ?? VAD_DEFAULTS.minSpeechMs,
+  };
+}
 
 /** Default transport = the real Wails-bridged api.ts wrappers. */
 const defaultTransport: VoiceTransport = {
@@ -39,6 +81,7 @@ export class AudioService implements IAudioService {
   private readonly maxListenMs: number;
   private readonly voice: string;
   private readonly speed: number;
+  private readonly vadOptions: ReturnType<typeof resolveVadOptions>;
   private bargeIn: boolean;
 
   private state: VoiceServiceState = "idle";
@@ -81,6 +124,7 @@ export class AudioService implements IAudioService {
     this.maxListenMs = opts.maxListenMs ?? DEFAULT_MAX_LISTEN_MS;
     this.voice = opts.voice ?? "";
     this.speed = opts.speed ?? 0;
+    this.vadOptions = resolveVadOptions(opts.vad);
     this.bargeIn = opts.bargeIn ?? false;
   }
 
@@ -188,6 +232,8 @@ export class AudioService implements IAudioService {
     try {
       this.vad = await MicVAD.new({
         model: this.vadModel,
+        // VAD endpointing tuning (WI-5.6): thresholds + redemption/min-speech.
+        ...this.vadOptions,
         // worklet bundle + silero_vad_*.onnx are fetched from here.
         baseAssetPath: this.vadAssetPath,
         // onnxruntime-web wasm binaries (ort-wasm-*) are fetched from here.
@@ -216,13 +262,19 @@ export class AudioService implements IAudioService {
   // ---- VAD callbacks -------------------------------------------------------
 
   private handleSpeechStart() {
-    // Barge-in: user started talking while TTS is playing → pause playback.
-    if (this.bargeIn && this.state === "speaking" && this.audioEl && !this.audioEl.paused) {
+    // Barge-in: user started talking while TTS is playing → stop playback and
+    // hand the turn back to the user. We stop (not just pause) so the in-flight
+    // speak() resolves and the agent's loop can move on to listening; if a
+    // listen() is already pending, surface "listening" immediately.
+    if (this.bargeIn && this.state === "speaking") {
       try {
-        this.audioEl.pause();
+        this.stopSpeaking();
       } catch {
-        /* ignore */
+        /* ignore — never let barge-in crash the pipeline */
       }
+      // stopSpeaking() drops us to "idle"; reflect that the user is now talking.
+      this.setState("listening");
+      return;
     }
     if (this.pendingListen) {
       this.setState("listening");
@@ -392,6 +444,18 @@ export class AudioService implements IAudioService {
       el.addEventListener("ended", onEnded);
       el.addEventListener("error", onError);
 
+      // Barge-in: keep the VAD running during playback so the user can talk over
+      // the agent. handleSpeechStart() stops playback when that happens. Best
+      // effort — never let a missing/unready VAD break playback. (handleSpeechEnd
+      // is a no-op while no listen() is pending, so this won't trigger STT.)
+      if (this.bargeIn && this.vad) {
+        try {
+          this.vad.start();
+        } catch {
+          /* ignore */
+        }
+      }
+
       el.play().catch((e) => {
         cleanup();
         this.failSpeak({ kind: "playback", message: "Audio playback was blocked.", cause: e });
@@ -460,6 +524,15 @@ export class AudioService implements IAudioService {
   }
 
   private teardownPlayback() {
+    // If barge-in left the VAD running during playback, pause it now (unless a
+    // listen() is pending, which owns the VAD and will (re)start it).
+    if (this.bargeIn && !this.pendingListen) {
+      try {
+        this.vad?.pause();
+      } catch {
+        /* ignore */
+      }
+    }
     try {
       this.playbackSource?.disconnect();
     } catch {

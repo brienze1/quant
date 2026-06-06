@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import VoiceOrb from "./VoiceOrb";
+import * as api from "../api";
 import { createAudioService } from "../voice/audioService";
 import { registerVoiceBridge } from "../voice/voiceBridge";
 import type { IAudioService, VoiceError, VoiceServiceState } from "../voice/types";
@@ -45,10 +46,68 @@ const STATE_COLOR: Record<VoiceServiceState, string> = {
   speaking: "var(--q-term-green)",
 };
 
+// WI-5.5: map an error kind to an actionable, human banner. `title` is short
+// (status bar), `detail` is the actionable line, `action` (optional) hints what
+// the user should do. Themed with --q-* by the renderer.
+interface BannerCopy {
+  title: string;
+  detail: string;
+}
+
+function errorCopy(err: VoiceError): BannerCopy {
+  switch (err.kind) {
+    case "permission":
+      return {
+        title: "microphone blocked",
+        detail: "Allow microphone access for quant in your OS/browser settings, then try again.",
+      };
+    case "network":
+      return {
+        title: "voice service unreachable",
+        detail: "Couldn't reach the speech service. Check your connection / provider URL in Settings → Voice.",
+      };
+    case "stt":
+      return {
+        title: "transcription failed",
+        detail: "The speech-to-text request failed. Check your STT model + key in Settings → Voice.",
+      };
+    case "tts":
+      return {
+        title: "speech synthesis failed",
+        detail: "The text-to-speech request failed. Check your TTS model + key in Settings → Voice.",
+      };
+    case "playback":
+      return {
+        title: "playback failed",
+        detail: "Couldn't play the audio reply. Check your output device.",
+      };
+    case "vad":
+      return {
+        title: "voice detector unavailable",
+        detail: "The voice-activity detector failed to load. Reopen the pane to retry.",
+      };
+    case "timeout":
+      return {
+        title: "didn't catch that",
+        detail: "No speech was heard. Tap to try again and speak after the orb turns on.",
+      };
+    default:
+      return { title: "voice error", detail: err.message || "Something went wrong." };
+  }
+}
+
+// "Voice not configured" gate: cloud provider with no saved key can't work.
+const NOT_CONFIGURED: BannerCopy = {
+  title: "voice not configured",
+  detail: "Add an API key in Settings → Voice to start talking.",
+};
+
 export function VoicePane({ sessionId, className, style }: Props) {
   const [state, setState] = useState<VoiceServiceState>("idle");
   const [error, setError] = useState<VoiceError | null>(null);
   const [lines, setLines] = useState<TranscriptLine[]>([]);
+  // WI-5.5: "voice not configured" gate (cloud provider without a saved key).
+  const [notConfigured, setNotConfigured] = useState(false);
   // The orb wants the input analyser while listening and the output analyser
   // while speaking; null otherwise (orb falls back to its simulated envelope).
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
@@ -67,7 +126,9 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // unmount. Re-created if the session changes (each pane owns its own session).
   useEffect(() => {
     // Default transport = the real api.ts Wails-bridged STT/TTS proxy.
-    const service = createAudioService();
+    // Barge-in ON by default (WI-5.2): the user can talk over the agent — VAD
+    // speech-start during playback stops TTS and hands the turn back to the user.
+    const service = createAudioService({ bargeIn: true });
     serviceRef.current = service;
 
     const offState = service.onState((s) => {
@@ -98,6 +159,28 @@ export function VoicePane({ sessionId, className, style }: Props) {
     const el = transcriptRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [lines]);
+
+  // WI-5.5: detect "voice not configured" (cloud/auto provider with no saved
+  // key) so we can show an actionable banner instead of a cryptic network error
+  // on the first turn. Local provider with a base URL needs no key.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const cfg = await api.getConfig();
+        const v = cfg.voice;
+        if (!alive || !v) return;
+        const needsKey = v.provider !== "local";
+        const hasUrl = !!(v.baseUrl && v.baseUrl.trim());
+        setNotConfigured(needsKey && !v.hasApiKey && !hasUrl);
+      } catch {
+        // If config can't be read, don't block the pane — leave the gate off.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [sessionId]);
 
   return (
     <div
@@ -151,12 +234,28 @@ export function VoicePane({ sessionId, className, style }: Props) {
             style={{
               color: "var(--q-fg-muted)",
               fontSize: 11.5,
-              lineHeight: 1.5,
+              lineHeight: 1.6,
               margin: "auto",
               textAlign: "center",
+              maxWidth: 240,
             }}
           >
-            no conversation yet — start talking and quant will reply.
+            {/* WI-5.5 idle/empty state. */}
+            {notConfigured ? (
+              <>
+                <div style={{ color: "var(--q-fg-secondary)", marginBottom: 4 }}>
+                  {NOT_CONFIGURED.title}
+                </div>
+                {NOT_CONFIGURED.detail}
+              </>
+            ) : (
+              <>
+                <div style={{ color: "var(--q-fg-secondary)", marginBottom: 4 }}>
+                  open mic to start talking
+                </div>
+                say something and quant will reply — the orb lights up while it listens.
+              </>
+            )}
           </div>
         ) : (
           lines.map((line) => (
@@ -186,6 +285,54 @@ export function VoicePane({ sessionId, className, style }: Props) {
           ))
         )}
       </div>
+
+      {/* WI-5.5: actionable banner for the active error or the not-configured
+          gate. Sits above the status bar; dismissible for errors. */}
+      {(() => {
+        const banner = error ? errorCopy(error) : notConfigured ? NOT_CONFIGURED : null;
+        if (!banner) return null;
+        const isWarn = notConfigured && !error;
+        const accent = isWarn ? "var(--q-warning)" : "var(--q-error)";
+        return (
+          <div
+            role="alert"
+            style={{
+              flex: "0 0 auto",
+              padding: "8px 12px",
+              borderTop: `1px solid ${accent}`,
+              backgroundColor: "var(--q-bg-input)",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+            }}
+          >
+            <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: accent }}>{banner.title}</div>
+              <div style={{ fontSize: 11, lineHeight: 1.45, color: "var(--q-fg-secondary)" }}>
+                {banner.detail}
+              </div>
+            </div>
+            {error && (
+              <button
+                onClick={() => setError(null)}
+                title="dismiss"
+                style={{
+                  flex: "none",
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--q-fg-muted)",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  lineHeight: 1,
+                  padding: 2,
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Listen/status bar: current state + mic/permission/error indicator. */}
       <div
@@ -225,8 +372,10 @@ export function VoicePane({ sessionId, className, style }: Props) {
               whiteSpace: "nowrap",
             }}
           >
-            {error.kind === "permission" ? "mic blocked" : error.kind}: {error.message}
+            {errorCopy(error).title}
           </span>
+        ) : notConfigured ? (
+          <span style={{ fontSize: 10, color: "var(--q-warning)" }}>not configured</span>
         ) : (
           <span style={{ fontSize: 10, color: "var(--q-fg-muted)" }}>mic ready</span>
         )}

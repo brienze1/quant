@@ -143,12 +143,36 @@
 
 ## P5 — Polish
 
-- **WI-5.1 — Orb flare tuning ⬜:** reduce the `speaking` flare ~10-15% so it stays inside the pane frame (tune bloom strength + expansion in `VoiceOrb.tsx`). Re-screenshot to confirm.
-- **WI-5.2 — Barge-in ⬜:** interrupt TTS when the user starts speaking (VAD-during-playback → pause `<audio>`, switch to listening).
-- **WI-5.3 — Sentence streaming ⬜:** stream TTS per sentence for lower latency (optional; `voice_speak` could chunk).
-- **WI-5.4 — Cross-platform verify ⬜:** compile-check the Linux WebKitGTK patch (WI-0.1) on a Linux build; confirm WebView2 mic on Windows (should work as-is). Document.
-- **WI-5.5 — States ⬜:** error / empty / mic-permission-denied / no-network UI states in the pane + Settings.
-- **WI-5.6 — VAD tuning ⬜:** expose/auto-tune `vad_aggressiveness`, min/max listen durations.
+- **WI-5.1 — Orb flare tuning ✅:** reduced the `speaking` recipe ~12-15% so the flare stays inside the pane frame, in `frontend/src/components/VoiceOrb.tsx`. Changes (apply to both dark + light recipes — these params are shared, the light/dark split is in the audio multipliers):
+  - `TARGETS.speaking`: `amp 0.18→0.155`, `expand 0.40→0.34`.
+  - Vertex-shader geometry expansion: audio term `uAudio*0.12→uAudio*0.10` (the `uExpand*0.18` term unchanged).
+  - Audio-driven bloom strength: light `0.4 + audioS*1.15 → 0.4 + audioS*1.0`; dark `0.32 + audioS*0.7 → 0.32 + audioS*0.6`.
+  - Idle/listening/thinking feel untouched. Re-screenshot to confirm the speaking orb now fits within the 220×220 stage.
+- **WI-5.2 — Barge-in ✅:** ON by default for the voice pane — `VoicePane.tsx` creates the service with `createAudioService({ bargeIn: true })`. Path: `speak()` now starts the VAD during playback (best-effort, guarded), so `onSpeechStart` can fire while TTS plays; `handleSpeechStart()` (in `audioService.ts`) detects `bargeIn && state==="speaking"`, calls `stopSpeaking()` (resolves the in-flight `speak()`, tears down playback) and transitions to `listening`. `teardownPlayback()` pauses the barge-in VAD when no `listen()` is pending; a pending `listen()` re-`start()`s it. All wrapped in try/catch so a missing/unready analyser/VAD never crashes the pipeline.
+- **WI-5.3 — Sentence streaming ⬜:** stream TTS per sentence for lower latency (optional; `voice_speak` could chunk). *Not done in this pass.*
+- **WI-5.4 — Cross-platform documentation 🟡 (documented; Linux not yet compile-checked):**
+  - **macOS — WKWebView:** mic = **patched + PROVEN** (WI-0.1). `WailsContext.m` implements the `<WKUIDelegate>` `requestMediaCapturePermissionForOrigin:…decisionHandler:` returning `WKPermissionDecisionGrant`; OS TCC still gates via `NSMicrophoneUsageDescription` (`build/darwin/Info.plist` / `Info.dev.plist`). `getUserMedia({audio:true})` returns SUCCESS live.
+  - **Windows — WebView2:** **works as-is, no patch needed.** WebView2 honors the host process's OS microphone permission; no delegate/handler is required. *To verify on a Windows box:* `wails build` + run, open the voice pane, confirm `getUserMedia` resolves (Windows mic privacy toggle must be on for desktop apps).
+  - **Linux — WebKitGTK:** patch **added but NOT yet compile-checked on a Linux box.** Lives in `third_party/wails-v2.12.0-patched/internal/frontend/desktop/linux/window.c`: `webkit_settings_set_enable_media_stream(settings, TRUE)` + an `onPermissionRequest` handler connected to the webview's `permission-request` signal that allows `WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST` (mirrors the macOS grant). **Linux to-verify list:**
+    1. Build on Linux: `wails build` (or `wails dev`) with the `replace` directive → confirm `window.c` **compiles + links** against the system `libwebkit2gtk-4.0/4.1` headers (the symbols `webkit_settings_set_enable_media_stream`, `WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST`, `webkit_permission_request_allow` exist there — confirm the dev package version in use exposes them).
+    2. Confirm the `permission-request` signal handler signature matches the WebKitGTK version (returns `gboolean`, `TRUE` = handled).
+    3. Runtime: open the voice pane → `getUserMedia({audio:true})` resolves (no silent deny) and VAD endpoints a real utterance.
+    4. Confirm PulseAudio/PipeWire mic is reachable from the sandbox/Flatpak if packaged that way.
+    5. Re-run the macOS MicProbe equivalent if a Linux probe is added.
+- **WI-5.5 — States ✅:** error / empty / mic-permission-denied / not-configured UI states added to `VoicePane.tsx` (+ an inline not-configured warning in the Settings → Voice tab). See the "WI-5.5 copy" list below.
+- **WI-5.6 — VAD tuning ✅ (in-code defaults, overridable via `AudioServiceOptions`):** added a `VadTuning` knob set to `frontend/src/voice/types.ts` and `resolveVadOptions()` in `audioService.ts` with conversational defaults: `positiveSpeechThreshold 0.6`, `negativeSpeechThreshold 0.45`, `redemptionMs 800`, `preSpeechPadMs 160`, `minSpeechMs 250`, plus a convenience `sensitivity` 0..1 (default 0.5) that derives the thresholds, and the existing `maxListenMs` (default 30000) max-listen cap. These are passed into `MicVAD.new`. **Not surfaced in Settings:** doing so cleanly would need new Go config fields (entity + DTO + masking + types) — out of scope for a polish pass, so they remain solid in-code defaults overridable per-instance via `createAudioService({ vad: {...}, maxListenMs })`.
+
+### WI-5.5 copy (banner title / actionable detail)
+
+- **permission denied** — "microphone blocked" / "Allow microphone access for quant in your OS/browser settings, then try again."
+- **no network / service unreachable** — "voice service unreachable" / "Couldn't reach the speech service. Check your connection / provider URL in Settings → Voice."
+- **STT failure** — "transcription failed" / "The speech-to-text request failed. Check your STT model + key in Settings → Voice."
+- **TTS failure** — "speech synthesis failed" / "The text-to-speech request failed. Check your TTS model + key in Settings → Voice."
+- **playback failure** — "playback failed" / "Couldn't play the audio reply. Check your output device."
+- **VAD load failure** — "voice detector unavailable" / "The voice-activity detector failed to load. Reopen the pane to retry."
+- **empty transcript (VAD heard nothing / timeout)** — "didn't catch that" / "No speech was heard. Tap to try again and speak after the orb turns on."
+- **not configured (no key / voice not set up)** — "voice not configured" / "Add an API key in Settings → Voice to start talking." (also the empty-state hint and an inline Settings warning)
+- **idle / empty** — "open mic to start talking" / "say something and quant will reply — the orb lights up while it listens."
 
 ---
 
