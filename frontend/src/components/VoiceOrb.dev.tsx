@@ -94,17 +94,29 @@ function Harness() {
         VoiceOrb dev harness — state: <b>{state}</b> · theme: <b>{preset.label}</b>
       </div>
 
+      {/* Mirror the real VoicePane geometry: a 220×220 orb centered in a 240px
+          dark "well" (10px margin each side). This makes the visual baselines
+          and the flare-containment check representative of production — the
+          speaking flare must stay inside the well, not bleed to the frame. */}
       <div
         data-orb-stage
         style={{
-          width: 420,
-          height: 420,
+          width: 240,
+          height: 240,
           borderRadius: 12,
           border: `1px solid ${preset.type === "light" ? "#D4D4D4" : "#2a2a2a"}`,
+          // Exact production well gradient (VoicePane.tsx).
+          background:
+            "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)",
           overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        <VoiceOrb state={state} themeKey={presetId} />
+        <div style={{ width: 220, height: 220 }}>
+          <VoiceOrb state={state} themeKey={presetId} />
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>

@@ -18,8 +18,8 @@ Workspace: `.claude/worktrees/feat-voice` (branch `feat/voice`). Started from `e
 - [x] WI-3.1 + WI-3.2 — VoicePane component + pane toggle/global state (commit d2c8ec9). tsc+vite+go green. Transcript via registerVoiceBridge callbacks {onUserTranscript,onAgentSpeak}. Dock layout stacks voice+mindmap.
 - [x] WI-3.3 — structured voice session persona + kickoff (commit c902494). enter-voice UX; hydration-safe guard; gating note for P4.
 - [x] WI-4.2 + WI-4.3 — Settings "Voice" tab + onboarding/provider defaults (commit c8b9503). masked-key UX, Test Voice, gating on enabled.
-- [ ] P5 — polish (orb flare, barge-in, states, VAD tuning, x-platform docs)
-- [ ] P6 — tests, changelog, PR
+- [x] P5 — polish (orb flare, barge-in, error/empty states, VAD tuning, x-platform docs) (commit 0c17089). tsc+vite green.
+- [ ] P6 — E2E tests (WI-6.1), changelog (WI-6.2), PR (WI-6.3)
 
 ## Decisions / findings (newest first)
 - 2026-06-06: Night shift started. Combining WI-4.1+2.1 (Go config+proxy) into one agent for coherent ownership; rest sequenced to avoid same-file conflicts in the shared worktree.
