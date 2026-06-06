@@ -58,6 +58,38 @@ export namespace dto {
 	        this.updatedAt = source["updatedAt"];
 	    }
 	}
+	export class VoiceConfigDTO {
+	    enabled: boolean;
+	    provider: string;
+	    baseUrl: string;
+	    sttBaseUrl: string;
+	    ttsBaseUrl: string;
+	    apiKey?: string;
+	    hasApiKey: boolean;
+	    sttModel: string;
+	    ttsModel: string;
+	    voice: string;
+	    speed: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new VoiceConfigDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.provider = source["provider"];
+	        this.baseUrl = source["baseUrl"];
+	        this.sttBaseUrl = source["sttBaseUrl"];
+	        this.ttsBaseUrl = source["ttsBaseUrl"];
+	        this.apiKey = source["apiKey"];
+	        this.hasApiKey = source["hasApiKey"];
+	        this.sttModel = source["sttModel"];
+	        this.ttsModel = source["ttsModel"];
+	        this.voice = source["voice"];
+	        this.speed = source["speed"];
+	    }
+	}
 	export class ShortcutDTO {
 	    name: string;
 	    command: string;
@@ -92,6 +124,7 @@ export namespace dto {
 	    activeSessionId: string;
 	    openSessionIds: string[];
 	    mindmapPaneOpen: boolean;
+	    voicePaneOpen: boolean;
 	    dataDirectory: string;
 	    worktreeDirectory: string;
 	    logDirectory: string;
@@ -111,6 +144,7 @@ export namespace dto {
 	    remoteAccessEnabled: boolean;
 	    remoteAccessPort: number;
 	    remoteAccessPasscode: string;
+	    voice: VoiceConfigDTO;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConfigResponse(source);
@@ -137,6 +171,7 @@ export namespace dto {
 	        this.activeSessionId = source["activeSessionId"];
 	        this.openSessionIds = source["openSessionIds"];
 	        this.mindmapPaneOpen = source["mindmapPaneOpen"];
+	        this.voicePaneOpen = source["voicePaneOpen"];
 	        this.dataDirectory = source["dataDirectory"];
 	        this.worktreeDirectory = source["worktreeDirectory"];
 	        this.logDirectory = source["logDirectory"];
@@ -156,6 +191,7 @@ export namespace dto {
 	        this.remoteAccessEnabled = source["remoteAccessEnabled"];
 	        this.remoteAccessPort = source["remoteAccessPort"];
 	        this.remoteAccessPasscode = source["remoteAccessPasscode"];
+	        this.voice = this.convertValues(source["voice"], VoiceConfigDTO);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -706,6 +742,7 @@ export namespace dto {
 	    activeSessionId: string;
 	    openSessionIds: string[];
 	    mindmapPaneOpen: boolean;
+	    voicePaneOpen: boolean;
 	    dataDirectory: string;
 	    worktreeDirectory: string;
 	    logDirectory: string;
@@ -725,6 +762,7 @@ export namespace dto {
 	    remoteAccessEnabled: boolean;
 	    remoteAccessPort: number;
 	    remoteAccessPasscode: string;
+	    voice: VoiceConfigDTO;
 	
 	    static createFrom(source: any = {}) {
 	        return new SaveConfigRequest(source);
@@ -751,6 +789,7 @@ export namespace dto {
 	        this.activeSessionId = source["activeSessionId"];
 	        this.openSessionIds = source["openSessionIds"];
 	        this.mindmapPaneOpen = source["mindmapPaneOpen"];
+	        this.voicePaneOpen = source["voicePaneOpen"];
 	        this.dataDirectory = source["dataDirectory"];
 	        this.worktreeDirectory = source["worktreeDirectory"];
 	        this.logDirectory = source["logDirectory"];
@@ -770,6 +809,7 @@ export namespace dto {
 	        this.remoteAccessEnabled = source["remoteAccessEnabled"];
 	        this.remoteAccessPort = source["remoteAccessPort"];
 	        this.remoteAccessPasscode = source["remoteAccessPasscode"];
+	        this.voice = this.convertValues(source["voice"], VoiceConfigDTO);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1032,6 +1072,7 @@ export namespace dto {
 	        this.mcpConfigPath = source["mcpConfigPath"];
 	    }
 	}
+	
 	export class WorkspaceResponse {
 	    id: string;
 	    name: string;
@@ -1165,6 +1206,25 @@ export namespace remote {
 	        this.clients = source["clients"];
 	        this.cloudflaredInstalled = source["cloudflaredInstalled"];
 	        this.error = source["error"];
+	    }
+	}
+
+}
+
+export namespace voice {
+	
+	export class SpeechResult {
+	    audioB64: string;
+	    contentType: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpeechResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.audioB64 = source["audioB64"];
+	        this.contentType = source["contentType"];
 	    }
 	}
 

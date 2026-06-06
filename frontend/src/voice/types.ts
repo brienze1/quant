@@ -63,6 +63,13 @@ export interface AudioServiceOptions {
   /** Enable barge-in: pause TTS when VAD detects speech during playback. */
   bargeIn?: boolean;
   /**
+   * Preferred input (microphone) deviceId. When omitted the service falls back
+   * to the value persisted in localStorage (`quant.voice.inputDeviceId`), then
+   * to the browser default. deviceIds are browser/machine-scoped, hence
+   * localStorage rather than Go-side config.
+   */
+  inputDeviceId?: string;
+  /**
    * VAD endpointing knobs (WI-5.6). All optional — sensible conversational
    * defaults are used when omitted. These map onto @ricky0123/vad-web's
    * FrameProcessorOptions. A single `sensitivity` 0..1 can also be supplied to
@@ -94,6 +101,15 @@ export interface VadTuning {
   /** Minimum speech (ms); shorter blips fire onVADMisfire instead of end. */
   minSpeechMs?: number;
 }
+
+/** A selectable audio input (microphone). */
+export interface AudioInputDevice {
+  deviceId: string;
+  /** Human label; falls back to `Microphone (id…)` when permission hides it. */
+  label: string;
+}
+
+export type DevicesChangedCb = () => void;
 
 /** Public surface of the audio service. */
 export interface IAudioService {
@@ -129,6 +145,47 @@ export interface IAudioService {
 
   /** Enable/disable barge-in at runtime. */
   setBargeIn(enabled: boolean): void;
+
+  // ---- device selection + input metering -----------------------------------
+
+  /**
+   * Enumerate available audio input devices. Labels are empty until mic
+   * permission is granted; this fills empties with a generic
+   * `Microphone (id…)` name. See `hasDeviceLabels()` to know if real labels are
+   * available (i.e. whether permission has been granted at least once).
+   */
+  listInputDevices(): Promise<AudioInputDevice[]>;
+
+  /** True once the browser exposes real device labels (permission granted). */
+  hasDeviceLabels(): Promise<boolean>;
+
+  /**
+   * Switch the active input device. Persists the choice to localStorage. Pass
+   * `null` to clear the override and use the browser default. If capture/preview
+   * is active it is torn down and re-initialised on the new device; otherwise
+   * the choice is stored for the next init()/listen()/preview. An invalid
+   * deviceId (OverconstrainedError) falls back to default and reports onError.
+   */
+  setInputDevice(deviceId: string | null): Promise<void>;
+
+  /** The currently selected input deviceId (override), or null for default. */
+  getInputDevice(): string | null;
+
+  /** Subscribe to device list changes (hotplug). Returns an unsubscribe fn. */
+  onDevicesChanged(cb: DevicesChangedCb): () => void;
+
+  /**
+   * Open the mic + an analyser purely for metering, without starting a VAD turn.
+   * Lets the UI show a live input level while idle so the user can verify the
+   * chosen mic. No-op (reuses the existing graph) if capture is already open.
+   */
+  startInputPreview(deviceId?: string): Promise<void>;
+
+  /** Stop a preview-only capture. No-op if a real listen() owns the mic. */
+  stopInputPreview(): void;
+
+  /** Current input level 0..1 (peak/RMS) from the input analyser, 0 if none. */
+  getInputLevel(): number;
 
   /** Release the mic + audio resources. */
   dispose(): Promise<void>;

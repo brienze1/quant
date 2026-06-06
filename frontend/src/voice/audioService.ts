@@ -13,7 +13,9 @@
 import { MicVAD, utils } from "@ricky0123/vad-web";
 import * as api from "../api";
 import type {
+  AudioInputDevice,
   AudioServiceOptions,
+  DevicesChangedCb,
   IAudioService,
   VadTuning,
   VoiceError,
@@ -25,6 +27,27 @@ import type {
 
 const DEFAULT_VAD_ASSET_PATH = "/vad/";
 const DEFAULT_MAX_LISTEN_MS = 30_000;
+
+/** localStorage key for the (browser/machine-scoped) selected input deviceId. */
+const INPUT_DEVICE_LS_KEY = "quant.voice.inputDeviceId";
+
+function readPersistedInputDevice(): string | null {
+  try {
+    const v = window.localStorage.getItem(INPUT_DEVICE_LS_KEY);
+    return v && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedInputDevice(deviceId: string | null): void {
+  try {
+    if (deviceId) window.localStorage.setItem(INPUT_DEVICE_LS_KEY, deviceId);
+    else window.localStorage.removeItem(INPUT_DEVICE_LS_KEY);
+  } catch {
+    /* ignore — persistence is best-effort */
+  }
+}
 
 // VAD endpointing defaults (WI-5.6), tuned for conversational turn-taking:
 // a slightly-strict positive threshold to avoid triggering on room noise, an
@@ -84,9 +107,14 @@ export class AudioService implements IAudioService {
   private readonly vadOptions: ReturnType<typeof resolveVadOptions>;
   private bargeIn: boolean;
 
+  // Active input deviceId override (null = browser default). Initialised from
+  // the explicit option, else persisted localStorage value, else null.
+  private inputDeviceId: string | null;
+
   private state: VoiceServiceState = "idle";
   private readonly stateCbs = new Set<VoiceStateCb>();
   private readonly errorCbs = new Set<VoiceErrorCb>();
+  private readonly devicesChangedCbs = new Set<DevicesChangedCb>();
 
   // Capture graph.
   private stream: MediaStream | null = null;
@@ -95,6 +123,25 @@ export class AudioService implements IAudioService {
   private micSource: MediaStreamAudioSourceNode | null = null;
   private vad: MicVAD | null = null;
   private initPromise: Promise<void> | null = null;
+
+  // Preview-only capture: a lightweight mic+analyser graph for metering while
+  // idle (no VAD/listen turn). When a real init()/listen() takes over it adopts
+  // the same graph (we never open the mic twice). Tracks who "owns" the mic so
+  // stopInputPreview() won't tear down a graph an active listen() depends on.
+  private previewActive = false;
+  // Scratch buffer reused by getInputLevel() to avoid per-frame allocations.
+  private levelBuf: Uint8Array | null = null;
+  // Bound handler so we can add/remove the devicechange listener symmetrically.
+  private readonly onDeviceChangeHandler = () => {
+    for (const cb of this.devicesChangedCbs) {
+      try {
+        cb();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+  private deviceChangeBound = false;
 
   // Playback graph (TTS).
   private audioEl: HTMLAudioElement | null = null;
@@ -126,6 +173,7 @@ export class AudioService implements IAudioService {
     this.speed = opts.speed ?? 0;
     this.vadOptions = resolveVadOptions(opts.vad);
     this.bargeIn = opts.bargeIn ?? false;
+    this.inputDeviceId = opts.inputDeviceId ?? readPersistedInputDevice();
   }
 
   // ---- subscriptions -------------------------------------------------------
@@ -154,6 +202,146 @@ export class AudioService implements IAudioService {
 
   setBargeIn(enabled: boolean): void {
     this.bargeIn = enabled;
+  }
+
+  // ---- device selection + input metering -----------------------------------
+
+  async listInputDevices(): Promise<AudioInputDevice[]> {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    let devices: MediaDeviceInfo[];
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } catch {
+      return [];
+    }
+    return devices
+      .filter((d) => d.kind === "audioinput")
+      .map((d) => ({
+        deviceId: d.deviceId,
+        // Labels are empty until permission is granted; show a stable generic
+        // name keyed off the (possibly opaque) id so the entry is selectable.
+        label:
+          d.label && d.label.trim()
+            ? d.label
+            : `Microphone (${(d.deviceId || "default").slice(0, 6)}…)`,
+      }));
+  }
+
+  async hasDeviceLabels(): Promise<boolean> {
+    if (!navigator.mediaDevices?.enumerateDevices) return false;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.some((d) => d.kind === "audioinput" && !!d.label.trim());
+    } catch {
+      return false;
+    }
+  }
+
+  getInputDevice(): string | null {
+    return this.inputDeviceId;
+  }
+
+  async setInputDevice(deviceId: string | null): Promise<void> {
+    const next = deviceId && deviceId.trim() ? deviceId : null;
+    if (next === this.inputDeviceId) return;
+    this.inputDeviceId = next;
+    writePersistedInputDevice(next);
+
+    // If nothing is capturing, just store it — next init()/listen()/preview
+    // will pick it up.
+    const wasInitialised = !!this.stream;
+    const wasPreviewing = this.previewActive;
+    const wasListening = !!this.pendingListen && !this.pendingListen.settled;
+    if (!wasInitialised) return;
+
+    // Cancel any in-flight turn before swapping the device underneath it.
+    if (wasListening) this.cancelListen();
+
+    // Tear down the capture graph + VAD, then re-init cleanly on the new device.
+    await this.teardownCapture();
+    try {
+      await this.init();
+      if (wasPreviewing) this.previewActive = true;
+    } catch {
+      // openMicStream() already reported via onError; leave capture down.
+    }
+  }
+
+  onDevicesChanged(cb: DevicesChangedCb): () => void {
+    this.devicesChangedCbs.add(cb);
+    this.bindDeviceChange();
+    return () => {
+      this.devicesChangedCbs.delete(cb);
+      if (this.devicesChangedCbs.size === 0) this.unbindDeviceChange();
+    };
+  }
+
+  private bindDeviceChange(): void {
+    if (this.deviceChangeBound || !navigator.mediaDevices) return;
+    try {
+      navigator.mediaDevices.addEventListener("devicechange", this.onDeviceChangeHandler);
+      this.deviceChangeBound = true;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private unbindDeviceChange(): void {
+    if (!this.deviceChangeBound || !navigator.mediaDevices) return;
+    try {
+      navigator.mediaDevices.removeEventListener("devicechange", this.onDeviceChangeHandler);
+    } catch {
+      /* ignore */
+    }
+    this.deviceChangeBound = false;
+  }
+
+  async startInputPreview(deviceId?: string): Promise<void> {
+    if (deviceId !== undefined) {
+      // Treat an explicit deviceId as a device selection (persists too).
+      await this.setInputDevice(deviceId || null);
+    }
+    // If the full graph is already open (preview, listen, or a warmed init),
+    // reuse it — never open the mic twice.
+    if (this.stream && this.inputAnalyser) {
+      this.previewActive = true;
+      return;
+    }
+    // init() opens the mic + builds the input analyser (and warms the VAD). We
+    // mark preview-active so stopInputPreview() may later tear it down (unless a
+    // listen() has since taken ownership).
+    await this.init();
+    this.previewActive = true;
+  }
+
+  stopInputPreview(): void {
+    if (!this.previewActive) return;
+    this.previewActive = false;
+    // If a real turn currently owns the mic, leave the graph intact.
+    if (this.pendingListen && !this.pendingListen.settled) return;
+    if (this.state === "listening" || this.state === "speaking" || this.state === "thinking") {
+      return;
+    }
+    // Idle preview → release the mic so the OS indicator goes off.
+    void this.teardownCapture();
+  }
+
+  getInputLevel(): number {
+    const analyser = this.inputAnalyser;
+    if (!analyser) return 0;
+    const n = analyser.fftSize;
+    if (!this.levelBuf || this.levelBuf.length !== n) {
+      this.levelBuf = new Uint8Array(n);
+    }
+    const buf = this.levelBuf;
+    analyser.getByteTimeDomainData(buf);
+    // Peak deviation from the 128 midpoint → 0..1.
+    let peak = 0;
+    for (let i = 0; i < n; i++) {
+      const v = Math.abs(buf[i] - 128);
+      if (v > peak) peak = v;
+    }
+    return Math.min(1, peak / 128);
   }
 
   private setState(s: VoiceServiceState) {
@@ -190,12 +378,44 @@ export class AudioService implements IAudioService {
     return this.initPromise;
   }
 
-  private async doInit(): Promise<void> {
-    // 1. Mic.
-    let stream: MediaStream;
+  /**
+   * Open the mic for the active input device with an OverconstrainedError
+   * fallback to the browser default (reported via onError). Used by both the
+   * full init() (VAD) path and the preview path so device handling lives in one
+   * place.
+   */
+  private async openMicStream(): Promise<MediaStream> {
+    const id = this.inputDeviceId;
+    const constraints: MediaStreamConstraints = {
+      audio: id ? { deviceId: { exact: id } } : true,
+    };
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      return await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
+      // A specific device that's gone/unavailable → fall back to default and
+      // surface a soft error rather than failing the whole pipeline.
+      const name = (e as { name?: string } | null)?.name;
+      if (id && (name === "OverconstrainedError" || name === "NotFoundError")) {
+        this.emitError({
+          kind: "permission",
+          message:
+            "The selected microphone is unavailable; falling back to the system default.",
+          cause: e,
+        });
+        this.inputDeviceId = null;
+        writePersistedInputDevice(null);
+        try {
+          return await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e2) {
+          const err: VoiceError = {
+            kind: "permission",
+            message: "Microphone access was denied or is unavailable.",
+            cause: e2,
+          };
+          this.emitError(err);
+          throw err;
+        }
+      }
       const err: VoiceError = {
         kind: "permission",
         message: "Microphone access was denied or is unavailable.",
@@ -204,9 +424,11 @@ export class AudioService implements IAudioService {
       this.emitError(err);
       throw err;
     }
-    this.stream = stream;
+  }
 
-    // 2. AudioContext + input analyser (drives the orb's listening level).
+  /** Lazily create (and resume) the shared AudioContext. */
+  private ensureContext(): AudioContext {
+    if (this.audioCtx) return this.audioCtx;
     const AC: typeof AudioContext =
       window.AudioContext ||
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -214,12 +436,14 @@ export class AudioService implements IAudioService {
     const ctx = new AC();
     this.audioCtx = ctx;
     if (ctx.state === "suspended") {
-      try {
-        await ctx.resume();
-      } catch {
-        /* resumed lazily on first user gesture in some browsers */
-      }
+      // Resumed lazily on first user gesture in some browsers; best-effort.
+      void ctx.resume().catch(() => {});
     }
+    return ctx;
+  }
+
+  /** Build the input analyser graph on the given stream (shared by init/preview). */
+  private buildInputGraph(ctx: AudioContext, stream: MediaStream): void {
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
     analyser.smoothingTimeConstant = 0.6;
@@ -227,6 +451,34 @@ export class AudioService implements IAudioService {
     this.micSource = ctx.createMediaStreamSource(stream);
     this.micSource.connect(analyser);
     // NOTE: analyser is intentionally NOT connected to ctx.destination (no echo).
+  }
+
+  private async doInit(): Promise<void> {
+    // Reuse a stream/graph already opened by startInputPreview() so we never
+    // open the mic twice; the VAD adopts the same stream below.
+    const reusing = !!this.stream;
+
+    // 1. Mic.
+    let stream: MediaStream;
+    if (this.stream) {
+      stream = this.stream;
+    } else {
+      stream = await this.openMicStream();
+      this.stream = stream;
+    }
+
+    // 2. AudioContext + input analyser (drives the orb's listening level).
+    const ctx = this.ensureContext();
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        /* resumed lazily on first user gesture in some browsers */
+      }
+    }
+    if (!this.inputAnalyser || !reusing) {
+      this.buildInputGraph(ctx, stream);
+    }
 
     // 3. VAD — self-hosted assets, offline-safe, no CDN.
     try {
@@ -550,9 +802,13 @@ export class AudioService implements IAudioService {
 
   // ---- teardown ------------------------------------------------------------
 
-  async dispose(): Promise<void> {
-    this.cancelListen();
-    this.stopSpeaking();
+  /**
+   * Release the capture half of the graph — VAD, mic stream, and input analyser
+   * — while KEEPING the AudioContext alive so it can be reused (e.g. when
+   * switching the input device, or so playback's context survives). Clears the
+   * cached init promise so a subsequent init() re-opens the mic cleanly.
+   */
+  private async teardownCapture(): Promise<void> {
     try {
       await this.vad?.destroy();
     } catch {
@@ -581,13 +837,22 @@ export class AudioService implements IAudioService {
       }
     }
     this.stream = null;
+    this.initPromise = null;
+  }
+
+  async dispose(): Promise<void> {
+    this.cancelListen();
+    this.stopSpeaking();
+    this.previewActive = false;
+    this.unbindDeviceChange();
+    this.devicesChangedCbs.clear();
+    await this.teardownCapture();
     try {
       await this.audioCtx?.close();
     } catch {
       /* ignore */
     }
     this.audioCtx = null;
-    this.initPromise = null;
     this.setState("idle");
   }
 }

@@ -17,7 +17,15 @@ import VoiceOrb from "./VoiceOrb";
 import * as api from "../api";
 import { createAudioService } from "../voice/audioService";
 import { registerVoiceBridge } from "../voice/voiceBridge";
-import type { IAudioService, VoiceError, VoiceServiceState } from "../voice/types";
+import type {
+  AudioInputDevice,
+  IAudioService,
+  VoiceError,
+  VoiceServiceState,
+} from "../voice/types";
+
+// Number of segments in the live input-level meter.
+const METER_SEGMENTS = 12;
 
 interface TranscriptLine {
   id: number;
@@ -112,6 +120,13 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // while speaking; null otherwise (orb falls back to its simulated envelope).
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
 
+  // Device selection + live input metering.
+  const [devices, setDevices] = useState<AudioInputDevice[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
+  const [hasLabels, setHasLabels] = useState(true);
+  // 0..METER_SEGMENTS-1 lit segments, driven by getInputLevel() via rAF.
+  const [meterLevel, setMeterLevel] = useState(0);
+
   const serviceRef = useRef<IAudioService | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const lineIdRef = useRef(0);
@@ -145,7 +160,53 @@ export function VoicePane({ sessionId, className, style }: Props) {
       onAgentSpeak: (text) => addLine("quant", text),
     });
 
+    // Device list: query now, refresh on hotplug. startInputPreview() opens the
+    // mic + an analyser purely for metering so the user can SEE the chosen mic
+    // is receiving audio while the pane is open and idle (before any real turn).
+    let alive = true;
+    const refreshDevices = async () => {
+      try {
+        const [list, labels] = await Promise.all([
+          service.listInputDevices(),
+          service.hasDeviceLabels(),
+        ]);
+        if (!alive) return;
+        setDevices(list);
+        setHasLabels(labels);
+        setSelectedDevice(service.getInputDevice());
+      } catch {
+        /* leave prior state */
+      }
+    };
+    const offDevices = service.onDevicesChanged(() => void refreshDevices());
+    void refreshDevices();
+    // Best-effort live preview meter. If permission isn't granted this rejects
+    // quietly (the onError handler surfaces the banner); the "Enable microphone"
+    // affordance lets the user prompt explicitly.
+    void service
+      .startInputPreview()
+      .then(() => void refreshDevices())
+      .catch(() => {});
+
+    // Animate the input-level meter while the pane is mounted. getInputLevel()
+    // reads whichever analyser is live (preview or an active listen turn), so
+    // the bar keeps moving across states without opening the mic twice.
+    let raf = 0;
+    const tick = () => {
+      const lvl = service.getInputLevel();
+      // Light segments proportional to level; small noise floor so an idle mic
+      // shows ~0 segments rather than flicker.
+      const lit = lvl <= 0.02 ? 0 : Math.max(1, Math.round(lvl * METER_SEGMENTS));
+      setMeterLevel((prev) => (prev === lit ? prev : lit));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
     return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      offDevices();
+      service.stopInputPreview();
       offBridge();
       offState();
       offError();
@@ -153,6 +214,37 @@ export function VoicePane({ sessionId, className, style }: Props) {
       serviceRef.current = null;
     };
   }, [sessionId]);
+
+  // Switch the active input device + persist it (audioService writes localStorage).
+  const handleSelectDevice = (deviceId: string) => {
+    const svc = serviceRef.current;
+    if (!svc) return;
+    const next = deviceId || null;
+    setSelectedDevice(next);
+    void svc.setInputDevice(next).catch(() => {});
+  };
+
+  // Explicit permission prompt: getUserMedia via a preview opens the OS prompt
+  // and, once granted, populates real device labels — then we refresh the list.
+  const handleEnableMic = () => {
+    const svc = serviceRef.current;
+    if (!svc) return;
+    void (async () => {
+      try {
+        await svc.startInputPreview();
+        const [list, labels] = await Promise.all([
+          svc.listInputDevices(),
+          svc.hasDeviceLabels(),
+        ]);
+        setDevices(list);
+        setHasLabels(labels);
+        setSelectedDevice(svc.getInputDevice());
+        setError(null);
+      } catch {
+        /* onError already surfaced the permission banner */
+      }
+    })();
+  };
 
   // Keep the newest transcript line in view (scroll to bottom on append).
   useEffect(() => {
@@ -333,6 +425,109 @@ export function VoicePane({ sessionId, className, style }: Props) {
           </div>
         );
       })()}
+
+      {/* Mic toolbar: device selector + live input-level meter. Lets the user
+          SEE the available mics, choose one, and confirm it's picking up audio
+          (the meter moves while they speak) before/while talking. When the
+          browser hasn't granted permission yet (no labels), show an explicit
+          "Enable microphone" affordance that prompts + populates labels. */}
+      <div
+        className="flex items-center gap-2 px-3 shrink-0"
+        style={{
+          minHeight: 30,
+          backgroundColor: "var(--q-bg-input)",
+          borderTop: "1px solid var(--q-border)",
+        }}
+      >
+        <span
+          title="microphone"
+          style={{ flex: "none", fontSize: 11, color: "var(--q-fg-muted)" }}
+        >
+          mic
+        </span>
+
+        {devices.length === 0 ? (
+          <span style={{ fontSize: 10.5, color: "var(--q-fg-muted)" }}>
+            no microphones found
+          </span>
+        ) : (
+          <select
+            value={selectedDevice ?? ""}
+            onChange={(e) => handleSelectDevice(e.target.value)}
+            title="select input device"
+            style={{
+              flex: "1 1 auto",
+              minWidth: 0,
+              maxWidth: 200,
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10.5,
+              color: "var(--q-fg)",
+              backgroundColor: "var(--q-bg)",
+              border: "1px solid var(--q-border)",
+              borderRadius: 4,
+              padding: "2px 4px",
+            }}
+          >
+            <option value="">system default</option>
+            {devices.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* Live input-level meter: segments light up with getInputLevel(). */}
+        <div
+          aria-label="input level"
+          title="input level"
+          style={{ flex: "none", display: "flex", alignItems: "center", gap: 1.5 }}
+        >
+          {Array.from({ length: METER_SEGMENTS }).map((_, i) => {
+            const on = i < meterLevel;
+            // Green → amber → red gradient across the bar.
+            const color =
+              i < METER_SEGMENTS * 0.6
+                ? "var(--q-term-green)"
+                : i < METER_SEGMENTS * 0.85
+                  ? "var(--q-warning)"
+                  : "var(--q-error)";
+            return (
+              <span
+                key={i}
+                style={{
+                  width: 3,
+                  height: 10,
+                  borderRadius: 1,
+                  backgroundColor: on ? color : "var(--q-border)",
+                  opacity: on ? 1 : 0.5,
+                  transition: "background-color .05s linear, opacity .05s linear",
+                }}
+              />
+            );
+          })}
+        </div>
+
+        {!hasLabels && (
+          <button
+            onClick={handleEnableMic}
+            title="grant microphone access to list and meter devices"
+            style={{
+              flex: "none",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10.5,
+              color: "var(--q-term-green)",
+              backgroundColor: "var(--q-bg-hover)",
+              border: "1px solid var(--q-border)",
+              borderRadius: 4,
+              padding: "2px 6px",
+              cursor: "pointer",
+            }}
+          >
+            enable microphone
+          </button>
+        )}
+      </div>
 
       {/* Listen/status bar: current state + mic/permission/error indicator. */}
       <div

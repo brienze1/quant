@@ -361,30 +361,41 @@ export function SessionPanel({
           )}
 
           {/* Voice button (mirrors the mindmap toggle; green control).
-              Gated on config.voice.enabled — when voice is disabled in Settings
-              the toggle is inert (disabled + dimmed) with an explanatory tooltip,
-              so the pane/kickoff can never fire for an unconfigured feature. */}
+              Gated on TWO conditions, both of which must hold:
+                1. config.voice.enabled — voice feature turned on in Settings.
+                2. The session has a live, running agent (displayStatus ===
+                   "running"). Voice listen()/speak() drive the session's agent,
+                   so opening the pane on an idle/starting/stopped session would
+                   only produce a confusing failure. We disable the toggle (and
+                   never fire the kickoff) until the agent is actually running. */}
           {!isArchived && (() => {
             const voiceEnabled = termConfig?.voice?.enabled ?? false;
+            const agentRunning = displayStatus === "running";
+            const canToggle = voiceEnabled && agentRunning;
+            const tooltip = !voiceEnabled
+              ? "Enable voice in Settings"
+              : !agentRunning
+                ? "Start the session's agent first"
+                : "toggle voice pane";
             return (
               <button
-                onClick={() => { if (voiceEnabled) onVoicePaneOpenChange(!voicePaneOpen); }}
-                disabled={!voiceEnabled}
-                title={voiceEnabled ? "toggle voice pane" : "Enable voice in Settings"}
+                onClick={() => { if (canToggle) onVoicePaneOpenChange(!voicePaneOpen); }}
+                disabled={!canToggle}
+                title={tooltip}
                 className="flex items-center gap-1 px-2 py-1 text-[11px]"
                 style={{
                   fontFamily: "'JetBrains Mono', monospace",
                   color: voicePaneOpen ? "var(--q-bg)" : "var(--q-term-green)",
                   backgroundColor: voicePaneOpen ? "var(--q-term-green)" : "var(--q-bg-hover)",
                   border: `1px solid ${voicePaneOpen ? "var(--q-term-green)" : "var(--q-border)"}`,
-                  opacity: voiceEnabled ? 1 : 0.4,
-                  cursor: voiceEnabled ? "pointer" : "not-allowed",
+                  opacity: canToggle ? 1 : 0.4,
+                  cursor: canToggle ? "pointer" : "not-allowed",
                 }}
                 onMouseEnter={(e) => {
-                  if (voiceEnabled && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
+                  if (canToggle && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
                 }}
                 onMouseLeave={(e) => {
-                  if (voiceEnabled && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                  if (canToggle && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
                 }}
               >
                 <span>voice</span>
