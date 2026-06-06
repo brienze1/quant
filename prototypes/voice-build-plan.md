@@ -154,9 +154,68 @@
 
 ## P6 — Ship
 
-- **WI-6.1 — Tests ⬜:** e2e/integration for the STT/TTS proxy + the voice tool round-trip (mirror `internal/e2e/` patterns). Frontend: at least typecheck + build green.
+- **WI-6.1 — Tests ⬜:** implement the full **Testing & E2E plan** below (Go proxy + bridge + MCP tools + headless full-loop via fake audio + orb visual regression). Frontend: typecheck + build green.
 - **WI-6.2 — Changelog ⬜:** add a `changelog.json` entry (feature: native voice mode + orb). Bump version.
 - **WI-6.3 — PR ⬜:** open PR from `feat/voice` (GabiHert github account for quant). **Commit messages: do NOT mention co-authoring** (global rule for `/Documents/Projects/`). Update memory `project_voice_orchestrator_feature.md` on merge.
+
+---
+
+## Testing & E2E plan
+
+> **Headline:** ~80% is automatable with **no human in the loop**. The enabler is Chromium's fake-audio device: feed a `.wav` as the microphone and auto-grant permission, so Playwright drives the whole pipeline deterministically. The **only** human-required checks are the native WKWebView mic grant (Playwright can't attach to the native window) and subjective audio quality/latency.
+
+### A. Testability matrix
+
+| Layer (WI) | Automatable? | How | Needs human? |
+|---|---|---|---|
+| Go STT/TTS proxy (2.1) | ✅ full | Go test vs `httptest` mock provider | no |
+| Frontend audioService: capture+VAD+STT+playback (2.2) | ✅ full | Playwright + Chromium fake-audio + mock provider | no |
+| Go↔frontend bridge (2.3) | ✅ full | Go test: emit `voice:request`, simulate `VoiceResult`, assert channel round-trip + timeout | no |
+| MCP voice tools (2.4) | ✅ full | e2e over MCP-HTTP (mirror `session_submit_test.go`) + stub frontend responder | no |
+| Full conversation loop (3.x) | ✅ mostly | Playwright drives the **real quant frontend over the remote/browser transport**, fake audio + mock provider + stub agent | no (functional); feel = human |
+| Orb visual (P1) | ✅ | Playwright screenshot regression across 4 states × dark/light (baselines exist) | no |
+| **Native WKWebView mic grant (0.1)** | ❌ | native window — not Playwright-reachable | **yes** (MicProbe click per Wails bump) |
+| Audio quality / TTS naturalness / latency / barge-in feel | ❌ | subjective | **yes** |
+| Real cloud provider accuracy + cost | ⚠️ optional | env-gated test hitting a real endpoint | one-off |
+| Windows WebView2 / Linux WebKitGTK native mic | ⚠️ | per-platform manual or device-lab | yes (rare) |
+
+### B. Key enabler — Chromium fake audio (Playwright)
+
+Launch headless Chromium with:
+```
+--use-fake-ui-for-media-stream          # auto-accept the getUserMedia prompt
+--use-fake-device-for-media-stream      # synthetic media devices
+--use-file-for-fake-audio-capture=<fixtures>/utterance.wav%noloop   # feed a WAV as the mic
+```
+This makes `getUserMedia({audio:true})` resolve with a stream whose audio is the WAV's contents → real VAD sees real speech-shaped audio and endpoints correctly → the capture→VAD→STT path runs end to end with **zero human input**. (Caveat: this validates the *browser* pipeline in Chromium, not WKWebView specifically — the WKWebView patch is covered separately/manually.)
+
+### C. Fixtures & determinism (mirror the existing `R42Z` echo trick)
+
+- `fixtures/utterance.wav` — a short spoken phrase (e.g. "what is six times seven"). Keep a couple of variants (short, long-with-pause to exercise VAD endpointing).
+- **Mock provider** (`httptest` in Go; or an in-test fetch stub in the browser): `/v1/audio/transcriptions` returns a **known transcript marker**; `/v1/audio/speech` returns a tiny valid MP3. Deterministic in/out → exact assertions.
+- **Stub agent** for the full-loop test: a session/persona instructed to reply with a fixed marker (e.g. answer "42") so the loop asserts `transcript-in → marker-out → TTS-called → audio played`.
+
+### D. Concrete test cases (per WI)
+
+1. **WI-2.1 proxy (Go):** asserts multipart fields (`model`/`file`/`response_format`), API key header injected, key NEVER in any frontend-facing DTO; **fallback ordering** (first base URL → 500 → second succeeds); `isLocal` detection.
+2. **WI-2.2 audioService (Playwright):** feed `utterance.wav` → assert returned transcript === marker; assert VAD fired speech-start then speech-end (no infinite record); `speak(text)` → assert `<audio>` emitted `play`+`ended`; assert AnalyserNode yields non-zero levels (orb has data).
+3. **WI-2.3 bridge (Go):** tool emits `voice:request{requestId}` → test calls `VoiceResult(requestId, transcript)` → handler returns it; **timeout path** returns a recoverable error; wrong/duplicate `requestId` ignored.
+4. **WI-2.4 MCP tools (e2e):** call `voice_speak`/`voice_listen` over MCP-HTTP with `X-Quant-Session` (mirror `internal/e2e/session_submit_test.go` `callRaw`), stub frontend responder; assert `voice_listen` returns the marker transcript and `voice_speak` acks after playback.
+5. **WI-3.x full loop (Playwright over remote transport):** start the app in browser/remote mode (`internal/integration/remote/dispatch.go`; auth passcode per `project_remote_access`), open the voice pane on a stub-agent session, run one turn with fake audio → assert transcript pair renders (`you ▸ …` / `quant ▸ 42`), orb transitioned listening→thinking→speaking→idle, TTS endpoint was hit.
+6. **Orb visual (Playwright):** screenshot regression vs committed baselines across 4 states × dark/light; fail on diff over threshold.
+
+### E. CI strategy
+
+- **Default CI (no secrets, headless):** Go tests (proxy/bridge/MCP) + Playwright project (fake audio + mock provider + stub agent + orb visual). Fully hermetic.
+- **Nightly/optional (gated by env):** one real-cloud-provider smoke test (accuracy + cost sanity) behind `VOICE_E2E_REAL=1` + a key.
+- **Self-host VAD assets** so the headless run is offline (no CDN) — same requirement as WI-2.2.
+
+### F. Manual checklist (the human-only set — keep it small)
+
+- [ ] **WKWebView mic grant** after any Wails bump: `wails dev` (sandboxed HOME) → MicProbe → SUCCESS. *(The one true blocker for automation.)*
+- [ ] Subjective: TTS naturalness, end-to-end latency, barge-in responsiveness.
+- [ ] Real cloud provider: transcription accuracy + cost sanity (one-off).
+- [ ] Windows WebView2 + Linux WebKitGTK native mic (per-platform, rare).
 
 ---
 
