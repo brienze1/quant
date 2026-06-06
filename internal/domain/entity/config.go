@@ -7,6 +7,35 @@ type Shortcut struct {
 	Command string `json:"command"`
 }
 
+// VoiceConfig holds settings for the native voice mode (STT/TTS pipeline).
+// The APIKey is stored Go-side only and is never exposed to the frontend / remote
+// clients — the DTO masks it (see internal/integration/entrypoint/dto/config.go).
+type VoiceConfig struct {
+	Enabled  bool    `json:"enabled"`
+	Provider string  `json:"provider"` // "auto" | "local" | "cloud"
+	BaseURL  string  `json:"baseUrl"`
+	APIKey   string  `json:"apiKey"`
+	STTModel string  `json:"sttModel"`
+	TTSModel string  `json:"ttsModel"`
+	Voice    string  `json:"voice"` // default "am_onyx"
+	Speed    float64 `json:"speed"` // default 1.2
+}
+
+// WithDefaults returns a copy of the voice config with sensible defaults applied
+// for any unset fields. This keeps configs saved before the voice feature usable.
+func (v VoiceConfig) WithDefaults() VoiceConfig {
+	if v.Provider == "" {
+		v.Provider = "auto"
+	}
+	if v.Voice == "" {
+		v.Voice = "am_onyx"
+	}
+	if v.Speed == 0 {
+		v.Speed = 1.2
+	}
+	return v
+}
+
 // Config represents the application configuration settings.
 type Config struct {
 	// General
@@ -64,6 +93,9 @@ type Config struct {
 	RemoteAccessEnabled  bool   `json:"remoteAccessEnabled"`
 	RemoteAccessPort     int    `json:"remoteAccessPort"`
 	RemoteAccessPasscode string `json:"remoteAccessPasscode"`
+
+	// Voice — native voice mode (STT/TTS proxy). APIKey is masked in the DTO.
+	Voice VoiceConfig `json:"voice"`
 }
 
 // NewDefaultConfig returns a Config populated with sensible default values.
@@ -121,5 +153,17 @@ func NewDefaultConfig() Config {
 		RemoteAccessEnabled:  false,
 		RemoteAccessPort:     0,
 		RemoteAccessPasscode: "",
+
+		// Voice — disabled by default; cloud/auto provider, sensible voice defaults.
+		Voice: VoiceConfig{
+			Enabled:  false,
+			Provider: "auto",
+			BaseURL:  "",
+			APIKey:   "",
+			STTModel: "",
+			TTSModel: "",
+			Voice:    "am_onyx",
+			Speed:    1.2,
+		},
 	}
 }

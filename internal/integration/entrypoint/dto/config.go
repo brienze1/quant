@@ -11,6 +11,21 @@ type ShortcutDTO struct {
 	Command string `json:"command"`
 }
 
+// VoiceConfigDTO is the frontend-facing voice config. The raw APIKey is NEVER
+// included here; only HasAPIKey indicates whether a key is stored. On save, an
+// empty APIKey is treated as "keep the existing key" (see controller SaveConfig).
+type VoiceConfigDTO struct {
+	Enabled   bool    `json:"enabled"`
+	Provider  string  `json:"provider"`
+	BaseURL   string  `json:"baseUrl"`
+	APIKey    string  `json:"apiKey,omitempty"` // write-only: set to change; empty = unchanged
+	HasAPIKey bool    `json:"hasApiKey"`        // read-only: whether a key is stored
+	STTModel  string  `json:"sttModel"`
+	TTSModel  string  `json:"ttsModel"`
+	Voice     string  `json:"voice"`
+	Speed     float64 `json:"speed"`
+}
+
 // SaveConfigRequest represents the request payload for saving configuration.
 type SaveConfigRequest struct {
 	// General
@@ -64,6 +79,9 @@ type SaveConfigRequest struct {
 	RemoteAccessEnabled  bool   `json:"remoteAccessEnabled"`
 	RemoteAccessPort     int    `json:"remoteAccessPort"`
 	RemoteAccessPasscode string `json:"remoteAccessPasscode"`
+
+	// Voice
+	Voice VoiceConfigDTO `json:"voice"`
 }
 
 // ConfigResponse represents the response payload for configuration data.
@@ -119,6 +137,9 @@ type ConfigResponse struct {
 	RemoteAccessEnabled  bool   `json:"remoteAccessEnabled"`
 	RemoteAccessPort     int    `json:"remoteAccessPort"`
 	RemoteAccessPasscode string `json:"remoteAccessPasscode"`
+
+	// Voice — APIKey is masked (never returned); HasAPIKey reports its presence.
+	Voice VoiceConfigDTO `json:"voice"`
 }
 
 // ConfigResponseFromEntity converts a domain entity to a ConfigResponse DTO.
@@ -166,6 +187,17 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		RemoteAccessEnabled:   cfg.RemoteAccessEnabled,
 		RemoteAccessPort:      cfg.RemoteAccessPort,
 		RemoteAccessPasscode:  cfg.RemoteAccessPasscode,
+		// APIKey is intentionally omitted; only its presence is reported.
+		Voice: VoiceConfigDTO{
+			Enabled:   cfg.Voice.Enabled,
+			Provider:  cfg.Voice.Provider,
+			BaseURL:   cfg.Voice.BaseURL,
+			HasAPIKey: cfg.Voice.APIKey != "",
+			STTModel:  cfg.Voice.STTModel,
+			TTSModel:  cfg.Voice.TTSModel,
+			Voice:     cfg.Voice.Voice,
+			Speed:     cfg.Voice.Speed,
+		},
 	}
 }
 
@@ -239,5 +271,15 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		RemoteAccessEnabled:   r.RemoteAccessEnabled,
 		RemoteAccessPort:      r.RemoteAccessPort,
 		RemoteAccessPasscode:  r.RemoteAccessPasscode,
+		Voice: entity.VoiceConfig{
+			Enabled:  r.Voice.Enabled,
+			Provider: r.Voice.Provider,
+			BaseURL:  r.Voice.BaseURL,
+			APIKey:   r.Voice.APIKey, // may be empty = preserve existing (handled in controller)
+			STTModel: r.Voice.STTModel,
+			TTSModel: r.Voice.TTSModel,
+			Voice:    r.Voice.Voice,
+			Speed:    r.Voice.Speed,
+		},
 	}
 }

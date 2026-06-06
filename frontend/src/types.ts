@@ -276,6 +276,33 @@ export interface Config {
   remoteAccessEnabled: boolean;
   remoteAccessPort: number;
   remoteAccessPasscode: string;
+
+  // Voice
+  voice: VoiceConfig;
+}
+
+// VoiceConfig mirrors the Go entity.VoiceConfig / VoiceConfigDTO. The raw API key
+// is never sent to the frontend: `apiKey` is write-only (set it to change the key,
+// leave it empty/undefined to keep the existing one) and `hasApiKey` reports
+// whether a key is currently stored Go-side.
+export interface VoiceConfig {
+  enabled: boolean;
+  provider: "auto" | "local" | "cloud";
+  baseUrl: string;
+  apiKey?: string;
+  hasApiKey?: boolean;
+  sttModel: string;
+  ttsModel: string;
+  voice: string;
+  speed: number;
+}
+
+// VoiceSpeechResult is the payload returned by the Synthesize proxy: base64
+// audio + its content type. Returned as a struct (not a tuple) so it round-trips
+// over both the Wails desktop and remote/tunnel transports.
+export interface VoiceSpeechResult {
+  audioB64: string;
+  contentType: string;
 }
 
 // --- Remote Access ---

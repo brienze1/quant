@@ -26,6 +26,7 @@ import type {
   PathValidationResult,
   MindmapNode,
   RemoteStatus,
+  VoiceSpeechResult,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -529,4 +530,35 @@ export function disableRemoteAccess(): Promise<RemoteStatus> {
 
 export function regenerateRemotePasscode(): Promise<RemoteStatus> {
   return callGo(PKG, REMOTE_CTRL, "RegenerateRemotePasscode");
+}
+
+// --- Voice (STT/TTS proxy) ---
+//
+// The Go proxy holds the provider API key, so audio never carries credentials
+// from the frontend. Audio crosses the bridge base64-encoded (the Wails bridge
+// marshals []byte awkwardly over the remote transport).
+
+const VOICE_CTRL = "voiceController";
+
+/**
+ * Transcribe base64-encoded audio via the Go STT proxy.
+ * @param audioB64 base64-encoded audio bytes (no data: prefix)
+ * @param mime audio MIME type, e.g. "audio/webm" or "audio/wav"
+ * @returns the transcript text (trimmed)
+ */
+export function transcribe(audioB64: string, mime: string): Promise<string> {
+  return callGo(PKG, VOICE_CTRL, "Transcribe", audioB64, mime);
+}
+
+/**
+ * Synthesize speech for the given text via the Go TTS proxy.
+ * Pass an empty `voice` and/or `speed === 0` to use the configured defaults.
+ * @returns { audioB64, contentType } — base64-encoded audio + its content type
+ */
+export function synthesize(
+  text: string,
+  voice: string,
+  speed: number,
+): Promise<VoiceSpeechResult> {
+  return callGo(PKG, VOICE_CTRL, "Synthesize", text, voice, speed);
 }

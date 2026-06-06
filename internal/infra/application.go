@@ -22,6 +22,7 @@ import (
 	quantmcp "quant/internal/integration/mcp"
 	"quant/internal/integration/persistence"
 	"quant/internal/integration/remote"
+	"quant/internal/integration/voice"
 )
 
 // discoverClaudeConfigDirs finds all Claude config directories.
@@ -224,6 +225,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 	jobGroupCtrl := injector.JobGroupController()
 	mindmapCtrl := injector.MindmapController()
 	changelogCtrl := injector.ChangelogController()
+	voiceCtrl := voice.NewVoiceController(injector.ConfigManager())
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
@@ -265,6 +267,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 		"jobGroupController":  jobGroupCtrl,
 		"mindmapController":   mindmapCtrl,
 		"changelogController": changelogCtrl,
+		"voiceController":     voiceCtrl,
 	}
 	remoteManager := remote.NewManager(assetsSub, remoteControllers, injector.ConfigPersistence())
 	remoteCtrl := controller.NewRemoteController(remoteManager)
@@ -294,6 +297,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl.OnStartup(ctx)
 			mindmapCtrl.OnStartup(ctx)
 			changelogCtrl.OnStartup(ctx)
+			voiceCtrl.OnStartup(ctx)
 			remoteCtrl.OnStartup(ctx)
 			// Auto-resume remote access if it was enabled before the last shutdown.
 			// Runs after controllers have their context set, since RPC dispatch
@@ -312,6 +316,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl.OnShutdown(ctx)
 			mindmapCtrl.OnShutdown(ctx)
 			changelogCtrl.OnShutdown(ctx)
+			voiceCtrl.OnShutdown(ctx)
 			remoteCtrl.OnShutdown(ctx)
 			remoteManager.Stop()
 			jobScheduler.Stop()
@@ -332,6 +337,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl,
 			mindmapCtrl,
 			changelogCtrl,
+			voiceCtrl,
 			remoteCtrl,
 		},
 	})
