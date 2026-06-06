@@ -14,6 +14,7 @@ type ConfigController interface {
 	GetConfig() (*dto.ConfigResponse, error)
 	SaveConfig(request dto.SaveConfigRequest) error
 	SetMindmapPaneOpen(open bool) error
+	SetVoicePaneOpen(open bool) error
 	ResetDatabase() error
 	ClearSessionLogs() error
 	BrowseDirectory() (string, error)

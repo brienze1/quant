@@ -267,6 +267,13 @@ export function setMindmapPaneOpen(open: boolean): Promise<void> {
   return callGo(PKG, CONFIG_CTRL, "SetMindmapPaneOpen", open);
 }
 
+// Lift the voice pane open/close flag to a single global, config-backed value.
+// Mirrors setMindmapPaneOpen: the backend persists it and emits a "voice:pane"
+// event so every session tab and remote client stays in sync.
+export function setVoicePaneOpen(open: boolean): Promise<void> {
+  return callGo(PKG, CONFIG_CTRL, "SetVoicePaneOpen", open);
+}
+
 export function resetDatabase(): Promise<void> {
   return callGo(PKG, CONFIG_CTRL, "ResetDatabase");
 }

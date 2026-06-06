@@ -88,6 +88,26 @@ func (c *configController) SetMindmapPaneOpen(open bool) error {
 	return nil
 }
 
+// SetVoicePaneOpen persists the global voice pane open/close flag and broadcasts
+// the change to all clients via the "voice:pane" event so they stay in sync.
+func (c *configController) SetVoicePaneOpen(open bool) error {
+	cfg, err := c.configManager.GetConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg.VoicePaneOpen = open
+	if err := c.configManager.SaveConfig(cfg); err != nil {
+		return err
+	}
+
+	if c.emitter != nil {
+		c.emitter.Emit("voice:pane", map[string]any{"open": open})
+	}
+
+	return nil
+}
+
 // ResetDatabase truncates all database tables.
 func (c *configController) ResetDatabase() error {
 	return c.configManager.ResetDatabase()

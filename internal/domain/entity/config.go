@@ -62,6 +62,7 @@ type Config struct {
 	ActiveSessionID       string   `json:"activeSessionId"`
 	OpenSessionIDs        []string `json:"openSessionIds"`
 	MindmapPaneOpen       bool     `json:"mindmapPaneOpen"`
+	VoicePaneOpen         bool     `json:"voicePaneOpen"`
 
 	// Storage & Data
 	DataDirectory     string `json:"dataDirectory"`

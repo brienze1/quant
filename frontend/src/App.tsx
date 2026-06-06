@@ -97,6 +97,10 @@ function App() {
   // terminal pane): it is config-backed and synced across all tabs and remote
   // clients via the "mindmap:pane" event.
   const [mindmapPaneOpen, setMindmapPaneOpen] = useState(false);
+  // Voice pane open/closed is a single GLOBAL flag (mirrors mindmapPaneOpen):
+  // config-backed and synced across all tabs and remote clients via the
+  // "voice:pane" event.
+  const [voicePaneOpen, setVoicePaneOpen] = useState(false);
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -169,6 +173,16 @@ function App() {
     setMindmapPaneOpen(open);
     api.setMindmapPaneOpen(open).catch((err) =>
       console.error("failed to persist mindmap pane state:", err)
+    );
+  }
+
+  // Toggle the global voice pane (mirrors handleMindmapPaneOpenChange): update
+  // locally for instant feedback, then persist via the backend, which broadcasts
+  // "voice:pane" so other tabs and remote clients converge on the same value.
+  function handleVoicePaneOpenChange(open: boolean) {
+    setVoicePaneOpen(open);
+    api.setVoicePaneOpen(open).catch((err) =>
+      console.error("failed to persist voice pane state:", err)
     );
   }
 
@@ -310,6 +324,9 @@ function App() {
         // done so the event handler can safely treat later updates as remote.
         setMindmapPaneOpen(!!cfg.mindmapPaneOpen);
         mindmapPaneHydratedRef.current = true;
+        // Hydrate the global voice pane flag from config (mirrors mindmap).
+        setVoicePaneOpen(!!cfg.voicePaneOpen);
+        voicePaneHydratedRef.current = true;
       } catch (err) {
         console.error("failed to restore active session:", err);
       }
@@ -387,6 +404,10 @@ function App() {
   // Guards the initial hydration of the global mindmap pane flag from config,
   // so the startup read doesn't trigger a write-back (mirrors tabsRestoredRef).
   const mindmapPaneHydratedRef = useRef(false);
+
+  // Guards the initial hydration of the global voice pane flag from config
+  // (mirrors mindmapPaneHydratedRef).
+  const voicePaneHydratedRef = useRef(false);
 
   // Persist open tabs and active tab to config whenever they change
   const tabsRestoredRef = useRef(false);
@@ -626,6 +647,19 @@ function App() {
     if (!w?.runtime?.EventsOn) return;
     const cancel = w.runtime.EventsOn("mindmap:pane", (d: { open?: boolean }) => {
       setMindmapPaneOpen(!!(d && d.open));
+    });
+    return () => cancel && cancel();
+  }, []);
+
+  // Keep the global voice pane flag in sync across every tab and remote client
+  // (mirrors the mindmap:pane handler). Idempotent: it SETS state to the received
+  // value and never toggles, so duplicate/echo events can't flip it out of sync.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w?.runtime?.EventsOn) return;
+    const cancel = w.runtime.EventsOn("voice:pane", (d: { open?: boolean }) => {
+      setVoicePaneOpen(!!(d && d.open));
     });
     return () => cancel && cancel();
   }, []);
@@ -2140,6 +2174,8 @@ function App() {
             onTerminalPaneOpenChange={handleTerminalPaneOpenChange}
             mindmapPaneOpen={mindmapPaneOpen}
             onMindmapPaneOpenChange={handleMindmapPaneOpenChange}
+            voicePaneOpen={voicePaneOpen}
+            onVoicePaneOpenChange={handleVoicePaneOpenChange}
             onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}
           />
         ) : (

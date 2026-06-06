@@ -249,6 +249,7 @@ export interface Config {
   activeSessionId: string;
   openSessionIds: string[];
   mindmapPaneOpen: boolean;
+  voicePaneOpen: boolean;
 
   // Storage & Data
   dataDirectory: string;

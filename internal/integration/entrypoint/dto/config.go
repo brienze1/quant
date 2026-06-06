@@ -52,6 +52,7 @@ type SaveConfigRequest struct {
 	ActiveSessionID       string   `json:"activeSessionId"`
 	OpenSessionIDs        []string `json:"openSessionIds"`
 	MindmapPaneOpen       bool     `json:"mindmapPaneOpen"`
+	VoicePaneOpen         bool     `json:"voicePaneOpen"`
 
 	// Storage & Data
 	DataDirectory     string `json:"dataDirectory"`
@@ -110,6 +111,7 @@ type ConfigResponse struct {
 	ActiveSessionID       string   `json:"activeSessionId"`
 	OpenSessionIDs        []string `json:"openSessionIds"`
 	MindmapPaneOpen       bool     `json:"mindmapPaneOpen"`
+	VoicePaneOpen         bool     `json:"voicePaneOpen"`
 
 	// Storage & Data
 	DataDirectory     string `json:"dataDirectory"`
@@ -168,6 +170,7 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		ActiveSessionID:       cfg.ActiveSessionID,
 		OpenSessionIDs:        cfg.OpenSessionIDs,
 		MindmapPaneOpen:       cfg.MindmapPaneOpen,
+		VoicePaneOpen:         cfg.VoicePaneOpen,
 		DataDirectory:         cfg.DataDirectory,
 		WorktreeDirectory:     cfg.WorktreeDirectory,
 		LogDirectory:          cfg.LogDirectory,
@@ -252,6 +255,7 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		ActiveSessionID:       r.ActiveSessionID,
 		OpenSessionIDs:        r.OpenSessionIDs,
 		MindmapPaneOpen:       r.MindmapPaneOpen,
+		VoicePaneOpen:         r.VoicePaneOpen,
 		DataDirectory:         r.DataDirectory,
 		WorktreeDirectory:     r.WorktreeDirectory,
 		LogDirectory:          r.LogDirectory,
