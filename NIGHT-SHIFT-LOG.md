@@ -12,7 +12,7 @@ Workspace: `.claude/worktrees/feat-voice` (branch `feat/voice`). Started from `e
 
 ## Status
 - [x] Baseline: feat-voice Go build clean, no uncommitted changes (e59fbb3)
-- [ ] WI-4.1 + WI-2.1 — config schema + Go STT/TTS proxy
+- [x] WI-4.1 + WI-2.1 — config schema + Go STT/TTS proxy (commit ed1da2f). Go tests green, tsc green.
 - [ ] WI-2.2 — frontend audioService (getUserMedia + vad-web + playback)
 - [ ] WI-2.3 — Go<->frontend voice bridge (voice:request / VoiceResult)
 - [ ] WI-2.4 — MCP voice tools (voice_listen / voice_speak)
