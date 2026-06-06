@@ -67,6 +67,7 @@ func newHarness(t *testing.T) *harness {
 		injector.WorkspaceManager(),
 		injector.RepoManager(),
 		injector.JobGroupManager(),
+		injector.MindmapManager(),
 	)
 	if err := server.Start(); err != nil {
 		t.Fatalf("server.Start: %v", err)

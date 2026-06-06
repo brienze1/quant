@@ -706,9 +706,10 @@ Returns the created session object with generated ID. The session starts in 'idl
 
 	mcpServer.AddTool(
 		mcp.NewTool("send_message",
-			mcp.WithDescription(`Send a message to a running session. The message is written to the session's terminal stdin. For claude sessions, this sends text to the Claude CLI.`),
+			mcp.WithDescription(`Send a message to a running session. The message is written to the session's terminal stdin. For claude sessions, this sends text to the Claude CLI and, by default, presses Enter to submit it (delivered as a separate keystroke so the TUI treats it as a submit, not a multi-line paste). Set submit=false to leave the text in the input box without submitting.`),
 			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID (must be running)")),
 			mcp.WithString("message", mcp.Required(), mcp.Description("Message text to send to the session")),
+			mcp.WithBoolean("submit", mcp.Description("Press Enter after the message to submit it. Default: true. Set false to only type the text without submitting.")),
 		),
 		s.handleSendMessage,
 	)
@@ -2205,12 +2206,38 @@ func (s *QuantMCPServer) handleSendMessage(_ context.Context, request mcp.CallTo
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	// submit defaults to true: the orchestration use case is to deliver a
+	// prompt to another session, which is useless if it just sits in the input
+	// box. Callers can opt out to only type the text.
+	submit := true
+	if v, ok := request.GetArguments()["submit"]; ok && v != nil {
+		submit, _ = v.(bool)
+	}
+
 	if err := s.sessionManager.SendMessage(id, message); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Message sent to session %s", id)), nil
+	if submit {
+		// The Claude CLI TUI treats a carriage return arriving in the same
+		// write as the message text as a multi-line newline, not a submit.
+		// Delivering Enter as a separate keystroke after a short delay lets the
+		// TUI process the pasted text first, so the return is read as a submit.
+		time.Sleep(submitKeyDelay)
+		if err := s.sessionManager.SendMessage(id, "\r"); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("message typed but submit (Enter) failed: %s", err.Error())), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Message sent and submitted to session %s", id)), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Message typed (not submitted) to session %s", id)), nil
 }
+
+// submitKeyDelay is the pause between writing a message to a session's PTY and
+// writing the Enter keystroke that submits it. It gives the Claude CLI TUI time
+// to process the pasted text before the carriage return arrives as a discrete
+// submit rather than a multi-line newline.
+const submitKeyDelay = 120 * time.Millisecond
 
 func (s *QuantMCPServer) handleGetSessionOutput(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
