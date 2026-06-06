@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.29",
+      "date": "2026-06-06",
+      "changes": {
+        "features": [
+          "messages sent to another session over MCP (send_message) now submit on their own — an orchestrator agent can prompt a worker session and it runs immediately instead of waiting for you to press Enter; pass submit=false to only type the text"
+        ]
+      }
+    },
+    {
       "version": "v3.1.28",
       "date": "2026-06-06",
       "changes": {
