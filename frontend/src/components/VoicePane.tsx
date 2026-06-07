@@ -98,7 +98,11 @@ function errorCopy(err: VoiceError): BannerCopy {
     case "timeout":
       return {
         title: "didn't catch that",
-        detail: "No speech was heard. Tap to try again and speak after the orb turns on.",
+        detail:
+          "No speech was heard. Tap to try again and speak after the orb turns on." +
+          // Append the live diagnostic snapshot (ctx/mic/peakIn/vadStart) so a
+          // copy-pasted report pinpoints which layer is dead on WebKit.
+          (err.message && err.message.includes("[") ? `  ⟨${err.message.split("[")[1]?.replace("]", "") ?? ""}⟩` : ""),
       };
     default:
       return { title: "voice error", detail: err.message || "Something went wrong." };

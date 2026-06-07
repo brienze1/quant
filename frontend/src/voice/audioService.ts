@@ -165,6 +165,13 @@ export class AudioService implements IAudioService {
   // instantly self-interrupt the reply.
   private speakStartedAt = 0;
 
+  // Per-listen diagnostics — folded into the timeout error so a "No speech was
+  // heard" report carries the live state (which layer is actually dead) without
+  // the user having to read the on-screen debug overlay.
+  private listenPeakIn = 0;
+  private listenSawSpeechStart = false;
+  private listenSampler: ReturnType<typeof setInterval> | null = null;
+
   // One in-flight listen() at a time.
   private pendingListen: {
     resolve: (transcript: string) => void;
@@ -666,6 +673,8 @@ export class AudioService implements IAudioService {
   // ---- VAD callbacks -------------------------------------------------------
 
   private handleSpeechStart() {
+    // Diagnostics: the VAD actually fired this turn (mic frames are flowing).
+    this.listenSawSpeechStart = true;
     // Barge-in: user started talking while TTS is playing → stop playback and
     // hand the turn back to the user. We stop (not just pause) so the in-flight
     // speak() resolves and the agent's loop can move on to listening; if a
@@ -752,11 +761,20 @@ export class AudioService implements IAudioService {
       throw { kind: "vad", message: "VAD is not initialized." } as VoiceError;
     }
 
+    // Reset + start per-listen diagnostics for this turn.
+    this.listenPeakIn = 0;
+    this.listenSawSpeechStart = false;
+    if (this.listenSampler) clearInterval(this.listenSampler);
+    this.listenSampler = setInterval(() => {
+      const lvl = this.getInputLevel();
+      if (lvl > this.listenPeakIn) this.listenPeakIn = lvl;
+    }, 50);
+
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.failListen({
           kind: "timeout",
-          message: `No complete utterance within ${this.maxListenMs}ms.`,
+          message: `No complete utterance within ${this.maxListenMs}ms. [${this.listenDiag()}]`,
         });
       }, this.maxListenMs);
 
@@ -773,6 +791,29 @@ export class AudioService implements IAudioService {
     });
   }
 
+  /**
+   * Compact snapshot of why a listen turn may have heard nothing: AudioContext
+   * state, mic-track health, the peak input level seen this turn, and whether
+   * the VAD ever fired speech-start. Surfaced in the timeout message so the
+   * failure is self-diagnosing from the user's report.
+   */
+  private listenDiag(): string {
+    const track = this.stream ? this.stream.getAudioTracks()[0] : undefined;
+    const mic = track
+      ? `${track.readyState}${track.muted ? "/muted" : ""}${track.enabled ? "" : "/disabled"}`
+      : "none";
+    return `ctx=${this.getContextState()} mic=${mic} peakIn=${this.listenPeakIn.toFixed(
+      2,
+    )} vadStart=${this.listenSawSpeechStart ? "yes" : "no"}`;
+  }
+
+  private clearListenSampler(): void {
+    if (this.listenSampler) {
+      clearInterval(this.listenSampler);
+      this.listenSampler = null;
+    }
+  }
+
   cancelListen(): void {
     if (!this.pendingListen || this.pendingListen.settled) return;
     this.failListen({ kind: "unknown", message: "Listen cancelled." });
@@ -783,6 +824,7 @@ export class AudioService implements IAudioService {
     if (!p || p.settled) return;
     p.settled = true;
     if (p.timer) clearTimeout(p.timer);
+    this.clearListenSampler();
     this.pendingListen = null;
     try {
       this.vad?.pause();
@@ -798,6 +840,7 @@ export class AudioService implements IAudioService {
     if (!p || p.settled) return;
     p.settled = true;
     if (p.timer) clearTimeout(p.timer);
+    this.clearListenSampler();
     this.pendingListen = null;
     try {
       this.vad?.pause();
