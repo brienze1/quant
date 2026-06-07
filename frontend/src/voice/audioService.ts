@@ -29,6 +29,16 @@ const DEFAULT_VAD_ASSET_PATH = "/vad/";
 const DEFAULT_MAX_LISTEN_MS = 30_000;
 /** Barge-in is suppressed for this long after TTS playback starts (see handleSpeechStart). */
 const BARGE_IN_GUARD_MS = 1200;
+/**
+ * Upper bound the orb stays in the post-listen "thinking" state after STT
+ * resolves while the agent reasons (and may run tools), before the next
+ * speak()/listen() request arrives. Caps the case where the conversation ends
+ * and no further turn comes (pane left open) so the orb eventually relaxes to
+ * idle. 45s comfortably exceeds a normal reasoning+tool turn so it won't
+ * prematurely cut a real think. A real listen()/speak()/barge-in transition
+ * clears this via setState() before it fires.
+ */
+const MAX_THINKING_MS = 45_000;
 
 /** localStorage key for the (browser/machine-scoped) selected input deviceId. */
 const INPUT_DEVICE_LS_KEY = "quant.voice.inputDeviceId";
@@ -115,6 +125,9 @@ export class AudioService implements IAudioService {
   private inputDeviceId: string | null;
 
   private state: VoiceServiceState = "idle";
+  // Single in-flight bound on the post-listen "thinking" state (see
+  // MAX_THINKING_MS / armThinkingTimeout). Cancelled on any real transition.
+  private thinkingTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly stateCbs = new Set<VoiceStateCb>();
   private readonly errorCbs = new Set<VoiceErrorCb>();
   private readonly devicesChangedCbs = new Set<DevicesChangedCb>();
@@ -399,7 +412,15 @@ export class AudioService implements IAudioService {
 
   private setState(s: VoiceServiceState) {
     if (this.state === s) return;
+    // Any real transition cancels the post-listen "thinking" bound; the new
+    // state (listening/speaking/idle) is authoritative. Re-armed below only
+    // when we are actually entering thinking.
+    if (this.thinkingTimer) {
+      clearTimeout(this.thinkingTimer);
+      this.thinkingTimer = null;
+    }
     this.state = s;
+    if (s === "thinking") this.armThinkingTimeout();
     for (const cb of this.stateCbs) {
       try {
         cb(s);
@@ -407,6 +428,20 @@ export class AudioService implements IAudioService {
         /* never let a subscriber break the pipeline */
       }
     }
+  }
+
+  /**
+   * Arm (or re-arm) the upper bound on the "thinking" state so the orb doesn't
+   * sit in thinking forever if the agent never speaks/listens again (e.g. the
+   * conversation ended with the pane left open). A real listen()/speak()/
+   * barge-in transition clears this via setState() before it fires.
+   */
+  private armThinkingTimeout() {
+    if (this.thinkingTimer) clearTimeout(this.thinkingTimer);
+    this.thinkingTimer = setTimeout(() => {
+      this.thinkingTimer = null;
+      if (this.state === "thinking") this.setState("idle");
+    }, MAX_THINKING_MS);
   }
 
   private emitError(err: VoiceError) {
@@ -831,7 +866,15 @@ export class AudioService implements IAudioService {
     } catch {
       /* ignore */
     }
-    this.setState("idle");
+    // The transcript is about to be handed back to Go; the agent now reasons
+    // (and may run tools) BEFORE the next speak()/listen() request arrives.
+    // Stay in "thinking" so the orb reflects that real reasoning window instead
+    // of dropping to idle. handleSpeechEnd() already set "thinking" for the STT
+    // slice; re-arm the bound here explicitly because setState() short-circuits
+    // when the state is unchanged and would not refresh the timeout — this makes
+    // the bound measure from STT-completion across the whole reasoning window.
+    this.setState("thinking");
+    this.armThinkingTimeout();
     p.resolve(transcript);
   }
 
@@ -869,6 +912,10 @@ export class AudioService implements IAudioService {
       audioB64 = res.audioB64;
       contentType = res.contentType || "audio/mpeg";
     } catch (e) {
+      // Synthesis failed before playback started; we were holding "thinking"
+      // from the prior listen turn — relax to idle now rather than waiting for
+      // the thinking-timeout bound.
+      if (this.state === "thinking" || this.state === "speaking") this.setState("idle");
       const err: VoiceError = { kind: "network", message: "Text-to-speech request failed.", cause: e };
       this.emitError(err);
       throw err;
@@ -971,7 +1018,10 @@ export class AudioService implements IAudioService {
   private finishSpeak() {
     this.teardownPlayback();
     const p = this.pendingSpeak;
-    if (this.state === "speaking") this.setState("idle");
+    // Reset from speaking OR thinking: a speak() can be abandoned (stopSpeaking)
+    // while we're still in the post-listen "thinking" hold, and we shouldn't lean
+    // on the thinking-timeout bound to relax it.
+    if (this.state === "speaking" || this.state === "thinking") this.setState("idle");
     if (!p || p.settled) return;
     p.settled = true;
     this.pendingSpeak = null;
@@ -980,7 +1030,7 @@ export class AudioService implements IAudioService {
 
   private failSpeak(err: VoiceError) {
     this.teardownPlayback();
-    if (this.state === "speaking") this.setState("idle");
+    if (this.state === "speaking" || this.state === "thinking") this.setState("idle");
     const p = this.pendingSpeak;
     this.emitError(err);
     if (!p || p.settled) return;
@@ -1064,6 +1114,13 @@ export class AudioService implements IAudioService {
   async dispose(): Promise<void> {
     this.cancelListen();
     this.stopSpeaking();
+    // Defensively clear the thinking bound so no orphaned timer fires after
+    // teardown (setState("idle") below also clears it, but only if the state
+    // actually changes — clearing explicitly is robust if state was already idle).
+    if (this.thinkingTimer) {
+      clearTimeout(this.thinkingTimer);
+      this.thinkingTimer = null;
+    }
     this.previewActive = false;
     this.unbindDeviceChange();
     this.devicesChangedCbs.clear();

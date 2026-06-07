@@ -52,13 +52,16 @@ test("listen(): fake-audio WAV drives the real Silero VAD to endpoint → STT ma
 
   // 3) State machine proves the REAL Silero VAD endpointed the WAV:
   //    listen() sets `listening`; `thinking` is ONLY entered from
-  //    handleSpeechEnd() (i.e. the VAD fired speech-end on the fake audio);
-  //    then it resolves back to `idle`. No infinite record (bounded earlier
-  //    than maxListen — proven by the promise resolving, not timing out).
+  //    handleSpeechEnd() (i.e. the VAD fired speech-end on the fake audio).
+  //    resolveListen() now HOLDS `thinking` after STT resolves (it reflects the
+  //    agent's real reasoning window until the next speak()/listen()), instead of
+  //    dropping straight back to `idle`. So the terminal state here is `thinking`.
+  //    No infinite record (bounded earlier than maxListen — proven by the
+  //    promise resolving, not timing out).
   const log = await getStateLog(page);
   expect(log).toContain("listening");
   expect(log).toContain("thinking"); // <-- VAD endpointed the utterance
-  expect(log[log.length - 1]).toBe("idle");
+  expect(log[log.length - 1]).toBe("thinking");
   // Ordering: listening must precede thinking which precedes the final idle.
   const iListening = log.indexOf("listening");
   const iThinking = log.indexOf("thinking");

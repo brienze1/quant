@@ -110,7 +110,11 @@ interface StateTarget {
 
 const TARGETS: Record<VoiceOrbState, StateTarget> = {
   idle: { amp: 0.07, freq: 1.4, expand: 0.0, rot: 0.08, role: "dim" },
-  listening: { amp: 0.13, freq: 1.9, expand: 0.25, expandLight: 0.14, rot: 0.18, role: "accent" },
+  // Listening is calm at rest but voice-reactive: a slightly higher base amp +
+  // expansion than the prototype so the mic-driven uAudio motion is clearly
+  // visible. Kept well under `speaking` (amp 0.155 / expand 0.34) and within the
+  // pane frame (the audio-driven geometry term is uAudio*0.10; see VERT).
+  listening: { amp: 0.15, freq: 1.9, expand: 0.27, expandLight: 0.16, rot: 0.18, role: "accent" },
   thinking: { amp: 0.1, freq: 2.8, expand: 0.12, rot: 0.55, role: "think" },
   // WI-5.1: speaking is the flare. Reined in ~12-15% from the prototype values
   // (amp 0.18→0.155, expand 0.40→0.34) so the bloom + geometry expansion stay
@@ -344,8 +348,12 @@ export default function VoiceOrb({
       }
       const provided =
         providedRaw === null ? null : Math.max(0, Math.min(1, providedRaw));
-      if (provided !== null && (s === "listening" || s === "speaking")) {
-        raw = provided;
+      // True only when a real live level (mic/output) is driving the orb. The
+      // simulated/fallback path (harness, idle, thinking, missing getLevel) keeps
+      // the original symmetric smoothing so its visual baselines are unchanged.
+      const driven = provided !== null && (s === "listening" || s === "speaking");
+      if (driven) {
+        raw = provided as number;
       } else if (s === "speaking") {
         raw = 0.45 + 0.4 * Math.abs(Math.sin(t * 7.0)) * Math.abs(Math.sin(t * 2.3));
       } else if (s === "thinking") {
@@ -358,7 +366,22 @@ export default function VoiceOrb({
         raw = 0.04 + 0.03 * Math.sin(t * 1.2);
       }
 
-      audioS = lerp(audioS, raw, 0.12);
+      // Smoothing. For a live-driven level (real mic/output), use ASYMMETRIC
+      // smoothing: a fast attack so the orb snaps up the instant the user speaks,
+      // and a slower release so it settles back without flickering on the gaps
+      // between syllables. Frame-rate-normalised against a 60fps baseline so the
+      // feel is consistent regardless of refresh rate (and never overshoots: the
+      // per-frame factor is clamped to ≤1). The simulated/fallback path keeps the
+      // original symmetric lerp(…, 0.12) so the harness baselines don't move.
+      if (driven) {
+        const ATTACK = 0.45; // per-60fps-frame rise toward a louder level
+        const RELEASE = 0.16; // per-60fps-frame fall toward a quieter level
+        const base = raw > audioS ? ATTACK : RELEASE;
+        const k = Math.min(1, base * dt * 60);
+        audioS = lerp(audioS, raw, k);
+      } else {
+        audioS = lerp(audioS, raw, 0.12);
+      }
       uniforms.uAudio.value = audioS;
       uniforms.uAmp.value = lerp(uniforms.uAmp.value, tg.amp, 0.05);
       uniforms.uFreq.value = lerp(uniforms.uFreq.value, tg.freq, 0.05);

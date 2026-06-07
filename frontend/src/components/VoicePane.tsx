@@ -148,7 +148,21 @@ export function VoicePane({ sessionId, className, style }: Props) {
   const orbGetLevel = useRef(() => {
     const svc = serviceRef.current;
     if (!svc) return null;
-    return stateRef.current === "speaking" ? svc.getOutputLevel() : svc.getInputLevel();
+    if (stateRef.current === "speaking") return svc.getOutputLevel();
+    // Input: make the orb noticeably reactive to normal speech. getInputLevel()
+    // peaks are small for conversational volume, so noise-gate a small floor
+    // then apply a perceptual curve + gain so quiet/mid speech clearly drives
+    // the orb while idle room noise stays flat.
+    const raw = svc.getInputLevel();
+    // Noise-gate a small floor (kills idle room noise + AGC drift), then lift
+    // quiet/mid speech with a perceptual curve + gain. The gate keeps idle flat;
+    // the sub-1 exponent gives early lift so the orb reacts to soft speech; the
+    // gain pushes normal conversational volume up toward (but not past) 1. The
+    // orb's tick applies fast-attack/slow-release smoothing on top, so this stays
+    // snappy without jittering.
+    const gated = Math.max(0, raw - 0.05);
+    if (gated <= 0) return 0;
+    return Math.min(1, Math.pow(gated, 0.55) * 2.1);
   }).current;
   const transcriptRef = useRef<HTMLDivElement>(null);
   const lineIdRef = useRef(nextLineId(lines));
