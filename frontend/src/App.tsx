@@ -205,8 +205,11 @@ function App() {
           // re-opening retries, and surface it as a non-fatal error.
           voiceStartedRef.current.delete(sessionId);
           console.error("failed to start voice session:", err);
+          const msg = String((err && err.message) || err || "");
           setError(
-            "Couldn't start voice mode — make sure the session has a running agent."
+            msg.includes("no process running")
+              ? "Start the session's agent before enabling voice."
+              : `Couldn't start voice mode: ${msg || "unknown error"}`
           );
         });
       }
