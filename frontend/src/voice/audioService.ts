@@ -127,6 +127,11 @@ export class AudioService implements IAudioService {
   // Muted sink that keeps the input analyser in the render graph (so WebKit
   // actually pulls it). Silent — gain is pinned to 0.
   private inputSink: GainNode | null = null;
+  // Silent looping source that keeps the AudioContext from idling into a
+  // suspended/interrupted state between turns (WebKit suspends a context with no
+  // active audio, which kills the VAD so later utterances are never heard). It
+  // produces digital silence, so it is inaudible and feeds no echo.
+  private keepAlive: AudioBufferSourceNode | null = null;
   private vad: MicVAD | null = null;
   private initPromise: Promise<void> | null = null;
 
@@ -516,6 +521,45 @@ export class AudioService implements IAudioService {
         /* best-effort */
       }
     }
+    if (ctx) this.startKeepAlive(ctx);
+  }
+
+  /**
+   * Start a silent, looping buffer source feeding the destination so the context
+   * never idles into "suspended"/"interrupted" between turns. WebKit suspends an
+   * inactive context, which silently kills the VAD — the user then talks and
+   * nothing is heard ("No speech was heard" / orb flat after the first turn).
+   * Idempotent; the source plays inaudible digital silence.
+   */
+  private startKeepAlive(ctx: AudioContext): void {
+    if (this.keepAlive) return;
+    try {
+      const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.5)), ctx.sampleRate);
+      // buf is zero-filled = silence; loop it forever.
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.connect(ctx.destination);
+      src.start();
+      this.keepAlive = src;
+    } catch {
+      /* best-effort — keep-alive is an optimization, never fatal */
+    }
+  }
+
+  private stopKeepAlive(): void {
+    if (!this.keepAlive) return;
+    try {
+      this.keepAlive.stop();
+    } catch {
+      /* ignore */
+    }
+    try {
+      this.keepAlive.disconnect();
+    } catch {
+      /* ignore */
+    }
+    this.keepAlive = null;
   }
 
   /** Build the input analyser graph on the given stream (shared by init/preview). */
@@ -564,6 +608,9 @@ export class AudioService implements IAudioService {
     if (!this.inputAnalyser || !reusing) {
       this.buildInputGraph(ctx, stream);
     }
+    // Keep the context alive across turns so WebKit doesn't suspend it (which
+    // would starve the VAD and make later utterances go unheard).
+    this.startKeepAlive(ctx);
 
     // 3. VAD — self-hosted assets, offline-safe, no CDN.
     try {
@@ -934,6 +981,7 @@ export class AudioService implements IAudioService {
     } catch {
       /* ignore */
     }
+    this.stopKeepAlive();
     this.micSource = null;
     this.inputAnalyser = null;
     this.inputSink = null;

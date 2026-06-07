@@ -112,6 +112,19 @@ async function handleRequest(
       );
     }
   } catch (err) {
+    // A listen timeout (the user simply didn't speak in time) must NOT derail
+    // the conversation. Report it as an empty transcript so the Go handler hands
+    // the agent the "no speech heard — keep going" nudge instead of an error
+    // that ends the loop.
+    const kind = (err as { kind?: string } | null)?.kind;
+    if (req.kind === "listen" && kind === "timeout") {
+      try {
+        await api.voiceResult(req.requestId, "", "");
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     // Best-effort: if even reporting the error fails, there is nothing more we
     // can do; the Go side will eventually time out.
