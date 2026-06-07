@@ -196,6 +196,12 @@ export interface IAudioService {
   /** Current input level 0..1 (peak/RMS) from the input analyser, 0 if none. */
   getInputLevel(): number;
 
+  /** Current playback level 0..1 from the output analyser, 0 if none. */
+  getOutputLevel(): number;
+
+  /** Current AudioContext state, or "none" if not yet created. */
+  getContextState(): string;
+
   /**
    * Resume the AudioContext. Call from a user-gesture handler — WKWebView/
    * autoplay policies keep a gesture-less context suspended, which leaves the

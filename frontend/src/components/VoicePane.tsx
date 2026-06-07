@@ -129,8 +129,23 @@ export function VoicePane({ sessionId, className, style }: Props) {
   const [hasLabels, setHasLabels] = useState(true);
   // 0..METER_SEGMENTS-1 lit segments, driven by getInputLevel() via rAF.
   const [meterLevel, setMeterLevel] = useState(0);
+  // Throttled live debug readout (state · ctx · in/out level) for diagnosing the
+  // hands-free loop on WebKit, where the orb otherwise can't be inspected.
+  const [dbg, setDbg] = useState("");
 
   const serviceRef = useRef<IAudioService | null>(null);
+  // Live mirror of `state` for the orb's per-frame level callback (avoids stale
+  // closures without re-creating the callback).
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  // Stable per-frame level source for the orb: output level while speaking,
+  // input level otherwise. Reading the live service every frame sidesteps the
+  // fragile per-state AnalyserNode handoff that left the orb flat after turn 1.
+  const orbGetLevel = useRef(() => {
+    const svc = serviceRef.current;
+    if (!svc) return null;
+    return stateRef.current === "speaking" ? svc.getOutputLevel() : svc.getInputLevel();
+  }).current;
   const transcriptRef = useRef<HTMLDivElement>(null);
   const lineIdRef = useRef(nextLineId(lines));
   // Which session the current `lines` belong to. Guards the persist effect from
@@ -203,12 +218,20 @@ export function VoicePane({ sessionId, className, style }: Props) {
     // reads whichever analyser is live (preview or an active listen turn), so
     // the bar keeps moving across states without opening the mic twice.
     let raf = 0;
+    let frame = 0;
     const tick = () => {
       const lvl = service.getInputLevel();
       // Light segments proportional to level; small noise floor so an idle mic
       // shows ~0 segments rather than flicker.
       const lit = lvl <= 0.02 ? 0 : Math.max(1, Math.round(lvl * METER_SEGMENTS));
       setMeterLevel((prev) => (prev === lit ? prev : lit));
+      // Throttled debug readout (~5/s) so re-renders stay cheap.
+      if (++frame % 12 === 0) {
+        const next = `${service.getState()} · ctx:${service.getContextState()} · in:${service
+          .getInputLevel()
+          .toFixed(2)} · out:${service.getOutputLevel().toFixed(2)}`;
+        setDbg((prev) => (prev === next ? prev : next));
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -347,7 +370,27 @@ export function VoicePane({ sessionId, className, style }: Props) {
         }}
       >
         <div style={{ width: 220, height: 220 }}>
-          <VoiceOrb state={state} analyser={analyser} />
+          <VoiceOrb state={state} analyser={analyser} getLevel={orbGetLevel} />
+        </div>
+        {/* Live diagnostic readout (temporary): helps pinpoint why the orb/loop
+            misbehaves on WebKit where the running context can't be inspected. */}
+        <div
+          style={{
+            position: "absolute",
+            left: 8,
+            bottom: 6,
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 10,
+            lineHeight: 1.2,
+            color: "rgba(220,220,235,0.65)",
+            background: "rgba(0,0,0,0.35)",
+            padding: "2px 6px",
+            borderRadius: 4,
+            pointerEvents: "none",
+            userSelect: "text",
+          }}
+        >
+          {dbg || "…"}
         </div>
       </div>
 

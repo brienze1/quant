@@ -18,6 +18,13 @@ export interface VoiceOrbProps {
    */
   analyser?: AnalyserNode | null;
   level?: number;
+  /**
+   * Per-frame amplitude source (0..1), called once per rAF tick. Preferred over
+   * `analyser`/`level`: it lets the host read whichever live level is relevant
+   * (input while listening, output while speaking) without the orb depending on
+   * a specific AnalyserNode surviving across conversation turns.
+   */
+  getLevel?: () => number | null;
   /** Pixel size of the (square) orb canvas. Defaults to filling the parent. */
   size?: number;
   /**
@@ -130,6 +137,7 @@ export default function VoiceOrb({
   state,
   analyser,
   level,
+  getLevel,
   size,
   themeKey,
   className,
@@ -141,10 +149,12 @@ export default function VoiceOrb({
   const stateRef = useRef(state);
   const analyserRef = useRef(analyser);
   const levelRef = useRef(level);
+  const getLevelRef = useRef(getLevel);
   const themeReadRef = useRef<() => void>(() => {});
   stateRef.current = state;
   analyserRef.current = analyser;
   levelRef.current = level;
+  getLevelRef.current = getLevel;
 
   // Re-read theme tokens when themeKey changes (without rebuilding the scene).
   useEffect(() => {
@@ -320,12 +330,20 @@ export default function VoiceOrb({
       // amp/expand: use the light-tuned listening expansion in light themes.
       const expand = isLight && tg.expandLight !== undefined ? tg.expandLight : tg.expand;
 
-      // audio source: real analyser/level if provided, else simulated envelope.
+      // audio source: a per-frame getLevel() callback wins (most robust), then
+      // a static level prop, then the analyser; null → simulated envelope.
       let raw: number;
+      let providedRaw: number | null = null;
+      const fn = getLevelRef.current;
+      if (fn) {
+        providedRaw = fn();
+      } else if (levelRef.current !== undefined && levelRef.current !== null) {
+        providedRaw = levelRef.current;
+      } else {
+        providedRaw = micLevel();
+      }
       const provided =
-        levelRef.current !== undefined && levelRef.current !== null
-          ? Math.max(0, Math.min(1, levelRef.current))
-          : micLevel();
+        providedRaw === null ? null : Math.max(0, Math.min(1, providedRaw));
       if (provided !== null && (s === "listening" || s === "speaking")) {
         raw = provided;
       } else if (s === "speaking") {

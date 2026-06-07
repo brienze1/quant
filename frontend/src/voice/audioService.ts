@@ -135,8 +135,9 @@ export class AudioService implements IAudioService {
   // the same graph (we never open the mic twice). Tracks who "owns" the mic so
   // stopInputPreview() won't tear down a graph an active listen() depends on.
   private previewActive = false;
-  // Scratch buffer reused by getInputLevel() to avoid per-frame allocations.
+  // Scratch buffers reused by get{Input,Output}Level() to avoid per-frame allocs.
   private levelBuf: Uint8Array | null = null;
+  private outLevelBuf: Uint8Array | null = null;
   // Bound handler so we can add/remove the devicechange listener symmetrically.
   private readonly onDeviceChangeHandler = () => {
     for (const cb of this.devicesChangedCbs) {
@@ -359,6 +360,29 @@ export class AudioService implements IAudioService {
       if (v > peak) peak = v;
     }
     return Math.min(1, peak / 128);
+  }
+
+  /** Peak playback (TTS) level 0..1 — mirrors getInputLevel for the output graph. */
+  getOutputLevel(): number {
+    const analyser = this.outputAnalyser;
+    if (!analyser) return 0;
+    const n = analyser.fftSize;
+    if (!this.outLevelBuf || this.outLevelBuf.length !== n) {
+      this.outLevelBuf = new Uint8Array(n);
+    }
+    const buf = this.outLevelBuf;
+    analyser.getByteTimeDomainData(buf);
+    let peak = 0;
+    for (let i = 0; i < n; i++) {
+      const v = Math.abs(buf[i] - 128);
+      if (v > peak) peak = v;
+    }
+    return Math.min(1, peak / 128);
+  }
+
+  /** Current AudioContext state ("running"/"suspended"/"interrupted"/"closed"/"none"). */
+  getContextState(): string {
+    return this.audioCtx ? this.audioCtx.state : "none";
   }
 
   private setState(s: VoiceServiceState) {
