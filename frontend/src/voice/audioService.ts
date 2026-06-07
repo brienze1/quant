@@ -481,7 +481,11 @@ export class AudioService implements IAudioService {
    */
   async resumeContext(): Promise<void> {
     const ctx = this.audioCtx;
-    if (ctx && ctx.state === "suspended") {
+    // Resume on any non-running state. WebKit uses "suspended" (autoplay) AND
+    // "interrupted" (Safari/iOS, e.g. another audio session or a finished media
+    // element) — resume() recovers both. Skipping "interrupted" is what leaves
+    // the loop dead after a turn or two.
+    if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
       try {
         await ctx.resume();
       } catch {
@@ -647,6 +651,12 @@ export class AudioService implements IAudioService {
       this.cancelListen();
     }
     await this.init();
+    // init() is cached, so it only resumes the context the first time. In a
+    // hands-free loop there are no further user gestures, and WebKit can suspend
+    // the context between turns — leaving the VAD starved of audio so the next
+    // utterance is never detected (the loop hangs after a turn or two). Resume
+    // on every turn; once a context has been unlocked, resume() needs no gesture.
+    await this.resumeContext();
     if (!this.vad) {
       throw { kind: "vad", message: "VAD is not initialized." } as VoiceError;
     }
@@ -713,6 +723,10 @@ export class AudioService implements IAudioService {
   async speak(text: string): Promise<void> {
     // Cancel any prior playback.
     this.stopSpeaking();
+
+    // Keep the shared context alive across turns (see the note in listen()): a
+    // suspended context would play the reply silently / not at all.
+    await this.resumeContext();
 
     let audioB64: string;
     let contentType: string;
