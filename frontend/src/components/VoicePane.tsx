@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import VoiceOrb from "./VoiceOrb";
+import { readOrbTheme } from "./voiceOrbTheme";
 import * as api from "../api";
 import { createAudioService } from "../voice/audioService";
 import { registerVoiceBridge } from "../voice/voiceBridge";
@@ -133,9 +134,6 @@ export function VoicePane({ sessionId, className, style }: Props) {
   const [hasLabels, setHasLabels] = useState(true);
   // 0..METER_SEGMENTS-1 lit segments, driven by getInputLevel() via rAF.
   const [meterLevel, setMeterLevel] = useState(0);
-  // Throttled live debug readout (state · ctx · in/out level) for diagnosing the
-  // hands-free loop on WebKit, where the orb otherwise can't be inspected.
-  const [dbg, setDbg] = useState("");
 
   const serviceRef = useRef<IAudioService | null>(null);
   // Live mirror of `state` for the orb's per-frame level callback (avoids stale
@@ -154,15 +152,16 @@ export function VoicePane({ sessionId, className, style }: Props) {
     // then apply a perceptual curve + gain so quiet/mid speech clearly drives
     // the orb while idle room noise stays flat.
     const raw = svc.getInputLevel();
-    // Noise-gate a small floor (kills idle room noise + AGC drift), then lift
-    // quiet/mid speech with a perceptual curve + gain. The gate keeps idle flat;
-    // the sub-1 exponent gives early lift so the orb reacts to soft speech; the
-    // gain pushes normal conversational volume up toward (but not past) 1. The
-    // orb's tick applies fast-attack/slow-release smoothing on top, so this stays
-    // snappy without jittering.
+    // Noise-gate a small floor (kills idle room noise + AGC drift), then shape
+    // the level with a perceptual curve + modest gain. The gate keeps idle flat;
+    // the near-linear exponent (0.85) gives a gentle early lift without slamming
+    // the orb to max, and the moderate gain (1.55) maps conversational volume
+    // (raw ~0.3) to mid-range (~0.48) while only loud speech (raw ~0.6) nears 1.0
+    // — saturation now sits at raw ~0.65 instead of ~0.31. The orb's tick applies
+    // fast-attack/slow-release smoothing on top, so this stays snappy.
     const gated = Math.max(0, raw - 0.05);
     if (gated <= 0) return 0;
-    return Math.min(1, Math.pow(gated, 0.55) * 2.1);
+    return Math.min(1, Math.pow(gated, 0.85) * 1.55);
   }).current;
   const transcriptRef = useRef<HTMLDivElement>(null);
   const lineIdRef = useRef(nextLineId(lines));
@@ -236,20 +235,12 @@ export function VoicePane({ sessionId, className, style }: Props) {
     // reads whichever analyser is live (preview or an active listen turn), so
     // the bar keeps moving across states without opening the mic twice.
     let raf = 0;
-    let frame = 0;
     const tick = () => {
       const lvl = service.getInputLevel();
       // Light segments proportional to level; small noise floor so an idle mic
       // shows ~0 segments rather than flicker.
       const lit = lvl <= 0.02 ? 0 : Math.max(1, Math.round(lvl * METER_SEGMENTS));
       setMeterLevel((prev) => (prev === lit ? prev : lit));
-      // Throttled debug readout (~5/s) so re-renders stay cheap.
-      if (++frame % 12 === 0) {
-        const next = `${service.getState()} · ctx:${service.getContextState()} · in:${service
-          .getInputLevel()
-          .toFixed(2)} · out:${service.getOutputLevel().toFixed(2)}`;
-        setDbg((prev) => (prev === next ? prev : next));
-      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -358,6 +349,17 @@ export function VoicePane({ sessionId, className, style }: Props) {
     };
   }, [sessionId]);
 
+  // Orb stage backing. In DARK themes the stage is just the plain app
+  // background (var(--q-bg)) — no purple tint. In LIGHT themes the neon orb
+  // needs a dark-ish backing to read, so keep the dark "well" gradient. Read
+  // once per render off the active --q-* tokens (a full theme-type flip
+  // re-renders the pane).
+  const stageIsLight =
+    typeof document !== "undefined" ? readOrbTheme().isLight : false;
+  const stageBackground = stageIsLight
+    ? "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)"
+    : "var(--q-bg)";
+
   return (
     <div
       className={className}
@@ -371,44 +373,37 @@ export function VoicePane({ sessionId, className, style }: Props) {
         ...style,
       }}
     >
-      {/* Orb stage: a dark radial well (the orb needs a dark stage even in light
-          themes). Square-ish, centered, sized to the pane width. */}
+      {/* Orb stage: shares the pane's vertical space with the transcript and
+          grows/shrinks as the pane is resized. The orb fills this container
+          responsively (no fixed size) via its own ResizeObserver. Background is
+          the plain app bg in dark themes, a dark well only in light themes. */}
       <div
         style={{
-          flex: "0 0 auto",
+          flex: "1 1 0",
+          minHeight: 0,
           position: "relative",
-          height: 240,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background:
-            "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)",
+          background: stageBackground,
           borderBottom: "1px solid var(--q-border)",
           overflow: "hidden",
         }}
       >
-        <div style={{ width: 220, height: 220 }}>
-          <VoiceOrb state={state} analyser={analyser} getLevel={orbGetLevel} />
-        </div>
-        {/* Live diagnostic readout (temporary): helps pinpoint why the orb/loop
-            misbehaves on WebKit where the running context can't be inspected. */}
+        {/* Square, centered orb box that tracks the SMALLER stage dimension so
+            the orb stays circular + contained in any aspect ratio: height:100%
+            + aspectRatio:1 makes width follow height, and maxWidth:100% clamps
+            it (shrinking height to match) when the stage is taller than wide. No
+            fixed size — the orb fills this box and resizes via its ResizeObserver. */}
         <div
           style={{
-            position: "absolute",
-            left: 8,
-            bottom: 6,
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10,
-            lineHeight: 1.2,
-            color: "rgba(220,220,235,0.65)",
-            background: "rgba(0,0,0,0.35)",
-            padding: "2px 6px",
-            borderRadius: 4,
-            pointerEvents: "none",
-            userSelect: "text",
+            height: "100%",
+            aspectRatio: "1 / 1",
+            maxWidth: "100%",
+            minHeight: 0,
           }}
         >
-          {dbg || "…"}
+          <VoiceOrb state={state} analyser={analyser} getLevel={orbGetLevel} />
         </div>
       </div>
 

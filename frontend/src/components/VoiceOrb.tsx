@@ -149,6 +149,16 @@ export default function VoiceOrb({
 }: VoiceOrbProps) {
   const mountRef = useRef<HTMLDivElement>(null);
 
+  // Light/dark recipe for the mount-div backing. In DARK themes the scene's
+  // background is painted opaque (matching --q-bg) and covers the mount div, so
+  // we let the mount div be the plain app background (no purple tint). In LIGHT
+  // themes the renderer is transparent over this div, so the neon orb needs a
+  // dark "well" here to stay legible. Read once at mount; a full theme-type flip
+  // remounts via themeKey (same as the scene recipe).
+  const isLightRef = useRef<boolean>(
+    typeof document !== "undefined" ? readOrbTheme().isLight : false
+  );
+
   // Live refs so the rAF loop reads current props without restarting WebGL.
   const stateRef = useRef(state);
   const analyserRef = useRef(analyser);
@@ -171,6 +181,7 @@ export default function VoiceOrb({
 
     const tokens0 = readOrbTheme();
     const isLight = tokens0.isLight;
+    isLightRef.current = isLight;
 
     const W = () => (size ?? mount.clientWidth) || 320;
     const H = () => (size ?? mount.clientHeight) || 320;
@@ -449,9 +460,13 @@ export default function VoiceOrb({
       style={{
         width: size ?? "100%",
         height: size ?? "100%",
-        // The dark "well": neon needs a dark stage even in light themes.
-        background:
-          "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)",
+        // Backing for the orb. DARK themes: the opaque scene background (painted
+        // to --q-bg) covers this div, so use the plain app bg here too — no
+        // purple tint. LIGHT themes: the renderer is transparent over this div,
+        // so keep a dark "well" gradient (neon needs a dark stage to read).
+        background: isLightRef.current
+          ? "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)"
+          : "var(--q-bg)",
         borderRadius: "inherit",
         overflow: "hidden",
         ...style,
