@@ -30,11 +30,15 @@ test("barge-in: speech during playback stops TTS and flips to listening", async 
       window as unknown as {
         __voiceService: {
           setBargeIn: (b: boolean) => void;
+          setBargeInGuardMs: (ms: number) => void;
           init: () => Promise<void>;
         };
       }
     ).__voiceService;
     svc.setBargeIn(true);
+    // Disable the echo guard window: this test fires speech-start synthetically
+    // the instant playback begins, which the guard would otherwise suppress.
+    svc.setBargeInGuardMs(0);
     await svc.init();
   });
 

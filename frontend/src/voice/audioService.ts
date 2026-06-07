@@ -27,6 +27,8 @@ import type {
 
 const DEFAULT_VAD_ASSET_PATH = "/vad/";
 const DEFAULT_MAX_LISTEN_MS = 30_000;
+/** Barge-in is suppressed for this long after TTS playback starts (see handleSpeechStart). */
+const BARGE_IN_GUARD_MS = 1200;
 
 /** localStorage key for the (browser/machine-scoped) selected input deviceId. */
 const INPUT_DEVICE_LS_KEY = "quant.voice.inputDeviceId";
@@ -106,6 +108,7 @@ export class AudioService implements IAudioService {
   private readonly speed: number;
   private readonly vadOptions: ReturnType<typeof resolveVadOptions>;
   private bargeIn: boolean;
+  private bargeInGuardMs: number;
 
   // Active input deviceId override (null = browser default). Initialised from
   // the explicit option, else persisted localStorage value, else null.
@@ -147,6 +150,11 @@ export class AudioService implements IAudioService {
   private audioEl: HTMLAudioElement | null = null;
   private outputAnalyser: AnalyserNode | null = null;
   private playbackSource: MediaElementAudioSourceNode | null = null;
+  // Wall-clock (performance.now) when the current TTS playback began. Used to
+  // guard barge-in: VAD events in the first BARGE_IN_GUARD_MS of playback are
+  // ignored so the agent's own opening syllable (leaking through speakers) can't
+  // instantly self-interrupt the reply.
+  private speakStartedAt = 0;
 
   // One in-flight listen() at a time.
   private pendingListen: {
@@ -173,6 +181,7 @@ export class AudioService implements IAudioService {
     this.speed = opts.speed ?? 0;
     this.vadOptions = resolveVadOptions(opts.vad);
     this.bargeIn = opts.bargeIn ?? false;
+    this.bargeInGuardMs = opts.bargeInGuardMs ?? BARGE_IN_GUARD_MS;
     this.inputDeviceId = opts.inputDeviceId ?? readPersistedInputDevice();
   }
 
@@ -202,6 +211,11 @@ export class AudioService implements IAudioService {
 
   setBargeIn(enabled: boolean): void {
     this.bargeIn = enabled;
+  }
+
+  /** Tune (or disable, with 0) the post-playback barge-in suppression window. */
+  setBargeInGuardMs(ms: number): void {
+    this.bargeInGuardMs = Math.max(0, ms);
   }
 
   // ---- device selection + input metering -----------------------------------
@@ -386,8 +400,18 @@ export class AudioService implements IAudioService {
    */
   private async openMicStream(): Promise<MediaStream> {
     const id = this.inputDeviceId;
+    // Enable the browser's audio processing chain. echoCancellation is the
+    // important one for the voice loop: without it, a speaker-played TTS reply
+    // leaks back into the mic and the VAD mistakes the agent's own voice for the
+    // user speaking (self-barge-in / echo). Noise suppression + auto gain also
+    // improve STT quality.
+    const processing = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
     const constraints: MediaStreamConstraints = {
-      audio: id ? { deviceId: { exact: id } } : true,
+      audio: id ? { ...processing, deviceId: { exact: id } } : { ...processing },
     };
     try {
       return await navigator.mediaDevices.getUserMedia(constraints);
@@ -405,7 +429,9 @@ export class AudioService implements IAudioService {
         this.inputDeviceId = null;
         writePersistedInputDevice(null);
         try {
-          return await navigator.mediaDevices.getUserMedia({ audio: true });
+          return await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          });
         } catch (e2) {
           const err: VoiceError = {
             kind: "permission",
@@ -538,6 +564,12 @@ export class AudioService implements IAudioService {
     // speak() resolves and the agent's loop can move on to listening; if a
     // listen() is already pending, surface "listening" immediately.
     if (this.bargeIn && this.state === "speaking") {
+      // Guard window: ignore speech detected in the first moments of playback.
+      // Without echo cancellation the agent's own voice leaks into the mic and
+      // would trip the VAD immediately, killing the reply mid-word.
+      if (performance.now() - this.speakStartedAt < this.bargeInGuardMs) {
+        return;
+      }
       try {
         this.stopSpeaking();
       } catch {
@@ -694,7 +726,10 @@ export class AudioService implements IAudioService {
       // play the element directly.
       this.wirePlaybackAnalyser(el);
 
-      const onPlaying = () => this.setState("speaking");
+      const onPlaying = () => {
+        this.speakStartedAt = performance.now();
+        this.setState("speaking");
+      };
       const onEnded = () => {
         cleanup();
         this.finishSpeak();

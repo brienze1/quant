@@ -141,9 +141,13 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // unmount. Re-created if the session changes (each pane owns its own session).
   useEffect(() => {
     // Default transport = the real api.ts Wails-bridged STT/TTS proxy.
-    // Barge-in ON by default (WI-5.2): the user can talk over the agent — VAD
-    // speech-start during playback stops TTS and hands the turn back to the user.
-    const service = createAudioService({ bargeIn: true });
+    // Half-duplex by default (barge-in OFF): the agent speaks its full reply,
+    // then listens. Barge-in (talking over the agent) requires reliable acoustic
+    // echo cancellation or headphones — on open speakers the mic re-captures the
+    // agent's own TTS and the VAD self-interrupts, cutting replies mid-word. We
+    // keep echoCancellation on the mic + a barge-in guard window as defenses, but
+    // default to half-duplex so the conversation is robust on any audio setup.
+    const service = createAudioService({ bargeIn: false });
     serviceRef.current = service;
 
     const offState = service.onState((s) => {

@@ -63,6 +63,12 @@ export interface AudioServiceOptions {
   /** Enable barge-in: pause TTS when VAD detects speech during playback. */
   bargeIn?: boolean;
   /**
+   * Suppress barge-in for this many ms after TTS playback starts, so the agent's
+   * own opening syllable leaking through speakers can't self-interrupt the reply.
+   * Default 1200. Set 0 to disable the guard.
+   */
+  bargeInGuardMs?: number;
+  /**
    * Preferred input (microphone) deviceId. When omitted the service falls back
    * to the value persisted in localStorage (`quant.voice.inputDeviceId`), then
    * to the browser default. deviceIds are browser/machine-scoped, hence
@@ -145,6 +151,9 @@ export interface IAudioService {
 
   /** Enable/disable barge-in at runtime. */
   setBargeIn(enabled: boolean): void;
+
+  /** Tune (or disable, with 0) the post-playback barge-in suppression window. */
+  setBargeInGuardMs(ms: number): void;
 
   // ---- device selection + input metering -----------------------------------
 
