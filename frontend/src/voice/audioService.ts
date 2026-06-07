@@ -493,6 +493,15 @@ export class AudioService implements IAudioService {
       (window as any).webkitAudioContext;
     const ctx = new AC();
     this.audioCtx = ctx;
+    // Self-heal: WebKit can flip the context to "interrupted"/"suspended"
+    // between turns (e.g. when a per-turn TTS <audio> element ends and drops the
+    // OS audio session). Whenever that happens, try to resume immediately so the
+    // VAD/analyser don't stay starved waiting for the next listen() turn.
+    ctx.onstatechange = () => {
+      if (ctx.state !== "running" && ctx.state !== "closed") {
+        void ctx.resume().catch(() => {});
+      }
+    };
     if (ctx.state === "suspended") {
       // Resumed lazily on first user gesture in some browsers; best-effort.
       void ctx.resume().catch(() => {});
@@ -626,6 +635,17 @@ export class AudioService implements IAudioService {
         // capture graph (avoids opening the mic twice).
         audioContext: ctx,
         getStream: async () => stream,
+        // CRITICAL (WebKit): @ricky0123/vad-web's DEFAULT pauseStream calls
+        // track.stop() on the mic stream, and its default resumeStream opens a
+        // brand-new getUserMedia. Because our inputAnalyser/micSource share this
+        // exact stream, the default pause() would permanently kill it — the orb
+        // and VAD go dead after the first turn, and WebKit hands back a muted
+        // track on re-acquire ("No speech was heard" on turn 2+). Override both
+        // to NO-OP / return-the-same-stream so vad.pause()/start() only toggle
+        // the frame processor on our persistent stream. Chromium masks this bug
+        // (its fake mic silently re-grants), which is why it only bites WebKit.
+        pauseStream: async () => {},
+        resumeStream: async () => stream,
         // We control start/stop explicitly per listen().
         startOnLoad: false,
         onSpeechStart: () => this.handleSpeechStart(),
