@@ -545,6 +545,11 @@ export function regenerateRemotePasscode(): Promise<RemoteStatus> {
 // from the frontend. Audio crosses the bridge base64-encoded (the Wails bridge
 // marshals []byte awkwardly over the remote transport).
 
+// The voice controller lives in Go package `voice` (internal/integration/voice),
+// NOT the shared `controller` package — so its Wails binding is namespaced under
+// window.go.voice.voiceController. Using PKG ("controller") here makes every
+// voice call resolve to undefined ("Binding not available").
+const VOICE_PKG = "voice";
 const VOICE_CTRL = "voiceController";
 
 /**
@@ -554,7 +559,7 @@ const VOICE_CTRL = "voiceController";
  * @returns the transcript text (trimmed)
  */
 export function transcribe(audioB64: string, mime: string): Promise<string> {
-  return callGo(PKG, VOICE_CTRL, "Transcribe", audioB64, mime);
+  return callGo(VOICE_PKG, VOICE_CTRL, "Transcribe", audioB64, mime);
 }
 
 /**
@@ -567,7 +572,7 @@ export function synthesize(
   voice: string,
   speed: number,
 ): Promise<VoiceSpeechResult> {
-  return callGo(PKG, VOICE_CTRL, "Synthesize", text, voice, speed);
+  return callGo(VOICE_PKG, VOICE_CTRL, "Synthesize", text, voice, speed);
 }
 
 /**
@@ -585,7 +590,7 @@ export function voiceResult(
   transcript: string,
   errMsg: string,
 ): Promise<void> {
-  return callGo(PKG, VOICE_CTRL, "VoiceResult", requestId, transcript, errMsg);
+  return callGo(VOICE_PKG, VOICE_CTRL, "VoiceResult", requestId, transcript, errMsg);
 }
 
 /**
@@ -598,5 +603,5 @@ export function voiceResult(
  * error indicator, or ignore — re-opening the pane re-kicks).
  */
 export function startVoiceSession(sessionId: string): Promise<void> {
-  return callGo(PKG, VOICE_CTRL, "StartVoiceSession", sessionId);
+  return callGo(VOICE_PKG, VOICE_CTRL, "StartVoiceSession", sessionId);
 }
