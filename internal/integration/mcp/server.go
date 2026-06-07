@@ -2332,6 +2332,26 @@ func sessionFromCtx(ctx context.Context) string {
 	return ""
 }
 
+// voiceTurnResult wraps a heard transcript with a standing reminder to KEEP the
+// spoken conversation going. Without this the tool returns only the bare
+// transcript, and after a turn or two the agent loses the "voice mode" framing
+// from the kickoff message and silently drops back to typing terminal text (the
+// conversation appears to "stop after the second turn"). Re-instructing on every
+// turn makes the loop self-sustaining until the user says goodbye.
+func voiceTurnResult(transcript string) *mcp.CallToolResult {
+	t := strings.TrimSpace(transcript)
+	if t == "" {
+		return mcp.NewToolResultText("(No speech was heard — silence or timeout.) You are still in VOICE MODE. Do NOT type a reply in the terminal. Continue by calling voice_converse to say something and listen again (or voice_listen to keep waiting).")
+	}
+	return mcp.NewToolResultText(fmt.Sprintf(
+		"The user said (via voice): %q\n\n"+
+			"You are still in VOICE MODE. Think, then CONTINUE the conversation by calling voice_converse with your spoken reply (or voice_speak if no reply is expected). "+
+			"Keep it short and speech-friendly: no markdown, no code, no lists, no emoji. Do NOT write your reply as terminal text. "+
+			"Keep going until the user says goodbye or the voice pane closes.",
+		t,
+	))
+}
+
 func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if s.voiceBridge == nil {
 		return mcp.NewToolResultError("voice bridge not available"), nil
@@ -2345,7 +2365,7 @@ func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, _ mcp.CallToolRe
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(reply.Transcript), nil
+	return voiceTurnResult(reply.Transcript), nil
 }
 
 func (s *QuantMCPServer) handleVoiceSpeak(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -2388,7 +2408,7 @@ func (s *QuantMCPServer) handleVoiceConverse(ctx context.Context, request mcp.Ca
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(reply.Transcript), nil
+	return voiceTurnResult(reply.Transcript), nil
 }
 
 // ---------------------------------------------------------------------------

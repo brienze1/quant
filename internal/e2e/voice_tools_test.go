@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,9 +123,14 @@ func TestVoiceToolsRoundTrip(t *testing.T) {
 	}
 
 	t.Run("voice_listen returns the frontend transcript", func(t *testing.T) {
+		// The result wraps the transcript with a standing "keep conversing"
+		// reminder, so assert it CONTAINS the transcript rather than equals it.
 		got := callText("voice_listen", nil)
-		if got != wantTranscript {
-			t.Fatalf("voice_listen = %q, want %q", got, wantTranscript)
+		if !strings.Contains(got, wantTranscript) {
+			t.Fatalf("voice_listen = %q, want it to contain %q", got, wantTranscript)
+		}
+		if !strings.Contains(got, "voice_converse") {
+			t.Fatalf("voice_listen result %q missing the continue-conversation nudge", got)
 		}
 		if gotSession != sessionID {
 			t.Fatalf("session scope = %q, want %q (X-Quant-Session not threaded)", gotSession, sessionID)
@@ -140,8 +146,11 @@ func TestVoiceToolsRoundTrip(t *testing.T) {
 
 	t.Run("voice_converse returns the reply transcript", func(t *testing.T) {
 		got := callText("voice_converse", map[string]any{"text": "what is six times seven"})
-		if got != wantTranscript {
-			t.Fatalf("voice_converse = %q, want %q", got, wantTranscript)
+		if !strings.Contains(got, wantTranscript) {
+			t.Fatalf("voice_converse = %q, want it to contain %q", got, wantTranscript)
+		}
+		if !strings.Contains(got, "voice_converse") {
+			t.Fatalf("voice_converse result %q missing the continue-conversation nudge", got)
 		}
 	})
 }
