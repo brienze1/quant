@@ -17,6 +17,7 @@ import VoiceOrb from "./VoiceOrb";
 import * as api from "../api";
 import { createAudioService } from "../voice/audioService";
 import { registerVoiceBridge } from "../voice/voiceBridge";
+import { loadTranscript, saveTranscript, nextLineId } from "../voice/transcriptStore";
 import type {
   AudioInputDevice,
   IAudioService,
@@ -113,7 +114,9 @@ const NOT_CONFIGURED: BannerCopy = {
 export function VoicePane({ sessionId, className, style }: Props) {
   const [state, setState] = useState<VoiceServiceState>("idle");
   const [error, setError] = useState<VoiceError | null>(null);
-  const [lines, setLines] = useState<TranscriptLine[]>([]);
+  // Transcript is persisted per session (localStorage) so it survives pane
+  // close/reopen, tab switches, and refreshes. Hydrate from storage on mount.
+  const [lines, setLines] = useState<TranscriptLine[]>(() => loadTranscript(sessionId));
   // WI-5.5: "voice not configured" gate (cloud provider without a saved key).
   const [notConfigured, setNotConfigured] = useState(false);
   // The orb wants the input analyser while listening and the output analyser
@@ -129,7 +132,11 @@ export function VoicePane({ sessionId, className, style }: Props) {
 
   const serviceRef = useRef<IAudioService | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const lineIdRef = useRef(0);
+  const lineIdRef = useRef(nextLineId(lines));
+  // Which session the current `lines` belong to. Guards the persist effect from
+  // writing the prior session's transcript under a newly-switched sessionId
+  // before the reload effect swaps `lines` in.
+  const linesSessionRef = useRef(sessionId);
 
   const addLine = (who: TranscriptLine["who"], text: string) => {
     const trimmed = (text || "").trim();
@@ -230,6 +237,22 @@ export function VoicePane({ sessionId, className, style }: Props) {
       serviceRef.current = null;
     };
   }, [sessionId]);
+
+  // Each pane owns one session; when the session changes, swap in that session's
+  // persisted transcript (and reset the id counter to stay unique).
+  useEffect(() => {
+    const restored = loadTranscript(sessionId);
+    lineIdRef.current = nextLineId(restored);
+    linesSessionRef.current = sessionId;
+    setLines(restored);
+  }, [sessionId]);
+
+  // Persist the transcript on every change so it survives close/reopen/refresh.
+  // Skip while `lines` still belong to a prior session (post-switch, pre-reload).
+  useEffect(() => {
+    if (linesSessionRef.current !== sessionId) return;
+    saveTranscript(sessionId, lines);
+  }, [sessionId, lines]);
 
   // Switch the active input device + persist it (audioService writes localStorage).
   const handleSelectDevice = (deviceId: string) => {

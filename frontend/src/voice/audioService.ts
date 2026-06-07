@@ -124,6 +124,9 @@ export class AudioService implements IAudioService {
   private audioCtx: AudioContext | null = null;
   private inputAnalyser: AnalyserNode | null = null;
   private micSource: MediaStreamAudioSourceNode | null = null;
+  // Muted sink that keeps the input analyser in the render graph (so WebKit
+  // actually pulls it). Silent — gain is pinned to 0.
+  private inputSink: GainNode | null = null;
   private vad: MicVAD | null = null;
   private initPromise: Promise<void> | null = null;
 
@@ -495,7 +498,16 @@ export class AudioService implements IAudioService {
     this.inputAnalyser = analyser;
     this.micSource = ctx.createMediaStreamSource(stream);
     this.micSource.connect(analyser);
-    // NOTE: analyser is intentionally NOT connected to ctx.destination (no echo).
+    // The analyser MUST have a path to the destination or some engines
+    // (notably Safari/WebKit) never pull it through the render graph, leaving
+    // getByteFrequencyData/getByteTimeDomainData flat — so the orb and the live
+    // level meter read zero while the user talks. Route it through a muted gain
+    // node: the node is pulled (analysis works) but emits silence (no echo).
+    const sink = ctx.createGain();
+    sink.gain.value = 0;
+    analyser.connect(sink);
+    sink.connect(ctx.destination);
+    this.inputSink = sink;
   }
 
   private async doInit(): Promise<void> {
@@ -879,8 +891,14 @@ export class AudioService implements IAudioService {
     } catch {
       /* ignore */
     }
+    try {
+      this.inputSink?.disconnect();
+    } catch {
+      /* ignore */
+    }
     this.micSource = null;
     this.inputAnalyser = null;
+    this.inputSink = null;
     if (this.stream) {
       for (const t of this.stream.getTracks()) {
         try {
