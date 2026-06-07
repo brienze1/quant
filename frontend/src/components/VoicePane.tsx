@@ -379,8 +379,12 @@ export function VoicePane({ sessionId, className, style }: Props) {
           the plain app bg in dark themes, a dark well only in light themes. */}
       <div
         style={{
-          flex: "1 1 0",
-          minHeight: 0,
+          // Grows with the pane (weight 2 vs the transcript's 3 → ~40% of the
+          // shared space) but never collapses: minHeight is a hard floor so a
+          // long transcript can't squeeze the orb to zero height (it scrolls
+          // instead). This keeps the orb dynamic AND always visible.
+          flex: "2 1 0",
+          minHeight: 200,
           position: "relative",
           display: "flex",
           alignItems: "center",
@@ -411,7 +415,9 @@ export function VoicePane({ sessionId, className, style }: Props) {
       <div
         ref={transcriptRef}
         style={{
-          flex: "1 1 auto",
+          // Grow-driven basis (0, not auto) so a tall transcript scrolls within
+          // its share instead of stealing the orb's space. Weight 3 → ~60%.
+          flex: "3 1 0",
           minHeight: 0,
           overflowY: "auto",
           padding: "10px 12px",
