@@ -363,18 +363,22 @@ export function SessionPanel({
           {/* Voice button (mirrors the mindmap toggle; green control).
               Gated on TWO conditions, both of which must hold:
                 1. config.voice.enabled — voice feature turned on in Settings.
-                2. The session has a live, running agent (displayStatus ===
-                   "running"). Voice listen()/speak() drive the session's agent,
-                   so opening the pane on an idle/starting/stopped session would
-                   only produce a confusing failure. We disable the toggle (and
-                   never fire the kickoff) until the agent is actually running. */}
+                2. The session has a LIVE agent process. "running" (mid-turn),
+                   "waiting" and "done" (agent idle at the prompt, ready for
+                   input) all have a live PTY the kickoff can write to. Idle /
+                   paused / stopped / starting have no live process, so we
+                   disable the toggle (and never fire the kickoff) there to
+                   avoid a confusing "no process running" failure. */}
           {!isArchived && (() => {
             const voiceEnabled = termConfig?.voice?.enabled ?? false;
-            const agentRunning = displayStatus === "running";
-            const canToggle = voiceEnabled && agentRunning;
+            const agentAlive =
+              displayStatus === "running" ||
+              displayStatus === "waiting" ||
+              displayStatus === "done";
+            const canToggle = voiceEnabled && agentAlive;
             const tooltip = !voiceEnabled
               ? "Enable voice in Settings"
-              : !agentRunning
+              : !agentAlive
                 ? "Start the session's agent first"
                 : "toggle voice pane";
             return (
