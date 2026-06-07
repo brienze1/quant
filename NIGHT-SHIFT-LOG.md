@@ -25,6 +25,17 @@ Workspace: `.claude/worktrees/feat-voice` (branch `feat/voice`). Started from `e
 - [ ] P6 WI-6.3 — PR (GabiHert acct, no co-author). PENDING.
 - [ ] LIVE TALK-TEST — sandboxed wails dev; waiting on user's Whisper URL + Kokoro running.
 
+## Live debugging (wails dev + Playwright MCP @ localhost:34115) — 2026-06-06/07
+Real bugs found ONLY via live testing (mocked unit/E2E missed them) and fixed + verified live:
+1. Wails binding namespace: voiceController is in Go pkg `voice`, api.ts called it under `controller` → "Binding not available" → every voice call failed (the true cause of "couldn't start voice mode"). Fix 6d4a498 (VOICE_PKG="voice"). Verified: window.go.voice.voiceController resolves.
+2. Misleading kickoff error masked #1. Fix 0d30d97.
+3. AudioContext suspended (no gesture) → dead mic level meter. Fix a457956 (resumeContext on gesture).
+4. VAD failed to load in vite dev (ort .mjs ?import → 500). Fix 56456c7 (vite middleware serves /vad/* raw). Verified: "...finished loading VAD".
+5. Voice toggle gated on "running" only → blocked waiting/done (live) sessions. Fix cea263d.
+6. Bridge emitted voice:request with the MCP request ctx, not the Wails lifecycle ctx → "invalid context" → loop hung ("app broke"). Fix b481a68 (bridge.SetContext in OnStartup). Verified live: voice_speak → frontend received voice:request → VoiceResult round-trip OK.
+Verified live: binding ✓, Synthesize→Kokoro MP3 ✓, mic devices ✓, VAD load ✓, orb ✓, bridge emit/round-trip ✓.
+Testing approach (per user): wails dev (real HOME + QUANT_HOME isolated + normal MCP injection) at http://localhost:34115 + Playwright MCP — see [[reference_quant_wails_binding_and_testing]].
+
 ## Build complete summary
 Full Voice feature built, committed on feat/voice, all automated tests green. Commits: ed1da2f, 4ad78fc, 39053d4, d2c8ec9, c902494, c8b9503, 0c17089, 6271702, 5a8d946, 820915c. Remaining: live hands-on test (needs user Whisper URL + Kokoro) then open PR.
 
