@@ -161,6 +161,11 @@ func (c *voiceController) StartVoiceSession(sessionId string) error {
 // OnStartup is called when the Wails app starts; the context is saved for later use.
 func (c *voiceController) OnStartup(ctx context.Context) {
 	c.ctx = ctx
+	// The bridge must emit voice:request with this lifecycle context; Wails
+	// rejects the per-request MCP context passed into Bridge.Request.
+	if c.bridge != nil {
+		c.bridge.SetContext(ctx)
+	}
 }
 
 // OnShutdown is called when the Wails app is shutting down.

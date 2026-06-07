@@ -60,6 +60,20 @@ type Bridge struct {
 	mu      sync.Mutex
 	pending map[string]chan VoiceReply
 	emit    Emitter
+	// appCtx is the Wails app LIFECYCLE context captured in OnStartup. Wails
+	// runtime.EventsEmit rejects any other context ("an invalid context was
+	// passed"), so the voice:request event MUST be emitted with this context —
+	// NOT the per-request MCP/HTTP context that flows into Request().
+	appCtx context.Context
+}
+
+// SetContext stores the Wails app lifecycle context used for emitting events.
+// Call from the controller's OnStartup. Until set, emits fall back to a nil
+// context (remote hub only; the native webview won't receive the event).
+func (b *Bridge) SetContext(ctx context.Context) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.appCtx = ctx
 }
 
 // NewBridge constructs a Bridge that emits requests through the given emitter.
@@ -109,10 +123,11 @@ func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, time
 	b.mu.Lock()
 	b.pending[requestID] = ch
 	emit := b.emit
+	emitCtx := b.appCtx // Wails lifecycle ctx — NOT the request ctx
 	b.mu.Unlock()
 
 	if emit != nil {
-		emit(ctx, "voice:request", VoiceRequestEvent{
+		emit(emitCtx, "voice:request", VoiceRequestEvent{
 			SessionID: sessionID,
 			RequestID: requestID,
 			Kind:      kind,
