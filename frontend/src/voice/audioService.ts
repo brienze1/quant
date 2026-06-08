@@ -26,7 +26,10 @@ import type {
 } from "./types";
 
 const DEFAULT_VAD_ASSET_PATH = "/vad/";
-const DEFAULT_MAX_LISTEN_MS = 30_000;
+// Overall cap on a single listen() turn (no speech-end within this window →
+// timeout). Generous so a long, paused explanation isn't cut off by the ceiling;
+// the redemption window (above) handles normal turn-taking well before this.
+const DEFAULT_MAX_LISTEN_MS = 60_000;
 /** Barge-in is suppressed for this long after TTS playback starts (see handleSpeechStart). */
 const BARGE_IN_GUARD_MS = 1200;
 /**
@@ -62,24 +65,45 @@ function writePersistedInputDevice(deviceId: string | null): void {
 }
 
 // VAD endpointing defaults (WI-5.6), tuned for conversational turn-taking:
-// a slightly-strict positive threshold to avoid triggering on room noise, an
-// ~800ms redemption so natural mid-sentence pauses don't cut the user off, a
-// short pre-speech pad so the first phoneme isn't clipped, and a min-speech
-// floor so coughs/clicks misfire instead of being transcribed.
+// a slightly-strict positive threshold to avoid triggering on room noise, a
+// very generous ~3000ms redemption so the user can pause to THINK mid-thought
+// while explaining something WITHOUT the turn ending under them (conversational
+// thinking pauses routinely run 2-3s), a short pre-speech pad so the first
+// phoneme isn't clipped, and a min-speech floor so coughs/clicks misfire instead
+// of being transcribed.
 const VAD_DEFAULTS: Required<Omit<VadTuning, "sensitivity">> = {
   positiveSpeechThreshold: 0.6,
   negativeSpeechThreshold: 0.45,
-  redemptionMs: 800,
+  redemptionMs: 3000,
   preSpeechPadMs: 160,
   minSpeechMs: 250,
+};
+
+// Silero frame size by model (samples per frame at 16 kHz). v5 requires 512
+// (32ms/frame); the legacy v4 model uses 1536 (96ms/frame). The endpointing
+// windows below are specified in ms and converted to frames against this.
+const VAD_SAMPLE_RATE = 16_000;
+const FRAME_SAMPLES_BY_MODEL: Record<"v5" | "legacy", number> = {
+  v5: 512,
+  legacy: 1536,
 };
 
 /**
  * Resolve the VAD tuning into the concrete FrameProcessorOptions subset that
  * @ricky0123/vad-web accepts. Explicit thresholds win; otherwise `sensitivity`
  * (0..1, default 0.5) derives them around the default positive threshold.
+ *
+ * IMPORTANT: vad-web's frame processor takes *frame counts* (redemptionFrames,
+ * preSpeechPadFrames, minSpeechFrames), NOT milliseconds. Passing `*Ms` keys is
+ * silently ignored and the library falls back to its defaults (redemption ≈ 8
+ * frames ≈ 256ms — which cut users off mid-sentence). We therefore convert each
+ * ms window to frames using the model's frame size, and pin `frameSamples` so
+ * the conversion and the runtime agree.
  */
-function resolveVadOptions(tuning: VadTuning | undefined) {
+function resolveVadOptions(
+  tuning: VadTuning | undefined,
+  frameSamples: number,
+) {
   const t = tuning ?? {};
   let positive = t.positiveSpeechThreshold;
   let negative = t.negativeSpeechThreshold;
@@ -93,12 +117,15 @@ function resolveVadOptions(tuning: VadTuning | undefined) {
     // Silero convention: 0.15 below positive (clamped to a sane floor).
     negative = Math.max(0.2, positive - 0.15);
   }
+  const msPerFrame = (frameSamples / VAD_SAMPLE_RATE) * 1000;
+  const framesFor = (ms: number) => Math.max(1, Math.round(ms / msPerFrame));
   return {
     positiveSpeechThreshold: positive,
     negativeSpeechThreshold: negative,
-    redemptionMs: t.redemptionMs ?? VAD_DEFAULTS.redemptionMs,
-    preSpeechPadMs: t.preSpeechPadMs ?? VAD_DEFAULTS.preSpeechPadMs,
-    minSpeechMs: t.minSpeechMs ?? VAD_DEFAULTS.minSpeechMs,
+    frameSamples,
+    redemptionFrames: framesFor(t.redemptionMs ?? VAD_DEFAULTS.redemptionMs),
+    preSpeechPadFrames: framesFor(t.preSpeechPadMs ?? VAD_DEFAULTS.preSpeechPadMs),
+    minSpeechFrames: framesFor(t.minSpeechMs ?? VAD_DEFAULTS.minSpeechMs),
   };
 }
 
@@ -208,7 +235,7 @@ export class AudioService implements IAudioService {
     this.maxListenMs = opts.maxListenMs ?? DEFAULT_MAX_LISTEN_MS;
     this.voice = opts.voice ?? "";
     this.speed = opts.speed ?? 0;
-    this.vadOptions = resolveVadOptions(opts.vad);
+    this.vadOptions = resolveVadOptions(opts.vad, FRAME_SAMPLES_BY_MODEL[this.vadModel]);
     this.bargeIn = opts.bargeIn ?? false;
     this.bargeInGuardMs = opts.bargeInGuardMs ?? BARGE_IN_GUARD_MS;
     this.inputDeviceId = opts.inputDeviceId ?? readPersistedInputDevice();

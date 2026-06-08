@@ -14,8 +14,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import VoiceOrb from "./VoiceOrb";
-import { readOrbTheme } from "./voiceOrbTheme";
 import * as api from "../api";
+import { useTheme } from "../theme";
 import { createAudioService } from "../voice/audioService";
 import { registerVoiceBridge } from "../voice/voiceBridge";
 import { loadTranscript, saveTranscript, nextLineId } from "../voice/transcriptStore";
@@ -117,6 +117,7 @@ const NOT_CONFIGURED: BannerCopy = {
 };
 
 export function VoicePane({ sessionId, className, style }: Props) {
+  const { theme } = useTheme();
   const [state, setState] = useState<VoiceServiceState>("idle");
   const [error, setError] = useState<VoiceError | null>(null);
   // Transcript is persisted per session (localStorage) so it survives pane
@@ -179,64 +180,20 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // One AudioService per pane: created on mount, bridge registered, disposed on
   // unmount. Re-created if the session changes (each pane owns its own session).
   useEffect(() => {
-    // Default transport = the real api.ts Wails-bridged STT/TTS proxy.
-    // Half-duplex by default (barge-in OFF): the agent speaks its full reply,
-    // then listens. Barge-in (talking over the agent) requires reliable acoustic
-    // echo cancellation or headphones — on open speakers the mic re-captures the
-    // agent's own TTS and the VAD self-interrupts, cutting replies mid-word. We
-    // keep echoCancellation on the mic + a barge-in guard window as defenses, but
-    // default to half-duplex so the conversation is robust on any audio setup.
-    const service = createAudioService({ bargeIn: false });
-    serviceRef.current = service;
-
-    const offState = service.onState((s) => {
-      setState(s);
-      // Pick the analyser relevant to the current state for the orb.
-      setAnalyser(s === "speaking" ? service.getOutputAnalyser() : service.getInputAnalyser());
-    });
-    const offError = service.onError((e) => setError(e));
-
-    // Bridge: Go MCP voice tools → this pane's audio service. The transcript
-    // callbacks surface each turn into the conversation view.
-    const offBridge = registerVoiceBridge(sessionId, service, {
-      onUserTranscript: (text) => addLine("you", text),
-      onAgentSpeak: (text) => addLine("quant", text),
-    });
-
-    // Device list: query now, refresh on hotplug. startInputPreview() opens the
-    // mic + an analyser purely for metering so the user can SEE the chosen mic
-    // is receiving audio while the pane is open and idle (before any real turn).
+    // `alive` guards every async continuation: if the effect is torn down before
+    // (or while) the service is being created, we skip wiring and dispose. The
+    // cleanup runs whatever has registered into `cleanupFns` by tear-down time.
     let alive = true;
-    const refreshDevices = async () => {
-      try {
-        const [list, labels] = await Promise.all([
-          service.listInputDevices(),
-          service.hasDeviceLabels(),
-        ]);
-        if (!alive) return;
-        setDevices(list);
-        setHasLabels(labels);
-        setSelectedDevice(service.getInputDevice());
-      } catch {
-        /* leave prior state */
-      }
-    };
-    const offDevices = service.onDevicesChanged(() => void refreshDevices());
-    void refreshDevices();
-    // Best-effort live preview meter. If permission isn't granted this rejects
-    // quietly (the onError handler surfaces the banner); the "Enable microphone"
-    // affordance lets the user prompt explicitly.
-    void service
-      .startInputPreview()
-      .then(() => void refreshDevices())
-      .catch(() => {});
+    const cleanupFns: Array<() => void> = [];
 
-    // Animate the input-level meter while the pane is mounted. getInputLevel()
-    // reads whichever analyser is live (preview or an active listen turn), so
-    // the bar keeps moving across states without opening the mic twice.
+    // The rAF meter starts immediately and tolerates serviceRef.current being
+    // briefly null (config load is async, so the service isn't created yet).
+    // getInputLevel() reads whichever analyser is live (preview or an active
+    // listen turn), so the bar keeps moving across states once the service is up.
     let raf = 0;
     const tick = () => {
-      const lvl = service.getInputLevel();
+      const svc = serviceRef.current;
+      const lvl = svc ? svc.getInputLevel() : 0;
       // Light segments proportional to level; small noise floor so an idle mic
       // shows ~0 segments rather than flicker.
       const lit = lvl <= 0.02 ? 0 : Math.max(1, Math.round(lvl * METER_SEGMENTS));
@@ -245,28 +202,110 @@ export function VoicePane({ sessionId, className, style }: Props) {
     };
     raf = requestAnimationFrame(tick);
 
-    // WKWebView (and browser autoplay policies) keep an AudioContext created
-    // without a user gesture in the "suspended" state, which leaves the input
-    // analyser flat → the live meter and the orb's listening level read zero.
-    // Resume on the first real interaction anywhere in the window.
-    const unlock = () => {
-      void service.resumeContext();
-    };
-    window.addEventListener("pointerdown", unlock, { capture: true });
-    window.addEventListener("keydown", unlock, { capture: true });
+    void (async () => {
+      // Load the saved voice/speed/pause config FIRST so the service honors the
+      // user's chosen voice, playback speed, and VAD redemption (pause tolerance)
+      // window. The settings apply when the service initializes (pane open /
+      // session switch / refresh) — we do NOT live-reinit the VAD.
+      let options: Parameters<typeof createAudioService>[0];
+      try {
+        const cfg = await api.getConfig();
+        options = {
+          bargeIn: false,
+          voice: cfg.voice?.voice || undefined,
+          speed: cfg.voice?.speed || undefined,
+          vad: { redemptionMs: cfg.voice?.pauseMs || undefined },
+        };
+      } catch {
+        options = { bargeIn: false };
+      }
+      // The effect may have been torn down while getConfig was in flight.
+      if (!alive) return;
+
+      // Default transport = the real api.ts Wails-bridged STT/TTS proxy.
+      // Half-duplex by default (barge-in OFF): the agent speaks its full reply,
+      // then listens. Barge-in (talking over the agent) requires reliable acoustic
+      // echo cancellation or headphones — on open speakers the mic re-captures the
+      // agent's own TTS and the VAD self-interrupts, cutting replies mid-word. We
+      // keep echoCancellation on the mic + a barge-in guard window as defenses, but
+      // default to half-duplex so the conversation is robust on any audio setup.
+      const service = createAudioService(options);
+      serviceRef.current = service;
+
+      const offState = service.onState((s) => {
+        setState(s);
+        // Pick the analyser relevant to the current state for the orb.
+        setAnalyser(s === "speaking" ? service.getOutputAnalyser() : service.getInputAnalyser());
+      });
+      const offError = service.onError((e) => setError(e));
+
+      // Bridge: Go MCP voice tools → this pane's audio service. The transcript
+      // callbacks surface each turn into the conversation view.
+      const offBridge = registerVoiceBridge(sessionId, service, {
+        onUserTranscript: (text) => addLine("you", text),
+        onAgentSpeak: (text) => addLine("quant", text),
+      });
+
+      // Device list: query now, refresh on hotplug. startInputPreview() opens the
+      // mic + an analyser purely for metering so the user can SEE the chosen mic
+      // is receiving audio while the pane is open and idle (before any real turn).
+      const refreshDevices = async () => {
+        try {
+          const [list, labels] = await Promise.all([
+            service.listInputDevices(),
+            service.hasDeviceLabels(),
+          ]);
+          if (!alive) return;
+          setDevices(list);
+          setHasLabels(labels);
+          setSelectedDevice(service.getInputDevice());
+        } catch {
+          /* leave prior state */
+        }
+      };
+      const offDevices = service.onDevicesChanged(() => void refreshDevices());
+      void refreshDevices();
+      // Best-effort live preview meter. If permission isn't granted this rejects
+      // quietly (the onError handler surfaces the banner); the "Enable microphone"
+      // affordance lets the user prompt explicitly.
+      void service
+        .startInputPreview()
+        .then(() => void refreshDevices())
+        .catch(() => {});
+
+      // WKWebView (and browser autoplay policies) keep an AudioContext created
+      // without a user gesture in the "suspended" state, which leaves the input
+      // analyser flat → the live meter and the orb's listening level read zero.
+      // Resume on the first real interaction anywhere in the window.
+      const unlock = () => {
+        void service.resumeContext();
+      };
+      window.addEventListener("pointerdown", unlock, { capture: true });
+      window.addEventListener("keydown", unlock, { capture: true });
+
+      // Register service-dependent teardown. If the effect already cleaned up
+      // while we were awaiting config (alive flipped false above we returned),
+      // this block isn't reached; otherwise cleanup runs these on tear-down.
+      cleanupFns.push(() => {
+        window.removeEventListener("pointerdown", unlock, { capture: true });
+        window.removeEventListener("keydown", unlock, { capture: true });
+        offDevices();
+        service.stopInputPreview();
+        offBridge();
+        offState();
+        offError();
+        void service.dispose();
+        serviceRef.current = null;
+      });
+    })();
 
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
-      window.removeEventListener("pointerdown", unlock, { capture: true });
-      window.removeEventListener("keydown", unlock, { capture: true });
-      offDevices();
-      service.stopInputPreview();
-      offBridge();
-      offState();
-      offError();
-      void service.dispose();
-      serviceRef.current = null;
+      // Run whatever service-dependent teardown was registered. If the service
+      // was never created (effect torn down before config resolved), there's
+      // nothing here and serviceRef.current stays null — no leak.
+      for (const fn of cleanupFns) fn();
     };
   }, [sessionId]);
 
@@ -354,8 +393,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // needs a dark-ish backing to read, so keep the dark "well" gradient. Read
   // once per render off the active --q-* tokens (a full theme-type flip
   // re-renders the pane).
-  const stageIsLight =
-    typeof document !== "undefined" ? readOrbTheme().isLight : false;
+  const stageIsLight = theme.type === "light";
   const stageBackground = stageIsLight
     ? "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)"
     : "var(--q-bg)";
@@ -394,21 +432,20 @@ export function VoicePane({ sessionId, className, style }: Props) {
           overflow: "hidden",
         }}
       >
-        {/* Square, centered orb box that tracks the SMALLER stage dimension so
-            the orb stays circular + contained in any aspect ratio: height:100%
-            + aspectRatio:1 makes width follow height, and maxWidth:100% clamps
-            it (shrinking height to match) when the stage is taller than wide. No
-            fixed size — the orb fills this box and resizes via its ResizeObserver. */}
-        <div
-          style={{
-            height: "100%",
-            aspectRatio: "1 / 1",
-            maxWidth: "100%",
-            minHeight: 0,
-          }}
-        >
-          <VoiceOrb state={state} analyser={analyser} getLevel={orbGetLevel} />
-        </div>
+        {/* The orb canvas fills the ENTIRE stage (full width + height), not a
+            centered square. This makes the scene background + starfield "dust"
+            extend edge-to-edge so there's no visible square seam against the
+            pane background. The orb's perspective camera uses the live w/h aspect
+            (camera.aspect = w/h), so the sphere itself stays perfectly circular
+            and centered no matter how wide the pane is — it just gets more dusty
+            space around it. The orb resizes with the stage via its ResizeObserver. */}
+        <VoiceOrb
+          state={state}
+          analyser={analyser}
+          getLevel={orbGetLevel}
+          themeKey={theme.id}
+          style={{ position: "absolute", inset: 0 }}
+        />
       </div>
 
       {/* Transcript: paired you/quant lines, scrollable, newest at bottom. */}

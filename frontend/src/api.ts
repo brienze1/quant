@@ -27,6 +27,7 @@ import type {
   MindmapNode,
   RemoteStatus,
   VoiceSpeechResult,
+  VoicePingResult,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -604,4 +605,42 @@ export function voiceResult(
  */
 export function startVoiceSession(sessionId: string): Promise<void> {
   return callGo(VOICE_PKG, VOICE_CTRL, "StartVoiceSession", sessionId);
+}
+
+/**
+ * Discover the models the configured server offers for the given operation
+ * ("stt" or "tts") by probing {base}/v1/models. Used by Settings → Voice to
+ * populate the model pickers. Soft-fails: resolves to [] if the server is
+ * unreachable or returns an error, so the UI can fall back to curated options.
+ */
+export function listModels(op: "stt" | "tts"): Promise<string[]> {
+  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListModels", op).then(
+    (r) => r ?? [],
+    () => [],
+  );
+}
+
+/**
+ * Discover the voices the configured TTS server offers by probing
+ * {ttsBase}/v1/audio/voices (Kokoro). Used by Settings → Voice to populate the
+ * voice picker. Soft-fails to [] like listModels.
+ */
+export function listVoices(): Promise<string[]> {
+  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListVoices").then(
+    (r) => r ?? [],
+    () => [],
+  );
+}
+
+/**
+ * Probe whether the configured engine for the given operation ("stt" or "tts")
+ * is reachable, by GET-ing {base}/v1/models with a short timeout. Used by
+ * Settings → Voice "Test connection". Soft-fails: resolves to
+ * { ok: false, detail: "probe failed" } on throw/null so the UI never crashes.
+ */
+export function pingVoiceEndpoint(op: "stt" | "tts"): Promise<VoicePingResult> {
+  return callGo<VoicePingResult | null>(VOICE_PKG, VOICE_CTRL, "Ping", op).then(
+    (r) => r ?? { ok: false, detail: "probe failed" },
+    () => ({ ok: false, detail: "probe failed" }),
+  );
 }

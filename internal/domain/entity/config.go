@@ -27,19 +27,47 @@ type VoiceConfig struct {
 	TTSModel   string  `json:"ttsModel"`
 	Voice      string  `json:"voice"` // default "am_onyx"
 	Speed      float64 `json:"speed"` // default 1.2
+	// PauseMs is the milliseconds of silence the VAD waits through before ending
+	// the user's turn (frontend redemption window); higher = more time to
+	// pause/think mid-sentence.
+	PauseMs int `json:"pauseMs"`
+	// Instructions is optional user-authored guidance appended to the built-in
+	// voice persona at session kickoff. Empty = none (no default).
+	Instructions string `json:"instructions"`
 }
+
+// Local-first default endpoints for the self-hosted STT/TTS engines: whisper.cpp
+// serves OpenAI-compatible STT on :2022, Kokoro-FastAPI serves TTS on :8880.
+const (
+	defaultLocalSTTBaseURL = "http://localhost:2022"
+	defaultLocalTTSBaseURL = "http://localhost:8880"
+)
 
 // WithDefaults returns a copy of the voice config with sensible defaults applied
 // for any unset fields. This keeps configs saved before the voice feature usable.
 func (v VoiceConfig) WithDefaults() VoiceConfig {
 	if v.Provider == "" {
-		v.Provider = "auto"
+		v.Provider = "local"
+	}
+	// Local-first: only a "local" provider gets the localhost engine URLs filled
+	// in when blank. Cloud users (Provider=="cloud") are never handed localhost
+	// URLs; a local user who clears a field gets the sensible default back.
+	if v.Provider == "local" {
+		if v.STTBaseURL == "" {
+			v.STTBaseURL = defaultLocalSTTBaseURL
+		}
+		if v.TTSBaseURL == "" {
+			v.TTSBaseURL = defaultLocalTTSBaseURL
+		}
 	}
 	if v.Voice == "" {
 		v.Voice = "am_onyx"
 	}
 	if v.Speed == 0 {
 		v.Speed = 1.2
+	}
+	if v.PauseMs == 0 {
+		v.PauseMs = 3000
 	}
 	return v
 }
@@ -61,12 +89,12 @@ type Config struct {
 	CommitMessagePrefix string            `json:"commitMessagePrefix"`
 
 	// Sessions
-	UseWorktreeDefault    bool   `json:"useWorktreeDefault"`
-	SkipPermissions       bool   `json:"skipPermissions"`
-	MaxConcurrentSessions int    `json:"maxConcurrentSessions"`
-	AutoResumeOnStart     bool   `json:"autoResumeOnStart"`
-	AutoStopIdle          bool   `json:"autoStopIdle"`
-	IdleTimeoutMinutes    int    `json:"idleTimeoutMinutes"`
+	UseWorktreeDefault    bool     `json:"useWorktreeDefault"`
+	SkipPermissions       bool     `json:"skipPermissions"`
+	MaxConcurrentSessions int      `json:"maxConcurrentSessions"`
+	AutoResumeOnStart     bool     `json:"autoResumeOnStart"`
+	AutoStopIdle          bool     `json:"autoStopIdle"`
+	IdleTimeoutMinutes    int      `json:"idleTimeoutMinutes"`
 	ActiveSessionID       string   `json:"activeSessionId"`
 	OpenSessionIDs        []string `json:"openSessionIds"`
 	MindmapPaneOpen       bool     `json:"mindmapPaneOpen"`
@@ -163,16 +191,20 @@ func NewDefaultConfig() Config {
 		RemoteAccessPort:     0,
 		RemoteAccessPasscode: "",
 
-		// Voice — disabled by default; cloud/auto provider, sensible voice defaults.
+		// Voice — disabled by default; local-first provider pointing at the
+		// self-hosted whisper.cpp (:2022) + Kokoro-FastAPI (:8880) engines.
 		Voice: VoiceConfig{
-			Enabled:  false,
-			Provider: "auto",
-			BaseURL:  "",
-			APIKey:   "",
-			STTModel: "",
-			TTSModel: "",
-			Voice:    "am_onyx",
-			Speed:    1.2,
+			Enabled:    false,
+			Provider:   "local",
+			BaseURL:    "",
+			STTBaseURL: defaultLocalSTTBaseURL,
+			TTSBaseURL: defaultLocalTTSBaseURL,
+			APIKey:     "",
+			STTModel:   "",
+			TTSModel:   "",
+			Voice:      "am_onyx",
+			Speed:      1.2,
+			PauseMs:    3000,
 		},
 	}
 }

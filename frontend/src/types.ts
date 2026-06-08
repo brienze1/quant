@@ -302,6 +302,12 @@ export interface VoiceConfig {
   ttsModel: string;
   voice: string;
   speed: number;
+  // Milliseconds of silence the VAD waits through before ending the user's turn
+  // (frontend redemption window); higher = more time to pause/think mid-sentence.
+  pauseMs: number;
+  // Optional user-authored guidance appended to the built-in voice persona at
+  // session kickoff. Empty = none.
+  instructions: string;
 }
 
 // VoiceSpeechResult is the payload returned by the Synthesize proxy: base64
@@ -310,6 +316,14 @@ export interface VoiceConfig {
 export interface VoiceSpeechResult {
   audioB64: string;
   contentType: string;
+}
+
+// VoicePingResult mirrors the Go voice.PingResult struct returned by the
+// per-engine connection probe (Settings → Voice "Test connection"): whether the
+// STT/TTS server is reachable plus a short human-readable detail.
+export interface VoicePingResult {
+  ok: boolean;
+  detail: string;
 }
 
 // --- Remote Access ---

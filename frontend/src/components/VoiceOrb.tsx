@@ -245,15 +245,20 @@ export default function VoiceOrb({
     const orb = new THREE.Mesh(geo, mat);
     scene.add(orb);
 
-    // Faint particle halo.
-    const N = 900;
+    // Faint particle halo / starfield. The orb canvas now fills the full pane
+    // width (not a square), so the field is spread WIDER and denser than the
+    // original tight halo: a larger radius range reaches the horizontal edges of
+    // a wide pane (so there's dust edge-to-edge, no dark voids beside the orb),
+    // and the X coordinate is stretched 1.6× so the scatter follows the pane's
+    // landscape aspect rather than pooling in a circle around the sphere.
+    const N = 1500;
     const pg = new THREE.BufferGeometry();
     const pp = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
-      const r = 1.7 + Math.random() * 0.9;
+      const r = 1.7 + Math.random() * 2.7;
       const th = Math.acos(2 * Math.random() - 1);
       const ph = Math.random() * 6.283;
-      pp[i * 3] = r * Math.sin(th) * Math.cos(ph);
+      pp[i * 3] = r * Math.sin(th) * Math.cos(ph) * 1.6;
       pp[i * 3 + 1] = r * Math.sin(th) * Math.sin(ph);
       pp[i * 3 + 2] = r * Math.cos(th);
     }

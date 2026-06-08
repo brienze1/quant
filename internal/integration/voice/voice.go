@@ -38,6 +38,10 @@ const (
 	defaultVoice        = "am_onyx"
 	defaultSpeed        = 1.2
 	defaultTimeout      = 60 * time.Second
+	// discoverTimeout bounds the model/voice discovery probes. It is short so a
+	// down or slow local server fails fast and the UI falls back to its curated
+	// option list instead of hanging the Settings tab.
+	discoverTimeout = 4 * time.Second
 )
 
 // kickoffSubmitDelay is the pause between writing the persona message to a
@@ -54,13 +58,16 @@ const kickoffSubmitDelay = 120 * time.Millisecond
 // a spoken, hands-free conversation driven by the MCP voice tools. The wording
 // references voice_speak / voice_listen / voice_converse exactly as registered in
 // internal/integration/mcp/server.go.
-const VoicePersona = "You are now in VOICE MODE. Communicate by speaking, not by writing text in the terminal. " +
-	"To talk with the user, call the MCP voice tools: voice_speak(text) to say something, " +
-	"voice_listen() to hear the user's reply, or voice_converse(text) to say something and immediately " +
-	"listen for the reply (prefer this for back-and-forth). " +
-	"Keep replies short, natural, and speech-friendly: no markdown, no code blocks, no bullet lists, no emoji — you are talking out loud. " +
+const VoicePersona = "You are now in VOICE MODE — you and the user are having a live, spoken conversation. " +
+	"Talk by calling the MCP voice tools: voice_converse(text) to say something and immediately listen for the reply " +
+	"(use this for normal back-and-forth), voice_speak(text) to say something without waiting, and voice_listen() to just listen. " +
+	"Speak the way people actually talk out loud: short, natural sentences, one idea at a time. " +
+	"No markdown, no code blocks, no bullet lists, no emoji, and don't read out long URLs or file paths character by character — " +
+	"if something is long or visual, summarize it in a sentence and offer to put the details in the terminal. " +
+	"You can still use all your normal tools to get real work done; when you do, narrate it in a few words instead of going silent. " +
+	"If you didn't catch what the user said, just ask them to repeat. " +
 	"Start now: greet the user briefly with voice_converse, then keep the conversation going — " +
-	"after each user turn, think, then reply with voice_converse (or voice_speak if you do not expect a reply). " +
+	"after each user turn, think, then reply with voice_converse (or voice_speak if you don't expect a reply). " +
 	"Continue until the user says goodbye or the voice pane is closed."
 
 // SessionMessenger is the minimal slice of the session manager that the voice
@@ -143,7 +150,16 @@ func (c *voiceController) StartVoiceSession(sessionId string) error {
 		return fmt.Errorf("sessionId is required")
 	}
 
-	if err := c.sessions.SendMessage(sessionId, VoicePersona); err != nil {
+	// Build the kickoff message: the built-in persona, optionally followed by the
+	// user's own voice instructions (from Settings) as authoritative guidance.
+	kickoff := VoicePersona
+	if cfg, err := c.voiceConfig(); err == nil {
+		if ci := strings.TrimSpace(cfg.Instructions); ci != "" {
+			kickoff = VoicePersona + "\n\nThe user has given you these additional instructions for how to behave in this voice conversation — follow them throughout:\n" + ci
+		}
+	}
+
+	if err := c.sessions.SendMessage(sessionId, kickoff); err != nil {
 		return fmt.Errorf("failed to start voice session %s: %w", sessionId, err)
 	}
 
@@ -542,4 +558,232 @@ func (c *voiceController) doSynthesize(base string, payload []byte, apiKey strin
 		contentType = "audio/mpeg"
 	}
 	return data, contentType, resp.StatusCode, nil
+}
+
+// opFromString maps the frontend's "stt"/"tts" discovery argument to the
+// internal op enum, defaulting to STT for anything else.
+func opFromString(s string) op {
+	if strings.EqualFold(strings.TrimSpace(s), "tts") {
+		return opTTS
+	}
+	return opSTT
+}
+
+// discoverGET issues a short-timeout GET against {base}/{path} for one
+// operation's resolved base URL and returns the raw response body. It soft-fails:
+// the timeout is intentionally tight so a down/slow local server doesn't hang the
+// Settings tab, and the caller turns any error into an empty list. The api key
+// header is attached when configured, mirroring Synthesize/Transcribe.
+func (c *voiceController) discoverGET(o op, path string) ([]byte, error) {
+	vc, err := c.voiceConfig()
+	if err != nil {
+		return nil, err
+	}
+	base := resolveBase(vc, o)
+	if base == "" {
+		// Fall back to the provider list (e.g. cloud default) so discovery still
+		// works when only the legacy/cloud config is set.
+		if urls := baseURLs(vc, o); len(urls) > 0 {
+			base = urls[0]
+		}
+	}
+	if base == "" {
+		return nil, fmt.Errorf("no %s configured — set it in Settings → Voice", o.field())
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), discoverTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if vc.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+vc.APIKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("discovery failed: status %d", resp.StatusCode)
+	}
+	return data, nil
+}
+
+// idFromAny extracts a string id from a discovery list element that may be a
+// bare string or an object carrying an "id" (or "name") field.
+func idFromAny(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case map[string]interface{}:
+		for _, key := range []string{"id", "name"} {
+			if s, ok := t[key].(string); ok && strings.TrimSpace(s) != "" {
+				return strings.TrimSpace(s)
+			}
+		}
+	}
+	return ""
+}
+
+// idsFromList maps a slice of mixed string/object elements to their ids,
+// dropping empties.
+func idsFromList(items []interface{}) []string {
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		if id := idFromAny(it); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// ListModels probes the OpenAI-compatible models endpoint for the given
+// operation ("stt" or "tts") and returns the available model ids. It tolerates
+// the standard {"data":[{"id":...}]} shape as well as {"models":[...]} or a bare
+// array; elements may be strings or objects with an id/name.
+//
+// It soft-fails: on any error it returns an empty slice plus the error so the
+// frontend can fall back to its curated option list without surfacing a crash.
+func (c *voiceController) ListModels(op string) ([]string, error) {
+	data, err := c.discoverGET(opFromString(op), "/v1/models")
+	if err != nil {
+		return []string{}, err
+	}
+
+	// Try the standard {"data": [...]} / {"models": [...]} shapes first.
+	var obj struct {
+		Data   []interface{} `json:"data"`
+		Models []interface{} `json:"models"`
+	}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		if len(obj.Data) > 0 {
+			return idsFromList(obj.Data), nil
+		}
+		if len(obj.Models) > 0 {
+			return idsFromList(obj.Models), nil
+		}
+	}
+
+	// Fall back to a bare array of strings/objects.
+	var arr []interface{}
+	if err := json.Unmarshal(data, &arr); err == nil {
+		return idsFromList(arr), nil
+	}
+
+	return []string{}, fmt.Errorf("could not parse models response")
+}
+
+// ListVoices probes the TTS server's voices endpoint (Kokoro:
+// {base}/v1/audio/voices) and returns the available voice ids. The response is
+// expected as {"voices":[...]} where each element is a string or an object with
+// an id/name; a bare array is also tolerated.
+//
+// It soft-fails like ListModels: any error yields an empty slice plus the error.
+func (c *voiceController) ListVoices() ([]string, error) {
+	data, err := c.discoverGET(opTTS, "/v1/audio/voices")
+	if err != nil {
+		return []string{}, err
+	}
+
+	var obj struct {
+		Voices []interface{} `json:"voices"`
+	}
+	if err := json.Unmarshal(data, &obj); err == nil && len(obj.Voices) > 0 {
+		return idsFromList(obj.Voices), nil
+	}
+
+	var arr []interface{}
+	if err := json.Unmarshal(data, &arr); err == nil {
+		return idsFromList(arr), nil
+	}
+
+	return []string{}, fmt.Errorf("could not parse voices response")
+}
+
+// PingResult is the return payload for Ping: whether the engine's server is
+// listening plus a short human-readable detail. Returned as a struct so it
+// round-trips over both the Wails desktop and remote/tunnel transports.
+type PingResult struct {
+	Ok     bool   `json:"ok"`
+	Detail string `json:"detail"`
+}
+
+// Ping probes whether the configured engine for one operation ("stt" or "tts")
+// is reachable. It resolves that op's base URL and issues a short-timeout GET to
+// {base}/v1/models. Semantics:
+//   - the URL for that op is unset → Ok=false, "no STT|TTS URL configured".
+//   - ANY HTTP response (even non-2xx) → the server is listening, Ok=true with a
+//     helpful detail (a non-2xx status is still "server up").
+//   - connection refused / timeout / DNS failure → Ok=false naming the host:port.
+//
+// It soft-fails (never panics): a load/config error is reported as Ok=false with
+// the error text rather than returned as a hard error.
+func (c *voiceController) Ping(op string) (PingResult, error) {
+	o := opFromString(op)
+
+	vc, err := c.voiceConfig()
+	if err != nil {
+		return PingResult{Ok: false, Detail: "could not load voice config: " + err.Error()}, nil
+	}
+
+	base := resolveBase(vc, o)
+	if base == "" {
+		// Fall back to the provider list so a cloud/legacy-only config still pings.
+		if urls := baseURLs(vc, o); len(urls) > 0 {
+			base = urls[0]
+		}
+	}
+	if base == "" {
+		kind := "STT"
+		if o == opTTS {
+			kind = "TTS"
+		}
+		return PingResult{Ok: false, Detail: "no " + kind + " URL configured"}, nil
+	}
+
+	hostPort := base
+	if u, perr := url.Parse(base); perr == nil && u.Host != "" {
+		hostPort = u.Host
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), discoverTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
+	if err != nil {
+		return PingResult{Ok: false, Detail: "invalid URL: " + base}, nil
+	}
+	if vc.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+vc.APIKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		// Connection refused / timeout / DNS failure: the server is not listening.
+		return PingResult{
+			Ok:     false,
+			Detail: fmt.Sprintf("not reachable — is the server running on %s?", hostPort),
+		}, nil
+	}
+	defer resp.Body.Close()
+	// Drain so the connection can be reused.
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return PingResult{Ok: true, Detail: "reachable"}, nil
+	}
+	// Any other response still means the server is up and listening.
+	return PingResult{
+		Ok:     true,
+		Detail: fmt.Sprintf("reachable (HTTP %d on /v1/models — server up)", resp.StatusCode),
+	}, nil
 }

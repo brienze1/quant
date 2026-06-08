@@ -2,11 +2,12 @@
   "entries": [
     {
       "version": "v3.1.30",
-      "date": "2026-06-06",
+      "date": "2026-06-08",
       "changes": {
         "features": [
-          "voice mode — talk to a session hands-free and hear it talk back: open the new voice pane on a session (green 'voice' toggle in the header) and an audio-reactive orb visualizes the conversation while you speak naturally; silence detection handles turn-taking, and you can talk over a reply to interrupt it (barge-in)",
-          "Settings → Voice: enable voice with just an OpenAI-compatible API key (cloud, zero install), or point at your own local whisper/kokoro engines; pick the voice and speaking speed, and use 'Test voice' to hear it (the key is stored locally and never sent to the browser)",
+          "voice mode — talk to a session hands-free and hear it talk back: open the new voice pane on a session (the 'voice' toggle in the header) and an audio-reactive orb visualizes the conversation while you speak naturally; silence detection handles turn-taking, and you can talk over a reply to interrupt it (barge-in)",
+          "voice runs fully local and private — your own Whisper (speech-to-text) and Kokoro (text-to-speech) engines, no cloud and no API key; Settings → Voice walks a new user through install with copy-paste cards per OS (native or Docker for Kokoro) and a 'Test connection' button for each engine",
+          "Settings → Voice: pick the voice, model and speaking speed from auto-discovered dropdowns (no guessing valid names), tune how long it waits for you to finish talking with a silence/pause slider, and edit the assistant's spoken persona/instructions; optional copy-paste scripts set the engines to auto-start on login (macOS/Linux/Windows)",
           "agents can drive a spoken conversation through new MCP tools voice_listen, voice_speak and voice_converse, scoped to their own session"
         ]
       }

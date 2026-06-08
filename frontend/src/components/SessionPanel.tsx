@@ -360,7 +360,8 @@ export function SessionPanel({
             </button>
           )}
 
-          {/* Voice button (mirrors the mindmap toggle; green control).
+          {/* Voice button (mirrors the mindmap toggle; uses the themed
+              --q-magenta accent so it tracks theme changes like its siblings).
               Gated on TWO conditions, both of which must hold:
                 1. config.voice.enabled — voice feature turned on in Settings.
                 2. The session has a LIVE agent process. "running" (mid-turn),
@@ -389,9 +390,9 @@ export function SessionPanel({
                 className="flex items-center gap-1 px-2 py-1 text-[11px]"
                 style={{
                   fontFamily: "'JetBrains Mono', monospace",
-                  color: voicePaneOpen ? "var(--q-bg)" : "var(--q-term-green)",
-                  backgroundColor: voicePaneOpen ? "var(--q-term-green)" : "var(--q-bg-hover)",
-                  border: `1px solid ${voicePaneOpen ? "var(--q-term-green)" : "var(--q-border)"}`,
+                  color: voicePaneOpen ? "var(--q-bg)" : "var(--q-magenta)",
+                  backgroundColor: voicePaneOpen ? "var(--q-magenta)" : "var(--q-bg-hover)",
+                  border: `1px solid ${voicePaneOpen ? "var(--q-magenta)" : "var(--q-border)"}`,
                   opacity: canToggle ? 1 : 0.4,
                   cursor: canToggle ? "pointer" : "not-allowed",
                 }}

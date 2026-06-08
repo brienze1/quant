@@ -70,6 +70,8 @@ export namespace dto {
 	    ttsModel: string;
 	    voice: string;
 	    speed: number;
+	    pauseMs: number;
+	    instructions: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new VoiceConfigDTO(source);
@@ -88,6 +90,8 @@ export namespace dto {
 	        this.ttsModel = source["ttsModel"];
 	        this.voice = source["voice"];
 	        this.speed = source["speed"];
+	        this.pauseMs = source["pauseMs"];
+	        this.instructions = source["instructions"];
 	    }
 	}
 	export class ShortcutDTO {
@@ -1213,6 +1217,20 @@ export namespace remote {
 
 export namespace voice {
 	
+	export class PingResult {
+	    ok: boolean;
+	    detail: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PingResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.detail = source["detail"];
+	    }
+	}
 	export class SpeechResult {
 	    audioB64: string;
 	    contentType: string;
