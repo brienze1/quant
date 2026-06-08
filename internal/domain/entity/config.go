@@ -53,16 +53,14 @@ func (v VoiceConfig) WithDefaults() VoiceConfig {
 	if v.Provider != "local" {
 		v.Provider = "local"
 	}
-	// Local-first: only a "local" provider gets the localhost engine URLs filled
-	// in when blank. Cloud users (Provider=="cloud") are never handed localhost
-	// URLs; a local user who clears a field gets the sensible default back.
-	if v.Provider == "local" {
-		if v.STTBaseURL == "" {
-			v.STTBaseURL = defaultLocalSTTBaseURL
-		}
-		if v.TTSBaseURL == "" {
-			v.TTSBaseURL = defaultLocalTTSBaseURL
-		}
+	// Provider is always "local" by the time we reach here (normalized above), so
+	// blank STT/TTS URLs always get the localhost engine defaults filled in; a
+	// local user who clears a field gets the sensible default back.
+	if v.STTBaseURL == "" {
+		v.STTBaseURL = defaultLocalSTTBaseURL
+	}
+	if v.TTSBaseURL == "" {
+		v.TTSBaseURL = defaultLocalTTSBaseURL
 	}
 	if v.Voice == "" {
 		v.Voice = "am_onyx"
@@ -197,18 +195,9 @@ func NewDefaultConfig() Config {
 
 		// Voice — disabled by default; local-first provider pointing at the
 		// self-hosted whisper.cpp (:2022) + Kokoro-FastAPI (:8880) engines.
-		Voice: VoiceConfig{
-			Enabled:    false,
-			Provider:   "local",
-			BaseURL:    "",
-			STTBaseURL: defaultLocalSTTBaseURL,
-			TTSBaseURL: defaultLocalTTSBaseURL,
-			APIKey:     "",
-			STTModel:   "",
-			TTSModel:   "",
-			Voice:      "am_onyx",
-			Speed:      1.2,
-			PauseMs:    3000,
-		},
+		// Delegate to WithDefaults() so the voice defaults (provider "local",
+		// voice "am_onyx", speed 1.2, pauseMs 3000, the localhost STT/TTS URLs)
+		// live in exactly one place. Enabled stays false (zero value untouched).
+		Voice: VoiceConfig{}.WithDefaults(),
 	}
 }

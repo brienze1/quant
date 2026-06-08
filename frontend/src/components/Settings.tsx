@@ -5,6 +5,7 @@ import type { VoiceConfig } from "../types";
 import { ThemeSettings } from "./ThemeSettings";
 import { KeybindingsTab } from "./KeybindingsTab";
 import { useTheme } from "../theme";
+import { getOS, type OS } from "../os";
 
 const chevronBg = (hex: string) =>
   `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='none' stroke='${hex.replace("#", "%23")}' stroke-width='1.5'/%3E%3C/svg%3E")`;
@@ -1809,21 +1810,9 @@ const DOCKER_DESKTOP = "https://www.docker.com/products/docker-desktop/"; // mac
 const DOCKER_ENGINE = "https://docs.docker.com/engine/install/"; // linux
 const UV_INSTALL = "https://docs.astral.sh/uv/getting-started/installation/"; // uv package manager (native Kokoro)
 
-type OS = "macos" | "windows" | "linux";
-
 // Install method for the Kokoro card: the bundled bash start scripts (native, no
 // Docker) vs the prebuilt Docker image.
 type InstallMethod = "native" | "docker";
-
-// detectOS guesses the user's platform from the UA so the install card opens on
-// the right tab. Falls back to macOS (the primary dev target).
-function detectOS(): OS {
-  const ua = (typeof navigator !== "undefined" ? navigator.userAgent : "").toLowerCase();
-  if (ua.includes("win")) return "windows";
-  if (ua.includes("linux") && !ua.includes("android")) return "linux";
-  if (ua.includes("mac")) return "macos";
-  return "macos";
-}
 
 // Per-OS whisper.cpp install + run commands. whisper.cpp serves OpenAI-compatible
 // STT on :2022 and MUST be launched with --inference-path "/v1/audio/transcriptions".
@@ -2220,7 +2209,7 @@ const WHISPER_AUTOSTART: Record<OS, AutoStartBlock[]> = {
 // start-gpu.sh) that exports the env it needs and runs uvicorn through `uv`, so
 // macOS + Linux use the Kokoro-specific builders that register that start script
 // (the bare uvicorn command exits under launchd/systemd). Windows uses the Docker
-// --restart note instead (see KOKORO_DOCKER_AUTOSTART), so the generic Scheduled
+// --restart note instead (see KOKORO_DOCKER_BLOCKS), so the generic Scheduled
 // Task entry here is only a fallback.
 const KOKORO_AUTOSTART: Record<OS, AutoStartBlock[]> = {
   macos: macKokoroAutoStartScript({ label: "com.local.kokoro", port: 8880 }),
@@ -2242,17 +2231,18 @@ const KOKORO_DOCKER_BLOCKS: AutoStartBlock[] = [
     text: "make sure Docker Desktop / the Docker service is itself set to start on login (Docker Desktop → Settings → General → Start on login).",
   },
 ];
-const KOKORO_DOCKER_AUTOSTART: Record<OS, AutoStartBlock[]> = {
-  macos: KOKORO_DOCKER_BLOCKS,
-  linux: KOKORO_DOCKER_BLOCKS,
-  windows: KOKORO_DOCKER_BLOCKS,
-};
+
+// pingStateColor maps a connection-test state to its themed color: ok → green,
+// fail → error, anything else (untested/pending) → muted neutral. Shared by the
+// StatusChip pill and the inline ping detail line so they stay consistent.
+function pingStateColor(state: "untested" | "pending" | "ok" | "fail"): string {
+  return state === "ok" ? "var(--q-term-green)" : state === "fail" ? "var(--q-error)" : "var(--q-fg-muted)";
+}
 
 // StatusChip renders a small "LABEL ●" pill whose dot + label color reflect a
 // ping state. Themed with --q-* tokens only.
 function StatusChip({ label, state }: { label: string; state: "untested" | "ok" | "fail" }) {
-  const color =
-    state === "ok" ? "var(--q-term-green)" : state === "fail" ? "var(--q-error)" : "var(--q-fg-muted)";
+  const color = pingStateColor(state);
   const text = state === "ok" ? "connected" : state === "fail" ? "not reachable" : "untested";
   return (
     <span
@@ -2273,13 +2263,18 @@ function StatusChip({ label, state }: { label: string; state: "untested" | "ok" 
   );
 }
 
-// OsSwitch is a 3-way segmented control for the install card OS tabs.
-function OsSwitch({ value, onChange }: { value: OS; onChange: (v: OS) => void }) {
-  const items: { key: OS; label: string }[] = [
-    { key: "macos", label: "macOS" },
-    { key: "windows", label: "Windows" },
-    { key: "linux", label: "Linux" },
-  ];
+// Segmented is a generic segmented control (a row of mutually-exclusive tabs).
+// Used for the install-card OS tabs (3-way) and the Kokoro install-method picker
+// (2-way). Themed with --q-* tokens only.
+function Segmented<T extends string>({
+  items,
+  value,
+  onChange,
+}: {
+  items: { key: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
   return (
     <div className="flex" style={{ border: "1px solid var(--q-border)", width: "fit-content" }}>
       {items.map((it) => {
@@ -2305,43 +2300,16 @@ function OsSwitch({ value, onChange }: { value: OS; onChange: (v: OS) => void })
   );
 }
 
-// MethodSwitch is a 2-way segmented control for the Kokoro install method
-// (native bash scripts vs Docker). Mirrors OsSwitch styling (--q-* tokens only).
-function MethodSwitch({
-  value,
-  onChange,
-}: {
-  value: InstallMethod;
-  onChange: (v: InstallMethod) => void;
-}) {
-  const items: { key: InstallMethod; label: string }[] = [
-    { key: "native", label: "Native (no Docker)" },
-    { key: "docker", label: "Docker" },
-  ];
-  return (
-    <div className="flex" style={{ border: "1px solid var(--q-border)", width: "fit-content" }}>
-      {items.map((it) => {
-        const active = it.key === value;
-        return (
-          <button
-            key={it.key}
-            onClick={() => onChange(it.key)}
-            className="px-3"
-            style={{
-              height: 26,
-              fontSize: 10,
-              color: active ? "var(--q-bg)" : "var(--q-fg-secondary)",
-              backgroundColor: active ? "var(--q-accent)" : "transparent",
-              cursor: "pointer",
-            }}
-          >
-            {it.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+const OS_SEGMENTS: { key: OS; label: string }[] = [
+  { key: "macos", label: "macOS" },
+  { key: "windows", label: "Windows" },
+  { key: "linux", label: "Linux" },
+];
+
+const METHOD_SEGMENTS: { key: InstallMethod; label: string }[] = [
+  { key: "native", label: "Native (no Docker)" },
+  { key: "docker", label: "Docker" },
+];
 
 // CommandLine renders one monospace copy-paste command with a copy button.
 function CommandLine({ cmd }: { cmd: string }) {
@@ -2425,7 +2393,7 @@ function InstallCard({
         backgroundColor: "var(--q-bg-surface)",
       }}
     >
-      <OsSwitch value={os} onChange={onOs} />
+      <Segmented items={OS_SEGMENTS} value={os} onChange={onOs} />
       {children}
     </div>
   );
@@ -2441,11 +2409,13 @@ function AutoStartSection({
   extra,
 }: {
   os: OS;
-  blocks: Record<OS, AutoStartBlock[]>;
+  // Either a flat list (same on every OS) or a per-OS record.
+  blocks: AutoStartBlock[] | Record<OS, AutoStartBlock[]>;
   extra?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const hasScript = blocks[os].some((b) => b.kind === "script");
+  const osBlocks = Array.isArray(blocks) ? blocks : blocks[os];
+  const hasScript = osBlocks.some((b) => b.kind === "script");
   return (
     <div
       className="flex flex-col"
@@ -2473,7 +2443,7 @@ function AutoStartSection({
             )}
           </span>
           {extra}
-          {blocks[os].map((b, i) => {
+          {osBlocks.map((b, i) => {
             if (b.kind === "script") return <ScriptBlock key={i} text={b.text} />;
             if (b.kind === "code") return <CommandLine key={i} cmd={b.text} />;
             if (b.kind === "link")
@@ -2524,12 +2494,12 @@ function VoiceTab({ config, update }: TabProps) {
   const [testMsg, setTestMsg] = useState<string>("");
 
   // Install-card OS tab, seeded from the detected platform.
-  const [whisperOs, setWhisperOs] = useState<OS>(() => detectOS());
-  const [kokoroOs, setKokoroOs] = useState<OS>(() => detectOS());
+  const [whisperOs, setWhisperOs] = useState<OS>(() => getOS());
+  const [kokoroOs, setKokoroOs] = useState<OS>(() => getOS());
   // Kokoro install method: default to the native bash scripts on macOS/Linux
   // (they can run them) and Docker on Windows (the start scripts are bash).
   const [kokoroMethod, setKokoroMethod] = useState<InstallMethod>(() =>
-    detectOS() === "windows" ? "docker" : "native",
+    getOS() === "windows" ? "docker" : "native",
   );
 
   // Advanced (cloud/escape-hatch) section is collapsed by default in the
@@ -2660,12 +2630,7 @@ function VoiceTab({ config, update }: TabProps) {
   // pingDetailLine renders the small green/red inline detail under a Test button.
   function pingDetailLine(p: { state: "untested" | "pending" | "ok" | "fail"; detail: string }) {
     if (p.state === "untested") return null;
-    const color =
-      p.state === "ok"
-        ? "var(--q-term-green)"
-        : p.state === "fail"
-        ? "var(--q-error)"
-        : "var(--q-fg-secondary)";
+    const color = pingStateColor(p.state);
     return <span style={{ fontSize: 10, color, marginTop: 4, display: "block" }}>{p.detail}</span>;
   }
 
@@ -2818,7 +2783,7 @@ function VoiceTab({ config, update }: TabProps) {
         description="kokoro-fastapi runs a local OpenAI-compatible TTS server on port 8880 — no api key"
       >
         <InstallCard os={kokoroOs} onOs={setKokoroOs}>
-          <MethodSwitch value={kokoroMethod} onChange={setKokoroMethod} />
+          <Segmented items={METHOD_SEGMENTS} value={kokoroMethod} onChange={setKokoroMethod} />
           {kokoroMethod === "native" ? (
             <>
               <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>
@@ -2861,7 +2826,7 @@ function VoiceTab({ config, update }: TabProps) {
             kokoro-fastapi docs →
           </a>
           {kokoroMethod === "docker" ? (
-            <AutoStartSection os={kokoroOs} blocks={KOKORO_DOCKER_AUTOSTART} />
+            <AutoStartSection os={kokoroOs} blocks={KOKORO_DOCKER_BLOCKS} />
           ) : (
             <AutoStartSection os={kokoroOs} blocks={KOKORO_AUTOSTART} />
           )}

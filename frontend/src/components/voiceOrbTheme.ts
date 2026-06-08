@@ -1,3 +1,5 @@
+import { parseHex } from "../theme/mapper";
+
 // Theme-token reading + luminance helpers for the VoiceOrb.
 //
 // The orb's color is driven by the active quant theme. Themes are applied by
@@ -28,19 +30,14 @@ export function parseColor(input: string): [number, number, number] | null {
   if (!s) return null;
 
   if (s[0] === "#") {
-    let hex = s.slice(1);
-    if (hex.length === 3) {
-      hex = hex
-        .split("")
-        .map((c) => c + c)
-        .join("");
-    }
-    if (hex.length === 6) {
-      const n = parseInt(hex, 16);
-      if (Number.isNaN(n)) return null;
-      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    }
-    return null;
+    // Reuse the shared hex parser from theme/mapper. It handles 3/6-digit hex;
+    // we keep parseColor's contract of returning null for any other length or
+    // non-hex digits (parseHex yields NaN components for those).
+    const hex = s.slice(1);
+    if (hex.length !== 3 && hex.length !== 6) return null;
+    const rgb = parseHex(hex);
+    if (rgb.some((v) => Number.isNaN(v))) return null;
+    return rgb;
   }
 
   const m = s.match(/rgba?\(([^)]+)\)/i);

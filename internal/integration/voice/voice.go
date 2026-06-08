@@ -35,9 +35,15 @@ import (
 const (
 	defaultSTTModel = "whisper-1"
 	defaultTTSModel = "tts-1"
-	defaultVoice    = "am_onyx"
-	defaultSpeed    = 1.2
-	defaultTimeout  = 60 * time.Second
+	// defaultVoice / defaultSpeed are the live-path fallbacks used when the
+	// frontend passes a blank voice / zero speed AND the saved config has none.
+	// They MUST stay in sync with entity.VoiceConfig.WithDefaults() (the single
+	// source of truth for voice defaults, in internal/domain/entity/config.go);
+	// they are duplicated here only to avoid an awkward cross-package import on
+	// the hot synth path.
+	defaultVoice   = "am_onyx"
+	defaultSpeed   = 1.2
+	defaultTimeout = 60 * time.Second
 	// discoverTimeout bounds the model/voice discovery probes. It is short so a
 	// down or slow local server fails fast and the UI falls back to its curated
 	// option list instead of hanging the Settings tab.
@@ -308,6 +314,56 @@ func filenameForMIME(mime string) string {
 	}
 }
 
+// doRequest centralizes the HTTP boilerplate shared by every voice proxy call:
+// it builds the request with the given context, sets the Content-Type (when
+// non-empty), attaches the optional Bearer auth header from the voice config,
+// performs the request, and fully reads + closes the body. It returns the
+// response (for status/headers) and the read body bytes. The caller owns all
+// status-code handling, so this preserves each caller's distinct semantics
+// (doTranscribe/doSynthesize's 5xx-vs-4xx fallthrough, discoverGET's >=400
+// error, Ping's "any response = up").
+//
+// ctx selects the timeout/cancellation the caller wants: doTranscribe and
+// doSynthesize pass c.ctx (the long-lived app lifecycle context); discoverGET
+// and Ping pass a short discoverTimeout context. A nil ctx is allowed (used by
+// doTranscribe/doSynthesize when the controller's lifecycle context is not yet
+// set, e.g. in tests) and falls back to the request's default background context.
+//
+// The Authorization header is omitted entirely when apiKey is empty so local
+// servers that reject an empty bearer still work.
+func (c *voiceController) doRequest(ctx context.Context, method, url string, body io.Reader, contentType, apiKey string) (*http.Response, []byte, error) {
+	var (
+		req *http.Request
+		err error
+	)
+	if ctx != nil {
+		req, err = http.NewRequestWithContext(ctx, method, url, body)
+	} else {
+		req, err = http.NewRequest(method, url, body)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp, nil, err
+	}
+	return resp, data, nil
+}
+
 // shouldFallthrough reports whether an error or response status should cause us
 // to try the next provider in the ordered list. Connection errors and 5xx
 // responses fall through; other (e.g. 4xx) responses are returned to the caller.
@@ -398,27 +454,13 @@ func (c *voiceController) doTranscribe(base, model, filename, mime string, audio
 	}
 
 	endpoint := base + "/v1/audio/transcriptions"
-	req, err := http.NewRequest(http.MethodPost, endpoint, &body)
+	resp, data, err := c.doRequest(c.ctx, http.MethodPost, endpoint, &body, mw.FormDataContentType(), apiKey)
 	if err != nil {
+		// On a transport/build error resp is nil; on a body-read error resp is set.
+		if resp != nil {
+			return "", resp.StatusCode, err
+		}
 		return "", 0, err
-	}
-	if c.ctx != nil {
-		req = req.WithContext(c.ctx)
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return "", 0, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", resp.StatusCode, err
 	}
 	return string(data), resp.StatusCode, nil
 }
@@ -520,27 +562,13 @@ func (c *voiceController) Synthesize(text string, voice string, speed float64) (
 // the audio bytes, content-type, HTTP status (0 on transport error), and any error.
 func (c *voiceController) doSynthesize(base string, payload []byte, apiKey string) ([]byte, string, int, error) {
 	endpoint := base + "/v1/audio/speech"
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	resp, data, err := c.doRequest(c.ctx, http.MethodPost, endpoint, bytes.NewReader(payload), "application/json", apiKey)
 	if err != nil {
+		// On a transport/build error resp is nil; on a body-read error resp is set.
+		if resp != nil {
+			return nil, "", resp.StatusCode, err
+		}
 		return nil, "", 0, err
-	}
-	if c.ctx != nil {
-		req = req.WithContext(c.ctx)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, "", 0, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", resp.StatusCode, err
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -583,21 +611,7 @@ func (c *voiceController) discoverGET(o op, path string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), discoverTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	if vc.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+vc.APIKey)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
+	resp, data, err := c.doRequest(ctx, http.MethodGet, base+path, nil, "", vc.APIKey)
 	if err != nil {
 		return nil, err
 	}
@@ -747,25 +761,19 @@ func (c *voiceController) Ping(op string) (PingResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), discoverTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
-	if err != nil {
-		return PingResult{Ok: false, Detail: "invalid URL: " + base}, nil
-	}
-	if vc.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+vc.APIKey)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
+	// doRequest builds + performs the request and fully reads (drains) the body so
+	// the connection can be reused. A nil resp means a build or transport error
+	// (invalid URL / connection refused / timeout / DNS) — i.e. not reachable. A
+	// body-read error with a non-nil resp still means the server responded, so we
+	// fall through to the status-based "server up" logic below.
+	resp, _, err := c.doRequest(ctx, http.MethodGet, base+"/v1/models", nil, "", vc.APIKey)
+	if err != nil && resp == nil {
 		// Connection refused / timeout / DNS failure: the server is not listening.
 		return PingResult{
 			Ok:     false,
 			Detail: fmt.Sprintf("not reachable — is the server running on %s?", hostPort),
 		}, nil
 	}
-	defer resp.Body.Close()
-	// Drain so the connection can be reused.
-	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return PingResult{Ok: true, Detail: "reachable"}, nil

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -149,13 +149,19 @@ export default function VoiceOrb({
 }: VoiceOrbProps) {
   const mountRef = useRef<HTMLDivElement>(null);
 
-  // Light/dark recipe for the mount-div backing. In DARK themes the scene's
-  // background is painted opaque (matching --q-bg) and covers the mount div, so
-  // we let the mount div be the plain app background (no purple tint). In LIGHT
-  // themes the renderer is transparent over this div, so the neon orb needs a
-  // dark "well" here to stay legible. Read once at mount; a full theme-type flip
-  // remounts via themeKey (same as the scene recipe).
-  const isLightRef = useRef<boolean>(
+  // Light/dark recipe for the mount-div backing AND the WebGL scene. In DARK
+  // themes the scene's background is painted opaque (matching --q-bg) and covers
+  // the mount div, so we let the mount div be the plain app background (no purple
+  // tint). In LIGHT themes the renderer is transparent over this div, so the neon
+  // orb needs a dark "well" here to stay legible.
+  //
+  // This is the only STRUCTURAL signal: it determines renderer alpha, scene bg,
+  // fresnel/audioMix, bloom params and the mount-div backing. The heavy build
+  // effect is keyed on it so that only a light<->dark FLIP rebuilds the scene;
+  // same-type theme switches refresh colors live via applyTokens() (see the
+  // themeKey effect below). Initialised from the current theme; updated on every
+  // themeKey change so a type flip triggers exactly one rebuild.
+  const [isLight, setIsLight] = useState<boolean>(() =>
     typeof document !== "undefined" ? readOrbTheme().isLight : false
   );
 
@@ -170,9 +176,18 @@ export default function VoiceOrb({
   levelRef.current = level;
   getLevelRef.current = getLevel;
 
-  // Re-read theme tokens when themeKey changes (without rebuilding the scene).
+  // On every theme change: refresh the orb's colors LIVE (applyTokens, via
+  // themeReadRef) WITHOUT tearing down the WebGL scene. This is the user-reported
+  // live-reload fix and must always run on a theme switch.
+  //
+  // Separately, detect a structural light<->dark FLIP and push it into `isLight`
+  // state. That (and only that) re-runs the heavy build effect to rebuild the
+  // scene with the other recipe. Same-type switches (dark->dark / light->light)
+  // leave `isLight` unchanged, so no rebuild happens — colors still update above.
   useEffect(() => {
     themeReadRef.current();
+    const nextIsLight = readOrbTheme().isLight;
+    setIsLight((prev) => (prev === nextIsLight ? prev : nextIsLight));
   }, [themeKey]);
 
   useEffect(() => {
@@ -180,8 +195,9 @@ export default function VoiceOrb({
     if (!mount) return;
 
     const tokens0 = readOrbTheme();
-    const isLight = tokens0.isLight;
-    isLightRef.current = isLight;
+    // `isLight` is the structural recipe from component state (a dep of this
+    // effect), so a light<->dark flip rebuilds with the correct recipe. Color
+    // roles below are still read fresh from tokens0 and stay live via applyTokens.
 
     const W = () => (size ?? mount.clientWidth) || 320;
     const H = () => (size ?? mount.clientHeight) || 320;
@@ -453,10 +469,12 @@ export default function VoiceOrb({
       }
       themeReadRef.current = () => {};
     };
-    // Rebuild only when the structural recipe could change (size/themeKey).
+    // Rebuild only when the structural recipe could change: the canvas `size`
+    // or a light<->dark flip (`isLight`). A SAME-type theme switch does NOT land
+    // here — it refreshes colors live via the themeKey effect + applyTokens().
     // State/analyser/level are read live via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size, themeKey]);
+  }, [size, isLight]);
 
   return (
     <div
@@ -469,7 +487,7 @@ export default function VoiceOrb({
         // to --q-bg) covers this div, so use the plain app bg here too — no
         // purple tint. LIGHT themes: the renderer is transparent over this div,
         // so keep a dark "well" gradient (neon needs a dark stage to read).
-        background: isLightRef.current
+        background: isLight
           ? "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)"
           : "var(--q-bg)",
         borderRadius: "inherit",

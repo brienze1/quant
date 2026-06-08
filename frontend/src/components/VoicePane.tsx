@@ -110,10 +110,11 @@ function errorCopy(err: VoiceError): BannerCopy {
   }
 }
 
-// "Voice not configured" gate: cloud provider with no saved key can't work.
+// "Voice not configured" gate: local STT/TTS endpoints aren't set yet.
 const NOT_CONFIGURED: BannerCopy = {
   title: "voice not configured",
-  detail: "Add an API key in Settings → Voice to start talking.",
+  detail:
+    "Set your local Whisper (STT) and Kokoro (TTS) URLs in Settings → Voice to start talking.",
 };
 
 export function VoicePane({ sessionId, className, style }: Props) {
@@ -123,11 +124,8 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // Transcript is persisted per session (localStorage) so it survives pane
   // close/reopen, tab switches, and refreshes. Hydrate from storage on mount.
   const [lines, setLines] = useState<TranscriptLine[]>(() => loadTranscript(sessionId));
-  // WI-5.5: "voice not configured" gate (cloud provider without a saved key).
+  // WI-5.5: "voice not configured" gate (local STT/TTS URLs missing).
   const [notConfigured, setNotConfigured] = useState(false);
-  // The orb wants the input analyser while listening and the output analyser
-  // while speaking; null otherwise (orb falls back to its simulated envelope).
-  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
 
   // Device selection + live input metering.
   const [devices, setDevices] = useState<AudioInputDevice[]>([]);
@@ -214,8 +212,20 @@ export function VoicePane({ sessionId, className, style }: Props) {
           bargeIn: false,
           voice: cfg.voice?.voice || undefined,
           speed: cfg.voice?.speed || undefined,
-          vad: { redemptionMs: cfg.voice?.pauseMs || undefined },
+          // `?? undefined` (not `||`) so a legitimately-saved 0 pause isn't
+          // conflated with "unset" (the slider min is 500 today, but be safe).
+          vad: { redemptionMs: cfg.voice?.pauseMs ?? undefined },
         };
+        // WI-5.5: derive the "voice not configured" gate from the SAME cfg the
+        // service init already fetched (no second getConfig). Local-only now:
+        // notConfigured when voice is enabled but lacks a usable STT or TTS URL
+        // (each falls back to the legacy single baseUrl). Mirrors Settings.tsx.
+        const v = cfg.voice;
+        if (alive && v) {
+          const hasSttUrl = !!(v.sttBaseUrl?.trim() || v.baseUrl?.trim());
+          const hasTtsUrl = !!(v.ttsBaseUrl?.trim() || v.baseUrl?.trim());
+          setNotConfigured(!!v.enabled && (!hasSttUrl || !hasTtsUrl));
+        }
       } catch {
         options = { bargeIn: false };
       }
@@ -232,11 +242,10 @@ export function VoicePane({ sessionId, className, style }: Props) {
       const service = createAudioService(options);
       serviceRef.current = service;
 
-      const offState = service.onState((s) => {
-        setState(s);
-        // Pick the analyser relevant to the current state for the orb.
-        setAnalyser(s === "speaking" ? service.getOutputAnalyser() : service.getInputAnalyser());
-      });
+      // The orb is driven entirely by the per-frame orbGetLevel callback below,
+      // so we don't hand it AnalyserNodes per state transition (which would force
+      // an extra re-render the orb ignores).
+      const offState = service.onState((s) => setState(s));
       const offError = service.onError((e) => setError(e));
 
       // Bridge: Go MCP voice tools → this pane's audio service. The transcript
@@ -366,27 +375,8 @@ export function VoicePane({ sessionId, className, style }: Props) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [lines]);
 
-  // WI-5.5: detect "voice not configured" (cloud/auto provider with no saved
-  // key) so we can show an actionable banner instead of a cryptic network error
-  // on the first turn. Local provider with a base URL needs no key.
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const cfg = await api.getConfig();
-        const v = cfg.voice;
-        if (!alive || !v) return;
-        const needsKey = v.provider !== "local";
-        const hasUrl = !!(v.baseUrl && v.baseUrl.trim());
-        setNotConfigured(needsKey && !v.hasApiKey && !hasUrl);
-      } catch {
-        // If config can't be read, don't block the pane — leave the gate off.
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [sessionId]);
+  // (The "voice not configured" gate is derived in the service-init effect above
+  // from the same getConfig() it already performs — see setNotConfigured there.)
 
   // Orb stage backing. In DARK themes the stage is just the plain app
   // background (var(--q-bg)) — no purple tint. In LIGHT themes the neon orb
@@ -441,7 +431,6 @@ export function VoicePane({ sessionId, className, style }: Props) {
             space around it. The orb resizes with the stage via its ResizeObserver. */}
         <VoiceOrb
           state={state}
-          analyser={analyser}
           getLevel={orbGetLevel}
           themeKey={theme.id}
           style={{ position: "absolute", inset: 0 }}
