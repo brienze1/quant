@@ -13,9 +13,30 @@ import (
 
 	"github.com/creack/pty"
 
+	"quant/internal/infra/paths"
 	"quant/internal/integration/adapter"
 	"quant/internal/integration/remote"
 )
+
+// mcpConfigArgs returns the ["--mcp-config", <path>] argument pair to pass to the
+// claude CLI when running in isolated mode (QUANT_HOME set) and the isolated
+// .mcp.json file actually exists. Otherwise it returns nil:
+//   - not isolated (production): the CLI reads the real ~/.mcp.json itself.
+//   - isolated but no file (e.g. QUANT_SKIP_MCP_INJECT=1 wrote nothing): nothing
+//     to point at, so we add no flag.
+//
+// We intentionally do NOT use --strict-mcp-config so the user's other MCP
+// servers still load alongside the CLI-provided (trusted) quant entry.
+func mcpConfigArgs() []string {
+	if !paths.IsIsolated() {
+		return nil
+	}
+	cfg := paths.MCPConfigPath()
+	if _, err := os.Stat(cfg); err != nil {
+		return nil
+	}
+	return []string{"--mcp-config", cfg}
+}
 
 // claudeProcess holds the running process and its PTY master.
 type claudeProcess struct {
@@ -182,6 +203,11 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 		if extraCliArgs != "" {
 			args = append(args, strings.Fields(extraCliArgs)...)
 		}
+		// In isolated mode, point claude at the isolated $QUANT_HOME/.mcp.json so
+		// the child loads the quant server from there (trusted, no per-project
+		// approval) instead of the real ~/.mcp.json. The flag and path are two
+		// separate args, both quoted via shellQuote below.
+		args = append(args, mcpConfigArgs()...)
 
 		// Build the full command string and run it via a login shell.
 		// We explicitly source the user's interactive shell config (~/.zshrc or ~/.bashrc)
