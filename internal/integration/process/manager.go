@@ -13,9 +13,47 @@ import (
 
 	"github.com/creack/pty"
 
+	"quant/internal/domain/persona"
+	"quant/internal/infra/paths"
 	"quant/internal/integration/adapter"
 	"quant/internal/integration/remote"
 )
+
+// mcpConfigArgs returns the ["--mcp-config", <path>] argument pair to pass to the
+// claude CLI when running in isolated mode (QUANT_HOME set) and the isolated
+// .mcp.json file actually exists. Otherwise it returns nil:
+//   - not isolated (production): the CLI reads the real ~/.mcp.json itself.
+//   - isolated but no file (e.g. QUANT_SKIP_MCP_INJECT=1 wrote nothing): nothing
+//     to point at, so we add no flag.
+//
+// We intentionally do NOT use --strict-mcp-config so the user's other MCP
+// servers still load alongside the CLI-provided (trusted) quant entry.
+func mcpConfigArgs() []string {
+	if !paths.IsIsolated() {
+		return nil
+	}
+	cfg := paths.MCPConfigPath()
+	if _, err := os.Stat(cfg); err != nil {
+		return nil
+	}
+	return []string{"--mcp-config", cfg}
+}
+
+// personaArgs returns the ["--append-system-prompt", "$QUANT_BASE_PERSONA"] argument
+// pair to append to interactive claude sessions so they get Quant's base persona
+// (awareness of Quant, the live mindmap, and the quant MCP tools) layered ON TOP
+// of the user's project context. The literal token "$QUANT_BASE_PERSONA" is
+// expanded newline-safely by the shellQuote+eval machinery from the env var of the
+// same name (mirroring how job_manager passes $QUANT_AGENT_SYSTEM_PROMPT).
+//
+// It returns nil when QUANT_SKIP_PERSONA=1 so the feature can be opted out, and is
+// only ever added to claude sessions (terminal sessions never call this).
+func personaArgs() []string {
+	if os.Getenv("QUANT_SKIP_PERSONA") == "1" {
+		return nil
+	}
+	return []string{"--append-system-prompt", "$QUANT_BASE_PERSONA"}
+}
 
 // claudeProcess holds the running process and its PTY master.
 type claudeProcess struct {
@@ -182,6 +220,16 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 		if extraCliArgs != "" {
 			args = append(args, strings.Fields(extraCliArgs)...)
 		}
+		// In isolated mode, point claude at the isolated $QUANT_HOME/.mcp.json so
+		// the child loads the quant server from there (trusted, no per-project
+		// approval) instead of the real ~/.mcp.json. The flag and path are two
+		// separate args, both quoted via shellQuote below.
+		args = append(args, mcpConfigArgs()...)
+		// Append Quant's base persona (via --append-system-prompt) so the agent is
+		// aware it runs inside Quant and knows the mindmap + quant MCP tools. The
+		// $QUANT_BASE_PERSONA token flows through the same shellQuote+eval path as the
+		// other args; the env var is set below. Opt-out via QUANT_SKIP_PERSONA=1.
+		args = append(args, personaArgs()...)
 
 		// Build the full command string and run it via a login shell.
 		// We explicitly source the user's interactive shell config (~/.zshrc or ~/.bashrc)
@@ -221,6 +269,13 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 	// Carry the session id so the child claude process can scope its mindmap
 	// MCP calls (the quant MCP server reads this via the X-Quant-Session header).
 	baseEnv = append(baseEnv, fmt.Sprintf("QUANT_SESSION_ID=%s", sessionID))
+	// Provide the base persona text for the $QUANT_BASE_PERSONA token added to the
+	// claude args above. Only set it when persona is not skipped (and it is never
+	// referenced by terminal sessions, which take the other branch). Passing it via
+	// env keeps newlines intact through the shellQuote+eval machinery.
+	if os.Getenv("QUANT_SKIP_PERSONA") != "1" {
+		baseEnv = append(baseEnv, "QUANT_BASE_PERSONA="+persona.Base)
+	}
 	cmd.Env = baseEnv
 
 	ptm, err := pty.Start(cmd)

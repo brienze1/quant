@@ -20,6 +20,7 @@ import type {
 import * as api from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPanel } from "./components/SessionPanel";
+import { VoicePane } from "./components/VoicePane";
 import { EmptyState } from "./components/EmptyState";
 import { OpenRepoModal } from "./components/OpenRepoModal";
 import { NewTaskModal } from "./components/NewTaskModal";
@@ -44,6 +45,14 @@ import { CommandPalette, type PaletteCommand } from "./components/CommandPalette
 import { ThemeQuickPicker } from "./components/ThemeQuickPicker";
 import { getActiveKeybindings, findMatchingAction, formatKeyCombo } from "./keybindings";
 import type { ChangelogEntry } from "./types";
+
+// localStorage key carrying WHICH session voice is attached to. The Go-backed
+// "voice:pane" event/config only sync the open/closed BOOL (we can't change the
+// Go shape here), so this companion carries the session id: it persists across
+// reloads and, via the cross-tab `storage` event, keeps every tab in the same
+// browser agreed on the attached session. Remote clients (a separate browser)
+// still converge on open/closed via the event and fall back to the active tab.
+const VOICE_SESSION_KEY = "quant:voiceSessionId";
 
 type ModalState =
   | { type: "none" }
@@ -97,6 +106,16 @@ function App() {
   // terminal pane): it is config-backed and synced across all tabs and remote
   // clients via the "mindmap:pane" event.
   const [mindmapPaneOpen, setMindmapPaneOpen] = useState(false);
+  // Voice is PINNED to the session it was opened on. The single source of truth
+  // is the session id voice is attached to (null = voice closed). The pane stays
+  // bound to this session even when the user switches the active tab, so it must
+  // be mounted at App scope keyed by this id (not inside the active SessionPanel,
+  // which would unmount on tab switch). Synced across tabs/remote clients via the
+  // global "voice:pane" open/closed event plus a localStorage companion carrying
+  // WHICH session is attached (see VOICE_SESSION_KEY).
+  const [voiceSessionId, setVoiceSessionId] = useState<string | null>(null);
+  // Derived boolean for the (still bool) global open/closed sync + pane toggles.
+  const voicePaneOpen = voiceSessionId !== null;
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -144,6 +163,10 @@ function App() {
   // find active session object (the one shown in the main panel)
   const activeSession = findSession(activeTabId, sessionsByRepo, sessionsByTask);
 
+  // The session voice is pinned to (if any). Resolved from the same store the
+  // rest of the UI uses, so the voice dock header can show the session's name.
+  const voiceSession = findSession(voiceSessionId, sessionsByRepo, sessionsByTask);
+
   // find task for active session
   const activeTask = activeSession?.taskId
     ? findTask(activeSession.taskId, tasksByRepo)
@@ -170,6 +193,111 @@ function App() {
     api.setMindmapPaneOpen(open).catch((err) =>
       console.error("failed to persist mindmap pane state:", err)
     );
+  }
+
+  // Tracks which session currently holds a LIVE voice attachment (kicked off),
+  // so we inject the persona exactly once per attachment and never re-kick just
+  // because the active tab changed. Holds at most one session at a time (voice
+  // is pinned to a single session). Cleared when voice closes or moves away.
+  const voiceStartedRef = useRef<string | null>(null);
+  // Live mirror of voiceSessionId for handlers/effects that must read the
+  // current attachment without re-subscribing.
+  const voiceSessionIdRef = useRef(voiceSessionId);
+  voiceSessionIdRef.current = voiceSessionId;
+
+  // Persist the attached session id to localStorage so reloads + other tabs in
+  // the SAME browser converge on which session voice is pinned to. The Go-backed
+  // open/closed bool is synced separately (setVoicePaneOpen below).
+  function persistVoiceSession(sessionId: string | null) {
+    try {
+      if (sessionId) localStorage.setItem(VOICE_SESSION_KEY, sessionId);
+      else localStorage.removeItem(VOICE_SESSION_KEY);
+    } catch {
+      /* localStorage may be unavailable; non-fatal */
+    }
+  }
+
+  // Fire the one-time persona kickoff for a freshly-attached (or moved) voice
+  // session. Idempotent per attachment via voiceStartedRef. Surfaces a non-fatal
+  // error (and clears the guard so re-opening retries) if the session has no
+  // live agent process.
+  function kickoffVoice(sessionId: string) {
+    if (voiceStartedRef.current === sessionId) return;
+    voiceStartedRef.current = sessionId;
+    api.startVoiceSession(sessionId).catch((err) => {
+      if (voiceStartedRef.current === sessionId) voiceStartedRef.current = null;
+      console.error("failed to start voice session:", err);
+      const msg = String((err && err.message) || err || "");
+      setError(
+        msg.includes("no process running")
+          ? "Start the session's agent before enabling voice."
+          : `Couldn't start voice mode: ${msg || "unknown error"}`
+      );
+    });
+  }
+
+  // PIN voice to `sessionId`: attach (open), or MOVE from another session
+  // (winding the old one down happens automatically — the VoicePane is keyed by
+  // voiceSessionId, so changing it remounts the pane onto the new session and
+  // tears the old bridge down, gracefully closing any in-flight request). Kicks
+  // off the persona exactly once for this attachment. Broadcasts open=true so
+  // other tabs/remote clients show the pane (which session is carried via the
+  // localStorage companion + the active-tab fallback).
+  function attachVoice(sessionId: string) {
+    if (voiceSessionId === sessionId) return;
+    // Moving to a different session — drop the old attachment's kickoff guard so
+    // the new session gets its own kickoff.
+    if (voiceSessionId && voiceSessionId !== sessionId) {
+      voiceStartedRef.current = null;
+    }
+    setVoiceSessionId(sessionId);
+    persistVoiceSession(sessionId);
+    api.setVoicePaneOpen(true).catch((err) =>
+      console.error("failed to persist voice pane state:", err)
+    );
+    kickoffVoice(sessionId);
+  }
+
+  // Close voice entirely (detach from whatever session holds it). Remounts the
+  // pane away (null) which tears the bridge down and gracefully closes any
+  // in-flight request. Broadcasts open=false so all clients close.
+  function detachVoice() {
+    if (voiceSessionId === null) return;
+    setVoiceSessionId(null);
+    voiceStartedRef.current = null;
+    persistVoiceSession(null);
+    api.setVoicePaneOpen(false).catch((err) =>
+      console.error("failed to persist voice pane state:", err)
+    );
+  }
+
+  // Self-heal a "zombie" voice pane: if voice is pinned to a session that no
+  // longer exists in the current store (a remote client archived/deleted it, it
+  // dropped on a loadAll() refresh, or a stale restored id), detach so we don't
+  // leave a VoicePane bound to a dead session. Gated on the store being
+  // non-empty so a transient empty list during initial hydration / refresh does
+  // NOT wrongly detach a just-restored attachment.
+  useEffect(() => {
+    if (voiceSessionId === null) return;
+    const sessionsLoaded =
+      Object.values(sessionsByRepo).some((list) => list.length > 0) ||
+      Object.values(sessionsByTask).some((list) => list.length > 0);
+    if (!sessionsLoaded) return;
+    if (!findSession(voiceSessionId, sessionsByRepo, sessionsByTask)) {
+      detachVoice();
+    }
+  }, [voiceSessionId, sessionsByRepo, sessionsByTask]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The SessionPanel voice toggle reports the desired open/closed for the ACTIVE
+  // session. Opening (or re-targeting from another session) pins voice to the
+  // active session; closing detaches. This is the only user-initiated path.
+  function handleVoicePaneOpenChange(open: boolean) {
+    const sessionId = activeSession?.id;
+    if (open) {
+      if (sessionId) attachVoice(sessionId);
+    } else {
+      detachVoice();
+    }
   }
 
   // --- data fetching ---
@@ -310,6 +438,32 @@ function App() {
         // done so the event handler can safely treat later updates as remote.
         setMindmapPaneOpen(!!cfg.mindmapPaneOpen);
         mindmapPaneHydratedRef.current = true;
+        // Hydrate the voice attachment. The Go config only persists the
+        // open/closed BOOL; WHICH session is restored from the localStorage
+        // companion (this browser), falling back to the persisted active session
+        // for a fresh/remote client. We do NOT kick off here — a persisted-open
+        // pane must not spuriously re-inject the persona on launch.
+        if (cfg.voicePaneOpen) {
+          let restored: string | null = null;
+          try {
+            restored = localStorage.getItem(VOICE_SESSION_KEY);
+          } catch {
+            restored = null;
+          }
+          if (!restored || !ids.includes(restored)) {
+            restored = cfg.activeSessionId && ids.includes(cfg.activeSessionId)
+              ? cfg.activeSessionId
+              : ids[0] ?? null;
+          }
+          if (restored) {
+            setVoiceSessionId(restored);
+            persistVoiceSession(restored);
+            // Treat the restored attachment as already-kicked so the first user
+            // interaction doesn't re-inject; the agent loop survives reloads.
+            voiceStartedRef.current = restored;
+          }
+        }
+        voicePaneHydratedRef.current = true;
       } catch (err) {
         console.error("failed to restore active session:", err);
       }
@@ -387,6 +541,10 @@ function App() {
   // Guards the initial hydration of the global mindmap pane flag from config,
   // so the startup read doesn't trigger a write-back (mirrors tabsRestoredRef).
   const mindmapPaneHydratedRef = useRef(false);
+
+  // Guards the initial hydration of the global voice pane flag from config
+  // (mirrors mindmapPaneHydratedRef).
+  const voicePaneHydratedRef = useRef(false);
 
   // Persist open tabs and active tab to config whenever they change
   const tabsRestoredRef = useRef(false);
@@ -628,6 +786,69 @@ function App() {
       setMindmapPaneOpen(!!(d && d.open));
     });
     return () => cancel && cancel();
+  }, []);
+
+  // Keep the voice attachment in sync across every tab and remote client. The
+  // Go event carries only the open/closed BOOL, so on open we resolve WHICH
+  // session from the localStorage companion (same-browser tabs), falling back to
+  // the active tab (remote clients). Idempotent: SETS state, never toggles. This
+  // is a remote/cross-tab convergence path — it never re-kicks the persona (the
+  // originating client already did), so we mark the attachment as already-kicked.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w?.runtime?.EventsOn) return;
+    const cancel = w.runtime.EventsOn("voice:pane", (d: { open?: boolean }) => {
+      const open = !!(d && d.open);
+      if (!open) {
+        setVoiceSessionId(null);
+        voiceStartedRef.current = null;
+        persistVoiceSession(null);
+        return;
+      }
+      // Already attached locally → nothing to converge.
+      if (voiceSessionIdRef.current !== null) return;
+      let target: string | null = null;
+      try {
+        target = localStorage.getItem(VOICE_SESSION_KEY);
+      } catch {
+        target = null;
+      }
+      const tabs = openTabIdsRef.current;
+      if (!target || !tabs.includes(target)) {
+        target = activeTabIdRef.current && tabs.includes(activeTabIdRef.current)
+          ? activeTabIdRef.current
+          : tabs[0] ?? null;
+      }
+      if (target) {
+        setVoiceSessionId(target);
+        persistVoiceSession(target);
+        voiceStartedRef.current = target;
+      }
+    });
+    return () => cancel && cancel();
+  }, []);
+
+  // Cross-tab (same browser) convergence on WHICH session voice is attached to.
+  // attachVoice/detachVoice write the companion key; sibling tabs pick the change
+  // up via the `storage` event. The Go "voice:pane" event handles open/closed; we
+  // additionally re-point an already-open pane when a sibling MOVES voice.
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== VOICE_SESSION_KEY) return;
+      const next = e.newValue;
+      if (next === voiceSessionIdRef.current) return;
+      if (next) {
+        // Converge onto the sibling's attachment without re-kicking.
+        setVoiceSessionId(next);
+        voiceStartedRef.current = next;
+      } else {
+        setVoiceSessionId(null);
+        voiceStartedRef.current = null;
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   // Track PTY output activity to distinguish "running" vs "waiting"
@@ -955,6 +1176,8 @@ function App() {
       });
       if (selectedSessionId === id) setSelectedSessionId(null);
       if (expandedSessionId === id) setExpandedSessionId(null);
+      // If voice was pinned to the deleted session, detach it (close the pane).
+      if (voiceSessionIdRef.current === id) detachVoice();
     } catch (err) {
       setError(String(err));
     }
@@ -973,6 +1196,8 @@ function App() {
       });
       if (selectedSessionId === id) setSelectedSessionId(null);
       if (expandedSessionId === id) setExpandedSessionId(null);
+      // If voice was pinned to the archived session, detach it (close the pane).
+      if (voiceSessionIdRef.current === id) detachVoice();
       await loadAll();
     } catch (err) {
       setError(String(err));
@@ -2126,25 +2351,50 @@ function App() {
           />
         )}
 
-        {activeSession ? (
-          <SessionPanel
-            session={activeSession}
-            task={activeTask}
-            onStart={handleStart}
-            onResume={handleResume}
-            onRestart={handleRestart}
-            onUnarchive={handleUnarchiveSession}
-            displayStatus={getDisplayStatus(activeSession.id, activeSession.status)}
-            embeddedTerminalSession={activeEmbeddedTerminalSession}
-            terminalPaneOpen={activeTerminalPaneOpen}
-            onTerminalPaneOpenChange={handleTerminalPaneOpenChange}
-            mindmapPaneOpen={mindmapPaneOpen}
-            onMindmapPaneOpenChange={handleMindmapPaneOpenChange}
-            onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}
-          />
-        ) : (
-          <EmptyState />
-        )}
+        {/* Session area + persistent voice dock, side by side. The voice dock is
+            mounted HERE (App scope) — NOT inside SessionPanel — so it survives
+            active-tab switches: the SessionPanel below remounts/swaps with the
+            active tab, but the VoiceDock stays mounted, keyed by voiceSessionId,
+            and only remounts when voice is closed or moved to another session. */}
+        <div className="flex-1 flex min-h-0">
+          <div className="flex-1 flex flex-col min-w-0">
+            {activeSession ? (
+              <SessionPanel
+                session={activeSession}
+                task={activeTask}
+                onStart={handleStart}
+                onResume={handleResume}
+                onRestart={handleRestart}
+                onUnarchive={handleUnarchiveSession}
+                displayStatus={getDisplayStatus(activeSession.id, activeSession.status)}
+                embeddedTerminalSession={activeEmbeddedTerminalSession}
+                terminalPaneOpen={activeTerminalPaneOpen}
+                onTerminalPaneOpenChange={handleTerminalPaneOpenChange}
+                mindmapPaneOpen={mindmapPaneOpen}
+                onMindmapPaneOpenChange={handleMindmapPaneOpenChange}
+                voicePaneOpen={voiceSessionId === activeSession.id}
+                onVoicePaneOpenChange={handleVoicePaneOpenChange}
+                onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}
+              />
+            ) : (
+              <EmptyState />
+            )}
+          </div>
+
+          {voiceSessionId && (
+            <VoiceDock
+              // Keyed by the attached session so it remounts ONLY when voice is
+              // closed (key changes to null → unmounts) or moved (key changes to
+              // the new session → remounts onto it). A plain active-tab switch
+              // leaves voiceSessionId untouched, so this stays mounted + alive.
+              key={voiceSessionId}
+              sessionId={voiceSessionId}
+              sessionName={voiceSession?.name ?? voiceSessionId}
+              isActiveTab={voiceSessionId === activeTabId}
+              onClose={detachVoice}
+            />
+          )}
+        </div>
       </main>
 
       {renderIconStrip()}
@@ -2331,6 +2581,95 @@ function App() {
       )}
     </div>
     </>
+  );
+}
+
+// VoiceDock is the persistent, App-scoped wrapper around VoicePane. It is mounted
+// once at App level (keyed by voiceSessionId) so it survives active-tab switches —
+// unlike the per-active-tab SessionPanel. The header names the session voice is
+// pinned to and makes it visually obvious when that session is NOT the active tab
+// (the case that previously produced a silently-dead pane). Closing detaches voice.
+function VoiceDock({
+  sessionId,
+  sessionName,
+  isActiveTab,
+  onClose,
+}: {
+  sessionId: string;
+  sessionName: string;
+  isActiveTab: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="flex flex-col min-h-0 shrink-0"
+      style={{
+        width: 340,
+        borderLeft: "1px solid var(--q-border)",
+        backgroundColor: "var(--q-bg)",
+      }}
+    >
+      <div
+        className="flex items-center justify-between px-4 shrink-0"
+        style={{
+          height: 24,
+          backgroundColor: "var(--q-bg-input)",
+          borderBottom: "1px solid var(--q-border)",
+          fontFamily: "'JetBrains Mono', monospace",
+        }}
+      >
+        <div className="flex items-center gap-1.5 overflow-hidden">
+          <div
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              backgroundColor: "var(--q-term-green)",
+              flexShrink: 0,
+            }}
+          />
+          <span
+            className="overflow-hidden whitespace-nowrap"
+            style={{ fontSize: 10, color: "var(--q-fg-secondary)", textOverflow: "ellipsis" }}
+            title={`voice attached to session "${sessionName}"`}
+          >
+            voice · {sessionName}
+          </span>
+          {/* Make it visually clear voice is pinned to a session that is NOT the
+              currently-active tab (so the user isn't confused by a pane whose
+              transcript/agent belongs to a different session than they're viewing). */}
+          {!isActiveTab && (
+            <span
+              className="shrink-0"
+              style={{
+                fontSize: 8.5,
+                color: "var(--q-warning)",
+                border: "1px solid var(--q-warning)",
+                borderRadius: 3,
+                padding: "0 3px",
+                lineHeight: "13px",
+              }}
+              title="voice is pinned to this session, which is not the active tab"
+            >
+              background
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          className="text-[9px] transition-colors shrink-0"
+          style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
+          title="close voice"
+        >
+          [x]
+        </button>
+      </div>
+      <div className="flex-1 min-h-0">
+        <VoicePane sessionId={sessionId} />
+      </div>
+    </div>
   );
 }
 

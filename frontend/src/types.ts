@@ -249,6 +249,7 @@ export interface Config {
   activeSessionId: string;
   openSessionIds: string[];
   mindmapPaneOpen: boolean;
+  voicePaneOpen: boolean;
 
   // Storage & Data
   dataDirectory: string;
@@ -276,6 +277,53 @@ export interface Config {
   remoteAccessEnabled: boolean;
   remoteAccessPort: number;
   remoteAccessPasscode: string;
+
+  // Voice
+  voice: VoiceConfig;
+}
+
+// VoiceConfig mirrors the Go entity.VoiceConfig / VoiceConfigDTO. The raw API key
+// is never sent to the frontend: `apiKey` is write-only (set it to change the key,
+// leave it empty/undefined to keep the existing one) and `hasApiKey` reports
+// whether a key is currently stored Go-side.
+export interface VoiceConfig {
+  enabled: boolean;
+  provider: "auto" | "local" | "cloud";
+  // baseUrl is the legacy single endpoint, kept as a back-compat fallback for
+  // both STT and TTS when the per-operation URLs below are empty.
+  baseUrl: string;
+  // Separate self-hosted STT/TTS endpoints (e.g. Whisper :2022, Kokoro :8880).
+  // Empty = fall back to baseUrl, then the provider default. Not secrets.
+  sttBaseUrl: string;
+  ttsBaseUrl: string;
+  apiKey?: string;
+  hasApiKey?: boolean;
+  sttModel: string;
+  ttsModel: string;
+  voice: string;
+  speed: number;
+  // Milliseconds of silence the VAD waits through before ending the user's turn
+  // (frontend redemption window); higher = more time to pause/think mid-sentence.
+  pauseMs: number;
+  // Optional user-authored guidance appended to the built-in voice persona at
+  // session kickoff. Empty = none.
+  instructions: string;
+}
+
+// VoiceSpeechResult is the payload returned by the Synthesize proxy: base64
+// audio + its content type. Returned as a struct (not a tuple) so it round-trips
+// over both the Wails desktop and remote/tunnel transports.
+export interface VoiceSpeechResult {
+  audioB64: string;
+  contentType: string;
+}
+
+// VoicePingResult mirrors the Go voice.PingResult struct returned by the
+// per-engine connection probe (Settings → Voice "Test connection"): whether the
+// STT/TTS server is reachable plus a short human-readable detail.
+export interface VoicePingResult {
+  ok: boolean;
+  detail: string;
 }
 
 // --- Remote Access ---

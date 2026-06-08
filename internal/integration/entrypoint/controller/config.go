@@ -51,8 +51,20 @@ func (c *configController) GetConfig() (*dto.ConfigResponse, error) {
 }
 
 // SaveConfig persists the given configuration from the request DTO.
+//
+// The voice API key is never returned to the frontend (it is masked in the DTO),
+// so an incoming empty voice APIKey means "keep the existing stored key" rather
+// than "clear it". We resolve that by reading the current config and carrying the
+// stored key forward when the request omits one.
 func (c *configController) SaveConfig(request dto.SaveConfigRequest) error {
 	cfg := request.ToEntity()
+
+	if cfg.Voice.APIKey == "" {
+		if existing, err := c.configManager.GetConfig(); err == nil && existing != nil {
+			cfg.Voice.APIKey = existing.Voice.APIKey
+		}
+	}
+
 	return c.configManager.SaveConfig(&cfg)
 }
 
@@ -71,6 +83,26 @@ func (c *configController) SetMindmapPaneOpen(open bool) error {
 
 	if c.emitter != nil {
 		c.emitter.Emit("mindmap:pane", map[string]any{"open": open})
+	}
+
+	return nil
+}
+
+// SetVoicePaneOpen persists the global voice pane open/close flag and broadcasts
+// the change to all clients via the "voice:pane" event so they stay in sync.
+func (c *configController) SetVoicePaneOpen(open bool) error {
+	cfg, err := c.configManager.GetConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg.VoicePaneOpen = open
+	if err := c.configManager.SaveConfig(cfg); err != nil {
+		return err
+	}
+
+	if c.emitter != nil {
+		c.emitter.Emit("voice:pane", map[string]any{"open": open})
 	}
 
 	return nil

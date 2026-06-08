@@ -314,6 +314,36 @@ export function TerminalPane({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, isArchived, termConfig]);
 
+  // Re-apply the xterm theme LIVE when the theme colors change, without
+  // recreating the terminal (which would otherwise require closing/reopening
+  // the session to pick up a theme switch).
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = {
+      background: tc.termBg,
+      foreground: tc.termFg,
+      cursor: isArchived ? tc.bg : tc.termCursor,
+      selectionBackground: tc.selectionBg,
+      black: tc.termBlack,
+      red: tc.termRed,
+      green: tc.termGreen,
+      yellow: tc.termYellow,
+      blue: tc.termBlue,
+      magenta: tc.termMagenta,
+      cyan: tc.termCyan,
+      white: tc.termWhite,
+      brightBlack: tc.termBrightBlack,
+      brightRed: tc.termBrightRed,
+      brightGreen: tc.termBrightGreen,
+      brightYellow: tc.termBrightYellow,
+      brightBlue: tc.termBrightBlue,
+      brightMagenta: tc.termBrightMagenta,
+      brightCyan: tc.termBrightCyan,
+      brightWhite: tc.termBrightWhite,
+    };
+  }, [tc, isArchived]);
+
   useEffect(() => {
     const container = termContainerRef.current;
     if (!container) return;

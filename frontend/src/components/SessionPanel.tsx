@@ -30,6 +30,10 @@ interface Props {
   // synced across tabs and remote clients) — not a per-session preference.
   mindmapPaneOpen: boolean;
   onMindmapPaneOpenChange: (open: boolean) => void;
+  // Voice pane open/closed is a single GLOBAL flag owned by App (config-backed,
+  // synced across tabs and remote clients) — mirrors the mindmap pane flag.
+  voicePaneOpen: boolean;
+  onVoicePaneOpenChange: (open: boolean) => void;
   onCreateEmbeddedTerminal: (parentSession: Session) => Promise<Session>;
 }
 
@@ -46,6 +50,8 @@ export function SessionPanel({
   onTerminalPaneOpenChange,
   mindmapPaneOpen,
   onMindmapPaneOpenChange,
+  voicePaneOpen,
+  onVoicePaneOpenChange,
   onCreateEmbeddedTerminal,
 }: Props) {
   const [autoScroll, setAutoScroll] = useState(true);
@@ -201,10 +207,17 @@ export function SessionPanel({
   // The terminal split's secondary pane (the embedded terminal) is open only
   // when a terminal session exists and the user has toggled it open.
   const terminalSecondaryOpen = splitState.open && !!splitState.terminalSession;
-  // The mindmap occupies the OUTER split's secondary pane, fully independent
-  // from the terminal split — so both can be shown at the same time.
-  const mindmapSplitState: SplitState = {
-    open: mindmapPaneOpen,
+  // The OUTER split's secondary pane is the mindmap "dock" — independent of the
+  // terminal split, so both the embedded terminal and the dock can show at once.
+  //
+  // NOTE: the VOICE pane is NO LONGER rendered here. Voice is pinned to the
+  // session it was opened on and must survive active-tab switches, so it is
+  // mounted at App scope (keyed by voiceSessionId) and rendered as a persistent
+  // right-docked panel — not inside this per-active-tab SessionPanel, which
+  // unmounts on tab switch. SessionPanel only owns the mindmap dock now.
+  const dockOpen = mindmapPaneOpen;
+  const dockSplitState: SplitState = {
+    open: dockOpen,
     terminalSession: null,
     layout: mindmapLayout,
     dividerPercent: mindmapDividerPercent,
@@ -311,6 +324,54 @@ export function SessionPanel({
             </button>
           )}
 
+          {/* Voice button (mirrors the mindmap toggle; uses the themed
+              --q-magenta accent so it tracks theme changes like its siblings).
+              Gated on TWO conditions, both of which must hold:
+                1. config.voice.enabled — voice feature turned on in Settings.
+                2. The session has a LIVE agent process. "running" (mid-turn),
+                   "waiting" and "done" (agent idle at the prompt, ready for
+                   input) all have a live PTY the kickoff can write to. Idle /
+                   paused / stopped / starting have no live process, so we
+                   disable the toggle (and never fire the kickoff) there to
+                   avoid a confusing "no process running" failure. */}
+          {!isArchived && (() => {
+            const voiceEnabled = termConfig?.voice?.enabled ?? false;
+            const agentAlive =
+              displayStatus === "running" ||
+              displayStatus === "waiting" ||
+              displayStatus === "done";
+            const canToggle = voiceEnabled && agentAlive;
+            const tooltip = !voiceEnabled
+              ? "Enable voice in Settings"
+              : !agentAlive
+                ? "Start the session's agent first"
+                : "toggle voice pane";
+            return (
+              <button
+                onClick={() => { if (canToggle) onVoicePaneOpenChange(!voicePaneOpen); }}
+                disabled={!canToggle}
+                title={tooltip}
+                className="flex items-center gap-1 px-2 py-1 text-[11px]"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: voicePaneOpen ? "var(--q-bg)" : "var(--q-magenta)",
+                  backgroundColor: voicePaneOpen ? "var(--q-magenta)" : "var(--q-bg-hover)",
+                  border: `1px solid ${voicePaneOpen ? "var(--q-magenta)" : "var(--q-border)"}`,
+                  opacity: canToggle ? 1 : 0.4,
+                  cursor: canToggle ? "pointer" : "not-allowed",
+                }}
+                onMouseEnter={(e) => {
+                  if (canToggle && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
+                }}
+                onMouseLeave={(e) => {
+                  if (canToggle && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                }}
+              >
+                <span>voice</span>
+              </button>
+            );
+          })()}
+
           {/* Terminal split layout toggle (only when the terminal split is open) */}
           {splitState.open && (
             <div className="flex items-center gap-0.5">
@@ -327,8 +388,9 @@ export function SessionPanel({
             </div>
           )}
 
-          {/* Mindmap split layout toggle (only when the mindmap is shown) */}
-          {mindmapPaneOpen && (
+          {/* Mindmap dock layout toggle (controls where the mindmap dock sits
+              relative to the session — shown only when the mindmap is open). */}
+          {dockOpen && (
             <div className="flex items-center gap-0.5">
               <LayoutIcon
                 type="horizontal"
@@ -376,12 +438,12 @@ export function SessionPanel({
       </div>
 
       {/* Outer split: the whole terminal block on the primary side, the
-          mindmap docked as its own secondary pane. Both splits are
-          independent, so the embedded terminal and the mindmap can show at
-          the same time without overlapping. */}
+          voice/mindmap dock on the secondary side. Both splits are
+          independent, so the embedded terminal and the dock can show at the
+          same time without overlapping. */}
       <SplitContainer
         splitContainerRef={mindmapContainerRef}
-        splitState={mindmapSplitState}
+        splitState={dockSplitState}
         onDividerMouseDown={handleMindmapDividerMouseDown}
         primaryPane={
           /* Inner split: session output (primary) + optional embedded terminal */
@@ -431,7 +493,7 @@ export function SessionPanel({
           />
         }
         secondaryPane={
-          mindmapPaneOpen ? (
+          dockOpen ? (
             <>
               <PaneHeader
                 label="mindmap"

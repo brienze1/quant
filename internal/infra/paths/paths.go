@@ -38,6 +38,16 @@ func MCPConfigPath() string {
 	return filepath.Join(home, ".mcp.json")
 }
 
+// IsIsolated reports whether quant is running in isolated (test/dev) mode,
+// i.e. with QUANT_HOME set. In isolated mode quant must not mutate the user's
+// real ~/.mcp.json or ~/.claude*/settings.local.json; instead it writes its MCP
+// entry to $QUANT_HOME/.mcp.json and spawns claude with --mcp-config pointing at
+// that file. All callers should use this rather than re-reading the env so there
+// is one source of truth.
+func IsIsolated() bool {
+	return os.Getenv("QUANT_HOME") != ""
+}
+
 // SkipClaudeConfigDiscovery reports whether the boot should skip touching
 // ~/.claude*/settings.local.json. Set QUANT_SKIP_CLAUDE_CONFIG=1 for E2E.
 func SkipClaudeConfigDiscovery() bool {

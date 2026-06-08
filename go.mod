@@ -43,3 +43,8 @@ require (
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )
+
+// Patched Wails v2.12.0: adds the WKUIDelegate media-capture permission method
+// to internal/frontend/desktop/darwin/WailsContext.m so getUserMedia (mic/camera)
+// works in the embedded WKWebView on macOS 12+. See third_party copy for the diff.
+replace github.com/wailsapp/wails/v2 => ./third_party/wails-v2.12.0-patched

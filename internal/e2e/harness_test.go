@@ -68,6 +68,7 @@ func newHarness(t *testing.T) *harness {
 		injector.RepoManager(),
 		injector.JobGroupManager(),
 		injector.MindmapManager(),
+		nil, // voice bridge — voice tools aren't exercised by these tests
 	)
 	if err := server.Start(); err != nil {
 		t.Fatalf("server.Start: %v", err)

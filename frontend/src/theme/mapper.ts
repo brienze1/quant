@@ -106,7 +106,7 @@ export function mapVSCodeTheme(theme: VSCodeTheme): ThemeColors {
 
 // --- Color utilities ---
 
-function parseHex(hex: string): [number, number, number] {
+export function parseHex(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
   if (h.length === 3) {
     return [

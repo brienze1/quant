@@ -1,5 +1,7 @@
 // Keybinding system: types, defaults, storage, matching
 
+import { isMac } from "./os";
+
 export interface KeyBinding {
   id: string;
   label: string;
@@ -106,11 +108,11 @@ export function eventToKeyString(e: KeyboardEvent): string {
 
 /** Format a key string for display (e.g. "Meta+Shift+1" -> "Cmd+Shift+1" on Mac) */
 export function formatKeyCombo(keys: string): string {
-  const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+  const mac = isMac();
   return keys
-    .replace(/Meta/g, isMac ? "\u2318" : "Ctrl")
-    .replace(/Shift/g, isMac ? "\u21E7" : "Shift")
-    .replace(/Alt/g, isMac ? "\u2325" : "Alt")
+    .replace(/Meta/g, mac ? "\u2318" : "Ctrl")
+    .replace(/Shift/g, mac ? "\u21E7" : "Shift")
+    .replace(/Alt/g, mac ? "\u2325" : "Alt")
     .replace(/\+/g, " ");
 }
 

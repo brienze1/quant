@@ -26,6 +26,8 @@ import type {
   PathValidationResult,
   MindmapNode,
   RemoteStatus,
+  VoiceSpeechResult,
+  VoicePingResult,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -264,6 +266,13 @@ export function saveConfig(config: Config): Promise<void> {
 // session tab and remote client stays in sync.
 export function setMindmapPaneOpen(open: boolean): Promise<void> {
   return callGo(PKG, CONFIG_CTRL, "SetMindmapPaneOpen", open);
+}
+
+// Lift the voice pane open/close flag to a single global, config-backed value.
+// Mirrors setMindmapPaneOpen: the backend persists it and emits a "voice:pane"
+// event so every session tab and remote client stays in sync.
+export function setVoicePaneOpen(open: boolean): Promise<void> {
+  return callGo(PKG, CONFIG_CTRL, "SetVoicePaneOpen", open);
 }
 
 export function resetDatabase(): Promise<void> {
@@ -529,4 +538,123 @@ export function disableRemoteAccess(): Promise<RemoteStatus> {
 
 export function regenerateRemotePasscode(): Promise<RemoteStatus> {
   return callGo(PKG, REMOTE_CTRL, "RegenerateRemotePasscode");
+}
+
+// --- Voice (STT/TTS proxy) ---
+//
+// The Go proxy holds the provider API key, so audio never carries credentials
+// from the frontend. Audio crosses the bridge base64-encoded (the Wails bridge
+// marshals []byte awkwardly over the remote transport).
+
+// The voice controller lives in Go package `voice` (internal/integration/voice),
+// NOT the shared `controller` package — so its Wails binding is namespaced under
+// window.go.voice.voiceController. Using PKG ("controller") here makes every
+// voice call resolve to undefined ("Binding not available").
+const VOICE_PKG = "voice";
+const VOICE_CTRL = "voiceController";
+
+/**
+ * Transcribe base64-encoded audio via the Go STT proxy.
+ * @param audioB64 base64-encoded audio bytes (no data: prefix)
+ * @param mime audio MIME type, e.g. "audio/webm" or "audio/wav"
+ * @returns the transcript text (trimmed)
+ */
+export function transcribe(audioB64: string, mime: string): Promise<string> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "Transcribe", audioB64, mime);
+}
+
+/**
+ * Synthesize speech for the given text via the Go TTS proxy.
+ * Pass an empty `voice` and/or `speed === 0` to use the configured defaults.
+ * @returns { audioB64, contentType } — base64-encoded audio + its content type
+ */
+export function synthesize(
+  text: string,
+  voice: string,
+  speed: number,
+): Promise<VoiceSpeechResult> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "Synthesize", text, voice, speed);
+}
+
+/**
+ * Report the result of a voice request back to the Go voice bridge, unblocking
+ * the MCP voice tool (voice_listen / voice_speak / voice_converse) that is
+ * waiting on it. Called by the frontend voice bridge (voiceBridge.ts) after it
+ * has run audioService.listen() or .speak() for an incoming "voice:request".
+ *
+ * @param requestId correlation id from the "voice:request" event
+ * @param transcript the recognized text for a "listen" request ("" for speak)
+ * @param errMsg non-empty on failure; "" on success
+ */
+export function voiceResult(
+  requestId: string,
+  transcript: string,
+  errMsg: string,
+): Promise<void> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "VoiceResult", requestId, transcript, errMsg);
+}
+
+/**
+ * Report that an in-flight voice request was abandoned because its voice pane
+ * was torn down (voice closed or moved to another session) while the request
+ * was still pending. The Go side maps this to a graceful "voice ended" result
+ * (NOT an error), so the waiting MCP voice tool returns immediately instead of
+ * blocking until its ~120s timeout. Called by the frontend voice bridge
+ * (voiceBridge.ts) on unregister when a request is still unsettled.
+ *
+ * @param requestId correlation id from the "voice:request" event
+ */
+export function voiceResultClosed(requestId: string): Promise<void> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "VoiceResultClosed", requestId);
+}
+
+/**
+ * Kick a running session into voice mode. Injects the voice-mode persona/kickoff
+ * message into the session (auto-submitted Go-side), after which the agent drives
+ * the spoken conversation loop via the voice_* MCP tools. Called once when the
+ * voice pane is opened for a session (see App.tsx handleVoicePaneOpenChange).
+ *
+ * Rejects if the session has no running agent/process (surface in the pane's
+ * error indicator, or ignore — re-opening the pane re-kicks).
+ */
+export function startVoiceSession(sessionId: string): Promise<void> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "StartVoiceSession", sessionId);
+}
+
+/**
+ * Discover the models the configured server offers for the given operation
+ * ("stt" or "tts") by probing {base}/v1/models. Used by Settings → Voice to
+ * populate the model pickers. Soft-fails: resolves to [] if the server is
+ * unreachable or returns an error, so the UI can fall back to curated options.
+ */
+export function listModels(op: "stt" | "tts"): Promise<string[]> {
+  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListModels", op).then(
+    (r) => r ?? [],
+    () => [],
+  );
+}
+
+/**
+ * Discover the voices the configured TTS server offers by probing
+ * {ttsBase}/v1/audio/voices (Kokoro). Used by Settings → Voice to populate the
+ * voice picker. Soft-fails to [] like listModels.
+ */
+export function listVoices(): Promise<string[]> {
+  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListVoices").then(
+    (r) => r ?? [],
+    () => [],
+  );
+}
+
+/**
+ * Probe whether the configured engine for the given operation ("stt" or "tts")
+ * is reachable, by GET-ing {base}/v1/models with a short timeout. Used by
+ * Settings → Voice "Test connection". Soft-fails: resolves to
+ * { ok: false, detail: "probe failed" } on throw/null so the UI never crashes.
+ */
+export function pingVoiceEndpoint(op: "stt" | "tts"): Promise<VoicePingResult> {
+  return callGo<VoicePingResult | null>(VOICE_PKG, VOICE_CTRL, "Ping", op).then(
+    (r) => r ?? { ok: false, detail: "probe failed" },
+    () => ({ ok: false, detail: "probe failed" }),
+  );
 }

@@ -1,0 +1,598 @@
+package voice
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"quant/internal/domain/entity"
+)
+
+// stubConfigManager is a minimal adapter.ConfigManager for tests. Only GetConfig
+// is exercised by the voice controller.
+type stubConfigManager struct {
+	cfg *entity.Config
+}
+
+func (s *stubConfigManager) GetConfig() (*entity.Config, error) { return s.cfg, nil }
+func (s *stubConfigManager) SaveConfig(*entity.Config) error    { return nil }
+func (s *stubConfigManager) ResetDatabase() error               { return nil }
+func (s *stubConfigManager) ClearSessionLogs() error            { return nil }
+func (s *stubConfigManager) GetDatabasePath() string            { return "" }
+func (s *stubConfigManager) SendNotification(string, string) error {
+	return nil
+}
+
+func newController(cfg entity.VoiceConfig) *voiceController {
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{Voice: cfg}}, nil, nil)
+	return c
+}
+
+// stubMessenger records the messages StartVoiceSession writes to a session's PTY.
+type stubMessenger struct {
+	calls   []struct{ id, message string }
+	failOn  string // if non-empty, SendMessage(failOn-id, ...) returns an error
+	failErr error
+}
+
+func (s *stubMessenger) SendMessage(id, message string) error {
+	if s.failOn != "" && id == s.failOn {
+		return s.failErr
+	}
+	s.calls = append(s.calls, struct{ id, message string }{id, message})
+	return nil
+}
+
+func TestStartVoiceSessionInjectsPersonaAndSubmits(t *testing.T) {
+	msgr := &stubMessenger{}
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, msgr)
+
+	if err := c.StartVoiceSession("sess-1"); err != nil {
+		t.Fatalf("StartVoiceSession: %v", err)
+	}
+
+	if len(msgr.calls) != 2 {
+		t.Fatalf("expected 2 SendMessage calls (persona + Enter), got %d: %+v", len(msgr.calls), msgr.calls)
+	}
+	if msgr.calls[0].id != "sess-1" || msgr.calls[0].message != VoicePersona {
+		t.Errorf("first call should inject VoicePersona into sess-1, got id=%q message=%q", msgr.calls[0].id, msgr.calls[0].message)
+	}
+	if msgr.calls[1].id != "sess-1" || msgr.calls[1].message != "\r" {
+		t.Errorf("second call should submit (Enter) for sess-1, got id=%q message=%q", msgr.calls[1].id, msgr.calls[1].message)
+	}
+}
+
+func TestStartVoiceSessionAppendsCustomInstructions(t *testing.T) {
+	const custom = "Be a concise pair-programming buddy."
+	msgr := &stubMessenger{}
+	c := NewVoiceController(
+		&stubConfigManager{cfg: &entity.Config{Voice: entity.VoiceConfig{Instructions: "  " + custom + "  "}}},
+		nil, msgr,
+	)
+
+	if err := c.StartVoiceSession("sess-1"); err != nil {
+		t.Fatalf("StartVoiceSession: %v", err)
+	}
+	if len(msgr.calls) != 2 {
+		t.Fatalf("expected 2 SendMessage calls, got %d: %+v", len(msgr.calls), msgr.calls)
+	}
+	kickoff := msgr.calls[0].message
+	if !strings.HasPrefix(kickoff, VoicePersona) {
+		t.Errorf("kickoff should start with VoicePersona, got %q", kickoff)
+	}
+	if !strings.Contains(kickoff, custom) {
+		t.Errorf("kickoff should contain the trimmed custom instructions, got %q", kickoff)
+	}
+	if strings.Contains(kickoff, "  "+custom) {
+		t.Errorf("custom instructions should be trimmed, got %q", kickoff)
+	}
+}
+
+func TestStartVoiceSessionPropagatesSendError(t *testing.T) {
+	wantErr := io.ErrUnexpectedEOF
+	msgr := &stubMessenger{failOn: "sess-x", failErr: wantErr}
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, msgr)
+
+	err := c.StartVoiceSession("sess-x")
+	if err == nil {
+		t.Fatal("expected error when the session has no running process, got nil")
+	}
+	if !strings.Contains(err.Error(), "sess-x") {
+		t.Errorf("error should name the session, got: %v", err)
+	}
+}
+
+func TestStartVoiceSessionRequiresSessionID(t *testing.T) {
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, &stubMessenger{})
+	if err := c.StartVoiceSession("  "); err == nil {
+		t.Fatal("expected error for blank sessionId, got nil")
+	}
+}
+
+func TestTranscribeMultipartAndAuth(t *testing.T) {
+	const marker = "the quick brown fox"
+	var gotModel, gotRespFormat, gotAuth, gotFilename string
+	var gotFileContents []byte
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/transcriptions" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		gotAuth = r.Header.Get("Authorization")
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			t.Fatalf("ParseMultipartForm: %v", err)
+		}
+		gotModel = r.FormValue("model")
+		gotRespFormat = r.FormValue("response_format")
+		file, hdr, err := r.FormFile("file")
+		if err != nil {
+			t.Fatalf("FormFile: %v", err)
+		}
+		defer file.Close()
+		gotFilename = hdr.Filename
+		gotFileContents, _ = io.ReadAll(file)
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, marker+"\n")
+	}))
+	defer srv.Close()
+
+	c := newController(entity.VoiceConfig{
+		Provider:   "local",
+		STTBaseURL: srv.URL,
+		APIKey:     "sk-test-123",
+		STTModel:   "whisper-1",
+	})
+
+	audio := []byte("FAKE_WEBM_AUDIO")
+	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString(audio), "audio/webm")
+	if err != nil {
+		t.Fatalf("Transcribe error: %v", err)
+	}
+
+	if transcript != marker {
+		t.Errorf("transcript = %q, want %q (trimmed)", transcript, marker)
+	}
+	if gotModel != "whisper-1" {
+		t.Errorf("model field = %q, want whisper-1", gotModel)
+	}
+	if gotRespFormat != "text" {
+		t.Errorf("response_format = %q, want text", gotRespFormat)
+	}
+	if gotAuth != "Bearer sk-test-123" {
+		t.Errorf("Authorization = %q, want Bearer sk-test-123", gotAuth)
+	}
+	if gotFilename != "audio.webm" {
+		t.Errorf("filename = %q, want audio.webm", gotFilename)
+	}
+	if string(gotFileContents) != string(audio) {
+		t.Errorf("file contents = %q, want %q", gotFileContents, audio)
+	}
+}
+
+func TestTranscribeDefaultModelAndWavFilename(t *testing.T) {
+	var gotModel, gotFilename string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseMultipartForm(10 << 20)
+		gotModel = r.FormValue("model")
+		_, hdr, _ := r.FormFile("file")
+		gotFilename = hdr.Filename
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+
+	c := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: srv.URL})
+	if _, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/wav"); err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if gotModel != defaultSTTModel {
+		t.Errorf("default model = %q, want %q", gotModel, defaultSTTModel)
+	}
+	if gotFilename != "audio.wav" {
+		t.Errorf("filename = %q, want audio.wav", gotFilename)
+	}
+}
+
+func TestSynthesizeJSONBodyAndBytes(t *testing.T) {
+	audioBytes := []byte("ID3\x00\x00\x00FAKEMP3")
+	var body speechRequest
+	var gotAuth string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/speech" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		gotAuth = r.Header.Get("Authorization")
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", ct)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write(audioBytes)
+	}))
+	defer srv.Close()
+
+	c := newController(entity.VoiceConfig{
+		Provider:   "local",
+		TTSBaseURL: srv.URL,
+		APIKey:     "sk-tts",
+		TTSModel:   "kokoro",
+	})
+
+	res, err := c.Synthesize("hello world", "am_onyx", 1.2)
+	if err != nil {
+		t.Fatalf("Synthesize error: %v", err)
+	}
+	b64, ct := res.AudioB64, res.ContentType
+
+	decoded, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		t.Fatalf("returned audio not valid base64: %v", err)
+	}
+	if string(decoded) != string(audioBytes) {
+		t.Errorf("audio = %q, want %q", decoded, audioBytes)
+	}
+	if ct != "audio/mpeg" {
+		t.Errorf("content-type = %q, want audio/mpeg", ct)
+	}
+	if gotAuth != "Bearer sk-tts" {
+		t.Errorf("Authorization = %q, want Bearer sk-tts", gotAuth)
+	}
+	if body.Model != "kokoro" {
+		t.Errorf("model = %q, want kokoro", body.Model)
+	}
+	if body.Input != "hello world" {
+		t.Errorf("input = %q, want 'hello world'", body.Input)
+	}
+	if body.Voice != "am_onyx" {
+		t.Errorf("voice = %q, want am_onyx", body.Voice)
+	}
+	if body.ResponseFormat != "mp3" {
+		t.Errorf("response_format = %q, want mp3", body.ResponseFormat)
+	}
+	if body.Speed != 1.2 {
+		t.Errorf("speed = %v, want 1.2", body.Speed)
+	}
+}
+
+func TestSynthesizeUsesConfigDefaultsForVoiceAndSpeed(t *testing.T) {
+	var body speechRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte("mp3"))
+	}))
+	defer srv.Close()
+
+	// Empty args → controller falls back to config (which WithDefaults fills).
+	c := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL})
+	if _, err := c.Synthesize("hi", "", 0); err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+	if body.Voice != defaultVoice {
+		t.Errorf("voice = %q, want %q", body.Voice, defaultVoice)
+	}
+	if body.Speed != defaultSpeed {
+		t.Errorf("speed = %v, want %v", body.Speed, defaultSpeed)
+	}
+	if body.Model != defaultTTSModel {
+		t.Errorf("model = %q, want %q", body.Model, defaultTTSModel)
+	}
+}
+
+func TestTranscribeFallbackOrdering(t *testing.T) {
+	const marker = "second wins"
+	var firstHit, secondHit bool
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstHit = true
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, "boom")
+	}))
+	defer first.Close()
+
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondHit = true
+		_, _ = io.WriteString(w, marker)
+	}))
+	defer second.Close()
+
+	// The proxy tries provider base URLs in order, falling through 5xx/transport
+	// errors to the next. We exercise that fallthrough by invoking doTranscribe
+	// directly on each server (first 500 → fallthrough, second 200 → success).
+	c := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: second.URL})
+	// Manually verify the loop's fallthrough by invoking doTranscribe on first
+	// (500 → fallthrough) then second (200).
+	_, status, err := c.doTranscribe(strings.TrimRight(first.URL, "/"), "whisper-1", "audio.webm", "audio/webm", []byte("a"), "")
+	if err != nil {
+		t.Fatalf("doTranscribe first: %v", err)
+	}
+	if !shouldFallthrough(status, nil) {
+		t.Fatalf("status %d should fall through", status)
+	}
+	text, status2, err := c.doTranscribe(strings.TrimRight(second.URL, "/"), "whisper-1", "audio.webm", "audio/webm", []byte("a"), "")
+	if err != nil {
+		t.Fatalf("doTranscribe second: %v", err)
+	}
+	if status2 != http.StatusOK || strings.TrimSpace(text) != marker {
+		t.Fatalf("second response = %d %q, want 200 %q", status2, text, marker)
+	}
+	if !firstHit || !secondHit {
+		t.Fatalf("expected both servers hit; first=%v second=%v", firstHit, secondHit)
+	}
+}
+
+// TestLocalOnlyNoCloudEgress is the core local-only guarantee: NO provider value
+// — including the legacy "auto" and "cloud" — may ever yield the OpenAI cloud URL
+// from baseURLs, and WithDefaults must rewrite any such legacy provider to "local"
+// so it persists local on the next save. This closes the cloud-egress hole where a
+// transient local failure could ship the user's mic audio / TTS text to OpenAI.
+func TestLocalOnlyNoCloudEgress(t *testing.T) {
+	const cloudHost = "api.openai.com"
+
+	// baseURLs must never contain api.openai.com for ANY provider, in either op.
+	for _, provider := range []string{"auto", "cloud", "local", ""} {
+		vc := entity.VoiceConfig{Provider: provider, BaseURL: "http://localhost:9/"}
+		for _, o := range []op{opSTT, opTTS} {
+			for _, u := range baseURLs(vc, o) {
+				if strings.Contains(u, cloudHost) {
+					t.Errorf("provider %q op %v baseURLs leaked cloud URL: %q", provider, o, u)
+				}
+			}
+		}
+	}
+
+	// Even with NO configured URL, the legacy "auto"/"cloud" branches must not fall
+	// back to the cloud default — they yield nil (caller surfaces a clear error).
+	for _, provider := range []string{"auto", "cloud"} {
+		if got := baseURLs(entity.VoiceConfig{Provider: provider}, opSTT); got != nil {
+			t.Errorf("provider %q with no URL should yield nil (no cloud fallback), got %v", provider, got)
+		}
+	}
+
+	// WithDefaults migrates any legacy provider to "local".
+	for _, provider := range []string{"auto", "cloud", "", "anything"} {
+		if got := (entity.VoiceConfig{Provider: provider}).WithDefaults().Provider; got != "local" {
+			t.Errorf("WithDefaults({provider:%q}).Provider = %q, want local", provider, got)
+		}
+	}
+}
+
+func TestIsLocal(t *testing.T) {
+	cases := map[string]bool{
+		"http://localhost:8080":     true,
+		"http://127.0.0.1:9000/v1":  true,
+		"https://[::1]:1234":        true,
+		"http://0.0.0.0:8080":       false,
+		"https://api.openai.com":    false,
+		"http://192.168.1.5:8080":   false,
+		"":                          false,
+		"https://example.com/local": false,
+	}
+	for url, want := range cases {
+		if got := isLocal(url); got != want {
+			t.Errorf("isLocal(%q) = %v, want %v", url, got, want)
+		}
+	}
+}
+
+func TestBaseURLsProviderModes(t *testing.T) {
+	// local: configured base only, trimmed of the trailing slash.
+	if got := baseURLs(entity.VoiceConfig{Provider: "local", BaseURL: "http://localhost:1/"}, opSTT); len(got) != 1 || got[0] != "http://localhost:1" {
+		t.Errorf("local mode = %v", got)
+	}
+	// Local-only: ANY provider behaves the same — configured base only, no cloud.
+	for _, provider := range []string{"local", "auto", "cloud", ""} {
+		got := baseURLs(entity.VoiceConfig{Provider: provider, BaseURL: "http://localhost:9/"}, opSTT)
+		if len(got) != 1 || got[0] != "http://localhost:9" {
+			t.Errorf("provider %q = %v, want [http://localhost:9] (local-only)", provider, got)
+		}
+	}
+}
+
+// TestBaseURLsPerOperation asserts STT and TTS resolve from their own URLs first,
+// then fall back to the shared legacy BaseURL, then the provider default.
+func TestBaseURLsPerOperation(t *testing.T) {
+	// Operation-specific URLs take precedence over the shared BaseURL.
+	vc := entity.VoiceConfig{
+		Provider:   "local",
+		BaseURL:    "http://shared:1",
+		STTBaseURL: "http://localhost:2022/",
+		TTSBaseURL: "http://localhost:8880/",
+	}
+	if got := baseURLs(vc, opSTT); len(got) != 1 || got[0] != "http://localhost:2022" {
+		t.Errorf("STT URL = %v, want [http://localhost:2022]", got)
+	}
+	if got := baseURLs(vc, opTTS); len(got) != 1 || got[0] != "http://localhost:8880" {
+		t.Errorf("TTS URL = %v, want [http://localhost:8880]", got)
+	}
+
+	// Fallback to the shared legacy BaseURL when the specific one is empty.
+	fb := entity.VoiceConfig{Provider: "local", BaseURL: "http://shared:1/"}
+	if got := baseURLs(fb, opSTT); len(got) != 1 || got[0] != "http://shared:1" {
+		t.Errorf("STT fallback to BaseURL = %v", got)
+	}
+	if got := baseURLs(fb, opTTS); len(got) != 1 || got[0] != "http://shared:1" {
+		t.Errorf("TTS fallback to BaseURL = %v", got)
+	}
+
+	// local provider with no URL at all → nil (clear error surfaced by caller).
+	if got := baseURLs(entity.VoiceConfig{Provider: "local"}, opSTT); got != nil {
+		t.Errorf("local with no URL should yield nil, got %v", got)
+	}
+}
+
+// TestTranscribeAndSynthesizeHitSeparateURLs proves that under "local", STT goes
+// to STTBaseURL and TTS goes to TTSBaseURL — two distinct servers.
+func TestTranscribeAndSynthesizeHitSeparateURLs(t *testing.T) {
+	var sttHit, ttsHit bool
+
+	stt := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sttHit = true
+		if r.URL.Path != "/v1/audio/transcriptions" {
+			t.Errorf("STT server got unexpected path: %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, "hi from whisper")
+	}))
+	defer stt.Close()
+
+	tts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ttsHit = true
+		if r.URL.Path != "/v1/audio/speech" {
+			t.Errorf("TTS server got unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("MP3"))
+	}))
+	defer tts.Close()
+
+	c := newController(entity.VoiceConfig{
+		Provider:   "local",
+		STTBaseURL: stt.URL,
+		TTSBaseURL: tts.URL,
+	})
+
+	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if transcript != "hi from whisper" {
+		t.Errorf("transcript = %q", transcript)
+	}
+	if _, err := c.Synthesize("hello", "", 0); err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+	if !sttHit {
+		t.Error("STT server was not hit by Transcribe")
+	}
+	if !ttsHit {
+		t.Error("TTS server was not hit by Synthesize")
+	}
+}
+
+// TestNoAuthHeaderWhenKeyEmpty asserts that an empty API key sends NO
+// Authorization header (local servers may reject an empty bearer), while a set
+// key sends the bearer header.
+func TestNoAuthHeaderWhenKeyEmpty(t *testing.T) {
+	var hadAuthHeader bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, hadAuthHeader = r.Header["Authorization"]
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("MP3"))
+	}))
+	defer srv.Close()
+
+	// Empty key → no header.
+	c := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL})
+	if _, err := c.Synthesize("hi", "", 0); err != nil {
+		t.Fatalf("Synthesize (no key): %v", err)
+	}
+	if hadAuthHeader {
+		t.Error("Authorization header should be absent when API key is empty")
+	}
+
+	// Non-empty key → header present.
+	hadAuthHeader = false
+	c2 := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL, APIKey: "sk-x"})
+	if _, err := c2.Synthesize("hi", "", 0); err != nil {
+		t.Fatalf("Synthesize (with key): %v", err)
+	}
+	if !hadAuthHeader {
+		t.Error("Authorization header should be present when API key is set")
+	}
+}
+
+// TestLocalDefaultsFillURLs asserts the local-first contract: a "local" provider
+// with blank STT/TTS URLs is given the localhost engine defaults by WithDefaults
+// (so the proxy targets http://localhost:2022 / :8880). The previous "no URL
+// configured" missing-URL error path is therefore never reached for a local
+// provider — verified here regardless of whether the local engines happen to be
+// running (the call may succeed or fail at the HTTP layer; what matters is it is
+// NOT the missing-URL error).
+func TestLocalDefaultsFillURLs(t *testing.T) {
+	c := newController(entity.VoiceConfig{Provider: "local"})
+
+	_, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
+	if err != nil && strings.Contains(err.Error(), "STT (Whisper) URL") {
+		t.Errorf("Transcribe local-default error = %v, want the localhost default to be used, not a missing-URL error", err)
+	}
+
+	_, err = c.Synthesize("hi", "", 0)
+	if err != nil && strings.Contains(err.Error(), "TTS (Kokoro) URL") {
+		t.Errorf("Synthesize local-default error = %v, want the localhost default to be used, not a missing-URL error", err)
+	}
+}
+
+// TestWithDefaultsLocalFirst pins the local-only default contract directly on the
+// entity: a blank provider becomes "local" with the localhost engine URLs, and a
+// legacy "cloud"/"auto" provider is normalized to "local" (local-only migration)
+// and likewise handed the localhost engine URLs.
+func TestWithDefaultsLocalFirst(t *testing.T) {
+	d := entity.VoiceConfig{}.WithDefaults()
+	if d.Provider != "local" {
+		t.Errorf("default provider = %q, want local", d.Provider)
+	}
+	if d.STTBaseURL != "http://localhost:2022" || d.TTSBaseURL != "http://localhost:8880" {
+		t.Errorf("default local URLs = %q / %q, want :2022 / :8880", d.STTBaseURL, d.TTSBaseURL)
+	}
+
+	// Legacy cloud/auto configs migrate to local and get the localhost defaults.
+	for _, provider := range []string{"cloud", "auto"} {
+		m := entity.VoiceConfig{Provider: provider}.WithDefaults()
+		if m.Provider != "local" {
+			t.Errorf("provider %q WithDefaults().Provider = %q, want local", provider, m.Provider)
+		}
+		if m.STTBaseURL != "http://localhost:2022" || m.TTSBaseURL != "http://localhost:8880" {
+			t.Errorf("provider %q migrated URLs = %q / %q, want :2022 / :8880", provider, m.STTBaseURL, m.TTSBaseURL)
+		}
+	}
+}
+
+// TestPingReachableAndNonReachable covers the connection-probe semantics: a
+// listening server (even a non-2xx /v1/models) → Ok=true; a refused connection →
+// Ok=false naming the host:port; no URL → Ok=false "no STT|TTS URL configured".
+func TestPingReachableAndNonReachable(t *testing.T) {
+	// 2xx server → reachable.
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer ok.Close()
+
+	// 404 server → still listening, so reachable.
+	notFound := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer notFound.Close()
+
+	c := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: ok.URL, TTSBaseURL: notFound.URL})
+
+	if r, _ := c.Ping("stt"); !r.Ok {
+		t.Errorf("Ping(stt) on 2xx server = %+v, want Ok=true", r)
+	}
+	if r, _ := c.Ping("tts"); !r.Ok {
+		t.Errorf("Ping(tts) on 404 server = %+v, want Ok=true (server is up)", r)
+	}
+
+	// Refused connection (closed server) → not reachable.
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadURL := dead.URL
+	dead.Close()
+	c2 := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: deadURL, TTSBaseURL: deadURL})
+	if r, _ := c2.Ping("stt"); r.Ok || !strings.Contains(r.Detail, "not reachable") {
+		t.Errorf("Ping(stt) on closed server = %+v, want Ok=false and 'not reachable'", r)
+	}
+
+	// A blank-provider config is normalized to "local" and WithDefaults fills the
+	// localhost engine URLs, so Ping resolves a URL and never returns empty detail
+	// (and never panics). The result may be reachable or not depending on whether a
+	// local engine happens to be running; what matters is the detail is populated.
+	c3 := newController(entity.VoiceConfig{})
+	if r, _ := c3.Ping("stt"); r.Detail == "" {
+		t.Errorf("Ping(stt) on local default returned empty detail = %+v", r)
+	}
+}

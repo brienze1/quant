@@ -18,10 +18,12 @@ import (
 
 	"quant/internal/infra/db"
 	"quant/internal/infra/dependency"
+	"quant/internal/infra/paths"
 	"quant/internal/integration/entrypoint/controller"
 	quantmcp "quant/internal/integration/mcp"
 	"quant/internal/integration/persistence"
 	"quant/internal/integration/remote"
+	"quant/internal/integration/voice"
 )
 
 // discoverClaudeConfigDirs finds all Claude config directories.
@@ -108,16 +110,18 @@ func disableQuantInSettingsLocal(settingsPath string) {
 }
 
 // injectQuantMCP registers the Quant MCP server so all Claude accounts can discover it.
-// 1. Adds the "quant" server entry to ~/.mcp.json (the global server registry).
-// 2. Enables it in every detected Claude config dir's settings.local.json.
+// 1. Adds the "quant" server entry to the .mcp.json registry (real ~/.mcp.json in
+//    production; $QUANT_HOME/.mcp.json in isolated mode).
+// 2. Enables it in every detected Claude config dir's settings.local.json
+//    (production only; skipped in isolated mode, which relies on --mcp-config trust).
 func injectQuantMCP(port int) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
+	// 1. Add quant to the .mcp.json registry (only the quant entry — don't touch
+	// anything else). In isolated mode (QUANT_HOME set) this targets
+	// $QUANT_HOME/.mcp.json so the real ~/.mcp.json is never mutated.
+	mcpPath := paths.MCPConfigPath()
+	if err := os.MkdirAll(filepath.Dir(mcpPath), 0755); err != nil {
 		return
 	}
-
-	// 1. Add quant to ~/.mcp.json (only the quant entry — don't touch anything else)
-	mcpPath := filepath.Join(homeDir, ".mcp.json")
 	data, err := os.ReadFile(mcpPath)
 	if err != nil {
 		data = []byte("{}")
@@ -146,23 +150,27 @@ func injectQuantMCP(port int) {
 	}
 	_ = os.WriteFile(mcpPath, out, 0644)
 
-	// 2. Enable quant in every Claude config dir's settings.local.json
+	// 2. Enable quant in every Claude config dir's settings.local.json.
+	// Skip in isolated mode: there we rely on --mcp-config trust at spawn time
+	// and must not touch the user's real ~/.claude config. Also honor the
+	// explicit QUANT_SKIP_CLAUDE_CONFIG gate.
+	if paths.IsIsolated() || paths.SkipClaudeConfigDiscovery() {
+		return
+	}
 	for _, dir := range discoverClaudeConfigDirs() {
 		enableQuantInSettingsLocal(filepath.Join(dir, "settings.local.json"))
 	}
 }
 
 // removeQuantMCP removes the Quant MCP server on shutdown.
-// 1. Removes the "quant" entry from ~/.mcp.json.
-// 2. Removes it from every detected Claude config dir's settings.local.json.
+// 1. Removes the "quant" entry from the .mcp.json registry (real ~/.mcp.json in
+//    production; $QUANT_HOME/.mcp.json in isolated mode).
+// 2. Removes it from every detected Claude config dir's settings.local.json
+//    (production only; skipped in isolated mode, mirroring inject).
 func removeQuantMCP() {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return
-	}
-
-	// 1. Remove quant from ~/.mcp.json
-	mcpPath := filepath.Join(homeDir, ".mcp.json")
+	// 1. Remove quant from the .mcp.json registry (isolated mode targets
+	// $QUANT_HOME/.mcp.json, mirroring injectQuantMCP).
+	mcpPath := paths.MCPConfigPath()
 	data, err := os.ReadFile(mcpPath)
 	if err != nil {
 		return
@@ -181,7 +189,11 @@ func removeQuantMCP() {
 	}
 	_ = os.WriteFile(mcpPath, out, 0644)
 
-	// 2. Remove from every Claude config dir's settings.local.json
+	// 2. Remove from every Claude config dir's settings.local.json.
+	// Skip in isolated mode (we never wrote there) and honor the explicit gate.
+	if paths.IsIsolated() || paths.SkipClaudeConfigDiscovery() {
+		return
+	}
 	for _, dir := range discoverClaudeConfigDirs() {
 		disableQuantInSettingsLocal(filepath.Join(dir, "settings.local.json"))
 	}
@@ -224,10 +236,17 @@ func Run(assets embed.FS, changelogData []byte) error {
 	jobGroupCtrl := injector.JobGroupController()
 	mindmapCtrl := injector.MindmapController()
 	changelogCtrl := injector.ChangelogController()
+	// Voice bridge connects the MCP voice tools (Go) to the frontend audio
+	// pipeline: a tool emits "voice:request" via remote.Emit (native webview +
+	// remote browser clients) and blocks until VoiceResult resolves it. Shared
+	// between the voice controller (which resolves) and the MCP server (which
+	// requests).
+	voiceBridge := voice.NewBridge(remote.Emit)
+	voiceCtrl := voice.NewVoiceController(injector.ConfigManager(), voiceBridge, injector.SessionManager())
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
-	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager())
+	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager(), voiceBridge)
 	mcpPort := mcpServer.Port()
 	fmt.Printf("[quant] MCP server on port %d → http://localhost:%d/mcp\n", mcpPort, mcpPort)
 	if mcpPort != quantmcp.DefaultPort {
@@ -265,6 +284,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 		"jobGroupController":  jobGroupCtrl,
 		"mindmapController":   mindmapCtrl,
 		"changelogController": changelogCtrl,
+		"voiceController":     voiceCtrl,
 	}
 	remoteManager := remote.NewManager(assetsSub, remoteControllers, injector.ConfigPersistence())
 	remoteCtrl := controller.NewRemoteController(remoteManager)
@@ -294,6 +314,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl.OnStartup(ctx)
 			mindmapCtrl.OnStartup(ctx)
 			changelogCtrl.OnStartup(ctx)
+			voiceCtrl.OnStartup(ctx)
 			remoteCtrl.OnStartup(ctx)
 			// Auto-resume remote access if it was enabled before the last shutdown.
 			// Runs after controllers have their context set, since RPC dispatch
@@ -312,6 +333,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl.OnShutdown(ctx)
 			mindmapCtrl.OnShutdown(ctx)
 			changelogCtrl.OnShutdown(ctx)
+			voiceCtrl.OnShutdown(ctx)
 			remoteCtrl.OnShutdown(ctx)
 			remoteManager.Stop()
 			jobScheduler.Stop()
@@ -332,6 +354,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			jobGroupCtrl,
 			mindmapCtrl,
 			changelogCtrl,
+			voiceCtrl,
 			remoteCtrl,
 		},
 	})
