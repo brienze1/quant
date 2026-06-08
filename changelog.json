@@ -8,7 +8,8 @@
           "voice mode — talk to a session hands-free and hear it talk back: open the new voice pane on a session (the 'voice' toggle in the header) and an audio-reactive orb visualizes the conversation while you speak naturally; silence detection handles turn-taking, and you can talk over a reply to interrupt it (barge-in)",
           "voice runs fully local and private — your own Whisper (speech-to-text) and Kokoro (text-to-speech) engines, no cloud and no API key; Settings → Voice walks a new user through install with copy-paste cards per OS (native or Docker for Kokoro) and a 'Test connection' button for each engine",
           "Settings → Voice: pick the voice, model and speaking speed from auto-discovered dropdowns (no guessing valid names), tune how long it waits for you to finish talking with a silence/pause slider, and edit the assistant's spoken persona/instructions; optional copy-paste scripts set the engines to auto-start on login (macOS/Linux/Windows)",
-          "agents can drive a spoken conversation through new MCP tools voice_listen, voice_speak and voice_converse, scoped to their own session"
+          "agents can drive a spoken conversation through new MCP tools voice_listen, voice_speak and voice_converse, scoped to their own session",
+          "every session's agent now knows it's running inside Quant: a built-in persona teaches it what Quant is, how to draw its plan and progress on the live mindmap, and how to use the Quant tools — so it keeps you in the loop visually instead of just scrolling text (set QUANT_SKIP_PERSONA=1 to turn it off)"
         ]
       }
     },

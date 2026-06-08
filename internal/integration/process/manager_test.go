@@ -3,7 +3,10 @@ package process
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"quant/internal/domain/persona"
 )
 
 func TestMCPConfigArgs(t *testing.T) {
@@ -37,4 +40,33 @@ func TestMCPConfigArgs(t *testing.T) {
 			t.Fatalf("mcpConfigArgs() = %v, want nil", got)
 		}
 	})
+}
+
+func TestPersonaArgs(t *testing.T) {
+	t.Run("default returns append-system-prompt pair", func(t *testing.T) {
+		t.Setenv("QUANT_SKIP_PERSONA", "")
+		got := personaArgs()
+		want := []string{"--append-system-prompt", "$QUANT_BASE_PERSONA"}
+		if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+			t.Fatalf("personaArgs() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("skipped returns nil", func(t *testing.T) {
+		t.Setenv("QUANT_SKIP_PERSONA", "1")
+		if got := personaArgs(); got != nil {
+			t.Fatalf("personaArgs() = %v, want nil", got)
+		}
+	})
+}
+
+func TestPersonaBaseContent(t *testing.T) {
+	if persona.Base == "" {
+		t.Fatal("persona.Base is empty")
+	}
+	for _, want := range []string{"mindmap_set_node", "Quant"} {
+		if !strings.Contains(persona.Base, want) {
+			t.Fatalf("persona.Base does not contain %q", want)
+		}
+	}
 }
