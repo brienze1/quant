@@ -110,6 +110,7 @@ func (i *Injector) ProcessManager() intAdapter.ProcessManager {
 		// used from the very first session, not just after the user opens Settings.
 		if cfg, err := i.ConfigPersistence().LoadConfig(); err == nil && cfg != nil {
 			pm.UpdateCliBinaryConfig(cfg.CliBinaryPath, cfg.CommandOverrides)
+			pm.UpdateBasePersona(cfg.BasePersona)
 		}
 		i.processManager = pm
 	}
@@ -252,6 +253,7 @@ func (i *Injector) ConfigManager() appAdapter.ConfigManager {
 			notification.NewManager(), // SendNotification
 			keybindings.NewManager(),  // SetNewLineKey
 			i.ProcessManager(),        // UpdateCliBinaryConfig
+			i.ProcessManager(),        // UpdateBasePersona
 		)
 	}
 	return i.configManager

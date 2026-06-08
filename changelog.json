@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.31",
+      "date": "2026-06-08",
+      "changes": {
+        "features": [
+          "the agent persona is now editable in Settings → Claude → 'agent persona': customize the base system prompt every session gets (how it should behave, what to emphasize, how it uses the mindmap and Quant tools), with 'load default to edit' and 'reset to default' buttons; leave it empty to keep the built-in default, which still updates with new releases"
+        ]
+      }
+    },
+    {
       "version": "v3.1.30",
       "date": "2026-06-08",
       "changes": {
