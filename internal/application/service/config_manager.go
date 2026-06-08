@@ -20,6 +20,7 @@ type configManagerService struct {
 	sendNotification      usecase.SendNotification
 	setNewLineKey         usecase.SetNewLineKey
 	updateCliBinaryConfig usecase.UpdateCliBinaryConfig
+	updateBasePersona     usecase.UpdateBasePersona
 }
 
 // NewConfigManagerService creates a new ConfigManager service.
@@ -34,6 +35,7 @@ func NewConfigManagerService(
 	sendNotification usecase.SendNotification,
 	setNewLineKey usecase.SetNewLineKey,
 	updateCliBinaryConfig usecase.UpdateCliBinaryConfig,
+	updateBasePersona usecase.UpdateBasePersona,
 ) adapter.ConfigManager {
 	return &configManagerService{
 		loadConfig:            loadConfig,
@@ -45,6 +47,7 @@ func NewConfigManagerService(
 		sendNotification:      sendNotification,
 		setNewLineKey:         setNewLineKey,
 		updateCliBinaryConfig: updateCliBinaryConfig,
+		updateBasePersona:     updateBasePersona,
 	}
 }
 
@@ -74,6 +77,7 @@ func (s *configManagerService) SaveConfig(cfg *entity.Config) error {
 	}
 
 	s.updateCliBinaryConfig.UpdateCliBinaryConfig(cfg.CliBinaryPath, cfg.CommandOverrides)
+	s.updateBasePersona.UpdateBasePersona(cfg.BasePersona)
 
 	return nil
 }

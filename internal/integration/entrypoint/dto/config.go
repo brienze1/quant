@@ -3,6 +3,7 @@ package dto
 
 import (
 	"quant/internal/domain/entity"
+	"quant/internal/domain/persona"
 )
 
 // ShortcutDTO represents a named shell command in config.
@@ -79,6 +80,7 @@ type SaveConfigRequest struct {
 	AssistantModel   string            `json:"assistantModel"`
 	EnvVariables     map[string]string `json:"envVariables"`
 	CommandOverrides map[string]string `json:"commandOverrides"`
+	BasePersona      string            `json:"basePersona"` // empty = use built-in default
 
 	// Remote Access
 	RemoteAccessEnabled  bool   `json:"remoteAccessEnabled"`
@@ -138,6 +140,10 @@ type ConfigResponse struct {
 	AssistantModel   string            `json:"assistantModel"`
 	EnvVariables     map[string]string `json:"envVariables"`
 	CommandOverrides map[string]string `json:"commandOverrides"`
+	BasePersona      string            `json:"basePersona"` // user override; empty = built-in default in use
+	// DefaultBasePersona is read-only: the built-in persona.Base text, so the UI can
+	// show it as the placeholder/preview and offer a "reset to default" action.
+	DefaultBasePersona string `json:"defaultBasePersona"`
 
 	// Remote Access
 	RemoteAccessEnabled  bool   `json:"remoteAccessEnabled"`
@@ -191,6 +197,8 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		AssistantModel:        cfg.AssistantModel,
 		EnvVariables:          cfg.EnvVariables,
 		CommandOverrides:      cfg.CommandOverrides,
+		BasePersona:           cfg.BasePersona,
+		DefaultBasePersona:    persona.Base,
 		RemoteAccessEnabled:   cfg.RemoteAccessEnabled,
 		RemoteAccessPort:      cfg.RemoteAccessPort,
 		RemoteAccessPasscode:  cfg.RemoteAccessPasscode,
@@ -280,6 +288,7 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		AssistantModel:        r.AssistantModel,
 		EnvVariables:          envVariables,
 		CommandOverrides:      commandOverrides,
+		BasePersona:           r.BasePersona,
 		RemoteAccessEnabled:   r.RemoteAccessEnabled,
 		RemoteAccessPort:      r.RemoteAccessPort,
 		RemoteAccessPasscode:  r.RemoteAccessPasscode,

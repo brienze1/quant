@@ -69,6 +69,7 @@ type processManager struct {
 	outputDir        string                    // base dir for output files (~/.quant/sessions/)
 	claudeBinaryPath string                    // command name or path for the default claude binary
 	commandOverrides map[string]string         // path substring -> resolved binary path
+	basePersona      string                    // user-configured base persona; empty = built-in persona.Base
 }
 
 // NewProcessManager creates a new process manager for Claude CLI processes.
@@ -144,6 +145,27 @@ func (m *processManager) UpdateCliBinaryConfig(cliBinaryPath string, commandOver
 	m.claudeBinaryPath = cliBinaryPath
 	m.commandOverrides = overrides
 	m.mu.Unlock()
+}
+
+// UpdateBasePersona stores the user-configured base persona used when spawning new
+// sessions. An empty string means "use the built-in persona.Base" (resolved at
+// spawn time), so clearing the field in Settings reverts to the shipped default.
+func (m *processManager) UpdateBasePersona(basePersona string) {
+	m.mu.Lock()
+	m.basePersona = basePersona
+	m.mu.Unlock()
+}
+
+// resolvePersona returns the persona text to inject: the user override when set,
+// otherwise the built-in default.
+func (m *processManager) resolvePersona() string {
+	m.mu.RLock()
+	custom := m.basePersona
+	m.mu.RUnlock()
+	if strings.TrimSpace(custom) != "" {
+		return custom
+	}
+	return persona.Base
 }
 
 // getClaudeBinary returns the binary to use for a session.
@@ -274,7 +296,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 	// referenced by terminal sessions, which take the other branch). Passing it via
 	// env keeps newlines intact through the shellQuote+eval machinery.
 	if os.Getenv("QUANT_SKIP_PERSONA") != "1" {
-		baseEnv = append(baseEnv, "QUANT_BASE_PERSONA="+persona.Base)
+		baseEnv = append(baseEnv, "QUANT_BASE_PERSONA="+m.resolvePersona())
 	}
 	cmd.Env = baseEnv
 

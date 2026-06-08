@@ -145,15 +145,17 @@ export namespace dto {
 	    assistantModel: string;
 	    envVariables: Record<string, string>;
 	    commandOverrides: Record<string, string>;
+	    basePersona: string;
+	    defaultBasePersona: string;
 	    remoteAccessEnabled: boolean;
 	    remoteAccessPort: number;
 	    remoteAccessPasscode: string;
 	    voice: VoiceConfigDTO;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ConfigResponse(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.startOnLogin = source["startOnLogin"];
@@ -192,6 +194,8 @@ export namespace dto {
 	        this.assistantModel = source["assistantModel"];
 	        this.envVariables = source["envVariables"];
 	        this.commandOverrides = source["commandOverrides"];
+	        this.basePersona = source["basePersona"];
+	        this.defaultBasePersona = source["defaultBasePersona"];
 	        this.remoteAccessEnabled = source["remoteAccessEnabled"];
 	        this.remoteAccessPort = source["remoteAccessPort"];
 	        this.remoteAccessPasscode = source["remoteAccessPasscode"];
@@ -763,11 +767,12 @@ export namespace dto {
 	    assistantModel: string;
 	    envVariables: Record<string, string>;
 	    commandOverrides: Record<string, string>;
+	    basePersona: string;
 	    remoteAccessEnabled: boolean;
 	    remoteAccessPort: number;
 	    remoteAccessPasscode: string;
 	    voice: VoiceConfigDTO;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SaveConfigRequest(source);
 	    }
@@ -810,6 +815,7 @@ export namespace dto {
 	        this.assistantModel = source["assistantModel"];
 	        this.envVariables = source["envVariables"];
 	        this.commandOverrides = source["commandOverrides"];
+	        this.basePersona = source["basePersona"];
 	        this.remoteAccessEnabled = source["remoteAccessEnabled"];
 	        this.remoteAccessPort = source["remoteAccessPort"];
 	        this.remoteAccessPasscode = source["remoteAccessPasscode"];

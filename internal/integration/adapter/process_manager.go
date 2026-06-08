@@ -11,5 +11,6 @@ import (
 type ProcessManager interface {
 	usecase.SpawnProcess
 	usecase.UpdateCliBinaryConfig
+	usecase.UpdateBasePersona
 	SetContext(ctx context.Context)
 }

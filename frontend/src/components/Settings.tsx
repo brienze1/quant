@@ -773,6 +773,53 @@ function ClaudeTab({ config, update }: TabProps) {
         />
       </Section>
 
+      <Section
+        title="agent persona"
+        description="the base system prompt appended to every session quant spawns — it tells the agent it is quant, what quant is, and how to use the live mindmap + quant tools. Layered on top of each project's own context. Leave empty to use the built-in default."
+      >
+        <textarea
+          value={config.basePersona ?? ""}
+          onChange={(e) => update("basePersona", e.target.value)}
+          placeholder={config.defaultBasePersona || "Leave empty to use the built-in Quant persona…"}
+          spellCheck={false}
+          style={{
+            width: "100%",
+            minHeight: 160,
+            resize: "vertical",
+            boxSizing: "border-box",
+            backgroundColor: "var(--q-bg-input)",
+            border: "1px solid var(--q-border)",
+            color: "var(--q-fg)",
+            fontFamily: font,
+            fontSize: 12,
+            lineHeight: 1.5,
+            padding: 8,
+            outline: "none",
+          }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
+          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+        />
+        <div className="flex items-center gap-3 mt-2">
+          <button
+            onClick={() => update("basePersona", config.defaultBasePersona ?? "")}
+            disabled={!config.defaultBasePersona}
+            style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: font, opacity: config.defaultBasePersona ? 1 : 0.4 }}
+          >
+            load default to edit
+          </button>
+          <button
+            onClick={() => update("basePersona", "")}
+            disabled={!(config.basePersona ?? "").trim()}
+            style={{ color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font, opacity: (config.basePersona ?? "").trim() ? 1 : 0.4 }}
+          >
+            reset to default
+          </button>
+          <span style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: font }}>
+            {(config.basePersona ?? "").trim() ? "using your custom persona" : "using built-in default"}
+          </span>
+        </div>
+      </Section>
+
       <Section title="per-path command overrides" description="use a different claude command for sessions whose path contains the given substring">
         <div style={{ border: "1px solid var(--q-border)" }}>
           {/* Table Header */}

@@ -272,6 +272,11 @@ export interface Config {
   assistantModel: string;
   envVariables: Record<string, string>;
   commandOverrides: Record<string, string>;
+  // Base persona appended to every spawned session. Empty = use the built-in
+  // default. `defaultBasePersona` is read-only (the built-in text) so the UI can
+  // show it as a placeholder and offer a reset-to-default action.
+  basePersona: string;
+  defaultBasePersona?: string;
 
   // Remote Access
   remoteAccessEnabled: boolean;
