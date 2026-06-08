@@ -64,13 +64,32 @@ export function registerVoiceBridge(
     return () => {};
   }
 
+  // The requestId of the request currently being serviced by THIS handler, or
+  // null when idle. handleRequest clears it the moment the request settles (a
+  // normal voiceResult was sent). On teardown we use it to gracefully close any
+  // still-in-flight request (pane unmounting because voice closed or moved):
+  // without this the orphaned voice_listen on the Go side blocks ~120s.
+  const inFlight = { requestId: null as string | null };
+
   const cancel = w.runtime.EventsOn("voice:request", (req: VoiceRequest) => {
     // Ignore events for other sessions (each pane handles only its own).
     if (!req || req.sessionId !== sessionId) return;
-    void handleRequest(req, service, callbacks);
+    void handleRequest(req, service, callbacks, inFlight);
   });
 
-  return () => cancel && cancel();
+  return () => {
+    if (cancel) cancel();
+    // If a request is still unsettled at tear-down, tell Go the voice ended so
+    // the waiting tool returns immediately (graceful, not an error). Clear the
+    // marker first so we fire exactly once.
+    const pending = inFlight.requestId;
+    inFlight.requestId = null;
+    if (pending) {
+      void api.voiceResultClosed(pending).catch(() => {
+        /* best-effort: Go will eventually time out if even this fails */
+      });
+    }
+  };
 }
 
 /** Best-effort callback invocation that never breaks the pipeline. */
@@ -92,10 +111,19 @@ async function handleRequest(
   req: VoiceRequest,
   service: IAudioService,
   callbacks: VoiceBridgeCallbacks,
+  inFlight: { requestId: string | null },
 ): Promise<void> {
+  // Mark this request as in-flight so a teardown mid-request can gracefully
+  // close it (see registerVoiceBridge's unsubscribe). We clear it the instant
+  // the request settles so a completed request is never double-resolved.
+  inFlight.requestId = req.requestId;
+  const settle = () => {
+    if (inFlight.requestId === req.requestId) inFlight.requestId = null;
+  };
   try {
     if (req.kind === "listen") {
       const transcript = await service.listen();
+      settle();
       safeCb(callbacks.onUserTranscript, transcript);
       await api.voiceResult(req.requestId, transcript, "");
     } else if (req.kind === "speak") {
@@ -103,8 +131,10 @@ async function handleRequest(
       // soon as quant starts speaking.
       safeCb(callbacks.onAgentSpeak, req.text);
       await service.speak(req.text);
+      settle();
       await api.voiceResult(req.requestId, "", "");
     } else {
+      settle();
       await api.voiceResult(
         req.requestId,
         "",
@@ -112,6 +142,7 @@ async function handleRequest(
       );
     }
   } catch (err) {
+    settle();
     // A listen timeout (the user simply didn't speak in time) must NOT derail
     // the conversation. Report it as an empty transcript so the Go handler hands
     // the agent the "no speech heard — keep going" nudge instead of an error

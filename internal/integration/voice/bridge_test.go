@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -53,8 +54,9 @@ func TestBridgeRequestResolves(t *testing.T) {
 	}
 }
 
-// TestBridgeTimeout verifies that Request returns a recoverable error when no
-// Resolve arrives within the timeout.
+// TestBridgeTimeout verifies that Request returns an ErrVoiceEnded error when no
+// Resolve arrives within the timeout, so the agent ends voice mode gracefully
+// instead of treating it as a retryable failure or looping.
 func TestBridgeTimeout(t *testing.T) {
 	b := NewBridge(func(_ context.Context, _ string, _ interface{}) {})
 
@@ -62,6 +64,9 @@ func TestBridgeTimeout(t *testing.T) {
 	_, err := b.Request(context.Background(), "sess-1", "listen", "", 50*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected a timeout error, got nil")
+	}
+	if !errors.Is(err, ErrVoiceEnded) {
+		t.Fatalf("timeout error should satisfy errors.Is(err, ErrVoiceEnded), got %v", err)
 	}
 	if elapsed := time.Since(start); elapsed < 40*time.Millisecond {
 		t.Fatalf("returned too early (%v) — did not wait for the timeout", elapsed)
@@ -72,6 +77,49 @@ func TestBridgeTimeout(t *testing.T) {
 	b.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("pending map not cleaned up after timeout: %d entries", n)
+	}
+}
+
+// TestBridgeClosedResolve verifies that a Resolve with Closed:true ends the
+// request with an ErrVoiceEnded error (the pane closed mid-request), promptly,
+// without waiting for the timeout.
+func TestBridgeClosedResolve(t *testing.T) {
+	var capturedReqID string
+	var mu sync.Mutex
+	b := NewBridge(func(_ context.Context, _ string, data interface{}) {
+		ev := data.(VoiceRequestEvent)
+		mu.Lock()
+		capturedReqID = ev.RequestID
+		mu.Unlock()
+	})
+
+	type result struct {
+		reply VoiceReply
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		// A generous timeout: the Closed resolve must end the request well before it.
+		reply, err := b.Request(context.Background(), "sess-1", "listen", "", time.Minute)
+		done <- result{reply, err}
+	}()
+
+	reqID := waitForReqID(t, &mu, &capturedReqID)
+	b.Resolve(reqID, VoiceReply{Closed: true})
+
+	select {
+	case r := <-done:
+		if r.err == nil {
+			t.Fatal("expected an error when the pane closed (Closed:true), got nil")
+		}
+		if !errors.Is(r.err, ErrVoiceEnded) {
+			t.Fatalf("closed error should satisfy errors.Is(err, ErrVoiceEnded), got %v", r.err)
+		}
+		if !r.reply.Closed {
+			t.Errorf("returned reply should carry Closed=true, got %+v", r.reply)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Request did not unblock promptly after a Closed resolve")
 	}
 }
 

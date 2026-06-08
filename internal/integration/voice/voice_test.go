@@ -141,10 +141,10 @@ func TestTranscribeMultipartAndAuth(t *testing.T) {
 	defer srv.Close()
 
 	c := newController(entity.VoiceConfig{
-		Provider: "cloud",
-		BaseURL:  srv.URL,
-		APIKey:   "sk-test-123",
-		STTModel: "whisper-1",
+		Provider:   "local",
+		STTBaseURL: srv.URL,
+		APIKey:     "sk-test-123",
+		STTModel:   "whisper-1",
 	})
 
 	audio := []byte("FAKE_WEBM_AUDIO")
@@ -184,7 +184,7 @@ func TestTranscribeDefaultModelAndWavFilename(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newController(entity.VoiceConfig{Provider: "cloud", BaseURL: srv.URL})
+	c := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: srv.URL})
 	if _, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/wav"); err != nil {
 		t.Fatalf("Transcribe: %v", err)
 	}
@@ -218,10 +218,10 @@ func TestSynthesizeJSONBodyAndBytes(t *testing.T) {
 	defer srv.Close()
 
 	c := newController(entity.VoiceConfig{
-		Provider: "cloud",
-		BaseURL:  srv.URL,
-		APIKey:   "sk-tts",
-		TTSModel: "kokoro",
+		Provider:   "local",
+		TTSBaseURL: srv.URL,
+		APIKey:     "sk-tts",
+		TTSModel:   "kokoro",
 	})
 
 	res, err := c.Synthesize("hello world", "am_onyx", 1.2)
@@ -269,7 +269,7 @@ func TestSynthesizeUsesConfigDefaultsForVoiceAndSpeed(t *testing.T) {
 	defer srv.Close()
 
 	// Empty args → controller falls back to config (which WithDefaults fills).
-	c := newController(entity.VoiceConfig{Provider: "cloud", BaseURL: srv.URL})
+	c := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL})
 	if _, err := c.Synthesize("hi", "", 0); err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
@@ -301,12 +301,10 @@ func TestTranscribeFallbackOrdering(t *testing.T) {
 	}))
 	defer second.Close()
 
-	// Use a controller whose ordered base URL list is [first, second]. Provider
-	// "cloud" only yields one URL, so drive baseURLs via "auto" with both as
-	// non-local; simplest is to call the proxy loop directly through a custom
-	// ordered run. We exercise the public Transcribe by pointing config to a
-	// composite via a small in-test override of baseURLs ordering.
-	c := newController(entity.VoiceConfig{Provider: "cloud", BaseURL: second.URL})
+	// The proxy tries provider base URLs in order, falling through 5xx/transport
+	// errors to the next. We exercise that fallthrough by invoking doTranscribe
+	// directly on each server (first 500 → fallthrough, second 200 → success).
+	c := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: second.URL})
 	// Manually verify the loop's fallthrough by invoking doTranscribe on first
 	// (500 → fallthrough) then second (200).
 	_, status, err := c.doTranscribe(strings.TrimRight(first.URL, "/"), "whisper-1", "audio.webm", "audio/webm", []byte("a"), "")
@@ -328,24 +326,39 @@ func TestTranscribeFallbackOrdering(t *testing.T) {
 	}
 }
 
-func TestBaseURLsAutoFallthrough(t *testing.T) {
-	// A full end-to-end fallthrough using the public Transcribe with an ordered
-	// list built by baseURLs. Under "auto" with a non-local configured base, the
-	// order is [configuredBase, cloudDefault]. We make the configured base 500 and
-	// assert Transcribe still errors gracefully (cloud default is unreachable in
-	// test), confirming we attempted the configured base first.
-	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
-	}))
-	defer failing.Close()
+// TestLocalOnlyNoCloudEgress is the core local-only guarantee: NO provider value
+// — including the legacy "auto" and "cloud" — may ever yield the OpenAI cloud URL
+// from baseURLs, and WithDefaults must rewrite any such legacy provider to "local"
+// so it persists local on the next save. This closes the cloud-egress hole where a
+// transient local failure could ship the user's mic audio / TTS text to OpenAI.
+func TestLocalOnlyNoCloudEgress(t *testing.T) {
+	const cloudHost = "api.openai.com"
 
-	vc := entity.VoiceConfig{Provider: "auto", BaseURL: failing.URL}.WithDefaults()
-	urls := baseURLs(vc, opSTT)
-	if len(urls) < 2 || urls[0] != strings.TrimRight(failing.URL, "/") {
-		t.Fatalf("auto base URL order = %v, want failing base first", urls)
+	// baseURLs must never contain api.openai.com for ANY provider, in either op.
+	for _, provider := range []string{"auto", "cloud", "local", ""} {
+		vc := entity.VoiceConfig{Provider: provider, BaseURL: "http://localhost:9/"}
+		for _, o := range []op{opSTT, opTTS} {
+			for _, u := range baseURLs(vc, o) {
+				if strings.Contains(u, cloudHost) {
+					t.Errorf("provider %q op %v baseURLs leaked cloud URL: %q", provider, o, u)
+				}
+			}
+		}
 	}
-	if urls[len(urls)-1] != defaultCloudBaseURL {
-		t.Fatalf("auto base URLs should end with cloud default, got %v", urls)
+
+	// Even with NO configured URL, the legacy "auto"/"cloud" branches must not fall
+	// back to the cloud default — they yield nil (caller surfaces a clear error).
+	for _, provider := range []string{"auto", "cloud"} {
+		if got := baseURLs(entity.VoiceConfig{Provider: provider}, opSTT); got != nil {
+			t.Errorf("provider %q with no URL should yield nil (no cloud fallback), got %v", provider, got)
+		}
+	}
+
+	// WithDefaults migrates any legacy provider to "local".
+	for _, provider := range []string{"auto", "cloud", "", "anything"} {
+		if got := (entity.VoiceConfig{Provider: provider}).WithDefaults().Provider; got != "local" {
+			t.Errorf("WithDefaults({provider:%q}).Provider = %q, want local", provider, got)
+		}
 	}
 }
 
@@ -368,18 +381,16 @@ func TestIsLocal(t *testing.T) {
 }
 
 func TestBaseURLsProviderModes(t *testing.T) {
-	// local: configured base only.
+	// local: configured base only, trimmed of the trailing slash.
 	if got := baseURLs(entity.VoiceConfig{Provider: "local", BaseURL: "http://localhost:1/"}, opSTT); len(got) != 1 || got[0] != "http://localhost:1" {
 		t.Errorf("local mode = %v", got)
 	}
-	// cloud with no base: default cloud.
-	if got := baseURLs(entity.VoiceConfig{Provider: "cloud"}, opSTT); len(got) != 1 || got[0] != defaultCloudBaseURL {
-		t.Errorf("cloud default = %v", got)
-	}
-	// auto with local base: [local, cloud].
-	got := baseURLs(entity.VoiceConfig{Provider: "auto", BaseURL: "http://localhost:9/"}, opSTT)
-	if len(got) != 2 || got[0] != "http://localhost:9" || got[1] != defaultCloudBaseURL {
-		t.Errorf("auto local mode = %v", got)
+	// Local-only: ANY provider behaves the same — configured base only, no cloud.
+	for _, provider := range []string{"local", "auto", "cloud", ""} {
+		got := baseURLs(entity.VoiceConfig{Provider: provider, BaseURL: "http://localhost:9/"}, opSTT)
+		if len(got) != 1 || got[0] != "http://localhost:9" {
+			t.Errorf("provider %q = %v, want [http://localhost:9] (local-only)", provider, got)
+		}
 	}
 }
 
@@ -516,9 +527,10 @@ func TestLocalDefaultsFillURLs(t *testing.T) {
 	}
 }
 
-// TestWithDefaultsLocalFirst pins the local-first default contract directly on
-// the entity: a blank provider becomes "local" with the localhost engine URLs,
-// and a "cloud" provider is NEVER handed localhost URLs.
+// TestWithDefaultsLocalFirst pins the local-only default contract directly on the
+// entity: a blank provider becomes "local" with the localhost engine URLs, and a
+// legacy "cloud"/"auto" provider is normalized to "local" (local-only migration)
+// and likewise handed the localhost engine URLs.
 func TestWithDefaultsLocalFirst(t *testing.T) {
 	d := entity.VoiceConfig{}.WithDefaults()
 	if d.Provider != "local" {
@@ -528,9 +540,15 @@ func TestWithDefaultsLocalFirst(t *testing.T) {
 		t.Errorf("default local URLs = %q / %q, want :2022 / :8880", d.STTBaseURL, d.TTSBaseURL)
 	}
 
-	cloud := entity.VoiceConfig{Provider: "cloud"}.WithDefaults()
-	if cloud.STTBaseURL != "" || cloud.TTSBaseURL != "" {
-		t.Errorf("cloud provider got localhost URLs = %q / %q, want empty", cloud.STTBaseURL, cloud.TTSBaseURL)
+	// Legacy cloud/auto configs migrate to local and get the localhost defaults.
+	for _, provider := range []string{"cloud", "auto"} {
+		m := entity.VoiceConfig{Provider: provider}.WithDefaults()
+		if m.Provider != "local" {
+			t.Errorf("provider %q WithDefaults().Provider = %q, want local", provider, m.Provider)
+		}
+		if m.STTBaseURL != "http://localhost:2022" || m.TTSBaseURL != "http://localhost:8880" {
+			t.Errorf("provider %q migrated URLs = %q / %q, want :2022 / :8880", provider, m.STTBaseURL, m.TTSBaseURL)
+		}
 	}
 }
 
@@ -569,14 +587,12 @@ func TestPingReachableAndNonReachable(t *testing.T) {
 		t.Errorf("Ping(stt) on closed server = %+v, want Ok=false and 'not reachable'", r)
 	}
 
-	// No URL configured (cloud provider, blank) → clear detail.
-	c3 := newController(entity.VoiceConfig{Provider: "cloud"})
-	// cloud with no base falls back to the cloud default, so test the explicit
-	// "no URL" path via a provider whose op URL cannot resolve: use "local" with
-	// an empty URL is impossible (defaults fill it), so assert the cloud default
-	// path is reachable-shaped instead — the no-URL branch is covered by an
-	// unset-able op only. Here we simply ensure Ping never panics on cloud.
+	// A blank-provider config is normalized to "local" and WithDefaults fills the
+	// localhost engine URLs, so Ping resolves a URL and never returns empty detail
+	// (and never panics). The result may be reachable or not depending on whether a
+	// local engine happens to be running; what matters is the detail is populated.
+	c3 := newController(entity.VoiceConfig{})
 	if r, _ := c3.Ping("stt"); r.Detail == "" {
-		t.Errorf("Ping(stt) cloud default returned empty detail = %+v", r)
+		t.Errorf("Ping(stt) on local default returned empty detail = %+v", r)
 	}
 }

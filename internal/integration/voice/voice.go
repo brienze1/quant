@@ -8,8 +8,9 @@
 //   - POST {baseURL}/v1/audio/transcriptions  (multipart: model, file, response_format, language?)
 //   - POST {baseURL}/v1/audio/speech          (json: model, input, voice, response_format, speed)
 //
-// Provider selection follows a simple ordered-list / first-success-wins model
-// (mirrors voicemode's local-first-then-cloud failover).
+// This feature is LOCAL-ONLY by design: requests target the user's self-hosted
+// engines (Whisper STT + Kokoro TTS) and NEVER fall back to a cloud provider, so
+// captured mic audio and TTS text never leave the machine.
 package voice
 
 import (
@@ -32,12 +33,11 @@ import (
 )
 
 const (
-	defaultCloudBaseURL = "https://api.openai.com"
-	defaultSTTModel     = "whisper-1"
-	defaultTTSModel     = "tts-1"
-	defaultVoice        = "am_onyx"
-	defaultSpeed        = 1.2
-	defaultTimeout      = 60 * time.Second
+	defaultSTTModel = "whisper-1"
+	defaultTTSModel = "tts-1"
+	defaultVoice    = "am_onyx"
+	defaultSpeed    = 1.2
+	defaultTimeout  = 60 * time.Second
 	// discoverTimeout bounds the model/voice discovery probes. It is short so a
 	// down or slow local server fails fast and the UI falls back to its curated
 	// option list instead of hanging the Settings tab.
@@ -126,6 +126,24 @@ func (c *voiceController) VoiceResult(requestId string, transcript string, errMs
 		Done:       errMsg == "",
 		Err:        errMsg,
 	})
+	return nil
+}
+
+// VoiceResultClosed is called by the frontend when the voice pane closes or moves
+// mid-request, so an in-flight voice tool turn ends promptly instead of waiting
+// the full timeout. It resolves the matching bridge request with Closed:true,
+// which Request() surfaces as ErrVoiceEnded so the agent leaves voice mode
+// gracefully (the MCP handler returns a "voice ended" message, not an error).
+// The frontend calls this as window.go.voice.voiceController.VoiceResultClosed(requestId).
+// Unknown/duplicate requestIds are ignored safely.
+//
+// It returns a single error (nil) to satisfy the remote-transport contract,
+// which keeps only the last non-error return value.
+func (c *voiceController) VoiceResultClosed(requestID string) error {
+	if c.bridge == nil {
+		return fmt.Errorf("voice bridge not initialized")
+	}
+	c.bridge.Resolve(requestID, VoiceReply{Closed: true})
 	return nil
 }
 
@@ -253,49 +271,20 @@ func resolveBase(vc entity.VoiceConfig, o op) string {
 	return trim(vc.BaseURL)
 }
 
-// baseURLs builds the ordered list of provider base URLs to try for one
-// operation (STT or TTS), based on the configured provider mode:
-//   - "local": the operation-specific local URL ONLY (no cloud fallback). If
-//     unset, returns nil (caller surfaces a clear error naming the field).
-//   - "cloud": the operation-specific/legacy URL if set, else the default cloud
-//     endpoint.
-//   - "auto" (default): the operation-specific/legacy URL first if set, then the
-//     cloud default as a fallback.
+// baseURLs builds the list of provider base URLs to try for one operation (STT
+// or TTS). This feature is LOCAL-ONLY: there is NO cloud fallback on any code
+// path. It returns the operation-specific local URL (sttBaseUrl/ttsBaseUrl),
+// falling back to the legacy shared BaseURL. If none is set it returns nil and
+// the caller surfaces a clear error naming the field to fill in. The OpenAI /
+// cloud endpoint is never returned — a transient local failure must never ship
+// the user's mic audio or TTS text off-machine. (Provider is normalized to
+// "local" by VoiceConfig.WithDefaults; legacy "auto"/"cloud" are treated the
+// same local-only way here as defense in depth.)
 func baseURLs(vc entity.VoiceConfig, o op) []string {
-	base := resolveBase(vc, o)
-
-	switch vc.Provider {
-	case "local":
-		if base != "" {
-			return []string{base}
-		}
-		return nil
-	case "cloud":
-		if base != "" {
-			return []string{base}
-		}
-		return []string{defaultCloudBaseURL}
-	default: // "auto"
-		var urls []string
-		if base != "" {
-			urls = append(urls, base)
-		}
-		urls = append(urls, defaultCloudBaseURL)
-		return dedupe(urls)
+	if base := resolveBase(vc, o); base != "" {
+		return []string{base}
 	}
-}
-
-func dedupe(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	out := in[:0]
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
+	return nil
 }
 
 // filenameForMIME maps an audio MIME type to a plausible filename so the

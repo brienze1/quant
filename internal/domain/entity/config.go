@@ -12,7 +12,7 @@ type Shortcut struct {
 // clients — the DTO masks it (see internal/integration/entrypoint/dto/config.go).
 type VoiceConfig struct {
 	Enabled  bool   `json:"enabled"`
-	Provider string `json:"provider"` // "auto" | "local" | "cloud"
+	Provider string `json:"provider"` // always normalized to "local" (local-only; legacy "auto"/"cloud" migrate to "local")
 	// BaseURL is the legacy single endpoint used for BOTH STT and TTS. It is kept
 	// as a back-compat fallback: when STTBaseURL / TTSBaseURL are empty the proxy
 	// falls back to BaseURL, then to the provider default.
@@ -46,7 +46,11 @@ const (
 // WithDefaults returns a copy of the voice config with sensible defaults applied
 // for any unset fields. This keeps configs saved before the voice feature usable.
 func (v VoiceConfig) WithDefaults() VoiceConfig {
-	if v.Provider == "" {
+	// Local-only enforcement: this feature must NEVER egress to a cloud provider
+	// (OpenAI etc.). Normalize ANY provider value other than "local" (including the
+	// legacy "auto"/"cloud" and the empty string) to "local", which migrates legacy
+	// saved configs so they persist as local on the next save.
+	if v.Provider != "local" {
 		v.Provider = "local"
 	}
 	// Local-first: only a "local" provider gets the localhost engine URLs filled

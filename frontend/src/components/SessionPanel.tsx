@@ -4,7 +4,6 @@ import type { Session, Task, Config } from "../types";
 import { StatusDot } from "./StatusDot";
 import { TerminalPane } from "./TerminalPane";
 import { MindmapPane } from "./MindmapPane";
-import { VoicePane } from "./VoicePane";
 import * as api from "../api";
 
 type SplitLayout = "horizontal" | "vertical";
@@ -68,17 +67,11 @@ export function SessionPanel({
   // layout (default vertical so the mindmap docks on the right) and divider.
   const [mindmapLayout, setMindmapLayout] = useState<SplitLayout>("vertical");
   const [mindmapDividerPercent, setMindmapDividerPercent] = useState(55);
-  // When BOTH the voice and mindmap panes are open they share the dock (the
-  // outer split's secondary pane), stacked horizontally (voice on top). This
-  // divider controls that mindmap/voice split. Default 50/50.
-  const [dockDividerPercent, setDockDividerPercent] = useState(50);
   const menuRef = useRef<HTMLDivElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null!)
   const mindmapContainerRef = useRef<HTMLDivElement>(null!)
-  const dockContainerRef = useRef<HTMLDivElement>(null!)
   const isDragging = useRef(false);
   const isDraggingMindmap = useRef(false);
-  const isDraggingDock = useRef(false);
 
   const isArchived = displayStatus === "archived";
   const isPaused = displayStatus === "paused";
@@ -182,36 +175,6 @@ export function SessionPanel({
     };
   }, [mindmapLayout]);
 
-  // Dock split divider drag handling: splits the dock between voice (top) and
-  // mindmap (bottom) when both are open. Always a horizontal stack.
-  const handleDockDividerMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isDraggingDock.current = true;
-    document.body.style.cursor = "row-resize";
-    document.body.style.userSelect = "none";
-  }, []);
-
-  useEffect(() => {
-    function handleMouseMove(e: MouseEvent) {
-      if (!isDraggingDock.current || !dockContainerRef.current) return;
-      const rect = dockContainerRef.current.getBoundingClientRect();
-      const percent = ((e.clientY - rect.top) / rect.height) * 100;
-      setDockDividerPercent(Math.min(80, Math.max(20, percent)));
-    }
-    function handleMouseUp() {
-      if (!isDraggingDock.current) return;
-      isDraggingDock.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
-
   async function handleOpenTerminal() {
     if (splitState.open) return;
     const existing = splitState.terminalSession || embeddedTerminalSession;
@@ -244,14 +207,15 @@ export function SessionPanel({
   // The terminal split's secondary pane (the embedded terminal) is open only
   // when a terminal session exists and the user has toggled it open.
   const terminalSecondaryOpen = splitState.open && !!splitState.terminalSession;
-  // The OUTER split's secondary pane is a shared "dock" holding the mindmap
-  // and/or voice panes — independent of the terminal split, so both the
-  // embedded terminal and the dock can show at once. The dock is open when
-  // EITHER the mindmap or the voice pane is open; its layout/divider follow the
-  // mindmap controls (the mindmap drives the primary/dock boundary). When both
-  // panes are open the dock itself splits (voice over mindmap) via the dock
-  // divider; when only one is open it fills the dock.
-  const dockOpen = mindmapPaneOpen || voicePaneOpen;
+  // The OUTER split's secondary pane is the mindmap "dock" — independent of the
+  // terminal split, so both the embedded terminal and the dock can show at once.
+  //
+  // NOTE: the VOICE pane is NO LONGER rendered here. Voice is pinned to the
+  // session it was opened on and must survive active-tab switches, so it is
+  // mounted at App scope (keyed by voiceSessionId) and rendered as a persistent
+  // right-docked panel — not inside this per-active-tab SessionPanel, which
+  // unmounts on tab switch. SessionPanel only owns the mindmap dock now.
+  const dockOpen = mindmapPaneOpen;
   const dockSplitState: SplitState = {
     open: dockOpen,
     terminalSession: null,
@@ -424,8 +388,8 @@ export function SessionPanel({
             </div>
           )}
 
-          {/* Dock split layout toggle (controls where the voice/mindmap dock
-              sits relative to the session — shown when either pane is open). */}
+          {/* Mindmap dock layout toggle (controls where the mindmap dock sits
+              relative to the session — shown only when the mindmap is open). */}
           {dockOpen && (
             <div className="flex items-center gap-0.5">
               <LayoutIcon
@@ -530,94 +494,20 @@ export function SessionPanel({
         }
         secondaryPane={
           dockOpen ? (
-            <DockPane
-              sessionId={session.id}
-              voicePaneOpen={voicePaneOpen}
-              mindmapPaneOpen={mindmapPaneOpen}
-              onVoicePaneOpenChange={onVoicePaneOpenChange}
-              onMindmapPaneOpenChange={onMindmapPaneOpenChange}
-              dockContainerRef={dockContainerRef}
-              dockDividerPercent={dockDividerPercent}
-              onDockDividerMouseDown={handleDockDividerMouseDown}
-            />
+            <>
+              <PaneHeader
+                label="mindmap"
+                dotColor="var(--q-accent)"
+                onClose={() => onMindmapPaneOpenChange(false)}
+              />
+              <div className="flex-1 min-h-0">
+                <MindmapPane sessionId={session.id} />
+              </div>
+            </>
           ) : null
         }
       />
     </div>
-  );
-}
-
-/**
- * DockPane renders the contents of the outer split's secondary pane: the voice
- * pane and/or the mindmap pane. When both are open it stacks them vertically
- * (voice on top, mindmap below) via a nested horizontal SplitContainer with its
- * own draggable divider; when only one is open it fills the dock. This keeps
- * voice and mindmap independent (either can be toggled on its own) while sharing
- * the single dock slot off the session.
- */
-function DockPane({
-  sessionId,
-  voicePaneOpen,
-  mindmapPaneOpen,
-  onVoicePaneOpenChange,
-  onMindmapPaneOpenChange,
-  dockContainerRef,
-  dockDividerPercent,
-  onDockDividerMouseDown,
-}: {
-  sessionId: string;
-  voicePaneOpen: boolean;
-  mindmapPaneOpen: boolean;
-  onVoicePaneOpenChange: (open: boolean) => void;
-  onMindmapPaneOpenChange: (open: boolean) => void;
-  dockContainerRef: React.RefObject<HTMLDivElement>;
-  dockDividerPercent: number;
-  onDockDividerMouseDown: (e: React.MouseEvent) => void;
-}) {
-  const voiceContent = (
-    <>
-      <PaneHeader
-        label="voice"
-        dotColor="var(--q-term-green)"
-        onClose={() => onVoicePaneOpenChange(false)}
-      />
-      <div className="flex-1 min-h-0">
-        <VoicePane sessionId={sessionId} />
-      </div>
-    </>
-  );
-
-  const mindmapContent = (
-    <>
-      <PaneHeader
-        label="mindmap"
-        dotColor="var(--q-accent)"
-        onClose={() => onMindmapPaneOpenChange(false)}
-      />
-      <div className="flex-1 min-h-0">
-        <MindmapPane sessionId={sessionId} />
-      </div>
-    </>
-  );
-
-  // Only one open → fill the dock.
-  if (voicePaneOpen && !mindmapPaneOpen) return voiceContent;
-  if (mindmapPaneOpen && !voicePaneOpen) return mindmapContent;
-
-  // Both open → stack voice over mindmap with a resizable divider.
-  return (
-    <SplitContainer
-      splitContainerRef={dockContainerRef}
-      splitState={{
-        open: true,
-        terminalSession: null,
-        layout: "horizontal",
-        dividerPercent: dockDividerPercent,
-      }}
-      onDividerMouseDown={onDockDividerMouseDown}
-      primaryPane={voiceContent}
-      secondaryPane={mindmapContent}
-    />
   );
 }
 

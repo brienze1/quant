@@ -20,3 +20,5 @@ export function Synthesize(arg1:string,arg2:string,arg3:number):Promise<voice.Sp
 export function Transcribe(arg1:string,arg2:string):Promise<string>;
 
 export function VoiceResult(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function VoiceResultClosed(arg1:string):Promise<void>;

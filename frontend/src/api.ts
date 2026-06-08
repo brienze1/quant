@@ -595,6 +595,20 @@ export function voiceResult(
 }
 
 /**
+ * Report that an in-flight voice request was abandoned because its voice pane
+ * was torn down (voice closed or moved to another session) while the request
+ * was still pending. The Go side maps this to a graceful "voice ended" result
+ * (NOT an error), so the waiting MCP voice tool returns immediately instead of
+ * blocking until its ~120s timeout. Called by the frontend voice bridge
+ * (voiceBridge.ts) on unregister when a request is still unsettled.
+ *
+ * @param requestId correlation id from the "voice:request" event
+ */
+export function voiceResultClosed(requestId: string): Promise<void> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "VoiceResultClosed", requestId);
+}
+
+/**
  * Kick a running session into voice mode. Injects the voice-mode persona/kickoff
  * message into the session (auto-submitted Go-side), after which the agent drives
  * the spoken conversation loop via the voice_* MCP tools. Called once when the

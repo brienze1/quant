@@ -4,10 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// ErrVoiceEnded signals that the voice surface is gone — the request timed out
+// with no client responding, or the voice pane was closed/unmounted mid-request.
+// It means the agent should STOP calling voice tools gracefully: it is NOT a
+// retryable failure and NOT a real audio error. Callers test for it with
+// errors.Is(err, ErrVoiceEnded).
+var ErrVoiceEnded = errors.New("voice session ended")
 
 // Default timeouts for the two voice round-trip kinds. They are generous because
 // a "listen" turn waits for a human to finish speaking, and a "speak" turn waits
@@ -34,6 +42,10 @@ type VoiceReply struct {
 	Transcript string
 	Done       bool
 	Err        string
+	// Closed is set by the frontend when the voice pane closed/moved mid-request,
+	// so the in-flight turn can end promptly (instead of waiting the full timeout)
+	// and the agent leaves voice mode gracefully via ErrVoiceEnded.
+	Closed bool
 }
 
 // VoiceRequestEvent is the payload emitted on the "voice:request" event. The
@@ -143,10 +155,17 @@ func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, time
 		if reply.Err != "" {
 			return reply, fmt.Errorf("voice %s failed: %s", kind, reply.Err)
 		}
+		if reply.Closed {
+			// The pane closed/moved mid-request: end voice mode gracefully rather
+			// than treating it as an error or waiting out the timeout.
+			return reply, fmt.Errorf("voice %s ended (pane closed): %w", kind, ErrVoiceEnded)
+		}
 		return reply, nil
 	case <-time.After(timeout):
 		b.remove(requestID)
-		return VoiceReply{}, fmt.Errorf("voice %s timed out after %s waiting for the frontend — is the voice pane open for this session? (recoverable: retry)", kind, timeout)
+		// No client responded within the timeout: the voice surface is gone. Wrap
+		// as ErrVoiceEnded so the agent stops calling voice tools instead of looping.
+		return VoiceReply{}, fmt.Errorf("voice %s ended (timed out after %s waiting for the pane): %w", kind, timeout, ErrVoiceEnded)
 	case <-ctx.Done():
 		b.remove(requestID)
 		return VoiceReply{}, fmt.Errorf("voice %s cancelled: %w", kind, ctx.Err())

@@ -5,6 +5,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -2352,6 +2353,15 @@ func voiceTurnResult(transcript string) *mcp.CallToolResult {
 	))
 }
 
+// voiceEndedResult is returned (as a successful tool result, NOT an error) when a
+// voice request ends because the pane closed or timed out with no client
+// (errors.Is(err, voice.ErrVoiceEnded)). It tells the agent to stop calling voice
+// tools and resume normal text interaction, so a closed/timed-out pane ends the
+// loop cleanly instead of ejecting the agent with a hard error or looping retries.
+func voiceEndedResult() *mcp.CallToolResult {
+	return mcp.NewToolResultText("The voice pane is no longer responding (it was closed, or this session is no longer the active voice session). Voice mode has ENDED. Stop calling voice tools (voice_listen/voice_speak/voice_converse) and resume normal text interaction. Do not retry voice unless the user asks.")
+}
+
 func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if s.voiceBridge == nil {
 		return mcp.NewToolResultError("voice bridge not available"), nil
@@ -2363,6 +2373,9 @@ func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, _ mcp.CallToolRe
 
 	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", voice.ListenTimeout)
 	if err != nil {
+		if errors.Is(err, voice.ErrVoiceEnded) {
+			return voiceEndedResult(), nil
+		}
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return voiceTurnResult(reply.Transcript), nil
@@ -2382,6 +2395,9 @@ func (s *QuantMCPServer) handleVoiceSpeak(ctx context.Context, request mcp.CallT
 	}
 
 	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, voice.SpeakTimeout); err != nil {
+		if errors.Is(err, voice.ErrVoiceEnded) {
+			return voiceEndedResult(), nil
+		}
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return mcp.NewToolResultText("spoken"), nil
@@ -2402,10 +2418,16 @@ func (s *QuantMCPServer) handleVoiceConverse(ctx context.Context, request mcp.Ca
 
 	// Speak first, then listen for the reply — one combined turn.
 	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, voice.SpeakTimeout); err != nil {
+		if errors.Is(err, voice.ErrVoiceEnded) {
+			return voiceEndedResult(), nil
+		}
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", voice.ListenTimeout)
 	if err != nil {
+		if errors.Is(err, voice.ErrVoiceEnded) {
+			return voiceEndedResult(), nil
+		}
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return voiceTurnResult(reply.Transcript), nil
