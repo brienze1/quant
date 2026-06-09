@@ -94,10 +94,6 @@ export function OnStartup(arg1) {
   return window['go']['controller']['sessionController']['OnStartup'](arg1);
 }
 
-export function QuantiChat(arg1, arg2, arg3) {
-  return window['go']['controller']['sessionController']['QuantiChat'](arg1, arg2, arg3);
-}
-
 export function RenameSession(arg1, arg2) {
   return window['go']['controller']['sessionController']['RenameSession'](arg1, arg2);
 }
@@ -116,10 +112,6 @@ export function RunShortcut(arg1, arg2) {
 
 export function SendMessage(arg1, arg2) {
   return window['go']['controller']['sessionController']['SendMessage'](arg1, arg2);
-}
-
-export function StartAssistantSession(arg1) {
-  return window['go']['controller']['sessionController']['StartAssistantSession'](arg1);
 }
 
 export function StartSession(arg1, arg2, arg3) {

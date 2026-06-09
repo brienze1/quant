@@ -269,7 +269,6 @@ export interface Config {
   cliBinaryPath: string;
   extraCliArgs: string;
   defaultModel: string;
-  assistantModel: string;
   envVariables: Record<string, string>;
   commandOverrides: Record<string, string>;
   // Base persona appended to every spawned session. Empty = use the built-in

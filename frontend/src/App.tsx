@@ -39,7 +39,6 @@ import { JobsView } from "./components/JobsView";
 import { CreateJobModal } from "./components/CreateJobModal";
 import AgentsView from "./components/AgentsView";
 import { CreateAgentModal } from "./components/CreateAgentModal";
-import { QuantAssistant } from "./components/QuantAssistant";
 import { ChangelogModal } from "./components/ChangelogModal";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { ThemeQuickPicker } from "./components/ThemeQuickPicker";
@@ -124,9 +123,6 @@ function App() {
     () => localStorage.getItem("quant:activeWorkspaceId") || "default"
   );
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
-  const [quantiConvID, setQuantiConvID] = useState<string>("");
-  const [quantiModel, setQuantiModel] = useState<string>("claude-sonnet-4-6");
-  const [assistantOpen, setAssistantOpen] = useState(false);
   const [jobGroups, setJobGroups] = useState<JobGroup[]>([]);
   const [appVersion, setAppVersion] = useState<string>("");
   const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[]>([]);
@@ -471,16 +467,6 @@ function App() {
     // Load app version and changelog
     api.getVersion().then(setAppVersion).catch(() => setAppVersion(""));
     api.getChangelog().then((cl) => setChangelogEntries(cl.entries ?? [])).catch(() => {});
-    // Set up Quanti directory (writes CLAUDE.md, memory files, runs background consolidation)
-    // convID starts empty — first message creates a new Claude conversation,
-    // then the quanti:session event gives us the real conversation ID for --resume
-    api.getConfig()
-      .then((cfg) => {
-        const model = cfg.assistantModel || "claude-sonnet-4-6";
-        setQuantiModel(model);
-        return api.startAssistantSession(model);
-      })
-      .catch((err) => console.error("failed to start quanti:", err));
   }, [loadAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -936,8 +922,6 @@ function App() {
             if (!cfg.notifications) return;
 
             const session = findSession(id, sessionsByRepo, sessionsByTask);
-            // Skip notifications for the assistant session
-            if (session?.name === "__quanti__") return;
             const name = session?.name ?? id;
 
             // In-app toast notification
@@ -1478,7 +1462,7 @@ function App() {
   // Filter out embedded terminal sessions and filter by active workspace
   const embeddedIds = new Set(Object.values(embeddedTerminalMap));
   const filterSessions = (sessions: Session[]) =>
-    sessions.filter(s => !embeddedIds.has(s.id) && s.workspaceId === activeWorkspaceId && s.name !== "__quanti__");
+    sessions.filter(s => !embeddedIds.has(s.id) && s.workspaceId === activeWorkspaceId);
 
   const filteredSessionsByRepo: Record<string, Session[]> = {};
   for (const [repoId, sessions] of Object.entries(sessionsByRepo)) {
@@ -1561,22 +1545,6 @@ function App() {
     : "";
 
   const currentView: View = view;
-
-  const renderQuantiOverlay = () => (
-    <div style={{
-      position: "fixed",
-      bottom: 24,
-      right: 60,
-      zIndex: 100,
-      display: assistantOpen ? "block" : "none",
-    }}>
-      <QuantAssistant
-        convID={quantiConvID}
-        model={quantiModel}
-        onMinimize={() => setAssistantOpen(false)}
-      />
-    </div>
-  );
 
   const renderIconStrip = () => {
     const items: { view: string; label: string; onClick: () => void; icon: React.ReactNode }[] = [
@@ -1677,25 +1645,6 @@ function App() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        {/* Assistant toggle */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <button
-            onClick={() => setAssistantOpen((v) => !v)}
-            style={{
-              width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-              background: "none", border: "none", cursor: "pointer",
-              color: assistantOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
-              borderRight: assistantOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
-            }}
-            onMouseEnter={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
-            onMouseLeave={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
-            title="Quant Assistant"
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-          </button>
-        </div>
         {/* Workspace selector */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
           <button
@@ -2197,11 +2146,9 @@ function App() {
     </>
   );
 
-  // Settings and diff wrap QuantAssistant so it stays mounted across all views
   if (view === "settings") {
     return (
       <>
-        {renderQuantiOverlay()}
         <Settings repos={repos} onBack={() => { fetchShortcuts(); setView("dashboard"); }} />
         {commandPaletteOpen && <CommandPalette commands={paletteCommands} onClose={() => setCommandPaletteOpen(false)} />}
         {themePickerOpen && <ThemeQuickPicker onClose={() => setThemePickerOpen(false)} />}
@@ -2212,7 +2159,6 @@ function App() {
   if (view === "diff" && diffSession) {
     return (
       <>
-        {renderQuantiOverlay()}
         <DiffView
           sessionId={diffSession.id}
           sessionName={diffSession.name}
@@ -2229,8 +2175,6 @@ function App() {
   // (sessions/terminals keep running in the background)
   return (
     <>
-      {renderQuantiOverlay()}
-
       {view === "jobs" && (
         <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
           <JobsView
@@ -2520,7 +2464,7 @@ function App() {
         <div
           style={{
             position: "fixed",
-            bottom: assistantOpen ? 608 : 20,
+            bottom: 20,
             right: 20,
             zIndex: 9999,
             transition: "bottom 0.2s ease",

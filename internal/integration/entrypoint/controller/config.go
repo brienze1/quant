@@ -3,8 +3,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -137,46 +135,4 @@ func (c *configController) GetDatabasePath() string {
 // SendNotification sends a system notification with the given title and message.
 func (c *configController) SendNotification(title, message string) error {
 	return c.configManager.SendNotification(title, message)
-}
-
-// GetQuantiFile reads a Quanti file by name (e.g. "CLAUDE.md", "short_term.md").
-// Files live in ~/.quant/quanti/ or ~/.quant/quanti/memory/.
-func (c *configController) GetQuantiFile(name string) (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-	path := resolveQuantiPath(homeDir, name)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("failed to read file: %w", err)
-	}
-	return string(data), nil
-}
-
-// SaveQuantiFile writes content to a Quanti file by name.
-func (c *configController) SaveQuantiFile(name string, content string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-	path := resolveQuantiPath(homeDir, name)
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
-	}
-	return nil
-}
-
-// resolveQuantiPath maps a file name to its full path within ~/.quant/quanti/.
-func resolveQuantiPath(homeDir, name string) string {
-	base := homeDir + "/.quant/quanti"
-	switch name {
-	case "short_term.md", "medium_term.md", "long_term.md":
-		return base + "/memory/" + name
-	default:
-		return base + "/" + name
-	}
 }

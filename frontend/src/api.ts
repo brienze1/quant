@@ -125,14 +125,6 @@ export function createSession(req: CreateSessionRequest): Promise<Session> {
   return callGo(PKG, SESSION_CTRL, "CreateSession", req);
 }
 
-export function startAssistantSession(model: string): Promise<Session> {
-  return callGo(PKG, SESSION_CTRL, "StartAssistantSession", model);
-}
-
-export function quantiChat(convID: string, message: string, model: string): Promise<string> {
-  return callGo(PKG, SESSION_CTRL, "QuantiChat", convID, message, model);
-}
-
 export function startSession(id: string, rows: number, cols: number): Promise<void> {
   return callGo(PKG, SESSION_CTRL, "StartSession", id, rows, cols);
 }
@@ -289,14 +281,6 @@ export function browseConfigDirectory(): Promise<string> {
 
 export function sendNotification(title: string, message: string): Promise<void> {
   return callGo(PKG, CONFIG_CTRL, "SendNotification", title, message);
-}
-
-export function getQuantiFile(name: string): Promise<string> {
-  return callGo(PKG, CONFIG_CTRL, "GetQuantiFile", name);
-}
-
-export function saveQuantiFile(name: string, content: string): Promise<void> {
-  return callGo(PKG, CONFIG_CTRL, "SaveQuantiFile", name, content);
 }
 
 // --- Jobs ---

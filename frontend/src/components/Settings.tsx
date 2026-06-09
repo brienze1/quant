@@ -10,7 +10,7 @@ import { getOS, type OS } from "../os";
 const chevronBg = (hex: string) =>
   `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='none' stroke='${hex.replace("#", "%23")}' stroke-width='1.5'/%3E%3C/svg%3E")`;
 
-type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "quanti" | "voice" | "remote" | "themes" | "keybindings";
+type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "voice" | "remote" | "themes" | "keybindings";
 
 const NAV_ITEMS: { key: SettingsTab; label: string; icon: string }[] = [
   { key: "general", label: "general", icon: "settings" },
@@ -21,7 +21,6 @@ const NAV_ITEMS: { key: SettingsTab; label: string; icon: string }[] = [
   { key: "storage", label: "storage & data", icon: "hard-drive" },
   { key: "terminal", label: "terminal", icon: "monitor" },
   { key: "claude", label: "claude cli", icon: "bot" },
-  { key: "quanti", label: "quanti", icon: "message-square" },
   { key: "voice", label: "voice", icon: "mic" },
   { key: "remote", label: "remote access", icon: "globe" },
 ];
@@ -178,7 +177,6 @@ export function Settings({ repos, onBack }: Props) {
           {tab === "storage" && <StorageTab config={config} update={update} onError={setError} onReload={loadConfig} />}
           {tab === "terminal" && <TerminalTab config={config} update={update} />}
           {tab === "claude" && <ClaudeTab config={config} update={update} />}
-          {tab === "quanti" && <QuantiTab config={config} update={update} />}
           {tab === "voice" && <VoiceTab config={config} update={update} />}
           {tab === "remote" && <RemoteTab />}
         </div>
@@ -1647,156 +1645,6 @@ function navIcon(name: string): React.ReactNode {
     default:
       return "*";
   }
-}
-
-// --- Quanti Tab ---
-
-const QUANTI_FILES = [
-  { name: "CLAUDE.md", label: "soul / personality", description: "Quanti's identity, personality, memory protocol and role definition" },
-  { name: "short_term.md", label: "short-term memory", description: "Current session notes — cleared and consolidated on each startup" },
-  { name: "medium_term.md", label: "medium-term memory", description: "Multi-session patterns and user preferences" },
-  { name: "long_term.md", label: "long-term memory", description: "Core stable knowledge about you and your setup" },
-];
-
-function QuantiTab({ config, update }: TabProps) {
-  const [activeFile, setActiveFile] = useState<string | null>(null);
-  const [fileContent, setFileContent] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  async function openFile(name: string) {
-    setActiveFile(name);
-    setLoading(true);
-    setFileContent("");
-    setSaved(false);
-    try {
-      const content = await api.getQuantiFile(name);
-      setFileContent(content ?? "");
-    } catch (err) {
-      console.error("failed to read file:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveFile() {
-    if (!activeFile) return;
-    setSaving(true);
-    try {
-      await api.saveQuantiFile(activeFile, fileContent);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error("failed to save file:", err);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const activeFileMeta = QUANTI_FILES.find(f => f.name === activeFile);
-
-  return (
-    <>
-      <Section title="model" description="model used for the Quanti chat panel">
-        <SettingRow
-          label="model"
-          description="faster models respond quicker; smarter models handle complex pipelines better"
-          right={
-            <SelectInput
-              value={config.assistantModel || "claude-sonnet-4-6"}
-              options={MODEL_OPTIONS}
-              onChange={(v) => update("assistantModel", v)}
-              width={280}
-            />
-          }
-        />
-      </Section>
-
-      <Section title="files" description="view and edit Quanti's personality and memory — changes take effect on the next Quanti session">
-        <div style={{ display: "flex", gap: 0, border: "1px solid var(--q-border)" }}>
-          {/* File list sidebar */}
-          <div style={{ width: 200, borderRight: "1px solid var(--q-border)", flexShrink: 0 }}>
-            {QUANTI_FILES.map((f) => (
-              <button
-                key={f.name}
-                onClick={() => openFile(f.name)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  padding: "10px 14px",
-                  textAlign: "left",
-                  background: activeFile === f.name ? "var(--q-bg-surface)" : "none",
-                  border: "none",
-                  borderBottom: "1px solid var(--q-bg-hover)",
-                  cursor: "pointer",
-                  fontFamily: font,
-                }}
-              >
-                <div style={{ fontSize: 11, color: activeFile === f.name ? "var(--q-fg)" : "var(--q-fg-tertiary)", fontWeight: activeFile === f.name ? 600 : 400 }}>
-                  {f.label}
-                </div>
-                <div style={{ fontSize: 9, color: "var(--q-fg-muted)", marginTop: 2 }}>{f.name}</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Editor area */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 360 }}>
-            {!activeFile ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font }}>
-                select a file to view and edit
-              </div>
-            ) : loading ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font }}>
-                loading…
-              </div>
-            ) : (
-              <>
-                <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--q-bg-hover)", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 10, color: "var(--q-fg-secondary)", fontFamily: font, flex: 1 }}>{activeFileMeta?.description}</span>
-                  <button
-                    onClick={saveFile}
-                    disabled={saving}
-                    style={{
-                      padding: "4px 12px",
-                      backgroundColor: saved ? "#065F46" : "var(--q-accent)",
-                      border: "none",
-                      borderRadius: 4,
-                      color: "var(--q-bg)",
-                      fontSize: 10,
-                      fontFamily: font,
-                      cursor: saving ? "default" : "pointer",
-                      transition: "background-color 0.2s",
-                    }}
-                  >
-                    {saved ? "saved ✓" : saving ? "saving…" : "save"}
-                  </button>
-                </div>
-                <textarea
-                  value={fileContent}
-                  onChange={(e) => { setFileContent(e.target.value); setSaved(false); }}
-                  style={{
-                    flex: 1,
-                    resize: "none",
-                    backgroundColor: "var(--q-bg)",
-                    border: "none",
-                    color: "var(--q-fg-dimmed)",
-                    fontFamily: font,
-                    fontSize: 11,
-                    lineHeight: 1.6,
-                    padding: "12px",
-                    outline: "none",
-                  }}
-                  spellCheck={false}
-                />
-              </>
-            )}
-          </div>
-        </div>
-      </Section>
-    </>
-  );
 }
 
 // --- Voice Tab ---

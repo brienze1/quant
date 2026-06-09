@@ -77,7 +77,6 @@ type SaveConfigRequest struct {
 	CliBinaryPath    string            `json:"cliBinaryPath"`
 	ExtraCliArgs     string            `json:"extraCliArgs"`
 	DefaultModel     string            `json:"defaultModel"`
-	AssistantModel   string            `json:"assistantModel"`
 	EnvVariables     map[string]string `json:"envVariables"`
 	CommandOverrides map[string]string `json:"commandOverrides"`
 	BasePersona      string            `json:"basePersona"` // empty = use built-in default
@@ -137,7 +136,6 @@ type ConfigResponse struct {
 	CliBinaryPath    string            `json:"cliBinaryPath"`
 	ExtraCliArgs     string            `json:"extraCliArgs"`
 	DefaultModel     string            `json:"defaultModel"`
-	AssistantModel   string            `json:"assistantModel"`
 	EnvVariables     map[string]string `json:"envVariables"`
 	CommandOverrides map[string]string `json:"commandOverrides"`
 	BasePersona      string            `json:"basePersona"` // user override; empty = built-in default in use
@@ -194,7 +192,6 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		CliBinaryPath:         cfg.CliBinaryPath,
 		ExtraCliArgs:          cfg.ExtraCliArgs,
 		DefaultModel:          cfg.DefaultModel,
-		AssistantModel:        cfg.AssistantModel,
 		EnvVariables:          cfg.EnvVariables,
 		CommandOverrides:      cfg.CommandOverrides,
 		BasePersona:           cfg.BasePersona,
@@ -285,7 +282,6 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		CliBinaryPath:         r.CliBinaryPath,
 		ExtraCliArgs:          r.ExtraCliArgs,
 		DefaultModel:          r.DefaultModel,
-		AssistantModel:        r.AssistantModel,
 		EnvVariables:          envVariables,
 		CommandOverrides:      commandOverrides,
 		BasePersona:           r.BasePersona,

@@ -2,21 +2,12 @@
 package controller
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 
 	"quant/internal/application/adapter"
 	"quant/internal/domain/entity"
 	intadapter "quant/internal/integration/adapter"
 	"quant/internal/integration/entrypoint/dto"
-	"quant/internal/integration/remote"
 )
 
 // sessionController implements the integration adapter.SessionController interface.
@@ -63,15 +54,6 @@ func (c *sessionController) CreateSession(request dto.CreateSessionRequest) (*dt
 		return nil, err
 	}
 
-	return dto.SessionResponseFromEntityPtr(session), nil
-}
-
-// StartAssistantSession creates and returns a fresh Quant Assistant session.
-func (c *sessionController) StartAssistantSession(model string) (*dto.SessionResponse, error) {
-	session, err := c.sessionManager.StartAssistantSession(model)
-	if err != nil {
-		return nil, err
-	}
 	return dto.SessionResponseFromEntityPtr(session), nil
 }
 
@@ -238,157 +220,4 @@ func (c *sessionController) GitSaveFileContent(sessionID string, filePath string
 // GitCommitFiles stages and commits only the specified files with the given message.
 func (c *sessionController) GitCommitFiles(sessionID string, message string, files []string) error {
 	return c.sessionManager.GitCommitFiles(sessionID, message, files)
-}
-
-// QuantiChat sends a message to Quanti using claude -p --output-format stream-json.
-// This gives newline-delimited JSON events with typed messages. We parse each event
-// and emit "quanti:token" for text deltas so the UI shows a streaming response.
-// Returns the complete response text when done.
-func (c *sessionController) QuantiChat(convID string, message string, model string) (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	quantiDir := filepath.Join(homeDir, ".quant", "quanti")
-
-	claudeBin := "claude"
-	for _, candidate := range []string{
-		"/usr/local/bin/claude",
-		filepath.Join(homeDir, ".local/bin/claude"),
-		filepath.Join(homeDir, "bin/claude"),
-	} {
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			claudeBin = candidate
-			break
-		}
-	}
-
-	args := []string{"-p", message, "--output-format", "stream-json", "--dangerously-skip-permissions", "--verbose"}
-	if convID != "" {
-		args = append(args, "--resume", convID)
-	} else {
-		// First call — let Claude create a new conversation
-	}
-	if model != "" && model != "cli default" {
-		args = append(args, "--model", model)
-	}
-
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/zsh"
-	}
-	parts := make([]string, 0, len(args)+1)
-	parts = append(parts, shellQuoteSession(claudeBin))
-	for _, a := range args {
-		parts = append(parts, shellQuoteSession(a))
-	}
-	shellCmd := strings.Join(parts, " ")
-
-	cmd := exec.Command(shell, "-l", "-c", shellCmd)
-	cmd.Dir = quantiDir
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start claude: %w", err)
-	}
-
-	// Parse newline-delimited JSON events from stream-json output.
-	// Key event types:
-	//   {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}
-	//   {"type":"result","subtype":"success","result":"..."}
-	var fullResponse strings.Builder
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer for large events
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-
-		// Quick JSON parse — extract type and text content
-		var event map[string]interface{}
-		if jsonErr := json.Unmarshal([]byte(line), &event); jsonErr != nil {
-			continue
-		}
-
-		eventType, _ := event["type"].(string)
-
-		switch eventType {
-		case "system":
-			// Capture session_id from init event so frontend can resume later
-			if subtype, _ := event["subtype"].(string); subtype == "init" {
-				if sessionID, ok := event["session_id"].(string); ok && sessionID != "" {
-					if c.ctx != nil {
-						remote.Emit(c.ctx, "quanti:session", sessionID)
-					}
-				}
-			}
-
-		case "assistant":
-			// Extract text from message.content[].text
-			msg, _ := event["message"].(map[string]interface{})
-			if msg == nil {
-				continue
-			}
-			contentArr, _ := msg["content"].([]interface{})
-			for _, block := range contentArr {
-				blockMap, _ := block.(map[string]interface{})
-				if blockMap == nil {
-					continue
-				}
-				if blockMap["type"] == "text" {
-					text, _ := blockMap["text"].(string)
-					if text != "" {
-						fullResponse.WriteString(text)
-						if c.ctx != nil {
-							remote.Emit(c.ctx, "quanti:token", text)
-						}
-					}
-				}
-			}
-
-		case "result":
-			// Final result — use this as the canonical response if we didn't get text events
-			if result, ok := event["result"].(string); ok && fullResponse.Len() == 0 {
-				fullResponse.WriteString(result)
-				if c.ctx != nil {
-					remote.Emit(c.ctx, "quanti:token", result)
-				}
-			}
-		}
-	}
-
-	if err := cmd.Wait(); err != nil {
-		errText := stderr.String()
-		if errText == "" {
-			errText = err.Error()
-		}
-		// Still emit done event even on error
-		if c.ctx != nil {
-			remote.Emit(c.ctx, "quanti:done", nil)
-		}
-		return "", fmt.Errorf("claude failed: %s", errText)
-	}
-
-	if c.ctx != nil {
-		remote.Emit(c.ctx, "quanti:done", nil)
-	}
-
-	return strings.TrimSpace(fullResponse.String()), nil
-}
-
-// shellQuoteSession quotes a string for safe shell use (same logic as process manager).
-func shellQuoteSession(s string) string {
-	if !strings.ContainsAny(s, " \t\n\"'\\$`&|;<>(){}") {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
