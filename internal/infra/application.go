@@ -201,6 +201,14 @@ func removeQuantMCP() {
 
 // Run bootstraps and starts the Wails application with all dependencies wired.
 func Run(assets embed.FS, changelogData []byte) error {
+	// Detached-window mode: when QUANT_ATTACH_PORT is set this process is a thin
+	// client of a primary Quant instance (spawned by OpenWorkspaceWindow). It runs
+	// NO backend — its webview reverse-proxies to the primary's loopback attach
+	// server — so we branch out before touching the DB/MCP/injector entirely.
+	if attachPort := os.Getenv("QUANT_ATTACH_PORT"); attachPort != "" {
+		return runAttachedWindow(attachPort, os.Getenv("QUANT_ATTACH_TOKEN"), os.Getenv("QUANT_ATTACH_WORKSPACE"))
+	}
+
 	database, err := db.NewSQLiteConnection()
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -292,6 +300,12 @@ func Run(assets embed.FS, changelogData []byte) error {
 	// control (enable/disable, passcode regen) must not be reachable through the
 	// tunnel itself. It is bound to Wails below for the desktop UI only.
 
+	// windowController spawns detached workspace windows. Like remoteController it
+	// is bound to Wails ONLY (not in remoteControllers): spawning a desktop window
+	// must not be reachable from a remote browser or a detached window — only the
+	// primary native window can detach workspaces.
+	windowCtrl := controller.NewWindowController(remoteManager)
+
 	err = wails.Run(&options.App{
 		Title:  ">_ quant",
 		Width:  1440,
@@ -316,6 +330,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			changelogCtrl.OnStartup(ctx)
 			voiceCtrl.OnStartup(ctx)
 			remoteCtrl.OnStartup(ctx)
+			windowCtrl.OnStartup(ctx)
 			// Auto-resume remote access if it was enabled before the last shutdown.
 			// Runs after controllers have their context set, since RPC dispatch
 			// invokes those same controller methods.
@@ -335,6 +350,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			changelogCtrl.OnShutdown(ctx)
 			voiceCtrl.OnShutdown(ctx)
 			remoteCtrl.OnShutdown(ctx)
+			windowCtrl.OnShutdown(ctx)
 			remoteManager.Stop()
 			jobScheduler.Stop()
 			_ = mcpServer.Stop()
@@ -356,6 +372,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			changelogCtrl,
 			voiceCtrl,
 			remoteCtrl,
+			windowCtrl,
 		},
 	})
 	if err != nil {

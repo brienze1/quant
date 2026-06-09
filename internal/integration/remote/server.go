@@ -105,30 +105,41 @@ func (s *server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	}
 	upath := strings.TrimPrefix(r.URL.Path, "/")
 	if upath == "" || upath == "index.html" {
-		s.serveIndex(w)
+		s.serveIndex(w, r)
 		return
 	}
 	if st, err := fs.Stat(s.assets, upath); err == nil && !st.IsDir() {
 		s.fileServer.ServeHTTP(w, r)
 		return
 	}
-	s.serveIndex(w) // SPA fallback
+	s.serveIndex(w, r) // SPA fallback
 }
 
 // serveIndex serves index.html with the bridge shim injected as the first
 // script in <head> so window.go / window.runtime exist before the app's
-// deferred module scripts run.
-func (s *server) serveIndex(w http.ResponseWriter) {
+// deferred module scripts run. When the request carries a `ws` query param (set
+// by a detached/attached window's reverse proxy), a tiny script pinning the
+// window to that workspace is injected alongside the shim.
+func (s *server) serveIndex(w http.ResponseWriter, r *http.Request) {
 	data, err := fs.ReadFile(s.assets, "index.html")
 	if err != nil {
 		http.Error(w, "index.html not found", http.StatusInternalServerError)
 		return
 	}
+	head := shimTag
+	if ws := r.URL.Query().Get("ws"); ws != "" {
+		// JSON-encode so an arbitrary workspace id can't break out of the string
+		// literal. The app reads window.__quantPinnedWorkspace on boot to lock the
+		// window to this workspace and hide the workspace switcher.
+		if b, mErr := json.Marshal(ws); mErr == nil {
+			head = `<script>window.__quantPinnedWorkspace=` + string(b) + `;</script>` + head
+		}
+	}
 	html := string(data)
 	if i := strings.Index(html, "<head>"); i >= 0 {
-		html = html[:i+len("<head>")] + shimTag + html[i+len("<head>"):]
+		html = html[:i+len("<head>")] + head + html[i+len("<head>"):]
 	} else {
-		html = shimTag + html
+		html = head + html
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))

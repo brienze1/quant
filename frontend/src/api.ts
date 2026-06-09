@@ -465,6 +465,21 @@ export function updateWorkspaceVoice(workspaceId: string, voice: VoiceConfig | n
   return callGo(PKG, WORKSPACE_CTRL, "UpdateWorkspaceVoice", { workspaceId, voice });
 }
 
+// --- Windows ---
+
+const WINDOW_CTRL = "windowController";
+
+/**
+ * Open the given workspace in its own detached desktop window. The new window is
+ * a thin client of THIS (primary) process — it shares the same backend, database,
+ * and live events, pinned to the chosen workspace. Only available in the primary
+ * native window (the binding is not exposed over the remote tunnel or to detached
+ * windows).
+ */
+export function openWorkspaceWindow(workspaceId: string): Promise<void> {
+  return callGo(PKG, WINDOW_CTRL, "OpenWorkspaceWindow", workspaceId);
+}
+
 // --- Mindmap ---
 
 const MINDMAP_CTRL = "mindmapController";

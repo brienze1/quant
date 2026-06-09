@@ -74,6 +74,19 @@ type ModalState =
 
 type View = "dashboard" | "settings" | "diff" | "jobs" | "agents";
 
+// A DETACHED window is pinned to a single workspace (injected Go-side by the
+// loopback attach server's serveIndex as window.__quantPinnedWorkspace). When
+// set, this window locks to that workspace and hides the workspace switcher.
+const PINNED_WORKSPACE: string | null =
+  (typeof window !== "undefined" &&
+    (window as { __quantPinnedWorkspace?: string }).__quantPinnedWorkspace) || null;
+// The "detach workspace to new window" action only works from the PRIMARY native
+// window: the windowController binding is not exposed over the remote tunnel or
+// to detached windows (both run through the shim, which sets __quantRemote).
+const IS_PRIMARY_NATIVE =
+  typeof window !== "undefined" &&
+  (window as { __quantRemote?: boolean }).__quantRemote !== true;
+
 function App() {
   const [view, setView] = useState<View>("dashboard");
   const [repos, setRepos] = useState<Repo[]>([]);
@@ -121,7 +134,7 @@ function App() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(
-    () => localStorage.getItem("quant:activeWorkspaceId") || "default"
+    () => PINNED_WORKSPACE || localStorage.getItem("quant:activeWorkspaceId") || "default"
   );
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [quantiConvID, setQuantiConvID] = useState<string>("");
@@ -488,10 +501,15 @@ function App() {
   // Persist active workspace to localStorage and reload data
   const prevWorkspaceId = useRef(activeWorkspaceId);
   useEffect(() => {
-    localStorage.setItem("quant:activeWorkspaceId", activeWorkspaceId);
-    api.setCurrentWorkspace(activeWorkspaceId).catch((err) =>
-      console.error("failed to sync active workspace to backend:", err)
-    );
+    // A pinned (detached) window must not hijack the shared backend's current
+    // workspace — it locks to PINNED_WORKSPACE locally and leaves the global
+    // CurrentWorkspaceID (which the primary owns) untouched.
+    if (!PINNED_WORKSPACE) {
+      localStorage.setItem("quant:activeWorkspaceId", activeWorkspaceId);
+      api.setCurrentWorkspace(activeWorkspaceId).catch((err) =>
+        console.error("failed to sync active workspace to backend:", err)
+      );
+    }
 
     // Save current tabs for the previous workspace
     if (prevWorkspaceId.current !== activeWorkspaceId) {
@@ -1683,16 +1701,18 @@ function App() {
         {/* Workspace selector */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
           <button
-            onClick={() => setWorkspaceDropdownOpen((v) => !v)}
+            onClick={() => { if (!PINNED_WORKSPACE) setWorkspaceDropdownOpen((v) => !v); }}
             style={{
               width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-              background: "none", border: "none", cursor: "pointer",
+              background: "none", border: "none", cursor: PINNED_WORKSPACE ? "default" : "pointer",
               color: workspaceDropdownOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
               borderRight: workspaceDropdownOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
             }}
             onMouseEnter={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
             onMouseLeave={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
-            title={`Workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? "Default"}`}
+            title={PINNED_WORKSPACE
+              ? `This window is pinned to workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? activeWorkspaceId}`
+              : `Workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? "Default"}`}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
@@ -1933,6 +1953,31 @@ function App() {
                         <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                       </svg>
                     </button>
+                    {IS_PRIMARY_NATIVE && !PINNED_WORKSPACE && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          api.openWorkspaceWindow(ws.id).catch((err) =>
+                            console.error("failed to open workspace window:", err)
+                          );
+                          setWorkspaceDropdownOpen(false);
+                        }}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          width: 28, height: 28, flexShrink: 0,
+                          background: "none", border: "none", cursor: "pointer",
+                          color: "var(--q-fg-secondary)",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                        title={`Open "${ws.name}" in a new window`}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M15 3h6v6" /><path d="M10 14L21 3" />
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        </svg>
+                      </button>
+                    )}
                     {isDeletable && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeletingWorkspaceId(ws.id); }}
