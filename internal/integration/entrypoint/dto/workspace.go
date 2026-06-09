@@ -26,8 +26,20 @@ type WorkspaceResponse struct {
 	Name             string `json:"name"`
 	ClaudeConfigPath string `json:"claudeConfigPath"`
 	McpConfigPath    string `json:"mcpConfigPath"`
-	CreatedAt        string `json:"createdAt"`
-	UpdatedAt        string `json:"updatedAt"`
+	// Voice is the per-workspace voice override (APIKey masked). nil/omitted means
+	// the workspace inherits the global voice config.
+	Voice     *VoiceConfigDTO `json:"voice,omitempty"`
+	CreatedAt string          `json:"createdAt"`
+	UpdatedAt string          `json:"updatedAt"`
+}
+
+// UpdateWorkspaceVoiceRequest sets or clears a workspace's per-workspace voice
+// override. A nil Voice clears the override (the workspace inherits the global
+// voice config again). An empty APIKey inside Voice means "keep the existing
+// stored key" (mirrors the global SaveConfig behaviour).
+type UpdateWorkspaceVoiceRequest struct {
+	WorkspaceID string          `json:"workspaceId"`
+	Voice       *VoiceConfigDTO `json:"voice"`
 }
 
 // PathValidationResult contains the validation status for workspace config paths.
@@ -40,11 +52,17 @@ type PathValidationResult struct {
 
 // WorkspaceResponseFromEntity converts a domain entity to a WorkspaceResponse DTO.
 func WorkspaceResponseFromEntity(workspace entity.Workspace) WorkspaceResponse {
+	var voice *VoiceConfigDTO
+	if workspace.Voice != nil {
+		v := VoiceConfigDTOFromEntity(*workspace.Voice)
+		voice = &v
+	}
 	return WorkspaceResponse{
 		ID:               workspace.ID,
 		Name:             workspace.Name,
 		ClaudeConfigPath: workspace.ClaudeConfigPath,
 		McpConfigPath:    workspace.McpConfigPath,
+		Voice:            voice,
 		CreatedAt:        workspace.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:        workspace.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}

@@ -13,6 +13,7 @@ type WorkspaceController interface {
 	OnShutdown(ctx context.Context)
 	CreateWorkspace(request dto.CreateWorkspaceRequest) (*dto.WorkspaceResponse, error)
 	UpdateWorkspace(request dto.UpdateWorkspaceRequest) (*dto.WorkspaceResponse, error)
+	UpdateWorkspaceVoice(request dto.UpdateWorkspaceVoiceRequest) (*dto.WorkspaceResponse, error)
 	DeleteWorkspace(id string) error
 	GetWorkspace(id string) (*dto.WorkspaceResponse, error)
 	ListWorkspaces() ([]dto.WorkspaceResponse, error)

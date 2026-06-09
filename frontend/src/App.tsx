@@ -74,6 +74,19 @@ type ModalState =
 
 type View = "dashboard" | "settings" | "diff" | "jobs" | "agents";
 
+// A DETACHED window is pinned to a single workspace (injected Go-side by the
+// loopback attach server's serveIndex as window.__quantPinnedWorkspace). When
+// set, this window locks to that workspace and hides the workspace switcher.
+const PINNED_WORKSPACE: string | null =
+  (typeof window !== "undefined" &&
+    (window as { __quantPinnedWorkspace?: string }).__quantPinnedWorkspace) || null;
+// The "detach workspace to new window" action only works from the PRIMARY native
+// window: the windowController binding is not exposed over the remote tunnel or
+// to detached windows (both run through the shim, which sets __quantRemote).
+const IS_PRIMARY_NATIVE =
+  typeof window !== "undefined" &&
+  (window as { __quantRemote?: boolean }).__quantRemote !== true;
+
 function App() {
   const [view, setView] = useState<View>("dashboard");
   const [repos, setRepos] = useState<Repo[]>([]);
@@ -102,10 +115,10 @@ function App() {
   const [embeddedTerminalMap, setEmbeddedTerminalMap] = useState<Record<string, string>>({});
   // Track which sessions have the terminal pane open: parentSessionId -> boolean
   const [terminalPaneOpenMap, setTerminalPaneOpenMap] = useState<Record<string, boolean>>({});
-  // Mindmap pane open/closed is a single GLOBAL flag (unlike the per-session
-  // terminal pane): it is config-backed and synced across all tabs and remote
-  // clients via the "mindmap:pane" event.
-  const [mindmapPaneOpen, setMindmapPaneOpen] = useState(false);
+  // Mindmap pane open/closed is PER-SESSION (like the terminal pane above):
+  // sessionId -> boolean, kept in local state only. Opening it for one session
+  // must not open it for the others. Ephemeral — resets to closed on restart.
+  const [mindmapPaneOpenMap, setMindmapPaneOpenMap] = useState<Record<string, boolean>>({});
   // Voice is PINNED to the session it was opened on. The single source of truth
   // is the session id voice is attached to (null = voice closed). The pane stays
   // bound to this session even when the user switches the active tab, so it must
@@ -121,7 +134,7 @@ function App() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(
-    () => localStorage.getItem("quant:activeWorkspaceId") || "default"
+    () => PINNED_WORKSPACE || localStorage.getItem("quant:activeWorkspaceId") || "default"
   );
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [quantiConvID, setQuantiConvID] = useState<string>("");
@@ -185,14 +198,13 @@ function App() {
     setTerminalPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
   }
 
-  // Toggle the global mindmap pane: update locally for instant feedback, then
-  // persist via the backend, which broadcasts "mindmap:pane" so other tabs and
-  // remote clients converge on the same value.
+  // whether the mindmap pane is open for the active session (per-session, like
+  // the terminal pane above)
+  const activeMindmapPaneOpen = activeSession ? (mindmapPaneOpenMap[activeSession.id] ?? false) : false;
+
   function handleMindmapPaneOpenChange(open: boolean) {
-    setMindmapPaneOpen(open);
-    api.setMindmapPaneOpen(open).catch((err) =>
-      console.error("failed to persist mindmap pane state:", err)
-    );
+    if (!activeSession) return;
+    setMindmapPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
   }
 
   // Tracks which session currently holds a LIVE voice attachment (kicked off),
@@ -224,7 +236,11 @@ function App() {
   function kickoffVoice(sessionId: string) {
     if (voiceStartedRef.current === sessionId) return;
     voiceStartedRef.current = sessionId;
-    api.startVoiceSession(sessionId).catch((err) => {
+    // Pass the pinned session's workspace so the kickoff resolves that
+    // workspace's voice override (empty = backend falls back to current).
+    const wsId =
+      findSession(sessionId, sessionsByRepo, sessionsByTask)?.workspaceId ?? "";
+    api.startVoiceSession(sessionId, wsId).catch((err) => {
       if (voiceStartedRef.current === sessionId) voiceStartedRef.current = null;
       console.error("failed to start voice session:", err);
       const msg = String((err && err.message) || err || "");
@@ -434,10 +450,8 @@ function App() {
           setActiveTabId(ids[0]);
           setSelectedSessionId(ids[0]);
         }
-        // Hydrate the global mindmap pane flag from config. Mark hydration as
-        // done so the event handler can safely treat later updates as remote.
-        setMindmapPaneOpen(!!cfg.mindmapPaneOpen);
-        mindmapPaneHydratedRef.current = true;
+        // Mindmap pane open state is per-session and ephemeral now — nothing to
+        // hydrate from config.
         // Hydrate the voice attachment. The Go config only persists the
         // open/closed BOOL; WHICH session is restored from the localStorage
         // companion (this browser), falling back to the persisted active session
@@ -487,10 +501,15 @@ function App() {
   // Persist active workspace to localStorage and reload data
   const prevWorkspaceId = useRef(activeWorkspaceId);
   useEffect(() => {
-    localStorage.setItem("quant:activeWorkspaceId", activeWorkspaceId);
-    api.setCurrentWorkspace(activeWorkspaceId).catch((err) =>
-      console.error("failed to sync active workspace to backend:", err)
-    );
+    // A pinned (detached) window must not hijack the shared backend's current
+    // workspace — it locks to PINNED_WORKSPACE locally and leaves the global
+    // CurrentWorkspaceID (which the primary owns) untouched.
+    if (!PINNED_WORKSPACE) {
+      localStorage.setItem("quant:activeWorkspaceId", activeWorkspaceId);
+      api.setCurrentWorkspace(activeWorkspaceId).catch((err) =>
+        console.error("failed to sync active workspace to backend:", err)
+      );
+    }
 
     // Save current tabs for the previous workspace
     if (prevWorkspaceId.current !== activeWorkspaceId) {
@@ -538,12 +557,7 @@ function App() {
     return () => clearTimeout(handle);
   }, [activeWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Guards the initial hydration of the global mindmap pane flag from config,
-  // so the startup read doesn't trigger a write-back (mirrors tabsRestoredRef).
-  const mindmapPaneHydratedRef = useRef(false);
-
-  // Guards the initial hydration of the global voice pane flag from config
-  // (mirrors mindmapPaneHydratedRef).
+  // Guards the initial hydration of the global voice pane flag from config.
   const voicePaneHydratedRef = useRef(false);
 
   // Persist open tabs and active tab to config whenever they change
@@ -772,19 +786,6 @@ function App() {
         });
       }
     );
-    return () => cancel && cancel();
-  }, []);
-
-  // Keep the global mindmap pane flag in sync across every tab and remote
-  // client. The handler is idempotent: it SETS state to the received value and
-  // never toggles, so duplicate/echo events can't flip the pane out of sync.
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    if (!w?.runtime?.EventsOn) return;
-    const cancel = w.runtime.EventsOn("mindmap:pane", (d: { open?: boolean }) => {
-      setMindmapPaneOpen(!!(d && d.open));
-    });
     return () => cancel && cancel();
   }, []);
 
@@ -1374,9 +1375,10 @@ function App() {
     handleOpenTab(sessionId);
     localStorage.setItem("quant.mindmapBoard." + sessionId, board);
     setActiveBoardBySession((prev) => ({ ...prev, [sessionId]: board }));
-    // The mindmap pane open flag is global now: route the OPEN action through
-    // the shared handler so it persists and syncs across tabs/remote clients.
-    handleMindmapPaneOpenChange(true);
+    // Open the mindmap pane for THIS session specifically. We can't go through
+    // handleMindmapPaneOpenChange (which targets the active session) because the
+    // tab we just opened isn't the active session synchronously yet.
+    setMindmapPaneOpenMap((prev) => ({ ...prev, [sessionId]: true }));
   }
 
   // Move a board from one session to another (mirrors session-onto-task move).
@@ -1699,16 +1701,18 @@ function App() {
         {/* Workspace selector */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
           <button
-            onClick={() => setWorkspaceDropdownOpen((v) => !v)}
+            onClick={() => { if (!PINNED_WORKSPACE) setWorkspaceDropdownOpen((v) => !v); }}
             style={{
               width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-              background: "none", border: "none", cursor: "pointer",
+              background: "none", border: "none", cursor: PINNED_WORKSPACE ? "default" : "pointer",
               color: workspaceDropdownOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
               borderRight: workspaceDropdownOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
             }}
             onMouseEnter={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
             onMouseLeave={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
-            title={`Workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? "Default"}`}
+            title={PINNED_WORKSPACE
+              ? `This window is pinned to workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? activeWorkspaceId}`
+              : `Workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? "Default"}`}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
@@ -1949,6 +1953,31 @@ function App() {
                         <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                       </svg>
                     </button>
+                    {IS_PRIMARY_NATIVE && !PINNED_WORKSPACE && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          api.openWorkspaceWindow(ws.id).catch((err) =>
+                            console.error("failed to open workspace window:", err)
+                          );
+                          setWorkspaceDropdownOpen(false);
+                        }}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          width: 28, height: 28, flexShrink: 0,
+                          background: "none", border: "none", cursor: "pointer",
+                          color: "var(--q-fg-secondary)",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                        title={`Open "${ws.name}" in a new window`}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M15 3h6v6" /><path d="M10 14L21 3" />
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        </svg>
+                      </button>
+                    )}
                     {isDeletable && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeletingWorkspaceId(ws.id); }}
@@ -2370,7 +2399,7 @@ function App() {
                 embeddedTerminalSession={activeEmbeddedTerminalSession}
                 terminalPaneOpen={activeTerminalPaneOpen}
                 onTerminalPaneOpenChange={handleTerminalPaneOpenChange}
-                mindmapPaneOpen={mindmapPaneOpen}
+                mindmapPaneOpen={activeMindmapPaneOpen}
                 onMindmapPaneOpenChange={handleMindmapPaneOpenChange}
                 voicePaneOpen={voiceSessionId === activeSession.id}
                 onVoicePaneOpenChange={handleVoicePaneOpenChange}

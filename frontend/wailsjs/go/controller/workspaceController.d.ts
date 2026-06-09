@@ -25,4 +25,6 @@ export function SetCurrentWorkspace(arg1:string):Promise<void>;
 
 export function UpdateWorkspace(arg1:dto.UpdateWorkspaceRequest):Promise<dto.WorkspaceResponse>;
 
+export function UpdateWorkspaceVoice(arg1:dto.UpdateWorkspaceVoiceRequest):Promise<dto.WorkspaceResponse>;
+
 export function ValidatePaths(arg1:string,arg2:string):Promise<dto.PathValidationResult>;

@@ -248,7 +248,6 @@ export interface Config {
   idleTimeoutMinutes: number;
   activeSessionId: string;
   openSessionIds: string[];
-  mindmapPaneOpen: boolean;
   voicePaneOpen: boolean;
 
   // Storage & Data
@@ -395,6 +394,9 @@ export interface Workspace {
   mcpConfigPath?: string;
   createdAt: string;
   updatedAt: string;
+  // Per-workspace voice override. Absent = inherit the global config.voice.
+  // apiKey is masked (only hasApiKey reported) when returned from the backend.
+  voice?: VoiceConfig;
 }
 
 // --- Job Groups ---

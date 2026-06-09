@@ -207,9 +207,19 @@ export function VoicePane({ sessionId, className, style }: Props) {
       // session switch / refresh) — we do NOT live-reinit the VAD.
       let options: Parameters<typeof createAudioService>[0];
       try {
+        // Resolve this session's workspace so STT/TTS use that workspace's voice
+        // override (empty string = backend falls back to the current workspace).
+        let workspaceId = "";
+        try {
+          const session = await api.getSession(sessionId);
+          workspaceId = session?.workspaceId ?? "";
+        } catch {
+          /* fall back to "" (current workspace) */
+        }
         const cfg = await api.getConfig();
         options = {
           bargeIn: false,
+          workspaceId,
           voice: cfg.voice?.voice || undefined,
           speed: cfg.voice?.speed || undefined,
           // `?? undefined` (not `||`) so a legitimately-saved 0 pause isn't

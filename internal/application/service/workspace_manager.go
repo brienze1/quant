@@ -64,12 +64,38 @@ func (s *workspaceManagerService) UpdateWorkspace(workspace entity.Workspace) (*
 
 	workspace.CreatedAt = existing.CreatedAt
 	workspace.UpdatedAt = time.Now()
+	// The generic update path (name/paths) never touches the per-workspace voice
+	// override — carry the existing one forward. Voice is changed only via
+	// UpdateWorkspaceVoice, so editing the name/paths can't silently wipe it.
+	workspace.Voice = existing.Voice
 
 	if err := s.updateWorkspace.UpdateWorkspace(workspace); err != nil {
 		return nil, fmt.Errorf("failed to update workspace: %w", err)
 	}
 
 	return &workspace, nil
+}
+
+// UpdateWorkspaceVoice sets (or clears) a workspace's per-workspace voice
+// override. A nil override clears it so the workspace inherits the global voice
+// config again. All other workspace fields are preserved.
+func (s *workspaceManagerService) UpdateWorkspaceVoice(id string, voice *entity.VoiceConfig) (*entity.Workspace, error) {
+	existing, err := s.findWorkspace.FindWorkspaceByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find workspace: %w", err)
+	}
+	if existing == nil {
+		return nil, fmt.Errorf("workspace not found: %s", id)
+	}
+
+	existing.Voice = voice
+	existing.UpdatedAt = time.Now()
+
+	if err := s.updateWorkspace.UpdateWorkspace(*existing); err != nil {
+		return nil, fmt.Errorf("failed to update workspace voice: %w", err)
+	}
+
+	return existing, nil
 }
 
 // DeleteWorkspace deletes a workspace by ID.

@@ -41,6 +41,39 @@ type Manager struct {
 	url     string
 	running bool
 	lastErr string
+
+	// localSrv is the loopback-only (no-tunnel) attach server used by detached
+	// desktop windows: it serves the same UI + RPC + events over 127.0.0.1, gated
+	// by localToken (via the X-Quant-Attach-Token header) instead of the passcode.
+	// It shares the same EventHub and controllers as the tunnel server, so every
+	// window stays live-synced. Started on demand the first time a window detaches.
+	localSrv   *server
+	localToken string
+}
+
+// EnsureLocalServer starts (if needed) the loopback attach server and returns its
+// port and bypass token. A detached window is a second Quant process whose webview
+// reverse-proxies to http://127.0.0.1:<port> with the token header, so it runs as
+// a thin client of THIS process's backend (shared DB + live events) — see
+// internal/infra/attach.go.
+func (m *Manager) EnsureLocalServer() (int, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.localSrv != nil {
+		return m.localSrv.port, m.localToken, nil
+	}
+
+	token := newAttachToken()
+	auth := newAttachAuthenticator(token)
+	srv, err := newServer(0, m.assets, m.controllers, m.hub, auth)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to start local attach server: %w", err)
+	}
+	srv.start()
+	m.localSrv = srv
+	m.localToken = token
+	return srv.port, token, nil
 }
 
 // NewManager wires the manager and registers the process-wide event hub so
@@ -139,6 +172,9 @@ func (m *Manager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stopLocked()
+	// The loopback attach server is independent of the tunnel (Disable only stops
+	// the tunnel), so it is torn down only here, on full app shutdown.
+	m.stopLocalLocked()
 }
 
 func (m *Manager) stopLocked() {
@@ -152,6 +188,15 @@ func (m *Manager) stopLocked() {
 	}
 	m.running = false
 	m.url = ""
+}
+
+// stopLocalLocked tears down the loopback attach server. Caller holds m.mu.
+func (m *Manager) stopLocalLocked() {
+	if m.localSrv != nil {
+		_ = m.localSrv.stop()
+		m.localSrv = nil
+	}
+	m.localToken = ""
 }
 
 // RegeneratePasscode rotates the passcode (invalidating live sessions) and

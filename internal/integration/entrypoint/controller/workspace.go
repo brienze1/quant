@@ -66,6 +66,34 @@ func (c *workspaceController) UpdateWorkspace(request dto.UpdateWorkspaceRequest
 	return dto.WorkspaceResponseFromEntityPtr(updated), nil
 }
 
+// UpdateWorkspaceVoice sets or clears a workspace's per-workspace voice override.
+// A nil request.Voice clears the override (the workspace inherits the global
+// voice config). The override is stored SPARSE (no WithDefaults) so empty fields
+// keep inheriting the global config at resolve time. An empty APIKey is treated
+// as "keep the existing stored key", mirroring the global SaveConfig behaviour.
+func (c *workspaceController) UpdateWorkspaceVoice(request dto.UpdateWorkspaceVoiceRequest) (*dto.WorkspaceResponse, error) {
+	var override *entity.VoiceConfig
+	if request.Voice != nil {
+		v := request.Voice.ToEntity()
+		// Preserve the existing stored key when the incoming key is empty (the raw
+		// key is never sent to the frontend, so an unchanged save arrives blank).
+		if v.APIKey == "" {
+			if existing, err := c.workspaceManager.GetWorkspace(request.WorkspaceID); err == nil &&
+				existing != nil && existing.Voice != nil {
+				v.APIKey = existing.Voice.APIKey
+			}
+		}
+		override = &v
+	}
+
+	updated, err := c.workspaceManager.UpdateWorkspaceVoice(request.WorkspaceID, override)
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.WorkspaceResponseFromEntityPtr(updated), nil
+}
+
 // DeleteWorkspace handles workspace deletion.
 func (c *workspaceController) DeleteWorkspace(id string) error {
 	return c.workspaceManager.DeleteWorkspace(id)

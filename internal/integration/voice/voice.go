@@ -84,6 +84,14 @@ type SessionMessenger interface {
 	SendMessage(id string, message string) error
 }
 
+// VoiceWorkspaceResolver is the minimal slice of the workspace manager the voice
+// controller needs: looking up a workspace (and its optional voice override) by
+// ID. Kept narrow so the voice package does not depend on the full workspace
+// manager surface and so tests can pass nil to disable override resolution.
+type VoiceWorkspaceResolver interface {
+	GetWorkspace(id string) (*entity.Workspace, error)
+}
+
 // voiceController is the concrete Wails-bound controller. It is kept unexported
 // to match the other controllers' binding convention (the binding key derives
 // from the struct type name → "voiceController").
@@ -93,6 +101,10 @@ type voiceController struct {
 	client        *http.Client
 	bridge        *Bridge
 	sessions      SessionMessenger
+	// workspaces resolves a workspace's optional voice override so each workspace
+	// can override the global voice config. nil disables override resolution
+	// (used by tests) — voiceConfig then always falls back to the global config.
+	workspaces VoiceWorkspaceResolver
 }
 
 // NewVoiceController constructs the voice STT/TTS proxy controller. It reads the
@@ -105,12 +117,18 @@ type voiceController struct {
 //
 // sessions is used by StartVoiceSession to inject the voice-mode kickoff message
 // into a running session; pass nil only in tests that do not exercise it.
-func NewVoiceController(configManager adapter.ConfigManager, bridge *Bridge, sessions SessionMessenger) *voiceController {
+//
+// workspaces resolves per-workspace voice overrides so the effective voice
+// config can differ per workspace (empty override fields fall back to the global
+// config). Pass nil to disable override resolution (the global config is always
+// used) — tests pass nil.
+func NewVoiceController(configManager adapter.ConfigManager, bridge *Bridge, sessions SessionMessenger, workspaces VoiceWorkspaceResolver) *voiceController {
 	return &voiceController{
 		configManager: configManager,
 		client:        &http.Client{Timeout: defaultTimeout},
 		bridge:        bridge,
 		sessions:      sessions,
+		workspaces:    workspaces,
 	}
 }
 
@@ -166,7 +184,7 @@ func (c *voiceController) VoiceResultClosed(requestID string) error {
 // It returns a clear error if no agent/process is running for the session (the
 // underlying SendMessage reports "no process running for session: <id>") so the
 // caller can surface it without crashing.
-func (c *voiceController) StartVoiceSession(sessionId string) error {
+func (c *voiceController) StartVoiceSession(sessionId string, workspaceID string) error {
 	if c.sessions == nil {
 		return fmt.Errorf("voice session manager not initialized")
 	}
@@ -177,7 +195,7 @@ func (c *voiceController) StartVoiceSession(sessionId string) error {
 	// Build the kickoff message: the built-in persona, optionally followed by the
 	// user's own voice instructions (from Settings) as authoritative guidance.
 	kickoff := VoicePersona
-	if cfg, err := c.voiceConfig(); err == nil {
+	if cfg, err := c.voiceConfig(workspaceID); err == nil {
 		if ci := strings.TrimSpace(cfg.Instructions); ci != "" {
 			kickoff = VoicePersona + "\n\nThe user has given you these additional instructions for how to behave in this voice conversation — follow them throughout:\n" + ci
 		}
@@ -211,16 +229,36 @@ func (c *voiceController) OnStartup(ctx context.Context) {
 // OnShutdown is called when the Wails app is shutting down.
 func (c *voiceController) OnShutdown(_ context.Context) {}
 
-// voiceConfig loads the voice config with defaults applied.
-func (c *voiceController) voiceConfig() (entity.VoiceConfig, error) {
+// voiceConfig loads the effective voice config (with defaults applied) for the
+// given workspace. The global config (cfg.Voice) is the baseline; if the target
+// workspace has a voice override, it is merged on top field-by-field via
+// entity.ResolveVoiceConfig (empty override fields fall back to global).
+//
+// The target workspace is workspaceID when non-empty, otherwise the current
+// workspace (cfg.CurrentWorkspaceID). If override lookup is unavailable (no
+// resolver) or fails / returns nil, the global config is used unchanged.
+func (c *voiceController) voiceConfig(workspaceID string) (entity.VoiceConfig, error) {
 	cfg, err := c.configManager.GetConfig()
 	if err != nil {
 		return entity.VoiceConfig{}, fmt.Errorf("failed to load config: %w", err)
 	}
 	if cfg == nil {
-		return entity.VoiceConfig{}.WithDefaults(), nil
+		return entity.ResolveVoiceConfig(entity.VoiceConfig{}, nil), nil
 	}
-	return cfg.Voice.WithDefaults(), nil
+
+	wsID := strings.TrimSpace(workspaceID)
+	if wsID == "" {
+		wsID = cfg.CurrentWorkspaceID
+	}
+
+	var override *entity.VoiceConfig
+	if c.workspaces != nil && wsID != "" {
+		if ws, err := c.workspaces.GetWorkspace(wsID); err == nil && ws != nil {
+			override = ws.Voice
+		}
+	}
+
+	return entity.ResolveVoiceConfig(cfg.Voice, override), nil
 }
 
 // isLocal reports whether the given base URL points at the local machine
@@ -379,7 +417,7 @@ func shouldFallthrough(status int, err error) bool {
 // bridge marshals []byte awkwardly across the remote transport.
 //
 // It returns the trimmed transcript text.
-func (c *voiceController) Transcribe(audioB64 string, mime string) (string, error) {
+func (c *voiceController) Transcribe(workspaceID string, audioB64 string, mime string) (string, error) {
 	audio, err := base64.StdEncoding.DecodeString(audioB64)
 	if err != nil {
 		return "", fmt.Errorf("invalid base64 audio: %w", err)
@@ -388,7 +426,7 @@ func (c *voiceController) Transcribe(audioB64 string, mime string) (string, erro
 		return "", fmt.Errorf("empty audio")
 	}
 
-	vc, err := c.voiceConfig()
+	vc, err := c.voiceConfig(workspaceID)
 	if err != nil {
 		return "", err
 	}
@@ -487,12 +525,12 @@ type speechRequest struct {
 // bytes plus the response content-type (as a SpeechResult). The voice and speed
 // arguments override the config defaults when non-empty / non-zero. Audio is
 // returned base64-encoded for the Wails bridge.
-func (c *voiceController) Synthesize(text string, voice string, speed float64) (SpeechResult, error) {
+func (c *voiceController) Synthesize(workspaceID string, text string, voice string, speed float64) (SpeechResult, error) {
 	if strings.TrimSpace(text) == "" {
 		return SpeechResult{}, fmt.Errorf("empty text")
 	}
 
-	vc, err := c.voiceConfig()
+	vc, err := c.voiceConfig(workspaceID)
 	if err != nil {
 		return SpeechResult{}, err
 	}
@@ -591,8 +629,8 @@ func opFromString(s string) op {
 // the timeout is intentionally tight so a down/slow local server doesn't hang the
 // Settings tab, and the caller turns any error into an empty list. The api key
 // header is attached when configured, mirroring Synthesize/Transcribe.
-func (c *voiceController) discoverGET(o op, path string) ([]byte, error) {
-	vc, err := c.voiceConfig()
+func (c *voiceController) discoverGET(workspaceID string, o op, path string) ([]byte, error) {
+	vc, err := c.voiceConfig(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -656,8 +694,8 @@ func idsFromList(items []interface{}) []string {
 //
 // It soft-fails: on any error it returns an empty slice plus the error so the
 // frontend can fall back to its curated option list without surfacing a crash.
-func (c *voiceController) ListModels(op string) ([]string, error) {
-	data, err := c.discoverGET(opFromString(op), "/v1/models")
+func (c *voiceController) ListModels(workspaceID string, op string) ([]string, error) {
+	data, err := c.discoverGET(workspaceID, opFromString(op), "/v1/models")
 	if err != nil {
 		return []string{}, err
 	}
@@ -691,8 +729,8 @@ func (c *voiceController) ListModels(op string) ([]string, error) {
 // an id/name; a bare array is also tolerated.
 //
 // It soft-fails like ListModels: any error yields an empty slice plus the error.
-func (c *voiceController) ListVoices() ([]string, error) {
-	data, err := c.discoverGET(opTTS, "/v1/audio/voices")
+func (c *voiceController) ListVoices(workspaceID string) ([]string, error) {
+	data, err := c.discoverGET(workspaceID, opTTS, "/v1/audio/voices")
 	if err != nil {
 		return []string{}, err
 	}
@@ -730,10 +768,10 @@ type PingResult struct {
 //
 // It soft-fails (never panics): a load/config error is reported as Ok=false with
 // the error text rather than returned as a hard error.
-func (c *voiceController) Ping(op string) (PingResult, error) {
+func (c *voiceController) Ping(workspaceID string, op string) (PingResult, error) {
 	o := opFromString(op)
 
-	vc, err := c.voiceConfig()
+	vc, err := c.voiceConfig(workspaceID)
 	if err != nil {
 		return PingResult{Ok: false, Detail: "could not load voice config: " + err.Error()}, nil
 	}

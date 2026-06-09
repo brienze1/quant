@@ -29,6 +29,25 @@ type authenticator struct {
 	passcode []byte
 	key      []byte
 	failures map[string]*failureState
+	// attachToken, when non-empty, is a bypass credential for the LOOPBACK attach
+	// server only: a request carrying it in the X-Quant-Attach-Token header is
+	// treated as authed without the passcode/cookie flow. It is never set on the
+	// Cloudflare-tunnel authenticator, so the external tunnel still requires the
+	// passcode. Used so a detached desktop window (a trusted local process behind
+	// a reverse proxy) reaches the shared backend without a login round-trip.
+	attachToken []byte
+}
+
+// attachTokenHeader carries the loopback attach bypass token (see attachToken).
+const attachTokenHeader = "X-Quant-Attach-Token"
+
+// newAttachAuthenticator builds an authenticator for the loopback attach server:
+// it accepts the given bypass token via the attach header. The passcode is set to
+// a random unusable value so the normal passcode path can never succeed on it.
+func newAttachAuthenticator(token string) *authenticator {
+	a := newAuthenticator(generatePasscode())
+	a.attachToken = []byte(token)
+	return a
 }
 
 type failureState struct {
@@ -163,13 +182,33 @@ func (a *authenticator) validToken(token string) bool {
 	return time.Now().Unix() < int64(binary.BigEndian.Uint64(buf))
 }
 
-// authedRequest reports whether the request carries a valid session cookie.
+// authedRequest reports whether the request carries a valid session cookie, or
+// (loopback attach server only) the configured attach bypass token.
 func (a *authenticator) authedRequest(r *http.Request) bool {
+	a.mu.Lock()
+	token := a.attachToken
+	a.mu.Unlock()
+	if len(token) > 0 {
+		if got := r.Header.Get(attachTokenHeader); got != "" &&
+			subtle.ConstantTimeCompare([]byte(got), token) == 1 {
+			return true
+		}
+	}
+
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return false
 	}
 	return a.validToken(c.Value)
+}
+
+// newAttachToken returns a 256-bit URL-safe random token for the loopback attach
+// server's bypass header. Unlike the passcode it is machine-only (never typed),
+// so it favors entropy over readability.
+func newAttachToken() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // generatePasscode returns a strong, human-readable passcode: 4 groups of 4

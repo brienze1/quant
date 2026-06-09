@@ -74,6 +74,56 @@ func (v VoiceConfig) WithDefaults() VoiceConfig {
 	return v
 }
 
+// ResolveVoiceConfig merges a per-workspace voice override onto the global voice
+// config and returns the effective config to use for that workspace.
+//
+// The merge rule: start from the global config, and when override != nil apply
+// each override field ONLY when it carries a meaningful value — string fields
+// (BaseURL, STTBaseURL, TTSBaseURL, APIKey, STTModel, TTSModel, Voice,
+// Instructions) override when non-empty; Speed overrides when != 0; PauseMs
+// overrides when != 0. Empty/zero override fields therefore inherit the global
+// value. Enabled and Provider are NEVER taken from the override — they stay
+// global (and WithDefaults pins Provider to "local"), preserving the local-only
+// guarantee. The result is normalized through WithDefaults() before returning.
+func ResolveVoiceConfig(global VoiceConfig, override *VoiceConfig) VoiceConfig {
+	result := global
+	if override != nil {
+		if override.BaseURL != "" {
+			result.BaseURL = override.BaseURL
+		}
+		if override.STTBaseURL != "" {
+			result.STTBaseURL = override.STTBaseURL
+		}
+		if override.TTSBaseURL != "" {
+			result.TTSBaseURL = override.TTSBaseURL
+		}
+		if override.APIKey != "" {
+			result.APIKey = override.APIKey
+		}
+		if override.STTModel != "" {
+			result.STTModel = override.STTModel
+		}
+		if override.TTSModel != "" {
+			result.TTSModel = override.TTSModel
+		}
+		if override.Voice != "" {
+			result.Voice = override.Voice
+		}
+		if override.Instructions != "" {
+			result.Instructions = override.Instructions
+		}
+		if override.Speed != 0 {
+			result.Speed = override.Speed
+		}
+		if override.PauseMs != 0 {
+			result.PauseMs = override.PauseMs
+		}
+		// Enabled and Provider are intentionally NOT overridden: they remain the
+		// global values. Provider is pinned to "local" by WithDefaults below.
+	}
+	return result.WithDefaults()
+}
+
 // Config represents the application configuration settings.
 type Config struct {
 	// General
@@ -99,7 +149,6 @@ type Config struct {
 	IdleTimeoutMinutes    int      `json:"idleTimeoutMinutes"`
 	ActiveSessionID       string   `json:"activeSessionId"`
 	OpenSessionIDs        []string `json:"openSessionIds"`
-	MindmapPaneOpen       bool     `json:"mindmapPaneOpen"`
 	VoicePaneOpen         bool     `json:"voicePaneOpen"`
 
 	// Storage & Data

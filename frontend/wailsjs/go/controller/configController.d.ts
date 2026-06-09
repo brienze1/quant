@@ -25,6 +25,5 @@ export function SaveQuantiFile(arg1:string,arg2:string):Promise<void>;
 
 export function SendNotification(arg1:string,arg2:string):Promise<void>;
 
-export function SetMindmapPaneOpen(arg1:boolean):Promise<void>;
 
 export function SetVoicePaneOpen(arg1:boolean):Promise<void>;
