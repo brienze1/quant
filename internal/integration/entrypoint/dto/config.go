@@ -31,6 +31,45 @@ type VoiceConfigDTO struct {
 	Instructions string  `json:"instructions"` // optional user-authored guidance appended to the built-in voice persona
 }
 
+// VoiceConfigDTOFromEntity builds the frontend-facing voice DTO from an entity,
+// masking the stored APIKey (only HasAPIKey is reported, never the key itself).
+func VoiceConfigDTOFromEntity(v entity.VoiceConfig) VoiceConfigDTO {
+	return VoiceConfigDTO{
+		Enabled:      v.Enabled,
+		Provider:     v.Provider,
+		BaseURL:      v.BaseURL,
+		STTBaseURL:   v.STTBaseURL,
+		TTSBaseURL:   v.TTSBaseURL,
+		HasAPIKey:    v.APIKey != "",
+		STTModel:     v.STTModel,
+		TTSModel:     v.TTSModel,
+		Voice:        v.Voice,
+		Speed:        v.Speed,
+		PauseMs:      v.PauseMs,
+		Instructions: v.Instructions,
+	}
+}
+
+// ToEntity converts an inbound voice DTO to an entity. APIKey may be empty,
+// meaning "keep the existing stored key" — the caller resolves that (the raw key
+// is never sent back to the frontend, so an unchanged save arrives empty).
+func (d VoiceConfigDTO) ToEntity() entity.VoiceConfig {
+	return entity.VoiceConfig{
+		Enabled:      d.Enabled,
+		Provider:     d.Provider,
+		BaseURL:      d.BaseURL,
+		STTBaseURL:   d.STTBaseURL,
+		TTSBaseURL:   d.TTSBaseURL,
+		APIKey:       d.APIKey,
+		STTModel:     d.STTModel,
+		TTSModel:     d.TTSModel,
+		Voice:        d.Voice,
+		Speed:        d.Speed,
+		PauseMs:      d.PauseMs,
+		Instructions: d.Instructions,
+	}
+}
+
 // SaveConfigRequest represents the request payload for saving configuration.
 type SaveConfigRequest struct {
 	// General

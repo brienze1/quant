@@ -7,6 +7,7 @@ import "quant/internal/domain/entity"
 type WorkspaceManager interface {
 	CreateWorkspace(workspace entity.Workspace) (*entity.Workspace, error)
 	UpdateWorkspace(workspace entity.Workspace) (*entity.Workspace, error)
+	UpdateWorkspaceVoice(id string, voice *entity.VoiceConfig) (*entity.Workspace, error)
 	DeleteWorkspace(id string) error
 	GetWorkspace(id string) (*entity.Workspace, error)
 	ListWorkspaces() ([]entity.Workspace, error)

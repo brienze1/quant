@@ -3,21 +3,21 @@
 import {context} from '../models';
 import {voice} from '../models';
 
-export function ListModels(arg1:string):Promise<Array<string>>;
+export function ListModels(arg1:string,arg2:string):Promise<Array<string>>;
 
-export function ListVoices():Promise<Array<string>>;
+export function ListVoices(arg1:string):Promise<Array<string>>;
 
 export function OnShutdown(arg1:context.Context):Promise<void>;
 
 export function OnStartup(arg1:context.Context):Promise<void>;
 
-export function Ping(arg1:string):Promise<voice.PingResult>;
+export function Ping(arg1:string,arg2:string):Promise<voice.PingResult>;
 
-export function StartVoiceSession(arg1:string):Promise<void>;
+export function StartVoiceSession(arg1:string,arg2:string):Promise<void>;
 
-export function Synthesize(arg1:string,arg2:string,arg3:number):Promise<voice.SpeechResult>;
+export function Synthesize(arg1:string,arg2:string,arg3:string,arg4:number):Promise<voice.SpeechResult>;
 
-export function Transcribe(arg1:string,arg2:string):Promise<string>;
+export function Transcribe(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function VoiceResult(arg1:string,arg2:string,arg3:string):Promise<void>;
 

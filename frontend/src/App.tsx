@@ -223,7 +223,11 @@ function App() {
   function kickoffVoice(sessionId: string) {
     if (voiceStartedRef.current === sessionId) return;
     voiceStartedRef.current = sessionId;
-    api.startVoiceSession(sessionId).catch((err) => {
+    // Pass the pinned session's workspace so the kickoff resolves that
+    // workspace's voice override (empty = backend falls back to current).
+    const wsId =
+      findSession(sessionId, sessionsByRepo, sessionsByTask)?.workspaceId ?? "";
+    api.startVoiceSession(sessionId, wsId).catch((err) => {
       if (voiceStartedRef.current === sessionId) voiceStartedRef.current = null;
       console.error("failed to start voice session:", err);
       const msg = String((err && err.message) || err || "");

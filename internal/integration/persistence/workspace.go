@@ -20,14 +20,32 @@ func NewWorkspacePersistence(db *sql.DB) adapter.WorkspacePersistence {
 	return &workspacePersistence{db: db}
 }
 
-const workspaceColumns = `id, name, claude_config_path, mcp_config_path, created_at, updated_at`
+// workspaceColumns lists the workspace columns in scan order. voice_config is
+// appended last (it was added via ALTER TABLE), and the scan + INSERT below must
+// keep the same ordering. voice_config is nullable, so it is scanned into a
+// sql.NullString and copied into the row only when present.
+const workspaceColumns = `id, name, claude_config_path, mcp_config_path, created_at, updated_at, voice_config`
 
 func scanWorkspaceRow(scanner interface{ Scan(...any) error }) (pdto.WorkspaceRow, error) {
 	var row pdto.WorkspaceRow
+	var voiceConfig sql.NullString
 	err := scanner.Scan(
-		&row.ID, &row.Name, &row.ClaudeConfigPath, &row.McpConfigPath, &row.CreatedAt, &row.UpdatedAt,
+		&row.ID, &row.Name, &row.ClaudeConfigPath, &row.McpConfigPath, &row.CreatedAt, &row.UpdatedAt, &voiceConfig,
 	)
+	if voiceConfig.Valid {
+		row.VoiceConfig = voiceConfig.String
+	}
 	return row, err
+}
+
+// nullableString maps "" to a NULL voice_config column (no override) and any
+// non-empty JSON blob to a stored string, so an absent override reads back as
+// NULL rather than an empty string.
+func nullableString(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // FindWorkspaceByID retrieves a workspace by its ID.
@@ -77,11 +95,11 @@ func (p *workspacePersistence) FindAllWorkspaces() ([]entity.Workspace, error) {
 func (p *workspacePersistence) SaveWorkspace(workspace entity.Workspace) error {
 	row := pdto.WorkspaceRowFromEntity(workspace)
 
-	query := `INSERT INTO workspaces (id, name, claude_config_path, mcp_config_path, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO workspaces (id, name, claude_config_path, mcp_config_path, created_at, updated_at, voice_config)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := p.db.Exec(query,
-		row.ID, row.Name, row.ClaudeConfigPath, row.McpConfigPath, row.CreatedAt, row.UpdatedAt,
+		row.ID, row.Name, row.ClaudeConfigPath, row.McpConfigPath, row.CreatedAt, row.UpdatedAt, nullableString(row.VoiceConfig),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save workspace: %w", err)
@@ -94,9 +112,9 @@ func (p *workspacePersistence) SaveWorkspace(workspace entity.Workspace) error {
 func (p *workspacePersistence) UpdateWorkspace(workspace entity.Workspace) error {
 	row := pdto.WorkspaceRowFromEntity(workspace)
 
-	query := `UPDATE workspaces SET name = ?, claude_config_path = ?, mcp_config_path = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE workspaces SET name = ?, claude_config_path = ?, mcp_config_path = ?, voice_config = ?, updated_at = ? WHERE id = ?`
 
-	result, err := p.db.Exec(query, row.Name, row.ClaudeConfigPath, row.McpConfigPath, row.UpdatedAt, row.ID)
+	result, err := p.db.Exec(query, row.Name, row.ClaudeConfigPath, row.McpConfigPath, nullableString(row.VoiceConfig), row.UpdatedAt, row.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update workspace: %w", err)
 	}

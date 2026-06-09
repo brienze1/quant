@@ -28,7 +28,7 @@ func (s *stubConfigManager) SendNotification(string, string) error {
 }
 
 func newController(cfg entity.VoiceConfig) *voiceController {
-	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{Voice: cfg}}, nil, nil)
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{Voice: cfg}}, nil, nil, nil)
 	return c
 }
 
@@ -49,9 +49,9 @@ func (s *stubMessenger) SendMessage(id, message string) error {
 
 func TestStartVoiceSessionInjectsPersonaAndSubmits(t *testing.T) {
 	msgr := &stubMessenger{}
-	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, msgr)
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, msgr, nil)
 
-	if err := c.StartVoiceSession("sess-1"); err != nil {
+	if err := c.StartVoiceSession("sess-1", ""); err != nil {
 		t.Fatalf("StartVoiceSession: %v", err)
 	}
 
@@ -71,10 +71,10 @@ func TestStartVoiceSessionAppendsCustomInstructions(t *testing.T) {
 	msgr := &stubMessenger{}
 	c := NewVoiceController(
 		&stubConfigManager{cfg: &entity.Config{Voice: entity.VoiceConfig{Instructions: "  " + custom + "  "}}},
-		nil, msgr,
+		nil, msgr, nil,
 	)
 
-	if err := c.StartVoiceSession("sess-1"); err != nil {
+	if err := c.StartVoiceSession("sess-1", ""); err != nil {
 		t.Fatalf("StartVoiceSession: %v", err)
 	}
 	if len(msgr.calls) != 2 {
@@ -95,9 +95,9 @@ func TestStartVoiceSessionAppendsCustomInstructions(t *testing.T) {
 func TestStartVoiceSessionPropagatesSendError(t *testing.T) {
 	wantErr := io.ErrUnexpectedEOF
 	msgr := &stubMessenger{failOn: "sess-x", failErr: wantErr}
-	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, msgr)
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, msgr, nil)
 
-	err := c.StartVoiceSession("sess-x")
+	err := c.StartVoiceSession("sess-x", "")
 	if err == nil {
 		t.Fatal("expected error when the session has no running process, got nil")
 	}
@@ -107,8 +107,8 @@ func TestStartVoiceSessionPropagatesSendError(t *testing.T) {
 }
 
 func TestStartVoiceSessionRequiresSessionID(t *testing.T) {
-	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, &stubMessenger{})
-	if err := c.StartVoiceSession("  "); err == nil {
+	c := NewVoiceController(&stubConfigManager{cfg: &entity.Config{}}, nil, &stubMessenger{}, nil)
+	if err := c.StartVoiceSession("  ", ""); err == nil {
 		t.Fatal("expected error for blank sessionId, got nil")
 	}
 }
@@ -148,7 +148,7 @@ func TestTranscribeMultipartAndAuth(t *testing.T) {
 	})
 
 	audio := []byte("FAKE_WEBM_AUDIO")
-	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString(audio), "audio/webm")
+	transcript, err := c.Transcribe("", base64.StdEncoding.EncodeToString(audio), "audio/webm")
 	if err != nil {
 		t.Fatalf("Transcribe error: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestTranscribeDefaultModelAndWavFilename(t *testing.T) {
 	defer srv.Close()
 
 	c := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: srv.URL})
-	if _, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/wav"); err != nil {
+	if _, err := c.Transcribe("", base64.StdEncoding.EncodeToString([]byte("x")), "audio/wav"); err != nil {
 		t.Fatalf("Transcribe: %v", err)
 	}
 	if gotModel != defaultSTTModel {
@@ -224,7 +224,7 @@ func TestSynthesizeJSONBodyAndBytes(t *testing.T) {
 		TTSModel:   "kokoro",
 	})
 
-	res, err := c.Synthesize("hello world", "am_onyx", 1.2)
+	res, err := c.Synthesize("", "hello world", "am_onyx", 1.2)
 	if err != nil {
 		t.Fatalf("Synthesize error: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestSynthesizeUsesConfigDefaultsForVoiceAndSpeed(t *testing.T) {
 
 	// Empty args → controller falls back to config (which WithDefaults fills).
 	c := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL})
-	if _, err := c.Synthesize("hi", "", 0); err != nil {
+	if _, err := c.Synthesize("", "hi", "", 0); err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
 	if body.Voice != defaultVoice {
@@ -456,14 +456,14 @@ func TestTranscribeAndSynthesizeHitSeparateURLs(t *testing.T) {
 		TTSBaseURL: tts.URL,
 	})
 
-	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
+	transcript, err := c.Transcribe("", base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
 	if err != nil {
 		t.Fatalf("Transcribe: %v", err)
 	}
 	if transcript != "hi from whisper" {
 		t.Errorf("transcript = %q", transcript)
 	}
-	if _, err := c.Synthesize("hello", "", 0); err != nil {
+	if _, err := c.Synthesize("", "hello", "", 0); err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
 	if !sttHit {
@@ -488,7 +488,7 @@ func TestNoAuthHeaderWhenKeyEmpty(t *testing.T) {
 
 	// Empty key → no header.
 	c := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL})
-	if _, err := c.Synthesize("hi", "", 0); err != nil {
+	if _, err := c.Synthesize("", "hi", "", 0); err != nil {
 		t.Fatalf("Synthesize (no key): %v", err)
 	}
 	if hadAuthHeader {
@@ -498,7 +498,7 @@ func TestNoAuthHeaderWhenKeyEmpty(t *testing.T) {
 	// Non-empty key → header present.
 	hadAuthHeader = false
 	c2 := newController(entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL, APIKey: "sk-x"})
-	if _, err := c2.Synthesize("hi", "", 0); err != nil {
+	if _, err := c2.Synthesize("", "hi", "", 0); err != nil {
 		t.Fatalf("Synthesize (with key): %v", err)
 	}
 	if !hadAuthHeader {
@@ -516,12 +516,12 @@ func TestNoAuthHeaderWhenKeyEmpty(t *testing.T) {
 func TestLocalDefaultsFillURLs(t *testing.T) {
 	c := newController(entity.VoiceConfig{Provider: "local"})
 
-	_, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
+	_, err := c.Transcribe("", base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
 	if err != nil && strings.Contains(err.Error(), "STT (Whisper) URL") {
 		t.Errorf("Transcribe local-default error = %v, want the localhost default to be used, not a missing-URL error", err)
 	}
 
-	_, err = c.Synthesize("hi", "", 0)
+	_, err = c.Synthesize("", "hi", "", 0)
 	if err != nil && strings.Contains(err.Error(), "TTS (Kokoro) URL") {
 		t.Errorf("Synthesize local-default error = %v, want the localhost default to be used, not a missing-URL error", err)
 	}
@@ -571,10 +571,10 @@ func TestPingReachableAndNonReachable(t *testing.T) {
 
 	c := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: ok.URL, TTSBaseURL: notFound.URL})
 
-	if r, _ := c.Ping("stt"); !r.Ok {
+	if r, _ := c.Ping("", "stt"); !r.Ok {
 		t.Errorf("Ping(stt) on 2xx server = %+v, want Ok=true", r)
 	}
-	if r, _ := c.Ping("tts"); !r.Ok {
+	if r, _ := c.Ping("", "tts"); !r.Ok {
 		t.Errorf("Ping(tts) on 404 server = %+v, want Ok=true (server is up)", r)
 	}
 
@@ -583,7 +583,7 @@ func TestPingReachableAndNonReachable(t *testing.T) {
 	deadURL := dead.URL
 	dead.Close()
 	c2 := newController(entity.VoiceConfig{Provider: "local", STTBaseURL: deadURL, TTSBaseURL: deadURL})
-	if r, _ := c2.Ping("stt"); r.Ok || !strings.Contains(r.Detail, "not reachable") {
+	if r, _ := c2.Ping("", "stt"); r.Ok || !strings.Contains(r.Detail, "not reachable") {
 		t.Errorf("Ping(stt) on closed server = %+v, want Ok=false and 'not reachable'", r)
 	}
 
@@ -592,7 +592,7 @@ func TestPingReachableAndNonReachable(t *testing.T) {
 	// (and never panics). The result may be reachable or not depending on whether a
 	// local engine happens to be running; what matters is the detail is populated.
 	c3 := newController(entity.VoiceConfig{})
-	if r, _ := c3.Ping("stt"); r.Detail == "" {
+	if r, _ := c3.Ping("", "stt"); r.Detail == "" {
 		t.Errorf("Ping(stt) on local default returned empty detail = %+v", r)
 	}
 }

@@ -28,6 +28,7 @@ import type {
   RemoteStatus,
   VoiceSpeechResult,
   VoicePingResult,
+  VoiceConfig,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -452,6 +453,18 @@ export function validateWorkspacePaths(claudeRoot: string, mcpRoot: string): Pro
   return callGo(PKG, WORKSPACE_CTRL, "ValidatePaths", claudeRoot, mcpRoot);
 }
 
+/**
+ * Set (or clear) a workspace's per-workspace voice override. Pass a VoiceConfig
+ * to override the global default for that workspace; pass null to CLEAR the
+ * override so the workspace inherits the global voice config. An empty `apiKey`
+ * inside `voice` means "keep the existing stored key". The returned Workspace's
+ * `voice` (if present) has its apiKey masked (only hasApiKey reported).
+ * `workspaceId === ""` falls back to the current workspace Go-side.
+ */
+export function updateWorkspaceVoice(workspaceId: string, voice: VoiceConfig | null): Promise<Workspace> {
+  return callGo(PKG, WORKSPACE_CTRL, "UpdateWorkspaceVoice", { workspaceId, voice });
+}
+
 // --- Mindmap ---
 
 const MINDMAP_CTRL = "mindmapController";
@@ -552,8 +565,8 @@ const VOICE_CTRL = "voiceController";
  * @param mime audio MIME type, e.g. "audio/webm" or "audio/wav"
  * @returns the transcript text (trimmed)
  */
-export function transcribe(audioB64: string, mime: string): Promise<string> {
-  return callGo(VOICE_PKG, VOICE_CTRL, "Transcribe", audioB64, mime);
+export function transcribe(workspaceId: string, audioB64: string, mime: string): Promise<string> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "Transcribe", workspaceId, audioB64, mime);
 }
 
 /**
@@ -562,11 +575,12 @@ export function transcribe(audioB64: string, mime: string): Promise<string> {
  * @returns { audioB64, contentType } — base64-encoded audio + its content type
  */
 export function synthesize(
+  workspaceId: string,
   text: string,
   voice: string,
   speed: number,
 ): Promise<VoiceSpeechResult> {
-  return callGo(VOICE_PKG, VOICE_CTRL, "Synthesize", text, voice, speed);
+  return callGo(VOICE_PKG, VOICE_CTRL, "Synthesize", workspaceId, text, voice, speed);
 }
 
 /**
@@ -610,8 +624,8 @@ export function voiceResultClosed(requestId: string): Promise<void> {
  * Rejects if the session has no running agent/process (surface in the pane's
  * error indicator, or ignore — re-opening the pane re-kicks).
  */
-export function startVoiceSession(sessionId: string): Promise<void> {
-  return callGo(VOICE_PKG, VOICE_CTRL, "StartVoiceSession", sessionId);
+export function startVoiceSession(sessionId: string, workspaceId: string): Promise<void> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "StartVoiceSession", sessionId, workspaceId);
 }
 
 /**
@@ -620,8 +634,8 @@ export function startVoiceSession(sessionId: string): Promise<void> {
  * populate the model pickers. Soft-fails: resolves to [] if the server is
  * unreachable or returns an error, so the UI can fall back to curated options.
  */
-export function listModels(op: "stt" | "tts"): Promise<string[]> {
-  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListModels", op).then(
+export function listModels(workspaceId: string, op: "stt" | "tts"): Promise<string[]> {
+  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListModels", workspaceId, op).then(
     (r) => r ?? [],
     () => [],
   );
@@ -632,8 +646,8 @@ export function listModels(op: "stt" | "tts"): Promise<string[]> {
  * {ttsBase}/v1/audio/voices (Kokoro). Used by Settings → Voice to populate the
  * voice picker. Soft-fails to [] like listModels.
  */
-export function listVoices(): Promise<string[]> {
-  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListVoices").then(
+export function listVoices(workspaceId: string): Promise<string[]> {
+  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListVoices", workspaceId).then(
     (r) => r ?? [],
     () => [],
   );
@@ -645,8 +659,8 @@ export function listVoices(): Promise<string[]> {
  * Settings → Voice "Test connection". Soft-fails: resolves to
  * { ok: false, detail: "probe failed" } on throw/null so the UI never crashes.
  */
-export function pingVoiceEndpoint(op: "stt" | "tts"): Promise<VoicePingResult> {
-  return callGo<VoicePingResult | null>(VOICE_PKG, VOICE_CTRL, "Ping", op).then(
+export function pingVoiceEndpoint(workspaceId: string, op: "stt" | "tts"): Promise<VoicePingResult> {
+  return callGo<VoicePingResult | null>(VOICE_PKG, VOICE_CTRL, "Ping", workspaceId, op).then(
     (r) => r ?? { ok: false, detail: "probe failed" },
     () => ({ ok: false, detail: "probe failed" }),
   );

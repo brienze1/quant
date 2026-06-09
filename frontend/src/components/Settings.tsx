@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Config, Repo, Shortcut, RemoteStatus } from "../types";
+import type { Config, Repo, Shortcut, RemoteStatus, Workspace } from "../types";
 import * as api from "../api";
 import type { VoiceConfig } from "../types";
 import { ThemeSettings } from "./ThemeSettings";
@@ -1820,6 +1820,25 @@ const VOICE_DEFAULTS: VoiceConfig = {
   hasApiKey: false,
 };
 
+// EMPTY_VOICE_OVERRIDE is the seed for a per-workspace override: every editable
+// field blank/zero so it INHERITS the global value (the backend's
+// ResolveVoiceConfig falls back to global for empty/zero fields). enabled +
+// provider are global-only and carried for shape only.
+const EMPTY_VOICE_OVERRIDE: VoiceConfig = {
+  enabled: false,
+  provider: "local",
+  baseUrl: "",
+  sttBaseUrl: "",
+  ttsBaseUrl: "",
+  sttModel: "",
+  ttsModel: "",
+  voice: "",
+  speed: 0,
+  pauseMs: 0,
+  instructions: "",
+  hasApiKey: false,
+};
+
 // Curated fallbacks shown in the pick-or-type fields when the server can't be
 // probed (down, or cloud). Server-discovered options are merged ahead of these,
 // de-duplicated, so the dropdowns are never empty.
@@ -2525,11 +2544,90 @@ function AutoStartSection({
 }
 
 function VoiceTab({ config, update }: TabProps) {
-  // Hydrate from config, falling back to defaults so the tab renders sensibly
-  // for a brand-new / legacy config without a voice sub-object. Voice is
-  // local-only now, so the provider is pinned to "local" — this normalizes any
-  // legacy "auto"/"cloud" value to local on the next save.
-  const voice: VoiceConfig = { ...VOICE_DEFAULTS, ...(config.voice ?? {}), provider: "local" };
+  // The GLOBAL voice config, hydrated from config with defaults so the tab
+  // renders sensibly for a brand-new / legacy config without a voice sub-object.
+  // Voice is local-only now, so the provider is pinned to "local" — this
+  // normalizes any legacy "auto"/"cloud" value to local on the next save.
+  const globalVoice: VoiceConfig = { ...VOICE_DEFAULTS, ...(config.voice ?? {}), provider: "local" };
+
+  // Scope: edit the GLOBAL default, or a per-workspace override. Defaults to the
+  // workspace so the common case (tuning the current workspace) is one click in.
+  const [scope, setScope] = useState<"global" | "workspace">("workspace");
+  const [ws, setWs] = useState<Workspace | null>(null);
+  // The per-workspace override draft. Fields left empty inherit the global value
+  // (the backend's ResolveVoiceConfig merges empty/zero fields from global), so
+  // unlike globalVoice this is NOT pre-filled with VOICE_DEFAULTS — empty means
+  // inherit. apiKey is masked (only hasApiKey) like the global one.
+  const [wsVoice, setWsVoice] = useState<VoiceConfig>({ ...VOICE_DEFAULTS });
+
+  // Load the current workspace (+ its existing voice override) once.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const w = await api.getCurrentWorkspace();
+        if (!alive) return;
+        setWs(w);
+        // Seed the override draft: enabled/provider follow the global (they are
+        // never per-workspace), the rest from the stored override (empty =
+        // inherit). hasApiKey reflects whether a workspace key is stored.
+        setWsVoice({
+          ...EMPTY_VOICE_OVERRIDE,
+          ...(w.voice ?? {}),
+          enabled: globalVoice.enabled,
+          provider: "local",
+        });
+      } catch {
+        /* no workspace context — the toggle simply falls back to global */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const inWorkspaceScope = scope === "workspace" && ws !== null;
+  // The id passed to the workspace-scoped api calls. "" in global scope (the
+  // backend ignores it for discovery/test in the global path).
+  const wsId = inWorkspaceScope ? (ws as Workspace).id : "";
+
+  // `voice` is the object the field renderers read/write. In workspace scope it
+  // is the raw override draft (empty fields allowed = inherit); in global scope
+  // it is the merged global config (as before).
+  const voice: VoiceConfig = inWorkspaceScope ? wsVoice : globalVoice;
+
+  // Persist the current workspace override draft (only the meaningful fields;
+  // enabled/provider are global-only and never sent). apiKey is sent only when
+  // the user typed a new one this session (apiKeyDraft), else "" = keep stored.
+  async function saveWsVoice(next: VoiceConfig, newApiKey?: string) {
+    if (!ws) return;
+    const payload: VoiceConfig = {
+      ...next,
+      provider: "local",
+      apiKey: newApiKey ?? "",
+    };
+    const updated = await api.updateWorkspaceVoice(ws.id, payload);
+    setWs(updated);
+    setWsVoice({
+      ...EMPTY_VOICE_OVERRIDE,
+      ...(updated.voice ?? {}),
+      enabled: globalVoice.enabled,
+      provider: "local",
+    });
+  }
+
+  // Clear the whole per-workspace override (inherit the global default).
+  async function resetWsToGlobal() {
+    if (!ws) return;
+    const updated = await api.updateWorkspaceVoice(ws.id, null);
+    setWs(updated);
+    setWsVoice({
+      ...EMPTY_VOICE_OVERRIDE,
+      enabled: globalVoice.enabled,
+      provider: "local",
+    });
+  }
 
   // The DTO masks the stored key: config.voice.apiKey is never populated from
   // Go-side; config.voice.hasApiKey reports whether one is saved. We keep the
@@ -2566,14 +2664,14 @@ function VoiceTab({ config, update }: TabProps) {
 
   const pingStt = useCallback(async () => {
     setSttPing({ state: "pending", detail: "testing…" });
-    const r = await api.pingVoiceEndpoint("stt");
+    const r = await api.pingVoiceEndpoint(wsId, "stt");
     setSttPing({ state: r.ok ? "ok" : "fail", detail: r.detail });
-  }, []);
+  }, [wsId]);
   const pingTts = useCallback(async () => {
     setTtsPing({ state: "pending", detail: "testing…" });
-    const r = await api.pingVoiceEndpoint("tts");
+    const r = await api.pingVoiceEndpoint(wsId, "tts");
     setTtsPing({ state: r.ok ? "ok" : "fail", detail: r.detail });
-  }, []);
+  }, [wsId]);
 
   // Best-effort: probe both engines once on mount to seed the chips.
   useEffect(() => {
@@ -2595,16 +2693,16 @@ function VoiceTab({ config, update }: TabProps) {
   const detect = useCallback(async () => {
     setProbeState("probing");
     const [voices, stt, tts] = await Promise.all([
-      api.listVoices(),
-      api.listModels("stt"),
-      api.listModels("tts"),
+      api.listVoices(wsId),
+      api.listModels(wsId, "stt"),
+      api.listModels(wsId, "tts"),
     ]);
     setDiscoveredVoices(voices);
     setDiscoveredStt(stt);
     setDiscoveredTts(tts);
     const any = voices.length + stt.length + tts.length > 0;
     setProbeState(any ? "ok" : "fail");
-  }, []);
+  }, [wsId]);
 
   // Probe once when the Voice tab mounts.
   useEffect(() => {
@@ -2616,7 +2714,29 @@ function VoiceTab({ config, update }: TabProps) {
   const ttsOptions = mergeOptions(discoveredTts, FALLBACK_TTS_MODELS);
 
   function updateVoice<K extends keyof VoiceConfig>(key: K, value: VoiceConfig[K]) {
+    if (inWorkspaceScope) {
+      // Optimistically reflect the edit, then persist the whole override (empty
+      // fields inherit the global Go-side). apiKey is never touched here — it is
+      // committed separately via commitApiKey so an empty draft keeps the stored
+      // key.
+      const next = { ...wsVoice, [key]: value };
+      setWsVoice(next);
+      void saveWsVoice(next).catch((err) => console.error("save workspace voice:", err));
+      return;
+    }
     update("voice", { ...voice, [key]: value });
+  }
+
+  // ph picks the placeholder for a field. In workspace scope an empty field
+  // INHERITS the global value, so the placeholder shows that inherited value
+  // (prefixed so it's clearly an inherited default, not a typed value). In
+  // global scope it falls back to the field's static example default.
+  function ph(globalValue: string | number, staticDefault: string): string {
+    if (inWorkspaceScope) {
+      const g = String(globalValue ?? "").trim();
+      return g ? `inherits: ${g}` : staticDefault;
+    }
+    return staticDefault;
   }
 
   // probeHint renders the tiny themed status line under the discovery fields:
@@ -2640,19 +2760,40 @@ function VoiceTab({ config, update }: TabProps) {
   }
 
   // Surface "not configured" inline. Local needs both STT + TTS URLs (no key
-  // required). Cloud/auto needs either a saved key or some configured URL.
-  const hasSttUrl = !!(voice.sttBaseUrl?.trim() || voice.baseUrl?.trim());
-  const hasTtsUrl = !!(voice.ttsBaseUrl?.trim() || voice.baseUrl?.trim());
+  // required). This is evaluated against the EFFECTIVE config (workspace
+  // override merged over global) so a workspace that inherits its URLs via empty
+  // fields isn't falsely flagged. enabled is always the global switch.
+  const effective: VoiceConfig = inWorkspaceScope
+    ? {
+        ...globalVoice,
+        ...Object.fromEntries(
+          Object.entries(wsVoice).filter(([, v]) => v !== "" && v !== 0),
+        ),
+        enabled: globalVoice.enabled,
+        provider: "local",
+      }
+    : voice;
+  const hasSttUrl = !!(effective.sttBaseUrl?.trim() || effective.baseUrl?.trim());
+  const hasTtsUrl = !!(effective.ttsBaseUrl?.trim() || effective.baseUrl?.trim());
   const notConfigured =
-    voice.enabled &&
-    (voice.provider === "local"
+    globalVoice.enabled &&
+    (effective.provider === "local"
       ? !hasSttUrl || !hasTtsUrl
-      : !voice.hasApiKey && !hasSttUrl && !hasTtsUrl);
+      : !effective.hasApiKey && !hasSttUrl && !hasTtsUrl);
 
   function commitApiKey() {
     // Only send when the user actually typed something; an empty field leaves
     // the stored key untouched (Go-side preserves it on an empty incoming key).
     if (apiKeyDraft.length === 0) return;
+    if (inWorkspaceScope) {
+      const next = { ...wsVoice, hasApiKey: true };
+      setWsVoice(next);
+      void saveWsVoice(next, apiKeyDraft).catch((err) =>
+        console.error("save workspace voice key:", err),
+      );
+      setApiKeyDraft("");
+      return;
+    }
     update("voice", { ...voice, apiKey: apiKeyDraft, hasApiKey: true });
     setApiKeyDraft("");
   }
@@ -2661,7 +2802,7 @@ function VoiceTab({ config, update }: TabProps) {
     setTestState("playing");
     setTestMsg("synthesizing…");
     try {
-      const res = await api.synthesize("Voice is working.", voice.voice || "", voice.speed || 0);
+      const res = await api.synthesize(wsId, "Voice is working.", voice.voice || "", voice.speed || 0);
       const audio = new Audio(`data:${res.contentType || "audio/mpeg"};base64,${res.audioB64}`);
       audio.onended = () => { setTestState("ok"); setTestMsg("played ✓"); };
       audio.onerror = () => { setTestState("error"); setTestMsg("playback failed"); };
@@ -2684,13 +2825,50 @@ function VoiceTab({ config, update }: TabProps) {
   return (
     <>
       <Section
+        title="voice config scope"
+        description="edit the global default, or override it for just this workspace. an empty field in a workspace override inherits the global value (shown as its placeholder)."
+      >
+        <div className="flex items-center justify-between" style={{ gap: 12 }}>
+          <Segmented
+            items={[
+              { key: "global", label: "global default" },
+              {
+                key: "workspace",
+                label: ws ? `this workspace (${ws.name})` : "this workspace",
+              },
+            ]}
+            value={scope}
+            onChange={(s) => setScope(s)}
+          />
+          {inWorkspaceScope && ws?.voice && (
+            <SmallButton
+              label="reset to global"
+              onClick={() => void resetWsToGlobal().catch((err) => console.error("reset voice:", err))}
+            />
+          )}
+        </div>
+        <span style={{ fontSize: 10, color: "var(--q-fg-muted)", marginTop: 6, display: "block" }}>
+          {inWorkspaceScope
+            ? ws?.voice
+              ? "this workspace has its own voice override — empty fields below inherit the global default."
+              : "this workspace inherits the global default — set any field below to override it just here."
+            : "editing the global default used by every workspace without its own override."}
+        </span>
+      </Section>
+
+      <Section
         title="voice"
         description="talk to a session hands-free; it talks back. STT/TTS run as local self-hosted engines through a Go proxy — private, zero-cost, no api key."
       >
         <SettingRow
           label="enable voice"
-          description="turn on the voice pane toggle in the session header"
-          right={<Toggle checked={voice.enabled} onChange={(v) => updateVoice("enabled", v)} />}
+          description="turn on the voice pane toggle in the session header — this is a global switch (not per-workspace)"
+          right={
+            <Toggle
+              checked={globalVoice.enabled}
+              onChange={(v) => update("voice", { ...globalVoice, enabled: v })}
+            />
+          }
         />
         <div className="flex items-center gap-2" style={{ marginTop: 2 }}>
           <StatusChip label="STT" state={sttPing.state === "pending" ? "untested" : sttPing.state} />
@@ -2722,7 +2900,11 @@ function VoiceTab({ config, update }: TabProps) {
         <textarea
           value={voice.instructions}
           onChange={(e) => updateVoice("instructions", e.target.value)}
-          placeholder="e.g. You are a concise pair-programming buddy. Be casual, keep replies under ~15 seconds, and always confirm before running commands."
+          placeholder={
+            inWorkspaceScope && globalVoice.instructions.trim()
+              ? `inherits global: ${globalVoice.instructions}`
+              : "e.g. You are a concise pair-programming buddy. Be casual, keep replies under ~15 seconds, and always confirm before running commands."
+          }
           spellCheck={false}
           style={{
             width: "100%",
@@ -2787,7 +2969,7 @@ function VoiceTab({ config, update }: TabProps) {
                   value={voice.sttBaseUrl}
                   onChange={(v) => updateVoice("sttBaseUrl", v)}
                   width={240}
-                  placeholder="http://localhost:2022"
+                  placeholder={ph(globalVoice.sttBaseUrl, "http://localhost:2022")}
                 />
                 <SmallButton
                   label={sttPing.state === "pending" ? "…" : "test connection"}
@@ -2809,7 +2991,7 @@ function VoiceTab({ config, update }: TabProps) {
                   value={voice.sttModel}
                   onChange={(v) => updateVoice("sttModel", v)}
                   width={200}
-                  placeholder="whisper-1"
+                  placeholder={ph(globalVoice.sttModel, "whisper-1")}
                   options={sttOptions}
                   listId="voice-stt-models"
                 />
@@ -2889,7 +3071,7 @@ function VoiceTab({ config, update }: TabProps) {
                   value={voice.ttsBaseUrl}
                   onChange={(v) => updateVoice("ttsBaseUrl", v)}
                   width={240}
-                  placeholder="http://localhost:8880"
+                  placeholder={ph(globalVoice.ttsBaseUrl, "http://localhost:8880")}
                 />
                 <SmallButton
                   label={ttsPing.state === "pending" ? "…" : "test connection"}
@@ -2910,7 +3092,7 @@ function VoiceTab({ config, update }: TabProps) {
                 value={voice.ttsModel}
                 onChange={(v) => updateVoice("ttsModel", v)}
                 width={200}
-                placeholder="kokoro"
+                placeholder={ph(globalVoice.ttsModel, "kokoro")}
                 options={ttsOptions}
                 listId="voice-tts-models"
               />
@@ -2927,7 +3109,7 @@ function VoiceTab({ config, update }: TabProps) {
                 value={voice.voice}
                 onChange={(v) => updateVoice("voice", v)}
                 width={200}
-                placeholder="am_onyx"
+                placeholder={ph(globalVoice.voice, "am_onyx")}
                 options={voiceOptions}
                 listId="voice-voices"
               />
@@ -2945,11 +3127,18 @@ function VoiceTab({ config, update }: TabProps) {
                 min={0.5}
                 max={2.0}
                 step={0.1}
-                value={voice.speed}
+                // In workspace scope a 0 override = inherit, so display the
+                // inherited global position on the slider.
+                value={voice.speed || globalVoice.speed}
                 onChange={(e) => updateVoice("speed", parseFloat(e.target.value))}
                 style={{ width: 160, accentColor: "var(--q-accent)" }}
               />
-              <span style={{ color: "var(--q-fg)", fontSize: 12, width: 32 }}>{voice.speed.toFixed(1)}x</span>
+              <span style={{ color: "var(--q-fg)", fontSize: 12, width: 32 }}>
+                {(voice.speed || globalVoice.speed).toFixed(1)}x
+              </span>
+              {inWorkspaceScope && !voice.speed && (
+                <span style={{ fontSize: 10, color: "var(--q-fg-muted)" }}>inherited</span>
+              )}
             </div>
           }
         />
@@ -2963,11 +3152,17 @@ function VoiceTab({ config, update }: TabProps) {
                 min={500}
                 max={6000}
                 step={250}
-                value={voice.pauseMs}
+                // In workspace scope a 0 override = inherit the global pause.
+                value={voice.pauseMs || globalVoice.pauseMs}
                 onChange={(e) => updateVoice("pauseMs", parseInt(e.target.value, 10))}
                 style={{ width: 160, accentColor: "var(--q-accent)" }}
               />
-              <span style={{ color: "var(--q-fg)", fontSize: 12, width: 32 }}>{(voice.pauseMs / 1000).toFixed(1)}s</span>
+              <span style={{ color: "var(--q-fg)", fontSize: 12, width: 32 }}>
+                {((voice.pauseMs || globalVoice.pauseMs) / 1000).toFixed(1)}s
+              </span>
+              {inWorkspaceScope && !voice.pauseMs && (
+                <span style={{ fontSize: 10, color: "var(--q-fg-muted)" }}>inherited</span>
+              )}
             </div>
           }
         />
@@ -3022,7 +3217,7 @@ function VoiceTab({ config, update }: TabProps) {
                   value={voice.baseUrl}
                   onChange={(v) => updateVoice("baseUrl", v)}
                   width={280}
-                  placeholder="(none)"
+                  placeholder={ph(globalVoice.baseUrl, "(none)")}
                 />
               }
             />

@@ -129,11 +129,17 @@ function resolveVadOptions(
   };
 }
 
-/** Default transport = the real Wails-bridged api.ts wrappers. */
-const defaultTransport: VoiceTransport = {
-  transcribe: (audioB64, mime) => api.transcribe(audioB64, mime),
-  synthesize: (text, voice, speed) => api.synthesize(text, voice, speed),
-};
+/**
+ * Default transport = the real Wails-bridged api.ts wrappers, bound to a
+ * workspace so STT/TTS resolve that workspace's voice override (empty string =
+ * the backend falls back to the current workspace).
+ */
+function makeDefaultTransport(workspaceId: string): VoiceTransport {
+  return {
+    transcribe: (audioB64, mime) => api.transcribe(workspaceId, audioB64, mime),
+    synthesize: (text, voice, speed) => api.synthesize(workspaceId, text, voice, speed),
+  };
+}
 
 export class AudioService implements IAudioService {
   private readonly transport: VoiceTransport;
@@ -228,7 +234,7 @@ export class AudioService implements IAudioService {
   } | null = null;
 
   constructor(opts: AudioServiceOptions = {}) {
-    this.transport = opts.transport ?? defaultTransport;
+    this.transport = opts.transport ?? makeDefaultTransport(opts.workspaceId ?? "");
     this.vadAssetPath = opts.vadAssetPath ?? DEFAULT_VAD_ASSET_PATH;
     this.onnxWasmPath = opts.onnxWasmPath ?? this.vadAssetPath;
     this.vadModel = opts.vadModel ?? "v5";

@@ -42,6 +42,12 @@ export interface AudioServiceOptions {
   /** Injected STT/TTS transport. Defaults to the api.ts wrappers. */
   transport?: VoiceTransport;
   /**
+   * Workspace whose voice override should resolve the STT/TTS endpoints/models.
+   * Empty / omitted = the backend falls back to the current workspace. Ignored
+   * when an explicit `transport` is supplied (e.g. tests/dev harness).
+   */
+  workspaceId?: string;
+  /**
    * Base URL (relative to the app root) where the self-hosted VAD assets live:
    * `vad.worklet.bundle.min.js` + `silero_vad_v5.onnx`. Must end with `/`.
    * Default: "/vad/".

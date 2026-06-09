@@ -46,6 +46,10 @@ export function UpdateWorkspace(arg1) {
   return window['go']['controller']['workspaceController']['UpdateWorkspace'](arg1);
 }
 
+export function UpdateWorkspaceVoice(arg1) {
+  return window['go']['controller']['workspaceController']['UpdateWorkspaceVoice'](arg1);
+}
+
 export function ValidatePaths(arg1, arg2) {
   return window['go']['controller']['workspaceController']['ValidatePaths'](arg1, arg2);
 }
