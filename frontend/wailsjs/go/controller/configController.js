@@ -46,10 +46,6 @@ export function SendNotification(arg1, arg2) {
   return window['go']['controller']['configController']['SendNotification'](arg1, arg2);
 }
 
-export function SetMindmapPaneOpen(arg1) {
-  return window['go']['controller']['configController']['SetMindmapPaneOpen'](arg1);
-}
-
 export function SetVoicePaneOpen(arg1) {
   return window['go']['controller']['configController']['SetVoicePaneOpen'](arg1);
 }
