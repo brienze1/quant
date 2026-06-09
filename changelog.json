@@ -1,6 +1,19 @@
 {
   "entries": [
     {
+      "version": "v3.1.32",
+      "date": "2026-06-08",
+      "changes": {
+        "features": [
+          "open a workspace in its own window — the workspace switcher now has an 'open in new window' action that pops a workspace out into a separate desktop window so you can work two workspaces side by side; the new window shares the same backend, data and live updates (sessions, mindmap, etc. stay in sync across windows) and stays pinned to its workspace",
+          "voice settings can now be set per workspace — Settings → Voice has a 'global default / this workspace' toggle, so one workspace can use a different voice, speed or engine while the rest inherit your global defaults; any field you leave blank in a workspace falls back to the global value"
+        ],
+        "improvements": [
+          "the mindmap pane is now per-session: opening it for one session no longer opens it for every other session/tab — each session remembers whether its mindmap is showing, like the terminal pane already did"
+        ]
+      }
+    },
+    {
       "version": "v3.1.31",
       "date": "2026-06-08",
       "changes": {
