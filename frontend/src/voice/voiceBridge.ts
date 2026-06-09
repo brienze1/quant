@@ -16,6 +16,11 @@
 import * as api from "../api";
 import type { IAudioService } from "./types";
 
+// While the user holds a listen open in recording mode, ping the Go bridge so
+// it resets the request's ListenTimeout (120s) timer. 30s leaves a wide margin
+// even if a ping or two is lost.
+const RECORDING_EXTEND_INTERVAL_MS = 30_000;
+
 /** Payload of the "voice:request" event emitted by the Go voice bridge. */
 export interface VoiceRequest {
   sessionId: string;
@@ -77,8 +82,38 @@ export function registerVoiceBridge(
     void handleRequest(req, service, callbacks, inFlight);
   });
 
+  // Recording keepalive: while the service reports "recording", periodically
+  // extend the in-flight listen request's Go-side timeout so a long recording
+  // isn't cut off by ListenTimeout. Driven off the service state so it works
+  // identically in the native webview and remote browser clients (the api call
+  // goes through the same callGo transport as voiceResult).
+  let extendTimer: ReturnType<typeof setInterval> | null = null;
+  const stopExtend = () => {
+    if (extendTimer) {
+      clearInterval(extendTimer);
+      extendTimer = null;
+    }
+  };
+  const offRecordingState = service.onState((s) => {
+    if (s === "recording") {
+      if (extendTimer) return;
+      const ping = () => {
+        const id = inFlight.requestId;
+        if (id) void api.voiceListenExtend(id).catch(() => {});
+      };
+      // Extend immediately (the listen may already be near its deadline), then
+      // on the interval.
+      ping();
+      extendTimer = setInterval(ping, RECORDING_EXTEND_INTERVAL_MS);
+    } else {
+      stopExtend();
+    }
+  });
+
   return () => {
     if (cancel) cancel();
+    stopExtend();
+    offRecordingState();
     // If a request is still unsettled at tear-down, tell Go the voice ended so
     // the waiting tool returns immediately (graceful, not an error). Clear the
     // marker first so we fire exactly once.

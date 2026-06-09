@@ -6,8 +6,12 @@
 // pure-TS service with no React/DOM-component dependency so it can be driven
 // from a dev harness, Playwright, and later from VoicePane.tsx.
 
-/** The four orb-visible states. `thinking` = VAD ended, STT/agent in flight. */
-export type VoiceServiceState = "idle" | "listening" | "thinking" | "speaking";
+/**
+ * The orb-visible states. `thinking` = VAD ended, STT/agent in flight.
+ * `recording` = a listen turn the user pinned open: VAD segments are
+ * transcribed as they end but the turn only resolves on an explicit stop.
+ */
+export type VoiceServiceState = "idle" | "listening" | "recording" | "thinking" | "speaking";
 
 export type VoiceStateCb = (state: VoiceServiceState) => void;
 
@@ -142,6 +146,26 @@ export interface IAudioService {
 
   /** Cancel an in-flight listen() (rejects its promise with a cancel error). */
   cancelListen(): void;
+
+  /**
+   * Pin the active listen() open as a long-form recording: VAD endpointing no
+   * longer resolves the turn — each detected segment is transcribed immediately
+   * and accumulated, and the per-listen maxListenMs timeout is disarmed (a
+   * generous recording safety ceiling applies instead). No-op unless a listen()
+   * is in flight and not already recording.
+   */
+  startRecording(): void;
+
+  /**
+   * Finalize a recording: flush any mid-speech segment, await the in-flight
+   * segment transcriptions in order, and resolve the pending listen() with the
+   * joined transcript. If nothing was captured, behaves like the existing
+   * no-speech (timeout) path. No-op if not recording.
+   */
+  stopRecording(): Promise<void>;
+
+  /** True while a listen() is pinned open in recording mode. */
+  isRecording(): boolean;
 
   /** Synthesize + play `text`; resolve on playback end. */
   speak(text: string): Promise<void>;

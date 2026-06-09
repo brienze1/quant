@@ -609,6 +609,19 @@ export function voiceResultClosed(requestId: string): Promise<void> {
 }
 
 /**
+ * Keepalive for a long-form listen: while the user holds the voice pane in
+ * recording mode, the frontend bridge pings this (~every 30s) with the
+ * in-flight requestId so the Go bridge resets that request's ListenTimeout
+ * timer and the recording isn't cut off mid-speech. Unknown/settled requestIds
+ * are ignored Go-side, and non-recording listens never call this.
+ *
+ * @param requestId correlation id from the "voice:request" event
+ */
+export function voiceListenExtend(requestId: string): Promise<void> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "VoiceListenExtend", requestId);
+}
+
+/**
  * Kick a running session into voice mode. Injects the voice-mode persona/kickoff
  * message into the session (auto-submitted Go-side), after which the agent drives
  * the spoken conversation loop via the voice_* MCP tools. Called once when the

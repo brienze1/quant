@@ -44,6 +44,7 @@ interface Props {
 const STATE_LABEL: Record<VoiceServiceState, string> = {
   idle: "idle",
   listening: "listening",
+  recording: "recording",
   thinking: "thinking",
   speaking: "speaking",
 };
@@ -52,9 +53,17 @@ const STATE_LABEL: Record<VoiceServiceState, string> = {
 const STATE_COLOR: Record<VoiceServiceState, string> = {
   idle: "var(--q-fg-muted)",
   listening: "var(--q-accent)",
+  recording: "var(--q-error)",
   thinking: "var(--q-blue)",
   speaking: "var(--q-term-green)",
 };
+
+/** mm:ss for the recording elapsed indicator. */
+function formatElapsed(totalSecs: number): string {
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 // WI-5.5: map an error kind to an actionable, human banner. `title` is short
 // (status bar), `detail` is the actionable line, `action` (optional) hints what
@@ -133,6 +142,8 @@ export function VoicePane({ sessionId, className, style }: Props) {
   const [hasLabels, setHasLabels] = useState(true);
   // 0..METER_SEGMENTS-1 lit segments, driven by getInputLevel() via rAF.
   const [meterLevel, setMeterLevel] = useState(0);
+  // Seconds elapsed in the current recording (drives the mm:ss indicator).
+  const [recordSecs, setRecordSecs] = useState(0);
 
   const serviceRef = useRef<IAudioService | null>(null);
   // Live mirror of `state` for the orb's per-frame level callback (avoids stale
@@ -368,6 +379,32 @@ export function VoicePane({ sessionId, className, style }: Props) {
       }
     })();
   };
+
+  // Toggle long-form recording on the active listen turn. Start is sync; stop
+  // flushes/joins the segments and resolves the listen (state → thinking).
+  const handleToggleRecording = () => {
+    const svc = serviceRef.current;
+    if (!svc) return;
+    if (svc.isRecording()) {
+      void svc.stopRecording();
+    } else {
+      svc.startRecording();
+    }
+  };
+
+  // Tick the mm:ss elapsed indicator while recording.
+  useEffect(() => {
+    if (state !== "recording") {
+      setRecordSecs(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setRecordSecs(0);
+    const t = setInterval(() => {
+      setRecordSecs(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [state]);
 
   // Keep the newest transcript line in view (scroll to bottom on append).
   useEffect(() => {
@@ -684,6 +721,53 @@ export function VoicePane({ sessionId, className, style }: Props) {
           <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>
             {STATE_LABEL[state]}
           </span>
+
+          {/* Record toggle: visible while a listen turn is active. Pressing it
+              pins the turn open (recording: speak as long as you want, across
+              pauses); pressing again stops + finalizes the full transcript. */}
+          {(state === "listening" || state === "recording") && (
+            <button
+              onClick={handleToggleRecording}
+              title={
+                state === "recording"
+                  ? "stop recording and send the full transcript"
+                  : "record a long message (keeps listening across pauses until you stop)"
+              }
+              style={{
+                flex: "none",
+                marginLeft: 8,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10.5,
+                color: "var(--q-error)",
+                backgroundColor: "var(--q-bg-hover)",
+                border:
+                  state === "recording"
+                    ? "1px solid var(--q-error)"
+                    : "1px solid var(--q-border)",
+                borderRadius: 4,
+                padding: "1px 6px",
+                cursor: "pointer",
+              }}
+            >
+              {state === "recording" ? (
+                <>
+                  <span style={{ fontSize: 9, lineHeight: 1 }}>■</span>
+                  stop
+                  <span style={{ color: "var(--q-fg-secondary)" }}>
+                    {formatElapsed(recordSecs)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: 9, lineHeight: 1 }}>●</span>
+                  rec
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {error ? (

@@ -153,6 +153,22 @@ func (c *voiceController) VoiceResultClosed(requestID string) error {
 	return nil
 }
 
+// VoiceListenExtend is the frontend keepalive for a long-running listen: while
+// the user holds the pane in recording mode the frontend pings this (every ~30s)
+// with the in-flight requestId, and the bridge resets that request's timeout so
+// a long-form recording isn't cut off by ListenTimeout. Unknown/settled
+// requestIds are ignored safely; non-recording listens never call this, so their
+// behavior is unchanged.
+//
+// It returns a single error (nil) to satisfy the remote-transport contract.
+func (c *voiceController) VoiceListenExtend(requestId string) error {
+	if c.bridge == nil {
+		return fmt.Errorf("voice bridge not initialized")
+	}
+	c.bridge.Extend(requestId)
+	return nil
+}
+
 // StartVoiceSession kicks a running session into the voice conversation loop by
 // injecting the VoicePersona message and auto-submitting it (Enter delivered as a
 // separate keystroke, mirroring the MCP send_message primitive so the Claude CLI

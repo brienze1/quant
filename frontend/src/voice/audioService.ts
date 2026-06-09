@@ -30,6 +30,15 @@ const DEFAULT_VAD_ASSET_PATH = "/vad/";
 // timeout). Generous so a long, paused explanation isn't cut off by the ceiling;
 // the redemption window (above) handles normal turn-taking well before this.
 const DEFAULT_MAX_LISTEN_MS = 60_000;
+// Safety ceiling for an explicit recording (user-pinned listen). Recording is
+// only ended by the user's stop, so this just guards against a forgotten
+// recording holding the mic forever; on expiry it finalizes with whatever was
+// captured so far.
+const RECORDING_MAX_MS = 15 * 60_000;
+// After flushing a mid-speech segment on stopRecording (vad.pause with
+// submitUserSpeechOnPause), give the onSpeechEnd callback a beat to enqueue its
+// transcription before we snapshot the segment list.
+const RECORDING_FLUSH_GRACE_MS = 80;
 /** Barge-in is suppressed for this long after TTS playback starts (see handleSpeechStart). */
 const BARGE_IN_GUARD_MS = 1200;
 /**
@@ -219,6 +228,14 @@ export class AudioService implements IAudioService {
     timer: ReturnType<typeof setTimeout> | null;
     settled: boolean;
   } | null = null;
+
+  // Recording mode (user-pinned listen). While active, handleSpeechEnd
+  // transcribes each VAD segment immediately (ordered promises below) instead
+  // of resolving the pending listen; stopRecording() joins them and resolves.
+  private recordingActive = false;
+  private recordingStopping = false;
+  private recordingSegments: Promise<string>[] = [];
+  private recordingCeil: ReturnType<typeof setTimeout> | null = null;
 
   // One in-flight speak() at a time.
   private pendingSpeak: {
@@ -758,12 +775,30 @@ export class AudioService implements IAudioService {
       return;
     }
     if (this.pendingListen) {
-      this.setState("listening");
+      this.setState(this.recordingActive ? "recording" : "listening");
     }
   }
 
   private async handleSpeechEnd(audio: Float32Array) {
     if (!this.pendingListen || this.pendingListen.settled) return;
+
+    if (this.recordingActive) {
+      // Recording: do NOT resolve the listen. Transcribe this segment right
+      // away (keeps the final stop fast and avoids one giant WAV) and keep the
+      // VAD running for the next segment. A failed segment resolves to "" so a
+      // single STT hiccup is skipped instead of killing the whole recording.
+      let audioB64: string;
+      try {
+        const wav = utils.encodeWAV(audio); // defaults: PCM, 16000Hz, mono, 16-bit
+        audioB64 = utils.arrayBufferToBase64(wav);
+      } catch {
+        return; // skip the segment; keep recording
+      }
+      this.recordingSegments.push(
+        this.transport.transcribe(audioB64, "audio/wav").catch(() => ""),
+      );
+      return;
+    }
 
     // Stop the VAD: we want exactly one utterance per listen().
     try {
@@ -801,7 +836,7 @@ export class AudioService implements IAudioService {
   private handleVADMisfire() {
     // Spoke too briefly to count; keep listening (stay in the same state).
     if (this.pendingListen && !this.pendingListen.settled) {
-      this.setState("listening");
+      this.setState(this.recordingActive ? "recording" : "listening");
     }
   }
 
@@ -881,12 +916,108 @@ export class AudioService implements IAudioService {
     this.failListen({ kind: "unknown", message: "Listen cancelled." });
   }
 
+  // ---- recording (user-pinned long-form listen) ------------------------------
+
+  isRecording(): boolean {
+    return this.recordingActive;
+  }
+
+  startRecording(): void {
+    const p = this.pendingListen;
+    if (!p || p.settled || this.recordingActive) return;
+
+    // Disarm the per-listen maxListenMs timeout: the user explicitly owns the
+    // turn now. A generous safety ceiling replaces it (finalizes with whatever
+    // was captured if the user walks away).
+    if (p.timer) {
+      clearTimeout(p.timer);
+      p.timer = null;
+    }
+    this.recordingActive = true;
+    this.recordingStopping = false;
+    this.recordingSegments = [];
+    // Make vad.pause() flush a mid-speech segment via onSpeechEnd, so the user
+    // can hit stop without waiting out the redemption window. Recording-only:
+    // reset in resetRecording() so normal listens keep today's pause semantics.
+    try {
+      this.vad?.setOptions({ submitUserSpeechOnPause: true });
+    } catch {
+      /* ignore — stop falls back to whatever the VAD has endpointed */
+    }
+    this.recordingCeil = setTimeout(() => {
+      this.recordingCeil = null;
+      void this.stopRecording();
+    }, RECORDING_MAX_MS);
+    this.setState("recording");
+  }
+
+  async stopRecording(): Promise<void> {
+    if (!this.recordingActive || this.recordingStopping) return;
+    this.recordingStopping = true;
+    if (this.recordingCeil) {
+      clearTimeout(this.recordingCeil);
+      this.recordingCeil = null;
+    }
+
+    // Flush a mid-speech segment: with submitUserSpeechOnPause, pause() emits a
+    // final onSpeechEnd carrying whatever has been captured so far (it lands in
+    // recordingSegments via the recording branch above, which is still active).
+    try {
+      await this.vad?.pause();
+    } catch {
+      /* ignore */
+    }
+    await new Promise((r) => setTimeout(r, RECORDING_FLUSH_GRACE_MS));
+
+    const segments = this.recordingSegments;
+    const p = this.pendingListen;
+    this.resetRecording();
+    if (!p || p.settled) return; // listen was cancelled mid-stop
+
+    // STT for the tail segments is (possibly) still in flight.
+    this.setState("thinking");
+    const texts = await Promise.all(segments); // segment failures resolved to ""
+    if (!this.pendingListen || this.pendingListen.settled) return;
+    const transcript = texts
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .join("\n");
+    if (!transcript) {
+      // Recording was toggled but nothing was captured/recognized — behave like
+      // the existing no-speech path (the bridge maps "timeout" to an empty
+      // transcript so the agent gets the "no speech heard" nudge, not an error).
+      this.failListen({
+        kind: "timeout",
+        message: `No speech was captured while recording. [${this.listenDiag()}]`,
+      });
+      return;
+    }
+    this.resolveListen(transcript);
+  }
+
+  /** Clear all recording state (also invoked when a listen settles/fails). */
+  private resetRecording(): void {
+    this.recordingActive = false;
+    this.recordingStopping = false;
+    this.recordingSegments = [];
+    if (this.recordingCeil) {
+      clearTimeout(this.recordingCeil);
+      this.recordingCeil = null;
+    }
+    try {
+      this.vad?.setOptions({ submitUserSpeechOnPause: false });
+    } catch {
+      /* ignore */
+    }
+  }
+
   private resolveListen(transcript: string) {
     const p = this.pendingListen;
     if (!p || p.settled) return;
     p.settled = true;
     if (p.timer) clearTimeout(p.timer);
     this.clearListenSampler();
+    if (this.recordingActive) this.resetRecording();
     this.pendingListen = null;
     try {
       this.vad?.pause();
@@ -911,6 +1042,7 @@ export class AudioService implements IAudioService {
     p.settled = true;
     if (p.timer) clearTimeout(p.timer);
     this.clearListenSampler();
+    if (this.recordingActive) this.resetRecording();
     this.pendingListen = null;
     try {
       this.vad?.pause();

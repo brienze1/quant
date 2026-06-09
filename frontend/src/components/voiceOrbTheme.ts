@@ -17,6 +17,8 @@ export interface OrbThemeTokens {
   speakAccent: string;
   /** Accent used for the "thinking" state (falls back to a warm tone / accent). */
   thinkAccent: string;
+  /** Accent used for the "recording" state (red-tinted; falls back to accent). */
+  recordAccent: string;
   /** True when the app background is light -> use the light-theme glow recipe. */
   isLight: boolean;
 }
@@ -83,12 +85,15 @@ export function readOrbTheme(el?: HTMLElement | null): OrbThemeTokens {
   const speakAccent = get("--q-blue", get("--q-cyan", accent));
   // --q-warning gives the "thinking" warm tone; fall back to accent.
   const thinkAccent = get("--q-warning", accent);
+  // --q-error gives the "recording" warm/red tone; fall back to accent.
+  const recordAccent = get("--q-error", accent);
 
   return {
     accent,
     bg,
     speakAccent,
     thinkAccent,
+    recordAccent,
     isLight: isLightColor(bg),
   };
 }
