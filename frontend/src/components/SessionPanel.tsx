@@ -4,6 +4,7 @@ import type { Session, Task, Config } from "../types";
 import { StatusDot } from "./StatusDot";
 import { TerminalPane } from "./TerminalPane";
 import { MindmapPane } from "./MindmapPane";
+import { FilesPane } from "./FilesPane";
 import * as api from "../api";
 
 type SplitLayout = "horizontal" | "vertical";
@@ -30,6 +31,10 @@ interface Props {
   // synced across tabs and remote clients) — not a per-session preference.
   mindmapPaneOpen: boolean;
   onMindmapPaneOpenChange: (open: boolean) => void;
+  // Files pane open/closed is a per-session preference owned by App
+  // (filesPaneOpenMap, mirroring the terminal pane) — NOT config-persisted.
+  filesPaneOpen: boolean;
+  onFilesPaneOpenChange: (open: boolean) => void;
   // Voice pane open/closed is a single GLOBAL flag owned by App (config-backed,
   // synced across tabs and remote clients) — mirrors the mindmap pane flag.
   voicePaneOpen: boolean;
@@ -50,6 +55,8 @@ export function SessionPanel({
   onTerminalPaneOpenChange,
   mindmapPaneOpen,
   onMindmapPaneOpenChange,
+  filesPaneOpen,
+  onFilesPaneOpenChange,
   voicePaneOpen,
   onVoicePaneOpenChange,
   onCreateEmbeddedTerminal,
@@ -214,8 +221,11 @@ export function SessionPanel({
   // session it was opened on and must survive active-tab switches, so it is
   // mounted at App scope (keyed by voiceSessionId) and rendered as a persistent
   // right-docked panel — not inside this per-active-tab SessionPanel, which
-  // unmounts on tab switch. SessionPanel only owns the mindmap dock now.
-  const dockOpen = mindmapPaneOpen;
+  // unmounts on tab switch. SessionPanel only owns the mindmap/files dock now.
+  //
+  // Mindmap and files SHARE the single dock slot, mutually exclusive (each
+  // toggle closes the other), so the dock is open when either pane is.
+  const dockOpen = mindmapPaneOpen || filesPaneOpen;
   const dockSplitState: SplitState = {
     open: dockOpen,
     terminalSession: null,
@@ -305,7 +315,10 @@ export function SessionPanel({
           {/* Mindmap button */}
           {!isArchived && (
             <button
-              onClick={() => onMindmapPaneOpenChange(!mindmapPaneOpen)}
+              onClick={() => {
+                if (!mindmapPaneOpen && filesPaneOpen) onFilesPaneOpenChange(false);
+                onMindmapPaneOpenChange(!mindmapPaneOpen);
+              }}
               className="flex items-center gap-1 px-2 py-1 text-[11px]"
               style={{
                 fontFamily: "'JetBrains Mono', monospace",
@@ -321,6 +334,31 @@ export function SessionPanel({
               }}
             >
               <span>mindmap</span>
+            </button>
+          )}
+
+          {/* Files button (shares the dock slot with mindmap, mutually exclusive) */}
+          {!isArchived && (
+            <button
+              onClick={() => {
+                if (!filesPaneOpen && mindmapPaneOpen) onMindmapPaneOpenChange(false);
+                onFilesPaneOpenChange(!filesPaneOpen);
+              }}
+              className="flex items-center gap-1 px-2 py-1 text-[11px]"
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                color: filesPaneOpen ? "var(--q-bg)" : "var(--q-blue)",
+                backgroundColor: filesPaneOpen ? "var(--q-blue)" : "var(--q-bg-hover)",
+                border: `1px solid ${filesPaneOpen ? "var(--q-blue)" : "var(--q-border)"}`,
+              }}
+              onMouseEnter={(e) => {
+                if (!filesPaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
+              }}
+              onMouseLeave={(e) => {
+                if (!filesPaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+              }}
+            >
+              <span>files</span>
             </button>
           )}
 
@@ -388,8 +426,8 @@ export function SessionPanel({
             </div>
           )}
 
-          {/* Mindmap dock layout toggle (controls where the mindmap dock sits
-              relative to the session — shown only when the mindmap is open). */}
+          {/* Dock layout toggle (controls where the mindmap/files dock sits
+              relative to the session — shown only when the dock is open). */}
           {dockOpen && (
             <div className="flex items-center gap-0.5">
               <LayoutIcon
@@ -496,12 +534,18 @@ export function SessionPanel({
           dockOpen ? (
             <>
               <PaneHeader
-                label="mindmap"
-                dotColor="var(--q-accent)"
-                onClose={() => onMindmapPaneOpenChange(false)}
+                label={filesPaneOpen ? "files" : "mindmap"}
+                dotColor={filesPaneOpen ? "var(--q-blue)" : "var(--q-accent)"}
+                onClose={() =>
+                  filesPaneOpen ? onFilesPaneOpenChange(false) : onMindmapPaneOpenChange(false)
+                }
               />
               <div className="flex-1 min-h-0">
-                <MindmapPane sessionId={session.id} />
+                {filesPaneOpen ? (
+                  <FilesPane key={session.id} sessionId={session.id} />
+                ) : (
+                  <MindmapPane sessionId={session.id} />
+                )}
               </div>
             </>
           ) : null

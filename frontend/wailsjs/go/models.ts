@@ -151,11 +151,11 @@ export namespace dto {
 	    remoteAccessPort: number;
 	    remoteAccessPasscode: string;
 	    voice: VoiceConfigDTO;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ConfigResponse(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.startOnLogin = source["startOnLogin"];
@@ -454,6 +454,44 @@ export namespace dto {
 	        this.path = source["path"];
 	        this.status = source["status"];
 	        this.oldPath = source["oldPath"];
+	    }
+	}
+	export class FileContentResponse {
+	    content: string;
+	    size: number;
+	    tooLarge: boolean;
+	    binary: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileContentResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.content = source["content"];
+	        this.size = source["size"];
+	        this.tooLarge = source["tooLarge"];
+	        this.binary = source["binary"];
+	    }
+	}
+	export class FileEntryResponse {
+	    name: string;
+	    path: string;
+	    isDir: boolean;
+	    size: number;
+	    modTime: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileEntryResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.isDir = source["isDir"];
+	        this.size = source["size"];
+	        this.modTime = source["modTime"];
 	    }
 	}
 	export class JobGroupResponse {
@@ -772,7 +810,7 @@ export namespace dto {
 	    remoteAccessPort: number;
 	    remoteAccessPasscode: string;
 	    voice: VoiceConfigDTO;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SaveConfigRequest(source);
 	    }

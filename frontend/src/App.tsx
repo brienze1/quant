@@ -102,6 +102,9 @@ function App() {
   const [embeddedTerminalMap, setEmbeddedTerminalMap] = useState<Record<string, string>>({});
   // Track which sessions have the terminal pane open: parentSessionId -> boolean
   const [terminalPaneOpenMap, setTerminalPaneOpenMap] = useState<Record<string, boolean>>({});
+  // Track which sessions have the files pane open: sessionId -> boolean
+  // (per-session like the terminal pane — NOT config-persisted).
+  const [filesPaneOpenMap, setFilesPaneOpenMap] = useState<Record<string, boolean>>({});
   // Mindmap pane open/closed is a single GLOBAL flag (unlike the per-session
   // terminal pane): it is config-backed and synced across all tabs and remote
   // clients via the "mindmap:pane" event.
@@ -183,6 +186,14 @@ function App() {
   function handleTerminalPaneOpenChange(open: boolean) {
     if (!activeSession) return;
     setTerminalPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
+  }
+
+  // whether the files pane is open for the active session
+  const activeFilesPaneOpen = activeSession ? (filesPaneOpenMap[activeSession.id] ?? false) : false;
+
+  function handleFilesPaneOpenChange(open: boolean) {
+    if (!activeSession) return;
+    setFilesPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
   }
 
   // Toggle the global mindmap pane: update locally for instant feedback, then
@@ -2372,6 +2383,8 @@ function App() {
                 onTerminalPaneOpenChange={handleTerminalPaneOpenChange}
                 mindmapPaneOpen={mindmapPaneOpen}
                 onMindmapPaneOpenChange={handleMindmapPaneOpenChange}
+                filesPaneOpen={activeFilesPaneOpen}
+                onFilesPaneOpenChange={handleFilesPaneOpenChange}
                 voicePaneOpen={voiceSessionId === activeSession.id}
                 onVoicePaneOpenChange={handleVoicePaneOpenChange}
                 onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}

@@ -57,6 +57,8 @@ type Injector struct {
 	mindmapPersistence   intAdapter.MindmapPersistence
 	mindmapManager       appAdapter.MindmapManager
 	mindmapController    intAdapter.MindmapController
+	fileManager          appAdapter.FileManager
+	fileController       intAdapter.FileController
 	eventEmitter         *events.Emitter
 }
 
@@ -445,6 +447,25 @@ func (i *Injector) MindmapController() intAdapter.MindmapController {
 		i.mindmapController = controller.NewMindmapController(i.MindmapManager())
 	}
 	return i.mindmapController
+}
+
+// FileManager returns the singleton FileManager service instance.
+func (i *Injector) FileManager() appAdapter.FileManager {
+	if i.fileManager == nil {
+		i.fileManager = service.NewFileManagerService(
+			i.SessionPersistence(), // FindSession
+			i.EventEmitter(),       // EventEmitter
+		)
+	}
+	return i.fileManager
+}
+
+// FileController returns the singleton FileController instance.
+func (i *Injector) FileController() intAdapter.FileController {
+	if i.fileController == nil {
+		i.fileController = controller.NewFileController(i.FileManager())
+	}
+	return i.fileController
 }
 
 // ChangelogController returns the singleton ChangelogController instance.

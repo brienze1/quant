@@ -456,6 +456,27 @@ export interface MindmapNode {
   color?: string;
 }
 
+// --- Files pane ---
+
+// FileEntry mirrors the Go entity.FileEntry returned by fileController.ListDir.
+// `path` is always forward-slash relative to the session root.
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  modTime: string;
+}
+
+// FileReadResult mirrors the Go entity.FileContent returned by
+// fileController.ReadFile. tooLarge/binary files come back with empty content.
+export interface FileReadResult {
+  content: string;
+  size: number;
+  tooLarge: boolean;
+  binary: boolean;
+}
+
 // --- Changelog ---
 
 export interface ChangelogEntry {

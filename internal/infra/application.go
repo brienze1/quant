@@ -235,6 +235,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 	workspaceCtrl := injector.WorkspaceController()
 	jobGroupCtrl := injector.JobGroupController()
 	mindmapCtrl := injector.MindmapController()
+	fileCtrl := injector.FileController()
 	changelogCtrl := injector.ChangelogController()
 	// Voice bridge connects the MCP voice tools (Go) to the frontend audio
 	// pipeline: a tool emits "voice:request" via remote.Emit (native webview +
@@ -283,6 +284,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 		"workspaceController": workspaceCtrl,
 		"jobGroupController":  jobGroupCtrl,
 		"mindmapController":   mindmapCtrl,
+		"fileController":      fileCtrl,
 		"changelogController": changelogCtrl,
 		"voiceController":     voiceCtrl,
 	}
@@ -313,6 +315,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			workspaceCtrl.OnStartup(ctx)
 			jobGroupCtrl.OnStartup(ctx)
 			mindmapCtrl.OnStartup(ctx)
+			fileCtrl.OnStartup(ctx)
 			changelogCtrl.OnStartup(ctx)
 			voiceCtrl.OnStartup(ctx)
 			remoteCtrl.OnStartup(ctx)
@@ -332,6 +335,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			workspaceCtrl.OnShutdown(ctx)
 			jobGroupCtrl.OnShutdown(ctx)
 			mindmapCtrl.OnShutdown(ctx)
+			fileCtrl.OnShutdown(ctx)
 			changelogCtrl.OnShutdown(ctx)
 			voiceCtrl.OnShutdown(ctx)
 			remoteCtrl.OnShutdown(ctx)
@@ -353,6 +357,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			workspaceCtrl,
 			jobGroupCtrl,
 			mindmapCtrl,
+			fileCtrl,
 			changelogCtrl,
 			voiceCtrl,
 			remoteCtrl,
