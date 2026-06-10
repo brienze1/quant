@@ -15,6 +15,14 @@ export type VoiceServiceState = "idle" | "listening" | "recording" | "thinking" 
 
 export type VoiceStateCb = (state: VoiceServiceState) => void;
 
+/**
+ * Live recording transcript callback: receives the accumulated transcript so
+ * far (segments joined with "\n", in speech order) each time a recording
+ * segment's STT resolves with text, and "" when the recording state is reset
+ * so a new recording starts with a clean draft.
+ */
+export type RecordingTranscriptCb = (text: string) => void;
+
 export interface VoiceError {
   /** Coarse category so the UI can branch (permission/network/etc). */
   kind: "permission" | "network" | "vad" | "stt" | "tts" | "playback" | "timeout" | "unknown";
@@ -166,6 +174,14 @@ export interface IAudioService {
 
   /** True while a listen() is pinned open in recording mode. */
   isRecording(): boolean;
+
+  /**
+   * Subscribe to the live recording transcript: while a recording is active,
+   * fires with the accumulated text so far each time a segment's STT resolves
+   * (newline-joined, speech order — same join stopRecording() uses), and with
+   * "" when recording state resets. Returns an unsubscribe fn.
+   */
+  onRecordingTranscript(cb: RecordingTranscriptCb): () => void;
 
   /** Synthesize + play `text`; resolve on playback end. */
   speak(text: string): Promise<void>;

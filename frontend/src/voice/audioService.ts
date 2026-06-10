@@ -17,6 +17,7 @@ import type {
   AudioServiceOptions,
   DevicesChangedCb,
   IAudioService,
+  RecordingTranscriptCb,
   VadTuning,
   VoiceError,
   VoiceErrorCb,
@@ -138,6 +139,20 @@ function resolveVadOptions(
   };
 }
 
+/**
+ * Join recording segment texts into the final transcript: trim each, drop
+ * empties (failed segments resolve to ""), newline-separate. `null` slots
+ * (STT still in flight) are simply omitted. Used by BOTH the live
+ * onRecordingTranscript emission and stopRecording()'s final resolve so the
+ * two can never diverge.
+ */
+function joinSegmentTexts(texts: ReadonlyArray<string | null>): string {
+  return texts
+    .map((t) => (t ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 /** Default transport = the real Wails-bridged api.ts wrappers. */
 const defaultTransport: VoiceTransport = {
   transcribe: (audioB64, mime) => api.transcribe(audioB64, mime),
@@ -235,7 +250,18 @@ export class AudioService implements IAudioService {
   private recordingActive = false;
   private recordingStopping = false;
   private recordingSegments: Promise<string>[] = [];
+  // Per-slot resolved segment texts, in SPEECH order (slot = push index above).
+  // `null` = the segment's STT is still in flight. The live transcript emitted
+  // via onRecordingTranscript is joinSegmentTexts() over this array, so an
+  // out-of-order STT resolution can only ever fill in an earlier/later slot —
+  // never reorder the text. stopRecording()'s final join uses the same helper
+  // over the same per-segment results so live and final cannot diverge.
+  private recordingSlotTexts: (string | null)[] = [];
+  // Bumped on every reset so a stale segment promise resolving after the
+  // recording ended (or a new one started) can't emit into the wrong recording.
+  private recordingEpoch = 0;
   private recordingCeil: ReturnType<typeof setTimeout> | null = null;
+  private readonly recordingTranscriptCbs = new Set<RecordingTranscriptCb>();
 
   // One in-flight speak() at a time.
   private pendingSpeak: {
@@ -268,6 +294,21 @@ export class AudioService implements IAudioService {
   onError(cb: VoiceErrorCb): () => void {
     this.errorCbs.add(cb);
     return () => this.errorCbs.delete(cb);
+  }
+
+  onRecordingTranscript(cb: RecordingTranscriptCb): () => void {
+    this.recordingTranscriptCbs.add(cb);
+    return () => this.recordingTranscriptCbs.delete(cb);
+  }
+
+  private emitRecordingTranscript(text: string) {
+    for (const cb of this.recordingTranscriptCbs) {
+      try {
+        cb(text);
+      } catch {
+        /* never let a subscriber break the pipeline */
+      }
+    }
   }
 
   getState(): VoiceServiceState {
@@ -794,9 +835,24 @@ export class AudioService implements IAudioService {
       } catch {
         return; // skip the segment; keep recording
       }
-      this.recordingSegments.push(
-        this.transport.transcribe(audioB64, "audio/wav").catch(() => ""),
-      );
+      // Slot index = speech order (this branch is synchronous up to here, so
+      // pushes happen in endpoint order even though STT resolves out of order).
+      const slot = this.recordingSlotTexts.length;
+      const epoch = this.recordingEpoch;
+      this.recordingSlotTexts.push(null);
+      const p = this.transport.transcribe(audioB64, "audio/wav").catch(() => "");
+      this.recordingSegments.push(p);
+      // Live transcript: as each segment resolves, fill its slot and emit the
+      // accumulated join so the pane can show the draft growing in real time.
+      // Empty/failed segments change nothing, so emit nothing for them. A
+      // stale resolution (recording reset/stopped meanwhile) is dropped.
+      void p.then((text) => {
+        if (epoch !== this.recordingEpoch) return;
+        this.recordingSlotTexts[slot] = text;
+        if (text.trim()) {
+          this.emitRecordingTranscript(joinSegmentTexts(this.recordingSlotTexts));
+        }
+      });
       return;
     }
 
@@ -936,6 +992,10 @@ export class AudioService implements IAudioService {
     this.recordingActive = true;
     this.recordingStopping = false;
     this.recordingSegments = [];
+    this.recordingSlotTexts = [];
+    this.recordingEpoch++;
+    // A new recording always starts with a clean live draft.
+    this.emitRecordingTranscript("");
     // Make vad.pause() flush a mid-speech segment via onSpeechEnd, so the user
     // can hit stop without waiting out the redemption window. Recording-only:
     // reset in resetRecording() so normal listens keep today's pause semantics.
@@ -971,17 +1031,18 @@ export class AudioService implements IAudioService {
 
     const segments = this.recordingSegments;
     const p = this.pendingListen;
-    this.resetRecording();
+    // Keep the live draft on screen through the post-stop "thinking" beat: the
+    // pane removes it when the final transcript line arrives, so don't emit a
+    // clear here (a NEW recording still starts clean via startRecording()).
+    this.resetRecording(false);
     if (!p || p.settled) return; // listen was cancelled mid-stop
 
     // STT for the tail segments is (possibly) still in flight.
     this.setState("thinking");
     const texts = await Promise.all(segments); // segment failures resolved to ""
     if (!this.pendingListen || this.pendingListen.settled) return;
-    const transcript = texts
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .join("\n");
+    // Same per-segment results + join as the live onRecordingTranscript path.
+    const transcript = joinSegmentTexts(texts);
     if (!transcript) {
       // Recording was toggled but nothing was captured/recognized — behave like
       // the existing no-speech path (the bridge maps "timeout" to an empty
@@ -995,11 +1056,20 @@ export class AudioService implements IAudioService {
     this.resolveListen(transcript);
   }
 
-  /** Clear all recording state (also invoked when a listen settles/fails). */
-  private resetRecording(): void {
+  /**
+   * Clear all recording state (also invoked when a listen settles/fails).
+   * Emits an empty live transcript by default so the pane's draft is cleared;
+   * stopRecording() passes false to keep the draft visible until the final
+   * transcript line lands.
+   */
+  private resetRecording(emitClear = true): void {
     this.recordingActive = false;
     this.recordingStopping = false;
     this.recordingSegments = [];
+    this.recordingSlotTexts = [];
+    // Invalidate any still-in-flight segment resolutions for the old recording.
+    this.recordingEpoch++;
+    if (emitClear) this.emitRecordingTranscript("");
     if (this.recordingCeil) {
       clearTimeout(this.recordingCeil);
       this.recordingCeil = null;
