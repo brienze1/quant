@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "../theme/provider";
 
 let mermaidSeq = 0;
@@ -11,6 +11,24 @@ export function MermaidBlock({ code }: { code: string }) {
   const { theme } = useTheme();
   const [svg, setSvg] = useState("");
   const [failed, setFailed] = useState(false);
+  const hostRef = useRef<HTMLDivElement>(null);
+
+  // Mermaid measures labels in a detached container whose font metrics can
+  // differ from the pane's, leaving the computed viewBox too narrow and
+  // clipping the rightmost nodes. Re-fit the viewBox to the real content
+  // bounding box once the SVG is in the DOM.
+  useEffect(() => {
+    const el = hostRef.current?.querySelector("svg");
+    if (!el) return;
+    try {
+      const box = el.getBBox();
+      const pad = 8;
+      el.setAttribute("viewBox", `${box.x - pad} ${box.y - pad} ${box.width + pad * 2} ${box.height + pad * 2}`);
+      el.style.maxWidth = `${box.width + pad * 2}px`;
+    } catch {
+      // getBBox throws on detached/hidden SVGs; keep mermaid's own viewBox.
+    }
+  }, [svg]);
 
   useEffect(() => {
     // Cancelled flag guards against the StrictMode double-effect and unmounts
@@ -24,6 +42,10 @@ export function MermaidBlock({ code }: { code: string }) {
           startOnLoad: false,
           securityLevel: "strict",
           theme: theme.type === "light" ? "default" : "dark",
+          // Measure labels with the same font the app applies to the injected
+          // SVG, otherwise the computed viewBox is too narrow and clips nodes.
+          fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+          themeVariables: { fontFamily: "'JetBrains Mono', ui-monospace, monospace" },
         });
         const result = await mermaid.render(id, code);
         if (!cancelled) setSvg(result.svg);
@@ -47,5 +69,5 @@ export function MermaidBlock({ code }: { code: string }) {
     );
   }
   if (!svg) return <div className="files-mermaid files-mermaid--loading">rendering diagram…</div>;
-  return <div className="files-mermaid" dangerouslySetInnerHTML={{ __html: svg }} />;
+  return <div ref={hostRef} className="files-mermaid" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
