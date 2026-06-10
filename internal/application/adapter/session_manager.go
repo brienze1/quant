@@ -9,7 +9,6 @@ import (
 // This is the application adapter that the sessionManagerService implements.
 type SessionManager interface {
 	CreateSession(name string, description string, sessionType string, repoID string, taskID string, opts entity.SessionOptions) (*entity.Session, error)
-	StartAssistantSession(model string) (*entity.Session, error)
 	StartSession(id string, rows int, cols int) error
 	ResumeSession(id string, rows int, cols int) error
 	StopSession(id string) error

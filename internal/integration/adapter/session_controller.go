@@ -12,8 +12,6 @@ type SessionController interface {
 	OnStartup(ctx context.Context)
 	OnShutdown(ctx context.Context)
 	CreateSession(request dto.CreateSessionRequest) (*dto.SessionResponse, error)
-	StartAssistantSession(model string) (*dto.SessionResponse, error)
-	QuantiChat(convID string, message string, model string) (string, error)
 	StartSession(id string, rows int, cols int) error
 	ResumeSession(id string, rows int, cols int) error
 	StopSession(id string) error

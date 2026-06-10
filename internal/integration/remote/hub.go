@@ -27,7 +27,7 @@ type wsClient struct {
 
 // EventHub fans out backend events to every connected browser (remote) client,
 // mirroring the Wails native event bus so a browser using the shim receives the
-// same session:output / quanti:* events the desktop webview gets.
+// same session:output events the desktop webview gets.
 type EventHub struct {
 	mu      sync.RWMutex
 	clients map[*wsClient]struct{}

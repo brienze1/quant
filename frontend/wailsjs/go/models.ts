@@ -141,7 +141,6 @@ export namespace dto {
 	    cliBinaryPath: string;
 	    extraCliArgs: string;
 	    defaultModel: string;
-	    assistantModel: string;
 	    envVariables: Record<string, string>;
 	    commandOverrides: Record<string, string>;
 	    basePersona: string;
@@ -150,11 +149,11 @@ export namespace dto {
 	    remoteAccessPort: number;
 	    remoteAccessPasscode: string;
 	    voice: VoiceConfigDTO;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ConfigResponse(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.startOnLogin = source["startOnLogin"];
@@ -189,7 +188,6 @@ export namespace dto {
 	        this.cliBinaryPath = source["cliBinaryPath"];
 	        this.extraCliArgs = source["extraCliArgs"];
 	        this.defaultModel = source["defaultModel"];
-	        this.assistantModel = source["assistantModel"];
 	        this.envVariables = source["envVariables"];
 	        this.commandOverrides = source["commandOverrides"];
 	        this.basePersona = source["basePersona"];
@@ -761,7 +759,6 @@ export namespace dto {
 	    cliBinaryPath: string;
 	    extraCliArgs: string;
 	    defaultModel: string;
-	    assistantModel: string;
 	    envVariables: Record<string, string>;
 	    commandOverrides: Record<string, string>;
 	    basePersona: string;
@@ -769,7 +766,7 @@ export namespace dto {
 	    remoteAccessPort: number;
 	    remoteAccessPasscode: string;
 	    voice: VoiceConfigDTO;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SaveConfigRequest(source);
 	    }
@@ -808,7 +805,6 @@ export namespace dto {
 	        this.cliBinaryPath = source["cliBinaryPath"];
 	        this.extraCliArgs = source["extraCliArgs"];
 	        this.defaultModel = source["defaultModel"];
-	        this.assistantModel = source["assistantModel"];
 	        this.envVariables = source["envVariables"];
 	        this.commandOverrides = source["commandOverrides"];
 	        this.basePersona = source["basePersona"];
