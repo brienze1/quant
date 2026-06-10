@@ -66,26 +66,6 @@ func (c *configController) SaveConfig(request dto.SaveConfigRequest) error {
 	return c.configManager.SaveConfig(&cfg)
 }
 
-// SetMindmapPaneOpen persists the global mindmap pane open/close flag and broadcasts
-// the change to all clients via the "mindmap:pane" event so they stay in sync.
-func (c *configController) SetMindmapPaneOpen(open bool) error {
-	cfg, err := c.configManager.GetConfig()
-	if err != nil {
-		return err
-	}
-
-	cfg.MindmapPaneOpen = open
-	if err := c.configManager.SaveConfig(cfg); err != nil {
-		return err
-	}
-
-	if c.emitter != nil {
-		c.emitter.Emit("mindmap:pane", map[string]any{"open": open})
-	}
-
-	return nil
-}
-
 // SetVoicePaneOpen persists the global voice pane open/close flag and broadcasts
 // the change to all clients via the "voice:pane" event so they stay in sync.
 func (c *configController) SetVoicePaneOpen(open bool) error {

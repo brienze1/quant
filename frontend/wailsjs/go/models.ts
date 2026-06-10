@@ -127,7 +127,6 @@ export namespace dto {
 	    idleTimeoutMinutes: number;
 	    activeSessionId: string;
 	    openSessionIds: string[];
-	    mindmapPaneOpen: boolean;
 	    voicePaneOpen: boolean;
 	    dataDirectory: string;
 	    worktreeDirectory: string;
@@ -175,7 +174,6 @@ export namespace dto {
 	        this.idleTimeoutMinutes = source["idleTimeoutMinutes"];
 	        this.activeSessionId = source["activeSessionId"];
 	        this.openSessionIds = source["openSessionIds"];
-	        this.mindmapPaneOpen = source["mindmapPaneOpen"];
 	        this.voicePaneOpen = source["voicePaneOpen"];
 	        this.dataDirectory = source["dataDirectory"];
 	        this.worktreeDirectory = source["worktreeDirectory"];
@@ -747,7 +745,6 @@ export namespace dto {
 	    idleTimeoutMinutes: number;
 	    activeSessionId: string;
 	    openSessionIds: string[];
-	    mindmapPaneOpen: boolean;
 	    voicePaneOpen: boolean;
 	    dataDirectory: string;
 	    worktreeDirectory: string;
@@ -794,7 +791,6 @@ export namespace dto {
 	        this.idleTimeoutMinutes = source["idleTimeoutMinutes"];
 	        this.activeSessionId = source["activeSessionId"];
 	        this.openSessionIds = source["openSessionIds"];
-	        this.mindmapPaneOpen = source["mindmapPaneOpen"];
 	        this.voicePaneOpen = source["voicePaneOpen"];
 	        this.dataDirectory = source["dataDirectory"];
 	        this.worktreeDirectory = source["worktreeDirectory"];

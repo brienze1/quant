@@ -248,7 +248,6 @@ export interface Config {
   idleTimeoutMinutes: number;
   activeSessionId: string;
   openSessionIds: string[];
-  mindmapPaneOpen: boolean;
   voicePaneOpen: boolean;
 
   // Storage & Data

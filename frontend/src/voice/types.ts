@@ -6,10 +6,22 @@
 // pure-TS service with no React/DOM-component dependency so it can be driven
 // from a dev harness, Playwright, and later from VoicePane.tsx.
 
-/** The four orb-visible states. `thinking` = VAD ended, STT/agent in flight. */
-export type VoiceServiceState = "idle" | "listening" | "thinking" | "speaking";
+/**
+ * The orb-visible states. `thinking` = VAD ended, STT/agent in flight.
+ * `recording` = a listen turn the user pinned open: VAD segments are
+ * transcribed as they end but the turn only resolves on an explicit stop.
+ */
+export type VoiceServiceState = "idle" | "listening" | "recording" | "thinking" | "speaking";
 
 export type VoiceStateCb = (state: VoiceServiceState) => void;
+
+/**
+ * Live recording transcript callback: receives the accumulated transcript so
+ * far (segments joined with "\n", in speech order) each time a recording
+ * segment's STT resolves with text, and "" when the recording state is reset
+ * so a new recording starts with a clean draft.
+ */
+export type RecordingTranscriptCb = (text: string) => void;
 
 export interface VoiceError {
   /** Coarse category so the UI can branch (permission/network/etc). */
@@ -108,6 +120,18 @@ export interface VadTuning {
   minSpeechMs?: number;
 }
 
+/** Options for a single listen() turn. */
+export interface ListenOptions {
+  /**
+   * Start the listen already pinned open in recording mode (long-form
+   * dictation): equivalent to calling startRecording() the instant the turn is
+   * armed, so the user never has to tap "rec". The turn then only resolves on
+   * an explicit stop (stopRecording(), the spoken stop phrase, or the
+   * recording safety ceiling). Default false — a normal single-utterance turn.
+   */
+  record?: boolean;
+}
+
 /** A selectable audio input (microphone). */
 export interface AudioInputDevice {
   deviceId: string;
@@ -137,11 +161,41 @@ export interface IAudioService {
   /**
    * Capture one VAD-endpointed utterance, run STT, resolve with the transcript.
    * Opens the mic if needed. Honors maxListenMs. Rejects on error/cancel.
+   * With `opts.record` the turn starts already in recording mode (see
+   * ListenOptions / startRecording()).
    */
-  listen(): Promise<string>;
+  listen(opts?: ListenOptions): Promise<string>;
 
   /** Cancel an in-flight listen() (rejects its promise with a cancel error). */
   cancelListen(): void;
+
+  /**
+   * Pin the active listen() open as a long-form recording: VAD endpointing no
+   * longer resolves the turn — each detected segment is transcribed immediately
+   * and accumulated, and the per-listen maxListenMs timeout is disarmed (a
+   * generous recording safety ceiling applies instead). No-op unless a listen()
+   * is in flight and not already recording.
+   */
+  startRecording(): void;
+
+  /**
+   * Finalize a recording: flush any mid-speech segment, await the in-flight
+   * segment transcriptions in order, and resolve the pending listen() with the
+   * joined transcript. If nothing was captured, behaves like the existing
+   * no-speech (timeout) path. No-op if not recording.
+   */
+  stopRecording(): Promise<void>;
+
+  /** True while a listen() is pinned open in recording mode. */
+  isRecording(): boolean;
+
+  /**
+   * Subscribe to the live recording transcript: while a recording is active,
+   * fires with the accumulated text so far each time a segment's STT resolves
+   * (newline-joined, speech order — same join stopRecording() uses), and with
+   * "" when recording state resets. Returns an unsubscribe fn.
+   */
+  onRecordingTranscript(cb: RecordingTranscriptCb): () => void;
 
   /** Synthesize + play `text`; resolve on playback end. */
   speak(text: string): Promise<void>;

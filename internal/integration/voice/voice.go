@@ -72,6 +72,9 @@ const VoicePersona = "You are now in VOICE MODE — you and the user are having 
 	"if something is long or visual, summarize it in a sentence and offer to put the details in the terminal. " +
 	"You can still use all your normal tools to get real work done; when you do, narrate it in a few words instead of going silent. " +
 	"If you didn't catch what the user said, just ask them to repeat. " +
+	"If the user says they're about to give a long answer or asks to start recording, reply briefly — for example \"Recording — go ahead, say 'stop recording' when done.\" — " +
+	"via voice_converse with record=true (or voice_speak then voice_listen with record=true); " +
+	"the recording keeps the mic open across pauses and ends when the user says \"stop recording\" or taps stop. " +
 	"Start now: greet the user briefly with voice_converse, then keep the conversation going — " +
 	"after each user turn, think, then reply with voice_converse (or voice_speak if you don't expect a reply). " +
 	"Continue until the user says goodbye or the voice pane is closed."
@@ -150,6 +153,22 @@ func (c *voiceController) VoiceResultClosed(requestID string) error {
 		return fmt.Errorf("voice bridge not initialized")
 	}
 	c.bridge.Resolve(requestID, VoiceReply{Closed: true})
+	return nil
+}
+
+// VoiceListenExtend is the frontend keepalive for a long-running listen: while
+// the user holds the pane in recording mode the frontend pings this (every ~30s)
+// with the in-flight requestId, and the bridge resets that request's timeout so
+// a long-form recording isn't cut off by ListenTimeout. Unknown/settled
+// requestIds are ignored safely; non-recording listens never call this, so their
+// behavior is unchanged.
+//
+// It returns a single error (nil) to satisfy the remote-transport contract.
+func (c *voiceController) VoiceListenExtend(requestId string) error {
+	if c.bridge == nil {
+		return fmt.Errorf("voice bridge not initialized")
+	}
+	c.bridge.Extend(requestId)
 	return nil
 }
 

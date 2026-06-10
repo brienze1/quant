@@ -87,6 +87,54 @@ test("listen(): fake-audio WAV drives the real Silero VAD to endpoint → STT ma
   ).toBeFalsy();
 });
 
+test("listen({record:true}) starts pinned in recording mode; a segment ending in 'stop recording' finalizes hands-free with the phrase stripped", async ({
+  page,
+}) => {
+  await installStateRecorder(page);
+
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __voiceService: { listen: (o?: { record?: boolean }) => Promise<string> };
+      __voiceTranscriptQueue?: string[];
+      __recordedResult?: string;
+    };
+    // Script the segment's STT result to END with the spoken stop phrase.
+    w.__voiceTranscriptQueue = ["I want dark mode and bigger fonts. Stop recording."];
+    w.__recordedResult = undefined;
+    void w.__voiceService.listen({ record: true }).then(
+      (t) => (w.__recordedResult = t),
+      (e) => (w.__recordedResult = `ERROR:${String((e as { message?: string })?.message ?? e)}`),
+    );
+  });
+
+  // Agent-activated recording: the turn is pinned open the moment it is armed,
+  // BEFORE any speech — state goes straight to "recording".
+  await page.waitForFunction(
+    () => (window as unknown as { __voiceState?: string }).__voiceState === "recording",
+  );
+
+  // The fake-audio utterance endpoints → the segment's STT resolves ending in
+  // the stop phrase → the recording finalizes as if "■ stop" was pressed, with
+  // the phrase (and separating punctuation) stripped from the transcript.
+  await page.waitForFunction(
+    () =>
+      (window as unknown as { __recordedResult?: string }).__recordedResult !== undefined,
+  );
+  const result = await page.evaluate(
+    () => (window as unknown as { __recordedResult?: string }).__recordedResult,
+  );
+  expect(result).toBe("I want dark mode and bigger fonts");
+
+  // The turn never passed through the plain "listening" state: record mode
+  // enters "recording" directly (and speech-start keeps it there).
+  const log = await getStateLog(page);
+  expect(log).toContain("recording");
+  expect(log).not.toContain("listening");
+  // After the hands-free stop, the turn resolves into the post-listen
+  // "thinking" hold (same as a manual stop).
+  expect(log[log.length - 1]).toBe("thinking");
+});
+
 test("speak(): TTS → <audio> emits play then ended, state speaking → idle", async ({
   page,
 }) => {
