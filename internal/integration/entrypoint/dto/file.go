@@ -24,6 +24,15 @@ type FileContentResponse struct {
 	Binary   bool   `json:"binary"`
 }
 
+// FileBase64Response represents the result of reading a file's raw bytes as base64
+// from a session's working directory.
+type FileBase64Response struct {
+	ContentBase64 string `json:"contentBase64"`
+	Mime          string `json:"mime"`
+	Size          int64  `json:"size"`
+	TooLarge      bool   `json:"tooLarge"`
+}
+
 // FileEntryResponseFromEntity converts a domain entity to a FileEntryResponse DTO.
 func FileEntryResponseFromEntity(e entity.FileEntry) FileEntryResponse {
 	return FileEntryResponse{
@@ -51,5 +60,15 @@ func FileContentResponseFromEntity(c entity.FileContent) FileContentResponse {
 		Size:     c.Size,
 		TooLarge: c.TooLarge,
 		Binary:   c.Binary,
+	}
+}
+
+// FileBase64ResponseFromEntity converts a domain entity to a FileBase64Response DTO.
+func FileBase64ResponseFromEntity(c entity.FileBase64Content) FileBase64Response {
+	return FileBase64Response{
+		ContentBase64: c.ContentBase64,
+		Mime:          c.Mime,
+		Size:          c.Size,
+		TooLarge:      c.TooLarge,
 	}
 }

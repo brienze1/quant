@@ -48,6 +48,16 @@ func (c *fileController) ReadFile(sessionID, relPath string) (dto.FileContentRes
 	return dto.FileContentResponseFromEntity(content), nil
 }
 
+// ReadFileBase64 reads a file's raw bytes as base64 from the session's working directory.
+func (c *fileController) ReadFileBase64(sessionID, relPath string) (dto.FileBase64Response, error) {
+	content, err := c.fileManager.ReadFileBase64(sessionID, relPath)
+	if err != nil {
+		return dto.FileBase64Response{}, err
+	}
+
+	return dto.FileBase64ResponseFromEntity(content), nil
+}
+
 // WriteFile writes content to a file in the session's working directory.
 func (c *fileController) WriteFile(sessionID, relPath, content string) error {
 	return c.fileManager.WriteFile(sessionID, relPath, content)

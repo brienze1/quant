@@ -3,6 +3,7 @@ package service
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -23,6 +24,32 @@ const maxFileReadBytes = 2 << 20
 // binarySniffBytes is how many leading bytes are scanned for a NUL byte to
 // classify a file as binary (same heuristic git uses).
 const binarySniffBytes = 8000
+
+// maxBase64ReadBytes caps ReadFileBase64 at 10 MiB; larger files are reported
+// as TooLarge.
+const maxBase64ReadBytes = 10 << 20
+
+// mimeByExt maps lowercase file extensions to their MIME types for
+// ReadFileBase64. Unknown extensions fall back to application/octet-stream.
+var mimeByExt = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".ico":  "image/x-icon",
+	".bmp":  "image/bmp",
+	".avif": "image/avif",
+}
+
+// mimeForExt returns the MIME type for a path based on its extension,
+// case-insensitively, defaulting to application/octet-stream.
+func mimeForExt(relPath string) string {
+	if mime, ok := mimeByExt[strings.ToLower(filepath.Ext(relPath))]; ok {
+		return mime
+	}
+	return "application/octet-stream"
+}
 
 // fileManagerService implements the adapter.FileManager interface.
 // All operations are sandboxed to the session's working directory via os.Root,
@@ -208,6 +235,44 @@ func (s *fileManagerService) ReadFile(sessionID, relPath string) (entity.FileCon
 	}
 
 	return entity.FileContent{Content: string(data), Size: int64(len(data))}, nil
+}
+
+// ReadFileBase64 reads a file's raw bytes as base64, capped at 10 MiB. Files
+// larger than the cap are reported as TooLarge with empty ContentBase64. The
+// MIME type is derived from the file extension only; no content sniffing.
+func (s *fileManagerService) ReadFileBase64(sessionID, relPath string) (entity.FileBase64Content, error) {
+	rel, err := normalizeRelPath(relPath)
+	if err != nil {
+		return entity.FileBase64Content{}, err
+	}
+
+	root, err := s.sessionRoot(sessionID)
+	if err != nil {
+		return entity.FileBase64Content{}, err
+	}
+	defer root.Close()
+
+	info, err := root.Stat(rel)
+	if err != nil {
+		return entity.FileBase64Content{}, fmt.Errorf("failed to stat file %s: %w", relPath, err)
+	}
+	if info.IsDir() {
+		return entity.FileBase64Content{}, fmt.Errorf("path is a directory: %s", relPath)
+	}
+	if info.Size() > maxBase64ReadBytes {
+		return entity.FileBase64Content{Mime: mimeForExt(rel), Size: info.Size(), TooLarge: true}, nil
+	}
+
+	data, err := root.ReadFile(rel)
+	if err != nil {
+		return entity.FileBase64Content{}, fmt.Errorf("failed to read file %s: %w", relPath, err)
+	}
+
+	return entity.FileBase64Content{
+		ContentBase64: base64.StdEncoding.EncodeToString(data),
+		Mime:          mimeForExt(rel),
+		Size:          int64(len(data)),
+	}, nil
 }
 
 // WriteFile writes content to an existing or new file. The parent directory

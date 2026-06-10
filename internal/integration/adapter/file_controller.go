@@ -12,6 +12,7 @@ type FileController interface {
 	OnShutdown(ctx context.Context)
 	ListDir(sessionID, relPath string) ([]dto.FileEntryResponse, error)
 	ReadFile(sessionID, relPath string) (dto.FileContentResponse, error)
+	ReadFileBase64(sessionID, relPath string) (dto.FileBase64Response, error)
 	WriteFile(sessionID, relPath, content string) error
 	CreateFile(sessionID, relPath string) error
 	CreateDir(sessionID, relPath string) error

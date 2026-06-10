@@ -23,3 +23,13 @@ type FileContent struct {
 	TooLarge bool
 	Binary   bool
 }
+
+// FileBase64Content represents the result of reading a file's raw bytes as
+// base64 from a session's working directory. When TooLarge is set,
+// ContentBase64 is empty.
+type FileBase64Content struct {
+	ContentBase64 string
+	Mime          string
+	Size          int64
+	TooLarge      bool
+}

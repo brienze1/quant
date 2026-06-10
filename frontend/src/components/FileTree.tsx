@@ -20,7 +20,7 @@ interface TreeNode {
 interface Props {
   sessionId: string;
   openPath: string | null;
-  dirty: boolean;
+  dirtyPaths: ReadonlySet<string>;
   refreshNonce: number;
   onOpen: (path: string) => void;
   onPathDeleted: (path: string) => void;
@@ -66,7 +66,7 @@ function withChildren(nodes: TreeNode[], dirPath: string, children: TreeNode[]):
 export function FileTree({
   sessionId,
   openPath,
-  dirty,
+  dirtyPaths,
   refreshNonce,
   onOpen,
   onPathDeleted,
@@ -221,6 +221,7 @@ export function FileTree({
   function Row({ node, style }: NodeRendererProps<TreeNode>) {
     const hidden = node.data.name.startsWith(".");
     const selected = openPath === node.data.id;
+    const rowDirty = dirtyPaths.has(node.data.id);
     return (
       <div
         style={style}
@@ -257,6 +258,7 @@ export function FileTree({
             {node.data.name}
           </span>
         )}
+        {rowDirty && <span className="files-dirty-dot" title="unsaved changes" />}
       </div>
     );
   }
@@ -264,7 +266,9 @@ export function FileTree({
   const deleteMessage = deleting
     ? `delete ${deleting.id}?` +
       (deleting.isDir ? "\neverything inside it will be permanently deleted." : "") +
-      (dirty && openPath && (openPath === deleting.id || openPath.startsWith(deleting.id + "/"))
+      (Array.from(dirtyPaths).some(
+        (p) => p === deleting.id || p.startsWith(deleting.id + "/")
+      )
         ? "\nit has unsaved changes that will be lost."
         : "")
     : "";

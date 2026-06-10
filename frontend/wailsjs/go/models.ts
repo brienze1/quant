@@ -456,6 +456,24 @@ export namespace dto {
 	        this.oldPath = source["oldPath"];
 	    }
 	}
+	export class FileBase64Response {
+	    contentBase64: string;
+	    mime: string;
+	    size: number;
+	    tooLarge: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileBase64Response(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.contentBase64 = source["contentBase64"];
+	        this.mime = source["mime"];
+	        this.size = source["size"];
+	        this.tooLarge = source["tooLarge"];
+	    }
+	}
 	export class FileContentResponse {
 	    content: string;
 	    size: number;

@@ -30,6 +30,10 @@ export function ReadFile(arg1, arg2) {
   return window['go']['controller']['fileController']['ReadFile'](arg1, arg2);
 }
 
+export function ReadFileBase64(arg1, arg2) {
+  return window['go']['controller']['fileController']['ReadFileBase64'](arg1, arg2);
+}
+
 export function RenamePath(arg1, arg2, arg3) {
   return window['go']['controller']['fileController']['RenamePath'](arg1, arg2, arg3);
 }

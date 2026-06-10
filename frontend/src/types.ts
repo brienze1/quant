@@ -477,6 +477,16 @@ export interface FileReadResult {
   binary: boolean;
 }
 
+// FileBase64Result mirrors the Go entity.FileBase64Content returned by
+// fileController.ReadFileBase64 (raw bytes for image tabs). tooLarge files
+// come back with empty contentBase64.
+export interface FileBase64Result {
+  contentBase64: string;
+  mime: string;
+  size: number;
+  tooLarge: boolean;
+}
+
 // --- Changelog ---
 
 export interface ChangelogEntry {

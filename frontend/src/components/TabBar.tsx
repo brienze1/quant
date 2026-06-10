@@ -4,11 +4,11 @@ import { ContextMenu } from "./ContextMenu";
 import type { DisplayStatus } from "./StatusBadge";
 import type { MenuItem } from "./ContextMenu";
 
-interface Tab {
-  id: string;
-  name: string;
-  displayStatus: DisplayStatus;
-}
+// Session tabs and file tabs share the bar, discriminated by `kind` (App's
+// tabs derivation always tags it).
+export type Tab =
+  | { kind: "session"; id: string; name: string; displayStatus: DisplayStatus }
+  | { kind: "file"; id: string; name: string; dirty: boolean; tooltip: string };
 
 interface TabBarProps {
   tabs: Tab[];
@@ -170,6 +170,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
                 borderRight: "1px solid var(--q-border)",
                 maxWidth: 200,
               }}
+              title={tab.kind === "file" ? tab.tooltip : undefined}
               onClick={() => onSelectTab(tab.id)}
               onContextMenu={(e) => openTabContextMenu(e, tab.id)}
               onMouseEnter={(e) => {
@@ -179,7 +180,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
                 if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              <StatusDot status={tab.displayStatus} />
+              {tab.kind !== "file" && <StatusDot status={tab.displayStatus} />}
               <span
                 className="text-xs overflow-hidden whitespace-nowrap flex-1"
                 style={{
@@ -189,6 +190,15 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
               >
                 {tab.name}
               </span>
+              {tab.kind === "file" && tab.dirty && (
+                <span
+                  className="shrink-0 text-[9px]"
+                  style={{ color: "var(--q-warning)" }}
+                  title="unsaved changes"
+                >
+                  ●
+                </span>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();

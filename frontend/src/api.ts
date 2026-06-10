@@ -27,6 +27,7 @@ import type {
   MindmapNode,
   FileEntry,
   FileReadResult,
+  FileBase64Result,
   RemoteStatus,
   VoiceSpeechResult,
   VoicePingResult,
@@ -524,6 +525,10 @@ export function listDir(sessionId: string, relPath: string): Promise<FileEntry[]
 
 export function readFile(sessionId: string, relPath: string): Promise<FileReadResult> {
   return callGo(PKG, FILE_CTRL, "ReadFile", sessionId, relPath);
+}
+
+export function readFileBase64(sessionId: string, relPath: string): Promise<FileBase64Result> {
+  return callGo(PKG, FILE_CTRL, "ReadFileBase64", sessionId, relPath);
 }
 
 export function writeFile(sessionId: string, relPath: string, content: string): Promise<void> {

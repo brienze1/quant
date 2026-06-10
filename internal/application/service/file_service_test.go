@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -262,6 +264,111 @@ func TestFileServiceReadFileBinary(t *testing.T) {
 	}
 	if content.Content != "" {
 		t.Fatal("binary content should be empty")
+	}
+}
+
+func TestFileServiceReadFileBase64RoundTrip(t *testing.T) {
+	svc, dir, _ := newTestFileService(t)
+
+	// Includes a NUL byte: ReadFileBase64 is a raw read with no binary sniff.
+	raw := []byte{0x89, 'P', 'N', 'G', 0x00, 0x01, 0xFF}
+	if err := os.WriteFile(filepath.Join(dir, "pic.png"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := svc.ReadFileBase64("s1", "pic.png")
+	if err != nil {
+		t.Fatalf("ReadFileBase64: %v", err)
+	}
+	if content.TooLarge {
+		t.Fatal("small file should not be TooLarge")
+	}
+	if content.Mime != "image/png" {
+		t.Fatalf("Mime = %q, want image/png", content.Mime)
+	}
+	if content.Size != int64(len(raw)) {
+		t.Fatalf("Size = %d, want %d", content.Size, len(raw))
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(content.ContentBase64)
+	if err != nil {
+		t.Fatalf("ContentBase64 is not valid base64: %v", err)
+	}
+	if !bytes.Equal(decoded, raw) {
+		t.Fatalf("decoded bytes = %v, want %v", decoded, raw)
+	}
+}
+
+func TestMimeForExt(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{path: "a.png", want: "image/png"},
+		{path: "a.jpg", want: "image/jpeg"},
+		{path: "a.jpeg", want: "image/jpeg"},
+		{path: "a.gif", want: "image/gif"},
+		{path: "a.webp", want: "image/webp"},
+		{path: "a.ico", want: "image/x-icon"},
+		{path: "a.bmp", want: "image/bmp"},
+		{path: "a.avif", want: "image/avif"},
+		{path: "dir/shouty.PNG", want: "image/png"},
+		{path: "a.JpEg", want: "image/jpeg"},
+		{path: "a.xyz", want: "application/octet-stream"},
+		{path: "noext", want: "application/octet-stream"},
+	}
+
+	for _, tt := range tests {
+		if got := mimeForExt(tt.path); got != tt.want {
+			t.Fatalf("mimeForExt(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestFileServiceReadFileBase64Rejections(t *testing.T) {
+	svc, _, _ := newTestFileService(t)
+
+	if err := svc.CreateDir("s1", "somedir"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ReadFileBase64("s1", "somedir"); err == nil {
+		t.Fatal("ReadFileBase64 of a directory should error")
+	}
+	if _, err := svc.ReadFileBase64("s1", "../../etc/passwd"); err == nil {
+		t.Fatal("ReadFileBase64 escape should error")
+	}
+}
+
+func TestFileServiceReadFileBase64TooLarge(t *testing.T) {
+	svc, dir, _ := newTestFileService(t)
+
+	// Sparse file: just over the 10 MiB cap without writing the bytes.
+	f, err := os.Create(filepath.Join(dir, "huge.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(maxBase64ReadBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := svc.ReadFileBase64("s1", "huge.png")
+	if err != nil {
+		t.Fatalf("ReadFileBase64: %v", err)
+	}
+	if !content.TooLarge {
+		t.Fatal("ReadFileBase64 of >10MiB file should report TooLarge")
+	}
+	if content.ContentBase64 != "" {
+		t.Fatal("TooLarge ContentBase64 should be empty")
+	}
+	if content.Mime != "image/png" {
+		t.Fatalf("TooLarge Mime = %q, want image/png", content.Mime)
+	}
+	if content.Size != maxBase64ReadBytes+1 {
+		t.Fatalf("TooLarge size = %d, want %d", content.Size, maxBase64ReadBytes+1)
 	}
 }
 
