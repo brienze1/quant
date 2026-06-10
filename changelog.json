@@ -1,6 +1,22 @@
 {
   "entries": [
     {
+      "version": "v3.1.33",
+      "date": "2026-06-10",
+      "changes": {
+        "features": [
+          "a built-in file explorer, VSCode-style — a new files panel on the right (toggle it from the icon strip) shows the active session's working directory as a tree: browse folders, create files and folders, rename inline, and delete with a confirmation; the panel is per-session and resizable, just like the sessions sidebar on the left",
+          "files open as real tabs — click a file in the tree and it opens in the center tab bar right next to your sessions, with its own unsaved-changes dot; switch tabs freely (drafts are kept), save with Cmd/Ctrl+S, and closing a tab with unsaved edits asks before discarding",
+          "edit code with syntax highlighting — a CodeMirror editor that follows your theme (including imported VS Code themes) and loads language support on demand for over a hundred languages",
+          "markdown opens rendered — tables, task lists, highlighted code fences, and live mermaid diagrams, with a rendered/source toggle so you can edit and watch the preview update as you type",
+          "view images and html too — images get a zoomable viewer with dimensions and file size; html files preview live in a sandboxed frame (scripts run isolated from the app) with the same preview/source toggle; svg works as both image and editable source"
+        ],
+        "fixes": [
+          "file access from the new explorer is locked to each session's working directory — path traversal and symlink escapes are rejected, and the existing diff file read/write endpoints got the same hardening"
+        ]
+      }
+    },
+    {
       "version": "v3.1.32",
       "date": "2026-06-10",
       "changes": {
