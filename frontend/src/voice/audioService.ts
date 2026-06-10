@@ -17,6 +17,7 @@ import type {
   AudioServiceOptions,
   DevicesChangedCb,
   IAudioService,
+  ListenOptions,
   RecordingTranscriptCb,
   VadTuning,
   VoiceError,
@@ -42,6 +43,20 @@ const RECORDING_MAX_MS = 15 * 60_000;
 const RECORDING_FLUSH_GRACE_MS = 80;
 /** Barge-in is suppressed for this long after TTS playback starts (see handleSpeechStart). */
 const BARGE_IN_GUARD_MS = 1200;
+// Hands-free stop phrases for recording mode. When a recording segment's STT
+// result ENDS with one of these (case-insensitive, trailing punctuation
+// ignored), the phrase is stripped from the segment and the recording is
+// finalized exactly as if the user pressed "■ stop". Matching is deliberately
+// conservative: the phrase must be the END of the segment (a whole-word tail),
+// so mentioning "stop recording" mid-sentence never cuts a dictation short.
+const RECORDING_STOP_PHRASES = [
+  "stop recording",
+  "stop the recording",
+  "end recording",
+  "end the recording",
+  "finish recording",
+  "stop dictation",
+] as const;
 /**
  * Upper bound the orb stays in the post-listen "thinking" state after STT
  * resolves while the agent reasons (and may run tools), before the next
@@ -151,6 +166,32 @@ function joinSegmentTexts(texts: ReadonlyArray<string | null>): string {
     .map((t) => (t ?? "").trim())
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * Detect a hands-free stop phrase at the END of a recording segment's
+ * transcript. Returns the segment text with the phrase (and any separating /
+ * trailing punctuation) stripped, plus whether a phrase matched. A segment that
+ * is ONLY the stop phrase strips to "" (the slot is dropped by
+ * joinSegmentTexts). The phrase must be a whole-word tail — "nonstop recording"
+ * does not match.
+ */
+function stripStopPhrase(text: string): { text: string; matched: boolean } {
+  // Ignore trailing whitespace + punctuation (STT often appends "." or "!").
+  const trimmed = text.replace(/[\s.,!?…;:]+$/u, "");
+  const lower = trimmed.toLowerCase();
+  for (const phrase of RECORDING_STOP_PHRASES) {
+    if (!lower.endsWith(phrase)) continue;
+    const cut = trimmed.length - phrase.length;
+    // Whole-word tail only: the phrase must start the string or follow a
+    // non-alphanumeric character.
+    if (cut > 0 && /[a-z0-9]/i.test(trimmed[cut - 1])) continue;
+    // Keep the prefix, dropping the punctuation/whitespace that separated it
+    // from the phrase ("…and that's all, stop recording" → "…and that's all").
+    const prefix = trimmed.slice(0, cut).replace(/[\s.,!?…;:—–-]+$/u, "");
+    return { text: prefix, matched: true };
+  }
+  return { text, matched: false };
 }
 
 /** Default transport = the real Wails-bridged api.ts wrappers. */
@@ -840,19 +881,33 @@ export class AudioService implements IAudioService {
       const slot = this.recordingSlotTexts.length;
       const epoch = this.recordingEpoch;
       this.recordingSlotTexts.push(null);
-      const p = this.transport.transcribe(audioB64, "audio/wav").catch(() => "");
+      // The pushed segment promise resolves to the text AFTER stop-phrase
+      // stripping, so stopRecording()'s final join and the live transcript see
+      // the same per-segment results (a segment that was only the stop phrase
+      // strips to "" and is dropped by joinSegmentTexts).
+      const p = this.transport
+        .transcribe(audioB64, "audio/wav")
+        .catch(() => "")
+        .then((raw) => {
+          const { text, matched } = stripStopPhrase(raw);
+          // Live transcript: as each segment resolves, fill its slot and emit
+          // the accumulated join so the pane can show the draft growing in real
+          // time. Empty/failed segments change nothing, so emit nothing for
+          // them. A stale resolution (recording reset/stopped meanwhile) is
+          // dropped.
+          if (epoch === this.recordingEpoch) {
+            this.recordingSlotTexts[slot] = text;
+            if (text.trim()) {
+              this.emitRecordingTranscript(joinSegmentTexts(this.recordingSlotTexts));
+            }
+            // Hands-free stop: the segment ended with a stop phrase → finalize
+            // as if "■ stop" was pressed. stopRecording() itself guards against
+            // re-entrancy via recordingStopping.
+            if (matched) void this.stopRecording();
+          }
+          return text;
+        });
       this.recordingSegments.push(p);
-      // Live transcript: as each segment resolves, fill its slot and emit the
-      // accumulated join so the pane can show the draft growing in real time.
-      // Empty/failed segments change nothing, so emit nothing for them. A
-      // stale resolution (recording reset/stopped meanwhile) is dropped.
-      void p.then((text) => {
-        if (epoch !== this.recordingEpoch) return;
-        this.recordingSlotTexts[slot] = text;
-        if (text.trim()) {
-          this.emitRecordingTranscript(joinSegmentTexts(this.recordingSlotTexts));
-        }
-      });
       return;
     }
 
@@ -898,7 +953,7 @@ export class AudioService implements IAudioService {
 
   // ---- listen() ------------------------------------------------------------
 
-  async listen(): Promise<string> {
+  async listen(opts?: ListenOptions): Promise<string> {
     // Only one listen at a time; cancel any prior.
     if (this.pendingListen && !this.pendingListen.settled) {
       this.cancelListen();
@@ -933,9 +988,18 @@ export class AudioService implements IAudioService {
 
       this.pendingListen = { resolve, reject, timer, settled: false };
 
-      // Begin capturing. We surface "listening" immediately so the orb reacts
-      // to mic level even before the first speech-start fires.
-      this.setState("listening");
+      if (opts?.record) {
+        // Agent-activated recording: pin the turn open BEFORE the VAD starts so
+        // the user can dictate hands-free from the first word. startRecording()
+        // requires pendingListen (just armed above); it disarms the maxListenMs
+        // timer, arms the recording safety ceiling, and sets state "recording"
+        // — so we skip the "listening" transition below entirely.
+        this.startRecording();
+      } else {
+        // Begin capturing. We surface "listening" immediately so the orb reacts
+        // to mic level even before the first speech-start fires.
+        this.setState("listening");
+      }
       try {
         this.vad!.start();
       } catch (e) {

@@ -56,6 +56,10 @@ type VoiceRequestEvent struct {
 	RequestID string `json:"requestId"`
 	Kind      string `json:"kind"` // "listen" | "speak"
 	Text      string `json:"text"` // text to speak (empty for listen)
+	// Record asks the frontend to start a "listen" already pinned open in
+	// recording mode (long-form dictation across pauses, ended only by the user's
+	// explicit stop or the spoken stop phrase). Ignored for "speak".
+	Record bool `json:"record"`
 }
 
 // Bridge is the request→do-audio→reply registry that connects the Go-side MCP
@@ -132,13 +136,14 @@ func newRequestID() string {
 // resolves it, the timeout elapses, or ctx is cancelled.
 //
 //   - kind "listen": text is ignored; the returned VoiceReply.Transcript holds
-//     the recognized speech.
+//     the recognized speech. record=true starts the listen already pinned open
+//     in recording mode (long-form dictation across pauses).
 //   - kind "speak":  text is the phrase to synthesize; the reply's Done is true
-//     once playback finishes.
+//     once playback finishes. record is ignored.
 //
 // On timeout or cancellation it cleans up the pending entry and returns a clear,
 // recoverable error so the calling agent can retry.
-func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, timeout time.Duration) (VoiceReply, error) {
+func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, record bool, timeout time.Duration) (VoiceReply, error) {
 	requestID := newRequestID()
 	p := &pendingRequest{
 		ch:     make(chan VoiceReply, 1),
@@ -157,6 +162,7 @@ func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, time
 			RequestID: requestID,
 			Kind:      kind,
 			Text:      text,
+			Record:    record,
 		})
 	}
 

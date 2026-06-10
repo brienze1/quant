@@ -27,6 +27,12 @@ export interface VoiceRequest {
   requestId: string;
   kind: "listen" | "speak";
   text: string;
+  /**
+   * For kind "listen": start the turn already pinned open in recording mode
+   * (agent-activated long-form dictation; voice_listen/voice_converse with
+   * record=true). Absent/false → a normal single-utterance listen.
+   */
+  record?: boolean;
 }
 
 /**
@@ -157,7 +163,7 @@ async function handleRequest(
   };
   try {
     if (req.kind === "listen") {
-      const transcript = await service.listen();
+      const transcript = await service.listen(req.record ? { record: true } : undefined);
       settle();
       safeCb(callbacks.onUserTranscript, transcript);
       await api.voiceResult(req.requestId, transcript, "");

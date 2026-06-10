@@ -120,6 +120,18 @@ export interface VadTuning {
   minSpeechMs?: number;
 }
 
+/** Options for a single listen() turn. */
+export interface ListenOptions {
+  /**
+   * Start the listen already pinned open in recording mode (long-form
+   * dictation): equivalent to calling startRecording() the instant the turn is
+   * armed, so the user never has to tap "rec". The turn then only resolves on
+   * an explicit stop (stopRecording(), the spoken stop phrase, or the
+   * recording safety ceiling). Default false — a normal single-utterance turn.
+   */
+  record?: boolean;
+}
+
 /** A selectable audio input (microphone). */
 export interface AudioInputDevice {
   deviceId: string;
@@ -149,8 +161,10 @@ export interface IAudioService {
   /**
    * Capture one VAD-endpointed utterance, run STT, resolve with the transcript.
    * Opens the mic if needed. Honors maxListenMs. Rejects on error/cancel.
+   * With `opts.record` the turn starts already in recording mode (see
+   * ListenOptions / startRecording()).
    */
-  listen(): Promise<string>;
+  listen(opts?: ListenOptions): Promise<string>;
 
   /** Cancel an in-flight listen() (rejects its promise with a cancel error). */
   cancelListen(): void;

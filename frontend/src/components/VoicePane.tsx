@@ -797,8 +797,8 @@ export function VoicePane({ sessionId, className, style }: Props) {
               onClick={handleToggleRecording}
               title={
                 state === "recording"
-                  ? "stop recording and send the full transcript"
-                  : "record a long message (keeps listening across pauses until you stop)"
+                  ? "stop recording and send the full transcript (you can also say 'stop recording')"
+                  : "record a long message (keeps listening across pauses until you tap stop or say 'stop recording')"
               }
               style={{
                 flex: "none",
