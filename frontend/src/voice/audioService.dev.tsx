@@ -33,9 +33,14 @@ const STATES: VoiceServiceState[] = ["idle", "listening", "thinking", "speaking"
 
 // Mock transport — used by default in the harness. Toggleable to the real
 // api.ts transport via the URL flag `?real=1` (won't work outside the app).
+// Tests can push strings onto window.__voiceTranscriptQueue to script what the
+// next transcribe() calls return (e.g. a recording segment ending in a stop
+// phrase); when the queue is empty the fixed marker is returned.
 function makeMockTransport(): VoiceTransport {
   return {
     async transcribe() {
+      const q = window.__voiceTranscriptQueue;
+      if (Array.isArray(q) && q.length > 0) return q.shift()!;
       // Fixed marker so Playwright can assert deterministically.
       return "VOICE_TRANSCRIPT_MARKER";
     },
@@ -51,6 +56,8 @@ declare global {
     __voiceState?: string;
     __voiceTranscript?: string;
     __voiceError?: string | null;
+    /** Scripted transcribe() results for tests (shifted per call; empty → marker). */
+    __voiceTranscriptQueue?: string[];
   }
 }
 

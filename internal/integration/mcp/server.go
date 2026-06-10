@@ -757,6 +757,7 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithDescription(`Listen to the user and return what they said as text.
 
 Captures one spoken utterance from the user (mic capture + voice-activity detection + speech-to-text run in the voice pane) and returns the transcript. Use this in a voice conversation to hear the user's reply. Blocks until the user finishes speaking or the listen times out. If it times out (no voice pane open, or the user said nothing), an error is returned — you can retry.`),
+			mcp.WithBoolean("record", mcp.Description("Set record=true when the user announced they want to give a long answer / dictate — it pins the microphone open across pauses until the user stops (taps stop or says 'stop recording'). Default: false (normal single-utterance listen).")),
 		),
 		s.handleVoiceListen,
 	)
@@ -773,6 +774,7 @@ Captures one spoken utterance from the user (mic capture + voice-activity detect
 		mcp.NewTool("voice_converse",
 			mcp.WithDescription(`Speak the given text aloud, then immediately listen for the user's reply — one combined turn. Returns the user's transcript. This is sugar for voice_speak(text) followed by voice_listen(); use it to keep a back-and-forth conversation flowing in a single call.`),
 			mcp.WithString("text", mcp.Required(), mcp.Description("The text to speak before listening. Plain, conversational, speech-friendly.")),
+			mcp.WithBoolean("record", mcp.Description("Set record=true when the user announced they want to give a long answer / dictate — after speaking, the listen pins the microphone open across pauses until the user stops (taps stop or says 'stop recording'). Default: false.")),
 		),
 		s.handleVoiceConverse,
 	)
@@ -2362,7 +2364,7 @@ func voiceEndedResult() *mcp.CallToolResult {
 	return mcp.NewToolResultText("The voice pane is no longer responding (it was closed, or this session is no longer the active voice session). Voice mode has ENDED. Stop calling voice tools (voice_listen/voice_speak/voice_converse) and resume normal text interaction. Do not retry voice unless the user asks.")
 }
 
-func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if s.voiceBridge == nil {
 		return mcp.NewToolResultError("voice bridge not available"), nil
 	}
@@ -2370,8 +2372,9 @@ func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, _ mcp.CallToolRe
 	if sessionID == "" {
 		return mcp.NewToolResultError("voice_listen requires a session context (X-Quant-Session) — call it from a hosted session"), nil
 	}
+	record := boolArg(request.GetArguments(), "record")
 
-	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", voice.ListenTimeout)
+	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", record, voice.ListenTimeout)
 	if err != nil {
 		if errors.Is(err, voice.ErrVoiceEnded) {
 			return voiceEndedResult(), nil
@@ -2394,7 +2397,7 @@ func (s *QuantMCPServer) handleVoiceSpeak(ctx context.Context, request mcp.CallT
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, voice.SpeakTimeout); err != nil {
+	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, false, voice.SpeakTimeout); err != nil {
 		if errors.Is(err, voice.ErrVoiceEnded) {
 			return voiceEndedResult(), nil
 		}
@@ -2415,15 +2418,16 @@ func (s *QuantMCPServer) handleVoiceConverse(ctx context.Context, request mcp.Ca
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	record := boolArg(request.GetArguments(), "record")
 
 	// Speak first, then listen for the reply — one combined turn.
-	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, voice.SpeakTimeout); err != nil {
+	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, false, voice.SpeakTimeout); err != nil {
 		if errors.Is(err, voice.ErrVoiceEnded) {
 			return voiceEndedResult(), nil
 		}
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", voice.ListenTimeout)
+	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", record, voice.ListenTimeout)
 	if err != nil {
 		if errors.Is(err, voice.ErrVoiceEnded) {
 			return voiceEndedResult(), nil

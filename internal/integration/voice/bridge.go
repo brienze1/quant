@@ -56,6 +56,10 @@ type VoiceRequestEvent struct {
 	RequestID string `json:"requestId"`
 	Kind      string `json:"kind"` // "listen" | "speak"
 	Text      string `json:"text"` // text to speak (empty for listen)
+	// Record asks the frontend to start a "listen" already pinned open in
+	// recording mode (long-form dictation across pauses, ended only by the user's
+	// explicit stop or the spoken stop phrase). Ignored for "speak".
+	Record bool `json:"record"`
 }
 
 // Bridge is the request→do-audio→reply registry that connects the Go-side MCP
@@ -70,13 +74,23 @@ type VoiceRequestEvent struct {
 // ignored safely. Targeting a single "active/primary" client is left for later.
 type Bridge struct {
 	mu      sync.Mutex
-	pending map[string]chan VoiceReply
+	pending map[string]*pendingRequest
 	emit    Emitter
 	// appCtx is the Wails app LIFECYCLE context captured in OnStartup. Wails
 	// runtime.EventsEmit rejects any other context ("an invalid context was
 	// passed"), so the voice:request event MUST be emitted with this context —
 	// NOT the per-request MCP/HTTP context that flows into Request().
 	appCtx context.Context
+}
+
+// pendingRequest tracks one in-flight voice request: the reply channel the
+// blocked Request select waits on, plus a keepalive channel that resets the
+// request's timeout (used by recording mode, where a listen can legitimately
+// outlive ListenTimeout). Both channels are buffered (cap 1) so senders never
+// block.
+type pendingRequest struct {
+	ch     chan VoiceReply
+	extend chan struct{}
 }
 
 // SetContext stores the Wails app lifecycle context used for emitting events.
@@ -93,7 +107,7 @@ func (b *Bridge) SetContext(ctx context.Context) {
 // but production wiring should always supply remote.Emit.
 func NewBridge(emit Emitter) *Bridge {
 	return &Bridge{
-		pending: make(map[string]chan VoiceReply),
+		pending: make(map[string]*pendingRequest),
 		emit:    emit,
 	}
 }
@@ -122,18 +136,22 @@ func newRequestID() string {
 // resolves it, the timeout elapses, or ctx is cancelled.
 //
 //   - kind "listen": text is ignored; the returned VoiceReply.Transcript holds
-//     the recognized speech.
+//     the recognized speech. record=true starts the listen already pinned open
+//     in recording mode (long-form dictation across pauses).
 //   - kind "speak":  text is the phrase to synthesize; the reply's Done is true
-//     once playback finishes.
+//     once playback finishes. record is ignored.
 //
 // On timeout or cancellation it cleans up the pending entry and returns a clear,
 // recoverable error so the calling agent can retry.
-func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, timeout time.Duration) (VoiceReply, error) {
+func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, record bool, timeout time.Duration) (VoiceReply, error) {
 	requestID := newRequestID()
-	ch := make(chan VoiceReply, 1)
+	p := &pendingRequest{
+		ch:     make(chan VoiceReply, 1),
+		extend: make(chan struct{}, 1),
+	}
 
 	b.mu.Lock()
-	b.pending[requestID] = ch
+	b.pending[requestID] = p
 	emit := b.emit
 	emitCtx := b.appCtx // Wails lifecycle ctx — NOT the request ctx
 	b.mu.Unlock()
@@ -144,31 +162,59 @@ func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, time
 			RequestID: requestID,
 			Kind:      kind,
 			Text:      text,
+			Record:    record,
 		})
 	}
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case reply := <-p.ch:
+			// The channel is buffered and only written once, but delete the entry so
+			// the map does not grow unbounded.
+			b.remove(requestID)
+			if reply.Err != "" {
+				return reply, fmt.Errorf("voice %s failed: %s", kind, reply.Err)
+			}
+			if reply.Closed {
+				// The pane closed/moved mid-request: end voice mode gracefully rather
+				// than treating it as an error or waiting out the timeout.
+				return reply, fmt.Errorf("voice %s ended (pane closed): %w", kind, ErrVoiceEnded)
+			}
+			return reply, nil
+		case <-p.extend:
+			// Keepalive from the frontend (recording mode): push the deadline out
+			// by the full timeout again. Reset without draining is safe on Go 1.23+
+			// timer semantics (go.mod pins well above that).
+			timer.Reset(timeout)
+		case <-timer.C:
+			b.remove(requestID)
+			// No client responded within the timeout: the voice surface is gone. Wrap
+			// as ErrVoiceEnded so the agent stops calling voice tools instead of looping.
+			return VoiceReply{}, fmt.Errorf("voice %s ended (timed out after %s waiting for the pane): %w", kind, timeout, ErrVoiceEnded)
+		case <-ctx.Done():
+			b.remove(requestID)
+			return VoiceReply{}, fmt.Errorf("voice %s cancelled: %w", kind, ctx.Err())
+		}
+	}
+}
+
+// Extend resets the timeout of the in-flight request with the given requestId
+// (keepalive). The frontend pings this every ~30s while the user is in recording
+// mode so a long-form listen doesn't hit ListenTimeout mid-recording. Unknown or
+// already-settled requestIds are ignored; the send is non-blocking (buffered,
+// and a pending-but-unconsumed extend is equivalent).
+func (b *Bridge) Extend(requestID string) {
+	b.mu.Lock()
+	p, ok := b.pending[requestID]
+	b.mu.Unlock()
+	if !ok {
+		return
+	}
 	select {
-	case reply := <-ch:
-		// The channel is buffered and only written once, but delete the entry so
-		// the map does not grow unbounded.
-		b.remove(requestID)
-		if reply.Err != "" {
-			return reply, fmt.Errorf("voice %s failed: %s", kind, reply.Err)
-		}
-		if reply.Closed {
-			// The pane closed/moved mid-request: end voice mode gracefully rather
-			// than treating it as an error or waiting out the timeout.
-			return reply, fmt.Errorf("voice %s ended (pane closed): %w", kind, ErrVoiceEnded)
-		}
-		return reply, nil
-	case <-time.After(timeout):
-		b.remove(requestID)
-		// No client responded within the timeout: the voice surface is gone. Wrap
-		// as ErrVoiceEnded so the agent stops calling voice tools instead of looping.
-		return VoiceReply{}, fmt.Errorf("voice %s ended (timed out after %s waiting for the pane): %w", kind, timeout, ErrVoiceEnded)
-	case <-ctx.Done():
-		b.remove(requestID)
-		return VoiceReply{}, fmt.Errorf("voice %s cancelled: %w", kind, ctx.Err())
+	case p.extend <- struct{}{}:
+	default:
 	}
 }
 
@@ -178,7 +224,7 @@ func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, time
 // buffered channel, and the entry is removed so a duplicate Resolve is a no-op.
 func (b *Bridge) Resolve(requestID string, reply VoiceReply) {
 	b.mu.Lock()
-	ch, ok := b.pending[requestID]
+	p, ok := b.pending[requestID]
 	if ok {
 		delete(b.pending, requestID)
 	}
@@ -187,11 +233,11 @@ func (b *Bridge) Resolve(requestID string, reply VoiceReply) {
 	if !ok {
 		return
 	}
-	// Non-blocking send: ch is buffered (cap 1) and unique to this request, so
-	// this never blocks. The select's default guards against the impossible
-	// double-send.
+	// Non-blocking send: the channel is buffered (cap 1) and unique to this
+	// request, so this never blocks. The select's default guards against the
+	// impossible double-send.
 	select {
-	case ch <- reply:
+	case p.ch <- reply:
 	default:
 	}
 }

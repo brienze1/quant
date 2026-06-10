@@ -5,7 +5,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { readOrbTheme } from "./voiceOrbTheme";
 
-export type VoiceOrbState = "idle" | "listening" | "thinking" | "speaking";
+export type VoiceOrbState = "idle" | "listening" | "recording" | "thinking" | "speaking";
 
 export interface VoiceOrbProps {
   /** Current orb state. */
@@ -105,7 +105,7 @@ interface StateTarget {
   expandLight?: number;
   rot: number;
   /** which theme accent role drives this state's glow color */
-  role: "accent" | "speak" | "think" | "dim";
+  role: "accent" | "speak" | "think" | "record" | "dim";
 }
 
 const TARGETS: Record<VoiceOrbState, StateTarget> = {
@@ -115,6 +115,10 @@ const TARGETS: Record<VoiceOrbState, StateTarget> = {
   // visible. Kept well under `speaking` (amp 0.155 / expand 0.34) and within the
   // pane frame (the audio-driven geometry term is uAudio*0.10; see VERT).
   listening: { amp: 0.15, freq: 1.9, expand: 0.27, expandLight: 0.16, rot: 0.18, role: "accent" },
+  // Recording = listening pinned open by the user: same mic-reactive feel but a
+  // warmer/red accent (--q-error role) and a slightly stronger base pulse so
+  // it's unmistakably "armed". Still under the speaking flare's envelope.
+  recording: { amp: 0.165, freq: 2.0, expand: 0.3, expandLight: 0.18, rot: 0.2, role: "record" },
   thinking: { amp: 0.1, freq: 2.8, expand: 0.12, rot: 0.55, role: "think" },
   // WI-5.1: speaking is the flare. Reined in ~12-15% from the prototype values
   // (amp 0.18→0.155, expand 0.40→0.34) so the bloom + geometry expansion stay
@@ -231,11 +235,13 @@ export default function VoiceOrb({
     const accentB = new THREE.Color(tokens0.accent);
     const speakB = new THREE.Color(tokens0.speakAccent);
     const thinkB = new THREE.Color(tokens0.thinkAccent);
+    const recordB = new THREE.Color(tokens0.recordAccent);
 
     const colors = {
       accent: { a: darkBase(accentB, isLight), b: accentB.clone() },
       speak: { a: darkBase(speakB, isLight), b: speakB.clone() },
       think: { a: darkBase(thinkB, isLight), b: thinkB.clone() },
+      record: { a: darkBase(recordB, isLight), b: recordB.clone() },
       dim: { a: darkBase(accentB, isLight), b: accentB.clone().multiplyScalar(isLight ? 0.7 : 0.55) },
     };
 
@@ -316,6 +322,8 @@ export default function VoiceOrb({
       colors.speak.a.copy(darkBase(colors.speak.b, isLight));
       colors.think.b.set(t.thinkAccent);
       colors.think.a.copy(darkBase(colors.think.b, isLight));
+      colors.record.b.set(t.recordAccent);
+      colors.record.a.copy(darkBase(colors.record.b, isLight));
       colors.dim.b.copy(new THREE.Color(t.accent).multiplyScalar(isLight ? 0.7 : 0.55));
       colors.dim.a.copy(darkBase(new THREE.Color(t.accent), isLight));
     };
@@ -357,6 +365,8 @@ export default function VoiceOrb({
           ? colors.speak
           : tg.role === "think"
           ? colors.think
+          : tg.role === "record"
+          ? colors.record
           : tg.role === "dim"
           ? colors.dim
           : colors.accent;
@@ -383,7 +393,8 @@ export default function VoiceOrb({
       // True only when a real live level (mic/output) is driving the orb. The
       // simulated/fallback path (harness, idle, thinking, missing getLevel) keeps
       // the original symmetric smoothing so its visual baselines are unchanged.
-      const driven = provided !== null && (s === "listening" || s === "speaking");
+      const driven =
+        provided !== null && (s === "listening" || s === "recording" || s === "speaking");
       if (driven) {
         raw = provided as number;
       } else if (s === "speaking") {
@@ -394,6 +405,11 @@ export default function VoiceOrb({
         raw = isLight
           ? 0.07 + 0.08 * Math.abs(Math.sin(t * 3.1))
           : 0.18 + 0.16 * Math.abs(Math.sin(t * 3.1));
+      } else if (s === "recording") {
+        // Fallback envelope (harness/no mic): like listening, a touch stronger.
+        raw = isLight
+          ? 0.1 + 0.1 * Math.abs(Math.sin(t * 3.4))
+          : 0.22 + 0.18 * Math.abs(Math.sin(t * 3.4));
       } else {
         raw = 0.04 + 0.03 * Math.sin(t * 1.2);
       }

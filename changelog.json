@@ -1,6 +1,18 @@
 {
   "entries": [
     {
+      "version": "v3.1.32",
+      "date": "2026-06-10",
+      "changes": {
+        "features": [
+          "voice recording mode — for long, thought-out answers that don't fit in one breath: while a session is listening, tap 'rec' (or just tell it 'I'm going to give a long answer, start recording') and the mic stays open across your pauses instead of cutting you off after a moment of silence; tap stop or say 'stop recording' when you're done and the whole thing is sent as one message",
+          "see your words as you speak — the voice pane now shows a live transcript that fills in while you're recording, so you can watch what's being captured before you send it",
+          "agents can start recording for you: ask a session to record and it opens the mic in recording mode itself, then ends when you say 'stop recording' (or 'finish recording' / 'end recording') — handy for dictating a long instruction hands-free",
+          "the mindmap pane is now per-session — open it on the session you're working in without it popping open on every other tab and client; each session remembers its own open/closed state while you work, and everything starts closed on a fresh launch (board contents are unaffected and stay saved per session)"
+        ]
+      }
+    },
+    {
       "version": "v3.1.31",
       "date": "2026-06-08",
       "changes": {

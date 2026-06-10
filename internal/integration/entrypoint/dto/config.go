@@ -56,7 +56,6 @@ type SaveConfigRequest struct {
 	IdleTimeoutMinutes    int      `json:"idleTimeoutMinutes"`
 	ActiveSessionID       string   `json:"activeSessionId"`
 	OpenSessionIDs        []string `json:"openSessionIds"`
-	MindmapPaneOpen       bool     `json:"mindmapPaneOpen"`
 	VoicePaneOpen         bool     `json:"voicePaneOpen"`
 
 	// Storage & Data
@@ -116,7 +115,6 @@ type ConfigResponse struct {
 	IdleTimeoutMinutes    int      `json:"idleTimeoutMinutes"`
 	ActiveSessionID       string   `json:"activeSessionId"`
 	OpenSessionIDs        []string `json:"openSessionIds"`
-	MindmapPaneOpen       bool     `json:"mindmapPaneOpen"`
 	VoicePaneOpen         bool     `json:"voicePaneOpen"`
 
 	// Storage & Data
@@ -179,7 +177,6 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		IdleTimeoutMinutes:    cfg.IdleTimeoutMinutes,
 		ActiveSessionID:       cfg.ActiveSessionID,
 		OpenSessionIDs:        cfg.OpenSessionIDs,
-		MindmapPaneOpen:       cfg.MindmapPaneOpen,
 		VoicePaneOpen:         cfg.VoicePaneOpen,
 		DataDirectory:         cfg.DataDirectory,
 		WorktreeDirectory:     cfg.WorktreeDirectory,
@@ -270,7 +267,6 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		IdleTimeoutMinutes:    r.IdleTimeoutMinutes,
 		ActiveSessionID:       r.ActiveSessionID,
 		OpenSessionIDs:        r.OpenSessionIDs,
-		MindmapPaneOpen:       r.MindmapPaneOpen,
 		VoicePaneOpen:         r.VoicePaneOpen,
 		DataDirectory:         r.DataDirectory,
 		WorktreeDirectory:     r.WorktreeDirectory,

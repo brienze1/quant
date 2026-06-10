@@ -55,6 +55,30 @@ func personaArgs() []string {
 	return []string{"--append-system-prompt", "$QUANT_BASE_PERSONA"}
 }
 
+// defaultMCPToolTimeoutMS is the MCP_TOOL_TIMEOUT value (milliseconds) injected
+// into every claude session quant spawns. The claude CLI's MCP client aborts any
+// tool call on HTTP-transport MCP servers after a hardcoded 60s default ("The
+// operation timed out."), which would kill voice_listen/voice_converse mid
+// recording: recording mode legitimately blocks up to the 15-min RECORDING_MAX_MS
+// ceiling (frontend/src/voice/audioService.ts), plus STT time and a speak leg.
+// Quant's own 120s ListenTimeout is already kept alive Go-side (Bridge.Extend),
+// but only MCP_TOOL_TIMEOUT raises the client-side limit — verified empirically
+// 2026-06-09: a 90s-blocking HTTP MCP tool fails at 60s by default and succeeds
+// with MCP_TOOL_TIMEOUT set. 20 minutes comfortably exceeds the worst case.
+const defaultMCPToolTimeoutMS = "1200000"
+
+// withMCPToolTimeout appends MCP_TOOL_TIMEOUT=defaultMCPToolTimeoutMS to env
+// unless the variable is already present (e.g. exported by the user's login
+// shell, which shellEnv() inherits), so an explicit user value always wins.
+func withMCPToolTimeout(env []string) []string {
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "MCP_TOOL_TIMEOUT=") {
+			return env
+		}
+	}
+	return append(env, "MCP_TOOL_TIMEOUT="+defaultMCPToolTimeoutMS)
+}
+
 // claudeProcess holds the running process and its PTY master.
 type claudeProcess struct {
 	cmd *exec.Cmd
@@ -298,6 +322,10 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 	if os.Getenv("QUANT_SKIP_PERSONA") != "1" {
 		baseEnv = append(baseEnv, "QUANT_BASE_PERSONA="+m.resolvePersona())
 	}
+	// Raise claude's client-side MCP tool-call timeout so long voice recordings
+	// survive past the hardcoded 60s HTTP-MCP default (see defaultMCPToolTimeoutMS).
+	// Skipped when the user already exports MCP_TOOL_TIMEOUT themselves.
+	baseEnv = withMCPToolTimeout(baseEnv)
 	cmd.Env = baseEnv
 
 	ptm, err := pty.Start(cmd)

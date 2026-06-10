@@ -33,7 +33,7 @@ func TestBridgeRequestResolves(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		reply, err := b.Request(context.Background(), "sess-1", "listen", "", time.Second)
+		reply, err := b.Request(context.Background(), "sess-1", "listen", "", false, time.Second)
 		done <- result{reply, err}
 	}()
 
@@ -61,7 +61,7 @@ func TestBridgeTimeout(t *testing.T) {
 	b := NewBridge(func(_ context.Context, _ string, _ interface{}) {})
 
 	start := time.Now()
-	_, err := b.Request(context.Background(), "sess-1", "listen", "", 50*time.Millisecond)
+	_, err := b.Request(context.Background(), "sess-1", "listen", "", false, 50*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected a timeout error, got nil")
 	}
@@ -100,7 +100,7 @@ func TestBridgeClosedResolve(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		// A generous timeout: the Closed resolve must end the request well before it.
-		reply, err := b.Request(context.Background(), "sess-1", "listen", "", time.Minute)
+		reply, err := b.Request(context.Background(), "sess-1", "listen", "", false, time.Minute)
 		done <- result{reply, err}
 	}()
 
@@ -123,6 +123,98 @@ func TestBridgeClosedResolve(t *testing.T) {
 	}
 }
 
+// TestBridgeExtendResetsTimeout verifies the recording-mode keepalive: Extend
+// pushes the request's deadline out by the full timeout again, so repeated
+// extends keep a request alive well past its original timeout, and the request
+// still resolves normally afterwards.
+func TestBridgeExtendResetsTimeout(t *testing.T) {
+	var capturedReqID string
+	var mu sync.Mutex
+	b := NewBridge(func(_ context.Context, _ string, data interface{}) {
+		ev := data.(VoiceRequestEvent)
+		mu.Lock()
+		capturedReqID = ev.RequestID
+		mu.Unlock()
+	})
+
+	type result struct {
+		reply VoiceReply
+		err   error
+	}
+	done := make(chan result, 1)
+	go func() {
+		reply, err := b.Request(context.Background(), "sess-1", "listen", "", false, 150*time.Millisecond)
+		done <- result{reply, err}
+	}()
+
+	reqID := waitForReqID(t, &mu, &capturedReqID)
+	// Extend every 80ms — total wait (4×80ms = 320ms) far exceeds the original
+	// 150ms timeout, so the request only survives if Extend resets the timer.
+	for i := 0; i < 4; i++ {
+		b.Extend(reqID)
+		time.Sleep(80 * time.Millisecond)
+		select {
+		case r := <-done:
+			t.Fatalf("request ended early despite extends (iteration %d): reply=%+v err=%v", i, r.reply, r.err)
+		default:
+		}
+	}
+
+	b.Resolve(reqID, VoiceReply{Transcript: "a long recorded speech"})
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("Request returned error after extends: %v", r.err)
+		}
+		if r.reply.Transcript != "a long recorded speech" {
+			t.Fatalf("transcript = %q, want %q", r.reply.Transcript, "a long recorded speech")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Request did not unblock after Resolve")
+	}
+
+	// Extending an unknown/settled requestId must be a safe no-op.
+	b.Extend("does-not-exist")
+	b.Extend(reqID)
+}
+
+// TestBridgeExtendDoesNotOutliveResolveTimeout verifies a request that stops
+// being extended still times out (the keepalive doesn't make it immortal).
+func TestBridgeExtendDoesNotOutliveResolveTimeout(t *testing.T) {
+	var capturedReqID string
+	var mu sync.Mutex
+	b := NewBridge(func(_ context.Context, _ string, data interface{}) {
+		ev := data.(VoiceRequestEvent)
+		mu.Lock()
+		capturedReqID = ev.RequestID
+		mu.Unlock()
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := b.Request(context.Background(), "sess-1", "listen", "", false, 60*time.Millisecond)
+		done <- err
+	}()
+
+	reqID := waitForReqID(t, &mu, &capturedReqID)
+	b.Extend(reqID)
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrVoiceEnded) {
+			t.Fatalf("expected ErrVoiceEnded after extends stop, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Request never timed out after extends stopped")
+	}
+	b.mu.Lock()
+	n := len(b.pending)
+	b.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("pending map not cleaned up after timeout: %d entries", n)
+	}
+}
+
 // TestBridgeCtxCancel verifies cancellation returns an error and cleans up.
 func TestBridgeCtxCancel(t *testing.T) {
 	b := NewBridge(func(_ context.Context, _ string, _ interface{}) {})
@@ -130,7 +222,7 @@ func TestBridgeCtxCancel(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := b.Request(ctx, "sess-1", "speak", "hi", time.Minute)
+		_, err := b.Request(ctx, "sess-1", "speak", "hi", false, time.Minute)
 		done <- err
 	}()
 
@@ -162,7 +254,7 @@ func TestBridgeUnknownAndDuplicateResolve(t *testing.T) {
 
 	done := make(chan VoiceReply, 1)
 	go func() {
-		reply, _ := b.Request(context.Background(), "sess-1", "listen", "", time.Second)
+		reply, _ := b.Request(context.Background(), "sess-1", "listen", "", false, time.Second)
 		done <- reply
 	}()
 
@@ -202,7 +294,7 @@ func TestBridgeConcurrentNoCrossWires(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			reply, err := b.Request(context.Background(), sid, "listen", "", 2*time.Second)
+			reply, err := b.Request(context.Background(), sid, "listen", "", false, 2*time.Second)
 			if err != nil {
 				t.Errorf("session %s: %v", sid, err)
 				return
@@ -241,6 +333,47 @@ func TestBridgeConcurrentNoCrossWires(t *testing.T) {
 	}
 	if res["B"] != "reply-B" {
 		t.Fatalf("session B got %q, want reply-B (cross-wired?)", res["B"])
+	}
+}
+
+// TestBridgeRecordFlagRoundTrips verifies the record flag passed to Request is
+// carried on the emitted VoiceRequestEvent (true and false), so the frontend
+// can start a listen already pinned open in recording mode.
+func TestBridgeRecordFlagRoundTrips(t *testing.T) {
+	for _, record := range []bool{true, false} {
+		var capturedReqID string
+		var capturedRecord bool
+		var mu sync.Mutex
+		b := NewBridge(func(_ context.Context, _ string, data interface{}) {
+			ev := data.(VoiceRequestEvent)
+			mu.Lock()
+			capturedReqID = ev.RequestID
+			capturedRecord = ev.Record
+			mu.Unlock()
+		})
+
+		done := make(chan error, 1)
+		go func() {
+			_, err := b.Request(context.Background(), "sess-1", "listen", "", record, time.Second)
+			done <- err
+		}()
+
+		reqID := waitForReqID(t, &mu, &capturedReqID)
+		mu.Lock()
+		got := capturedRecord
+		mu.Unlock()
+		if got != record {
+			t.Fatalf("emitted VoiceRequestEvent.Record = %v, want %v", got, record)
+		}
+		b.Resolve(reqID, VoiceReply{Transcript: "ok"})
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Request returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("Request did not unblock after Resolve")
+		}
 	}
 }
 

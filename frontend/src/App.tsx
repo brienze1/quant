@@ -102,10 +102,10 @@ function App() {
   const [embeddedTerminalMap, setEmbeddedTerminalMap] = useState<Record<string, string>>({});
   // Track which sessions have the terminal pane open: parentSessionId -> boolean
   const [terminalPaneOpenMap, setTerminalPaneOpenMap] = useState<Record<string, boolean>>({});
-  // Mindmap pane open/closed is a single GLOBAL flag (unlike the per-session
-  // terminal pane): it is config-backed and synced across all tabs and remote
-  // clients via the "mindmap:pane" event.
-  const [mindmapPaneOpen, setMindmapPaneOpen] = useState(false);
+  // Mindmap pane open/closed is PER-SESSION (like the terminal pane above):
+  // sessionId -> boolean, kept in local state only. Opening it for one session
+  // must not open it for the others. Ephemeral — resets to closed on restart.
+  const [mindmapPaneOpenMap, setMindmapPaneOpenMap] = useState<Record<string, boolean>>({});
   // Voice is PINNED to the session it was opened on. The single source of truth
   // is the session id voice is attached to (null = voice closed). The pane stays
   // bound to this session even when the user switches the active tab, so it must
@@ -185,14 +185,13 @@ function App() {
     setTerminalPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
   }
 
-  // Toggle the global mindmap pane: update locally for instant feedback, then
-  // persist via the backend, which broadcasts "mindmap:pane" so other tabs and
-  // remote clients converge on the same value.
+  // whether the mindmap pane is open for the active session (per-session, like
+  // the terminal pane above)
+  const activeMindmapPaneOpen = activeSession ? (mindmapPaneOpenMap[activeSession.id] ?? false) : false;
+
   function handleMindmapPaneOpenChange(open: boolean) {
-    setMindmapPaneOpen(open);
-    api.setMindmapPaneOpen(open).catch((err) =>
-      console.error("failed to persist mindmap pane state:", err)
-    );
+    if (!activeSession) return;
+    setMindmapPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
   }
 
   // Tracks which session currently holds a LIVE voice attachment (kicked off),
@@ -434,10 +433,8 @@ function App() {
           setActiveTabId(ids[0]);
           setSelectedSessionId(ids[0]);
         }
-        // Hydrate the global mindmap pane flag from config. Mark hydration as
-        // done so the event handler can safely treat later updates as remote.
-        setMindmapPaneOpen(!!cfg.mindmapPaneOpen);
-        mindmapPaneHydratedRef.current = true;
+        // Mindmap pane open state is per-session and ephemeral now — nothing to
+        // hydrate from config.
         // Hydrate the voice attachment. The Go config only persists the
         // open/closed BOOL; WHICH session is restored from the localStorage
         // companion (this browser), falling back to the persisted active session
@@ -538,12 +535,7 @@ function App() {
     return () => clearTimeout(handle);
   }, [activeWorkspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Guards the initial hydration of the global mindmap pane flag from config,
-  // so the startup read doesn't trigger a write-back (mirrors tabsRestoredRef).
-  const mindmapPaneHydratedRef = useRef(false);
-
-  // Guards the initial hydration of the global voice pane flag from config
-  // (mirrors mindmapPaneHydratedRef).
+  // Guards the initial hydration of the global voice pane flag from config.
   const voicePaneHydratedRef = useRef(false);
 
   // Persist open tabs and active tab to config whenever they change
@@ -772,19 +764,6 @@ function App() {
         });
       }
     );
-    return () => cancel && cancel();
-  }, []);
-
-  // Keep the global mindmap pane flag in sync across every tab and remote
-  // client. The handler is idempotent: it SETS state to the received value and
-  // never toggles, so duplicate/echo events can't flip the pane out of sync.
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    if (!w?.runtime?.EventsOn) return;
-    const cancel = w.runtime.EventsOn("mindmap:pane", (d: { open?: boolean }) => {
-      setMindmapPaneOpen(!!(d && d.open));
-    });
     return () => cancel && cancel();
   }, []);
 
@@ -1374,9 +1353,10 @@ function App() {
     handleOpenTab(sessionId);
     localStorage.setItem("quant.mindmapBoard." + sessionId, board);
     setActiveBoardBySession((prev) => ({ ...prev, [sessionId]: board }));
-    // The mindmap pane open flag is global now: route the OPEN action through
-    // the shared handler so it persists and syncs across tabs/remote clients.
-    handleMindmapPaneOpenChange(true);
+    // Open the mindmap pane for THIS session specifically. We can't go through
+    // handleMindmapPaneOpenChange (which targets the active session) because the
+    // tab we just opened isn't the active session synchronously yet.
+    setMindmapPaneOpenMap((prev) => ({ ...prev, [sessionId]: true }));
   }
 
   // Move a board from one session to another (mirrors session-onto-task move).
@@ -2370,7 +2350,7 @@ function App() {
                 embeddedTerminalSession={activeEmbeddedTerminalSession}
                 terminalPaneOpen={activeTerminalPaneOpen}
                 onTerminalPaneOpenChange={handleTerminalPaneOpenChange}
-                mindmapPaneOpen={mindmapPaneOpen}
+                mindmapPaneOpen={activeMindmapPaneOpen}
                 onMindmapPaneOpenChange={handleMindmapPaneOpenChange}
                 voicePaneOpen={voiceSessionId === activeSession.id}
                 onVoicePaneOpenChange={handleVoicePaneOpenChange}
