@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.33",
+      "date": "2026-06-10",
+      "changes": {
+        "internal": [
+          "removed the built-in Quanti assistant (the chat bubble overlay and its Settings tab) — it was unused; your sessions, jobs and settings are unaffected"
+        ]
+      }
+    },
+    {
       "version": "v3.1.32",
       "date": "2026-06-10",
       "changes": {
