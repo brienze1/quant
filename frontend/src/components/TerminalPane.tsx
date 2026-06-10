@@ -121,6 +121,16 @@ export function TerminalPane({
       term.onResize(({ rows, cols }) => {
         api.resizeTerminal(sessionIdRef.current, rows, cols).catch(() => {});
       });
+
+      // The fit() at open time ran BEFORE this onResize handler existed, so
+      // the PTY never hears about the grid size the terminal mounted at. When
+      // the terminal is recreated on a tab switch into a pane whose width
+      // differs from this session's last-known PTY size — and the pane does
+      // not change size afterwards (so the ResizeObserver never fires) — the
+      // agent's TUI keeps rendering at the stale column count, squeezing the
+      // chat into a narrow band and leaving an empty gap beside it. Sync the
+      // PTY to the freshly mounted grid explicitly.
+      api.resizeTerminal(sessionIdRef.current, term.rows, term.cols).catch(() => {});
     }
 
     const viewportEl = termContainerRef.current.querySelector('.xterm-viewport');

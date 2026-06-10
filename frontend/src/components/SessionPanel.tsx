@@ -8,6 +8,25 @@ import * as api from "../api";
 
 type SplitLayout = "horizontal" | "vertical";
 
+// Per-session mindmap dock geometry (split layout + divider %), persisted per
+// session in localStorage — mirroring how boards persist under
+// "quant.mindmapBoard.<sessionId>". SessionPanel is a single instance reused
+// across tab switches, so without keying these by session id a resize in one
+// session would silently resize every other session's pane too.
+const MM_LAYOUT_KEY = "quant.mindmapLayout.";
+const MM_DIVIDER_KEY = "quant.mindmapDivider.";
+
+function loadMindmapLayout(sessionId: string): SplitLayout {
+  return localStorage.getItem(MM_LAYOUT_KEY + sessionId) === "horizontal"
+    ? "horizontal"
+    : "vertical";
+}
+
+function loadMindmapDivider(sessionId: string): number {
+  const v = Number(localStorage.getItem(MM_DIVIDER_KEY + sessionId));
+  return Number.isFinite(v) && v >= 20 && v <= 80 ? v : 55;
+}
+
 interface SplitState {
   open: boolean;
   terminalSession: Session | null;
@@ -26,8 +45,8 @@ interface Props {
   embeddedTerminalSession?: Session | null;
   terminalPaneOpen?: boolean;
   onTerminalPaneOpenChange?: (open: boolean) => void;
-  // Mindmap pane open/closed is a single GLOBAL flag owned by App (config-backed,
-  // synced across tabs and remote clients) — not a per-session preference.
+  // Mindmap pane open/closed is a PER-SESSION flag owned by App
+  // (mindmapPaneOpenMap) — ephemeral, every pane starts closed on launch.
   mindmapPaneOpen: boolean;
   onMindmapPaneOpenChange: (open: boolean) => void;
   // Voice pane open/closed is a single GLOBAL flag owned by App (config-backed,
@@ -65,8 +84,13 @@ export function SessionPanel({
   const [menuOpen, setMenuOpen] = useState(false);
   // The mindmap split is independent of the terminal split: it has its own
   // layout (default vertical so the mindmap docks on the right) and divider.
-  const [mindmapLayout, setMindmapLayout] = useState<SplitLayout>("vertical");
-  const [mindmapDividerPercent, setMindmapDividerPercent] = useState(55);
+  // Both are PER-SESSION: hydrated from localStorage whenever the session
+  // changes, persisted back per session id.
+  const [mindmapLayout, setMindmapLayoutState] = useState<SplitLayout>(() => loadMindmapLayout(session.id));
+  const [mindmapDividerPercent, setMindmapDividerPercent] = useState(() => loadMindmapDivider(session.id));
+  // Mirrors the divider state so the mouseup handler can persist the final
+  // value without re-registering listeners on every mousemove.
+  const mindmapDividerRef = useRef(mindmapDividerPercent);
   const menuRef = useRef<HTMLDivElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null!)
   const mindmapContainerRef = useRef<HTMLDivElement>(null!)
@@ -90,8 +114,23 @@ export function SessionPanel({
       open: terminalPaneOpen && !!(embeddedTerminalSession || prev.terminalSession),
       terminalSession: embeddedTerminalSession || null,
     }));
-    // NOTE: the mindmap pane open flag is now a global, App-owned value, so
-    // there is nothing session-scoped to reset here.
+    // Hydrate THIS session's mindmap dock geometry (the open flag itself is
+    // per-session App state passed down as a prop).
+    const layout = loadMindmapLayout(session.id);
+    const divider = loadMindmapDivider(session.id);
+    setMindmapLayoutState(layout);
+    setMindmapDividerPercent(divider);
+    mindmapDividerRef.current = divider;
+    // A divider drag must never survive a session switch: the divider element
+    // can unmount mid-drag (pane closed on the next session), which would
+    // leave the dragging flag stuck and let plain mouse movement silently
+    // resize the pane.
+    if (isDraggingMindmap.current || isDragging.current) {
+      isDraggingMindmap.current = false;
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);
 
@@ -159,13 +198,20 @@ export function SessionPanel({
       } else {
         percent = ((e.clientX - rect.left) / rect.width) * 100;
       }
-      setMindmapDividerPercent(Math.min(80, Math.max(20, percent)));
+      const clamped = Math.min(80, Math.max(20, percent));
+      mindmapDividerRef.current = clamped;
+      setMindmapDividerPercent(clamped);
     }
     function handleMouseUp() {
       if (!isDraggingMindmap.current) return;
       isDraggingMindmap.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      // Persist the final divider position for THIS session only.
+      localStorage.setItem(
+        MM_DIVIDER_KEY + session.id,
+        String(Math.round(mindmapDividerRef.current))
+      );
     }
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
@@ -173,7 +219,13 @@ export function SessionPanel({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [mindmapLayout]);
+  }, [mindmapLayout, session.id]);
+
+  // Switch the mindmap dock layout and persist it for this session.
+  const setMindmapLayout = useCallback((l: SplitLayout) => {
+    setMindmapLayoutState(l);
+    localStorage.setItem(MM_LAYOUT_KEY + session.id, l);
+  }, [session.id]);
 
   async function handleOpenTerminal() {
     if (splitState.open) return;
