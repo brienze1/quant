@@ -22,6 +22,16 @@ import { Sidebar } from "./components/Sidebar";
 import { SessionPanel } from "./components/SessionPanel";
 import { VoicePane } from "./components/VoicePane";
 import { EmptyState } from "./components/EmptyState";
+import { FileTabPanel } from "./components/FileTabPanel";
+import { FilesPanel } from "./components/FilesPanel";
+import {
+  fileBasename,
+  isFileTabId,
+  isFileTabOfSession,
+  makeFileTabId,
+  parseFileTabId,
+} from "./fileTabs";
+import type { Tab } from "./components/TabBar";
 import { OpenRepoModal } from "./components/OpenRepoModal";
 import { NewTaskModal } from "./components/NewTaskModal";
 import { NewSessionModal } from "./components/NewSessionModal";
@@ -60,7 +70,7 @@ type ModalState =
   | { type: "newTask"; repoId: string }
   | { type: "newSession"; repoId: string; taskId?: string }
   | { type: "moveSession"; sessionId: string; repoId: string }
-  | { type: "confirm"; message: string; onConfirm: () => void }
+  | { type: "confirm"; message: string; onConfirm: () => void; confirmLabel?: string }
   | { type: "renameSession"; sessionId: string; currentName: string }
   | { type: "renameTask"; taskId: string; currentTag: string; currentName: string }
   | { type: "gitCommit"; sessionId: string; sessionName: string }
@@ -102,6 +112,13 @@ function App() {
   const [embeddedTerminalMap, setEmbeddedTerminalMap] = useState<Record<string, string>>({});
   // Track which sessions have the terminal pane open: parentSessionId -> boolean
   const [terminalPaneOpenMap, setTerminalPaneOpenMap] = useState<Record<string, boolean>>({});
+  // Track which sessions have the right files panel (file tree) open:
+  // sessionId -> boolean (ephemeral, like the terminal pane map).
+  const [filesPanelOpenMap, setFilesPanelOpenMap] = useState<Record<string, boolean>>({});
+  // Dirty (unsaved draft) flags per open file tab id. Mirrored up from each
+  // FileTabPanel; consumed by the tab bar (dot), the files panel (tree dots)
+  // and the close-confirmation guard.
+  const [fileTabDirty, setFileTabDirty] = useState<Record<string, boolean>>({});
   // Mindmap pane open/closed is PER-SESSION (like the terminal pane above):
   // sessionId -> boolean, kept in local state only. Opening it for one session
   // must not open it for the others. Ephemeral — resets to closed on restart.
@@ -153,6 +170,10 @@ function App() {
   activeTabIdRef.current = activeTabId;
   const openTabIdsRef = useRef(openTabIds);
   openTabIdsRef.current = openTabIds;
+  const fileTabDirtyRef = useRef(fileTabDirty);
+  fileTabDirtyRef.current = fileTabDirty;
+  const embeddedTerminalMapRef = useRef(embeddedTerminalMap);
+  embeddedTerminalMapRef.current = embeddedTerminalMap;
   const expandedSessionIdRef = useRef(expandedSessionId);
   expandedSessionIdRef.current = expandedSessionId;
   const reposRef = useRef(repos);
@@ -162,6 +183,33 @@ function App() {
 
   // find active session object (the one shown in the main panel)
   const activeSession = findSession(activeTabId, sessionsByRepo, sessionsByTask);
+
+  // If the active tab is a file tab, its parsed {sessionId, relPath}.
+  const activeFileTab = activeTabId ? parseFileTabId(activeTabId) : null;
+
+  // The session the right files panel shows: the active session, or — while a
+  // file tab is active — the session that owns it.
+  const filesPanelSession =
+    activeSession ??
+    (activeFileTab
+      ? findSession(activeFileTab.sessionId, sessionsByRepo, sessionsByTask)
+      : null);
+
+  // whether the files panel is open for its owning session
+  const filesPanelOpen = filesPanelSession ? (filesPanelOpenMap[filesPanelSession.id] ?? false) : false;
+
+  // Rel paths of dirty file tabs belonging to the files panel's session (for
+  // the dirty dots in the tree and the delete-confirm copy).
+  const panelDirtyPaths = (() => {
+    const set = new Set<string>();
+    if (!filesPanelSession) return set;
+    for (const [tabId, dirty] of Object.entries(fileTabDirty)) {
+      if (!dirty || !isFileTabOfSession(tabId, filesPanelSession.id)) continue;
+      const parsed = parseFileTabId(tabId);
+      if (parsed) set.add(parsed.relPath);
+    }
+    return set;
+  })();
 
   // The session voice is pinned to (if any). Resolved from the same store the
   // rest of the UI uses, so the voice dock header can show the session's name.
@@ -183,6 +231,12 @@ function App() {
   function handleTerminalPaneOpenChange(open: boolean) {
     if (!activeSession) return;
     setTerminalPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
+  }
+
+  function handleFilesPanelOpenChange(open: boolean) {
+    if (!filesPanelSession) return;
+    const sessionId = filesPanelSession.id;
+    setFilesPanelOpenMap(prev => ({ ...prev, [sessionId]: open }));
   }
 
   // whether the mindmap pane is open for the active session (per-session, like
@@ -550,8 +604,11 @@ function App() {
     }
     api.getConfig()
       .then((cfg) => {
-        cfg.openSessionIds = openTabIds;
-        cfg.activeSessionId = activeTabId ?? "";
+        // File tabs are NOT persisted across restarts: the Go config is typed
+        // as session ids only, so filter file tab ids out of the write.
+        cfg.openSessionIds = openTabIds.filter((id) => !isFileTabId(id));
+        cfg.activeSessionId =
+          activeTabId && !isFileTabId(activeTabId) ? activeTabId : "";
         return api.saveConfig(cfg);
       })
       .catch((err) => console.error("failed to persist open tabs:", err));
@@ -627,7 +684,7 @@ function App() {
           const idx = currentTab ? tabs.indexOf(currentTab) : -1;
           const nextIdx = (idx + 1) % tabs.length;
           setActiveTabId(tabs[nextIdx]);
-          setSelectedSessionId(tabs[nextIdx]);
+          setSelectedSessionId(sessionIdForTab(tabs[nextIdx]));
           focusTerminalAfterSwitch();
           break;
         }
@@ -636,7 +693,7 @@ function App() {
           const idx = currentTab ? tabs.indexOf(currentTab) : 0;
           const prevIdx = (idx - 1 + tabs.length) % tabs.length;
           setActiveTabId(tabs[prevIdx]);
-          setSelectedSessionId(tabs[prevIdx]);
+          setSelectedSessionId(sessionIdForTab(tabs[prevIdx]));
           focusTerminalAfterSwitch();
           break;
         }
@@ -645,19 +702,20 @@ function App() {
           const n = parseInt(matched.id.replace("tab", ""), 10) - 1;
           if (n < tabs.length) {
             setActiveTabId(tabs[n]);
-            setSelectedSessionId(tabs[n]);
+            setSelectedSessionId(sessionIdForTab(tabs[n]));
             focusTerminalAfterSwitch();
           }
           break;
         }
         case "closeTab": {
           if (currentTab) {
-            handleCloseTab(currentTab);
+            requestCloseTab(currentTab);
           }
           break;
         }
         case "stopSession": {
-          if (currentTab) {
+          // Session-only: file tabs have no process to stop.
+          if (currentTab && !isFileTabId(currentTab)) {
             handleStop(currentTab);
           }
           break;
@@ -708,6 +766,7 @@ function App() {
     const interval = setInterval(() => {
       const ids = new Set<string>();
       for (const tabId of openTabIdsRef.current) {
+        if (isFileTabId(tabId)) continue; // file tabs have no actions
         ids.add(tabId);
       }
       if (expandedSessionIdRef.current) ids.add(expandedSessionIdRef.current);
@@ -718,7 +777,7 @@ function App() {
 
   // fetch actions when active tab or expanded session changes
   useEffect(() => {
-    if (activeTabId) fetchActions(activeTabId);
+    if (activeTabId && !isFileTabId(activeTabId)) fetchActions(activeTabId);
   }, [activeTabId, fetchActions]);
 
   useEffect(() => {
@@ -956,68 +1015,167 @@ function App() {
       return [...prev, id];
     });
     setActiveTabId(id);
-    setSelectedSessionId(id);
+    setSelectedSessionId(sessionIdForTab(id));
   }
 
-  function handleCloseTab(id: string) {
-    // Clean up embedded terminal if any
-    const embeddedTermId = embeddedTerminalMap[id];
-    if (embeddedTermId) {
-      handleDeleteEmbeddedTerminal(embeddedTermId);
+  // Open a file as a center tab (dedupe + activate via handleOpenTab).
+  function handleOpenFile(sessionId: string, relPath: string) {
+    handleOpenTab(makeFileTabId(sessionId, relPath));
+  }
+
+  // The set of tab ids that closing `id` removes: a file tab closes alone; a
+  // session tab takes its file tabs with it.
+  function closeSetFor(id: string): string[] {
+    if (isFileTabId(id)) return [id];
+    return [id, ...openTabIdsRef.current.filter((t) => isFileTabOfSession(t, id))];
+  }
+
+  // Close a set of tabs unconditionally: prune them from openTabIds and
+  // fileTabDirty, clean up embedded terminals, and — when the active tab is in
+  // the set — pick the next active tab from the POST-removal array (indexing
+  // the pre-removal array picks an already-closed neighbor when several tabs
+  // close at once).
+  function doCloseTab(ids: string[]) {
+    if (ids.length === 0) return;
+    const closing = new Set(ids);
+
+    for (const id of ids) {
+      if (isFileTabId(id)) continue;
+      const embeddedTermId = embeddedTerminalMapRef.current[id];
+      if (embeddedTermId) handleDeleteEmbeddedTerminal(embeddedTermId);
     }
 
     const tabs = openTabIdsRef.current;
-    const wasActive = activeTabIdRef.current === id;
+    const remaining = tabs.filter((t) => !closing.has(t));
+    setOpenTabIds(remaining);
+    setFileTabDirty((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const id of ids) {
+        if (id in next) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
 
-    setOpenTabIds((prev) => prev.filter((t) => t !== id));
-
-    if (wasActive) {
-      const idx = tabs.indexOf(id);
+    const current = activeTabIdRef.current;
+    if (current && closing.has(current)) {
       let nextActive: string | null = null;
-      if (tabs.length > 1) {
-        nextActive = idx === tabs.length - 1 ? tabs[idx - 1] : tabs[idx + 1];
+      if (remaining.length > 0) {
+        // Number of surviving tabs left of the old active position = the index
+        // (in `remaining`) of the closed tab's right-hand neighbor; clamp to
+        // the last tab when the active tab was rightmost.
+        const beforeActive = tabs
+          .slice(0, tabs.indexOf(current))
+          .filter((t) => !closing.has(t)).length;
+        nextActive = remaining[Math.min(beforeActive, remaining.length - 1)];
       }
       setActiveTabId(nextActive);
-      setSelectedSessionId(nextActive);
+      setSelectedSessionId(nextActive ? sessionIdForTab(nextActive) : null);
     }
+  }
+
+  // Close a set of tabs, asking for confirmation once if any of them carries
+  // an unsaved file draft.
+  function confirmThenClose(ids: string[]) {
+    const dirtyIds = ids.filter((t) => fileTabDirtyRef.current[t]);
+    if (dirtyIds.length === 0) {
+      doCloseTab(ids);
+      return;
+    }
+    const message =
+      dirtyIds.length === 1
+        ? `discard unsaved changes to ${parseFileTabId(dirtyIds[0])?.relPath ?? dirtyIds[0]}?`
+        : `discard unsaved changes to ${dirtyIds.length} file(s)?`;
+    setModal({
+      type: "confirm",
+      message,
+      confirmLabel: "discard",
+      onConfirm: () => {
+        setModal({ type: "none" });
+        doCloseTab(ids);
+      },
+    });
+  }
+
+  // Dirty-guarded close of a single tab (session tabs take their file tabs).
+  // All user-facing close entry points (keyboard, palette, tab bar) route here.
+  function requestCloseTab(id: string) {
+    confirmThenClose(closeSetFor(id));
   }
 
   function handleCloseAllTabs() {
-    for (const id of openTabIds) {
-      const embeddedTermId = embeddedTerminalMap[id];
-      if (embeddedTermId) handleDeleteEmbeddedTerminal(embeddedTermId);
-    }
-    setOpenTabIds([]);
-    setActiveTabId(null);
+    confirmThenClose([...openTabIdsRef.current]);
   }
 
   function handleCloseTabsToLeft(id: string) {
-    const idx = openTabIds.indexOf(id);
+    const tabs = openTabIdsRef.current;
+    const idx = tabs.indexOf(id);
     if (idx <= 0) return;
-    const toClose = openTabIds.slice(0, idx);
-    for (const cid of toClose) {
-      const embeddedTermId = embeddedTerminalMap[cid];
-      if (embeddedTermId) handleDeleteEmbeddedTerminal(embeddedTermId);
-    }
-    setOpenTabIds((prev) => prev.slice(idx));
-    setActiveTabId((prev) => (toClose.includes(prev!) ? id : prev));
+    confirmThenClose(tabs.slice(0, idx));
   }
 
   function handleCloseTabsToRight(id: string) {
-    const idx = openTabIds.indexOf(id);
-    if (idx < 0 || idx >= openTabIds.length - 1) return;
-    const toClose = openTabIds.slice(idx + 1);
-    for (const cid of toClose) {
-      const embeddedTermId = embeddedTerminalMap[cid];
-      if (embeddedTermId) handleDeleteEmbeddedTerminal(embeddedTermId);
-    }
-    setOpenTabIds((prev) => prev.slice(0, idx + 1));
-    setActiveTabId((prev) => (toClose.includes(prev!) ? id : prev));
+    const tabs = openTabIdsRef.current;
+    const idx = tabs.indexOf(id);
+    if (idx < 0 || idx >= tabs.length - 1) return;
+    confirmThenClose(tabs.slice(idx + 1));
+  }
+
+  // Close every tab belonging to `sessionId` (the session tab + its file tabs)
+  // WITHOUT a dirty confirm — used when the session itself is deleted or
+  // archived, where drafts are moot.
+  function closeSessionTabs(sessionId: string) {
+    doCloseTab(
+      openTabIdsRef.current.filter(
+        (t) => t === sessionId || isFileTabOfSession(t, sessionId)
+      )
+    );
+  }
+
+  // A directory/file was renamed in the files tree: remap open tab ids (the
+  // exact path + anything under the old dir prefix) so tabs follow the rename.
+  // The keep-alive FileTabPanel is keyed by tab id, so a remapped tab REMOUNTS
+  // and reloads from disk — a dirty draft on a renamed file drops (accepted v1).
+  function handleTreePathRenamed(sessionId: string, oldRel: string, newRel: string) {
+    const remapId = (id: string): string => {
+      const parsed = parseFileTabId(id);
+      if (!parsed || parsed.sessionId !== sessionId) return id;
+      if (parsed.relPath === oldRel) return makeFileTabId(sessionId, newRel);
+      if (parsed.relPath.startsWith(oldRel + "/")) {
+        return makeFileTabId(sessionId, newRel + parsed.relPath.slice(oldRel.length));
+      }
+      return id;
+    };
+    setOpenTabIds((prev) => prev.map(remapId));
+    setActiveTabId((prev) => (prev === null ? prev : remapId(prev)));
+    setFileTabDirty((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const [id, dirty] of Object.entries(prev)) next[remapId(id)] = dirty;
+      return next;
+    });
+  }
+
+  // A path was deleted in the files tree: close tabs at/under it. No extra
+  // confirm — the tree's own delete confirmation already covered dirty drafts.
+  function handleTreePathDeleted(sessionId: string, relPath: string) {
+    doCloseTab(
+      openTabIdsRef.current.filter((t) => {
+        const parsed = parseFileTabId(t);
+        return (
+          !!parsed &&
+          parsed.sessionId === sessionId &&
+          (parsed.relPath === relPath || parsed.relPath.startsWith(relPath + "/"))
+        );
+      })
+    );
   }
 
   function handleSelectTab(id: string) {
     setActiveTabId(id);
-    setSelectedSessionId(id);
+    setSelectedSessionId(sessionIdForTab(id));
   }
 
   // --- handlers ---
@@ -1146,13 +1304,8 @@ function App() {
     try {
       setError(null);
       await api.deleteSession(id);
-      // Remove from tabs if present
-      setOpenTabIds((prev) => prev.filter((t) => t !== id));
-      setActiveTabId((prev) => {
-        if (prev !== id) return prev;
-        const remaining = openTabIds.filter((t) => t !== id);
-        return remaining.length > 0 ? remaining[remaining.length - 1] : null;
-      });
+      // Remove the session tab AND its file tabs (pruning dirty flags too).
+      closeSessionTabs(id);
       if (selectedSessionId === id) setSelectedSessionId(null);
       if (expandedSessionId === id) setExpandedSessionId(null);
       // If voice was pinned to the deleted session, detach it (close the pane).
@@ -1166,13 +1319,8 @@ function App() {
     try {
       setError(null);
       await api.archiveSession(id);
-      // Remove from tabs if present
-      setOpenTabIds((prev) => prev.filter((t) => t !== id));
-      setActiveTabId((prev) => {
-        if (prev !== id) return prev;
-        const remaining = openTabIds.filter((t) => t !== id);
-        return remaining.length > 0 ? remaining[remaining.length - 1] : null;
-      });
+      // Remove the session tab AND its file tabs (pruning dirty flags too).
+      closeSessionTabs(id);
       if (selectedSessionId === id) setSelectedSessionId(null);
       if (expandedSessionId === id) setExpandedSessionId(null);
       // If voice was pinned to the archived session, detach it (close the pane).
@@ -1234,10 +1382,14 @@ function App() {
 
   async function handleArchiveTask(taskId: string) {
     const sessions = sessionsByTask[taskId] ?? [];
-    // Remove open tabs for sessions in this task
-    for (const s of sessions) {
-      setOpenTabIds((prev) => prev.filter((id) => id !== s.id));
-    }
+    // Remove open tabs (session + file tabs) for sessions in this task
+    const taskSessionIds = new Set(sessions.map((s) => s.id));
+    doCloseTab(
+      openTabIdsRef.current.filter((t) => {
+        const sid = sessionIdForTab(t);
+        return taskSessionIds.has(sid);
+      })
+    );
     try {
       setError(null);
       await api.archiveTask(taskId);
@@ -1268,11 +1420,15 @@ function App() {
   }
 
   async function executeDeleteTask(taskId: string) {
-    // Remove open tabs for sessions in this task.
+    // Remove open tabs (session + file tabs) for sessions in this task.
     const sessions = sessionsByTask[taskId] ?? [];
-    for (const s of sessions) {
-      setOpenTabIds((prev) => prev.filter((id) => id !== s.id));
-    }
+    const taskSessionIds = new Set(sessions.map((s) => s.id));
+    doCloseTab(
+      openTabIdsRef.current.filter((t) => {
+        const sid = sessionIdForTab(t);
+        return taskSessionIds.has(sid);
+      })
+    );
     try {
       setError(null);
       await api.deleteTask(taskId);
@@ -1474,17 +1630,31 @@ function App() {
   const filteredAgents = agents.filter(a => a.workspaceId === activeWorkspaceId);
 
   // Build tab data for TabBar
-  const tabs = openTabIds
-    .map((id) => {
+  const tabs: Tab[] = openTabIds
+    .map((id): Tab | null => {
+      const fileTab = parseFileTabId(id);
+      if (fileTab) {
+        const owner = findSession(fileTab.sessionId, sessionsByRepo, sessionsByTask);
+        // Drop file tabs whose owner session no longer exists.
+        if (!owner) return null;
+        return {
+          kind: "file",
+          id,
+          name: fileBasename(fileTab.relPath),
+          dirty: !!fileTabDirty[id],
+          tooltip: `${owner.name}:${fileTab.relPath}`,
+        };
+      }
       const session = findSession(id, sessionsByRepo, sessionsByTask);
       if (!session) return null;
       return {
+        kind: "session",
         id: session.id,
         name: session.name,
         displayStatus: getDisplayStatus(session.id, session.status),
       };
     })
-    .filter((t): t is NonNullable<typeof t> => t !== null);
+    .filter((t): t is Tab => t !== null);
 
   // Build command palette commands
   const paletteCommands: PaletteCommand[] = (() => {
@@ -1497,24 +1667,24 @@ function App() {
       if (openTabIds.length === 0) return;
       const idx = activeTabId ? openTabIds.indexOf(activeTabId) : -1;
       const next = openTabIds[(idx + 1) % openTabIds.length];
-      setActiveTabId(next); setSelectedSessionId(next);
+      setActiveTabId(next); setSelectedSessionId(sessionIdForTab(next));
     }});
     cmds.push({ id: "prevTab", label: "Previous tab", category: "tabs", shortcut: shortcutFor("prevTab"), onExecute: () => {
       if (openTabIds.length === 0) return;
       const idx = activeTabId ? openTabIds.indexOf(activeTabId) : 0;
       const prev = openTabIds[(idx - 1 + openTabIds.length) % openTabIds.length];
-      setActiveTabId(prev); setSelectedSessionId(prev);
+      setActiveTabId(prev); setSelectedSessionId(sessionIdForTab(prev));
     }});
-    cmds.push({ id: "closeTab", label: "Close current tab", category: "tabs", shortcut: shortcutFor("closeTab"), onExecute: () => { if (activeTabId) handleCloseTab(activeTabId); } });
+    cmds.push({ id: "closeTab", label: "Close current tab", category: "tabs", shortcut: shortcutFor("closeTab"), onExecute: () => { if (activeTabId) requestCloseTab(activeTabId); } });
     cmds.push({ id: "closeAllTabs", label: "Close all tabs", category: "tabs", onExecute: handleCloseAllTabs });
 
     // Jump to specific tabs
     tabs.forEach((t, i) => {
-      cmds.push({ id: `gotoTab-${t.id}`, label: `Go to tab: ${t.name}`, category: "tabs", shortcut: i < 9 ? shortcutFor(`tab${i + 1}`) : undefined, onExecute: () => { setActiveTabId(t.id); setSelectedSessionId(t.id); } });
+      cmds.push({ id: `gotoTab-${t.id}`, label: `Go to tab: ${t.name}`, category: "tabs", shortcut: i < 9 ? shortcutFor(`tab${i + 1}`) : undefined, onExecute: () => { setActiveTabId(t.id); setSelectedSessionId(sessionIdForTab(t.id)); } });
     });
 
-    // Session
-    if (activeTabId) {
+    // Session (session tabs only — file tabs have no process to stop)
+    if (activeTabId && !isFileTabId(activeTabId)) {
       cmds.push({ id: "stopSession", label: "Stop active session", category: "session", shortcut: shortcutFor("stopSession"), onExecute: () => handleStop(activeTabId) });
     }
 
@@ -1657,6 +1827,28 @@ function App() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
+        {/* Files panel toggle */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <button
+            onClick={() => {
+              setView("dashboard");
+              handleFilesPanelOpenChange(!filesPanelOpen);
+            }}
+            style={{
+              width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
+              background: "none", border: "none", cursor: "pointer",
+              color: filesPanelOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
+              borderRight: filesPanelOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
+            }}
+            onMouseEnter={(e) => { if (!filesPanelOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
+            onMouseLeave={(e) => { if (!filesPanelOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+            title="Files"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+        </div>
         {/* Assistant toggle */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
           <button
@@ -2324,7 +2516,7 @@ function App() {
             tabs={tabs}
             activeTabId={activeTabId}
             onSelectTab={handleSelectTab}
-            onCloseTab={handleCloseTab}
+            onCloseTab={requestCloseTab}
             onCloseAllTabs={handleCloseAllTabs}
             onCloseTabsToLeft={handleCloseTabsToLeft}
             onCloseTabsToRight={handleCloseTabsToRight}
@@ -2357,8 +2549,40 @@ function App() {
                 onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}
               />
             ) : (
-              <EmptyState />
+              !activeFileTab && <EmptyState />
             )}
+
+            {/* Keep-alive file tab panels: EVERY open file tab stays mounted
+                (inactive ones display:none) so drafts and cursor positions
+                survive tab switches — session panels don't get this because
+                only the active SessionPanel is mounted. */}
+            {openTabIds.filter(isFileTabId).map((id) => {
+              const fileTab = parseFileTabId(id);
+              if (!fileTab) return null;
+              return (
+                <div
+                  key={id}
+                  style={{
+                    display: id === activeTabId ? "flex" : "none",
+                    flex: 1,
+                    flexDirection: "column",
+                    minHeight: 0,
+                    minWidth: 0,
+                  }}
+                >
+                  <FileTabPanel
+                    sessionId={fileTab.sessionId}
+                    relPath={fileTab.relPath}
+                    active={id === activeTabId}
+                    onDirtyChange={(dirty) =>
+                      setFileTabDirty((prev) =>
+                        !!prev[id] === dirty ? prev : { ...prev, [id]: dirty }
+                      )
+                    }
+                  />
+                </div>
+              );
+            })}
           </div>
 
           {voiceSessionId && (
@@ -2376,6 +2600,29 @@ function App() {
           )}
         </div>
       </main>
+
+      {filesPanelOpen && (
+        <FilesPanel
+          session={filesPanelSession}
+          activeFilePath={
+            activeFileTab && filesPanelSession && activeFileTab.sessionId === filesPanelSession.id
+              ? activeFileTab.relPath
+              : null
+          }
+          dirtyPaths={panelDirtyPaths}
+          onOpenFile={(path) => {
+            if (filesPanelSession) handleOpenFile(filesPanelSession.id, path);
+          }}
+          onPathDeleted={(path) => {
+            if (filesPanelSession) handleTreePathDeleted(filesPanelSession.id, path);
+          }}
+          onPathRenamed={(oldPath, newPath) => {
+            if (filesPanelSession) handleTreePathRenamed(filesPanelSession.id, oldPath, newPath);
+          }}
+          onClose={() => handleFilesPanelOpenChange(false)}
+          onError={(msg) => setError(msg)}
+        />
+      )}
 
       {renderIconStrip()}
 
@@ -2436,7 +2683,7 @@ function App() {
       {modal.type === "confirm" && (
         <ConfirmModal
           message={modal.message}
-          confirmLabel="delete"
+          confirmLabel={modal.confirmLabel ?? "delete"}
           onConfirm={modal.onConfirm}
           onCancel={() => setModal({ type: "none" })}
         />
@@ -2654,6 +2901,12 @@ function VoiceDock({
 }
 
 // --- helpers ---
+
+// The session a tab belongs to: a file tab maps to its owner session, a
+// session tab to itself. Used to keep the sidebar highlight on session ids.
+function sessionIdForTab(tabId: string): string {
+  return parseFileTabId(tabId)?.sessionId ?? tabId;
+}
 
 function findSession(
   id: string | null,

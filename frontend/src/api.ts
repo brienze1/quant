@@ -25,6 +25,9 @@ import type {
   UpdateJobGroupRequest,
   PathValidationResult,
   MindmapNode,
+  FileEntry,
+  FileReadResult,
+  FileBase64Result,
   RemoteStatus,
   VoiceSpeechResult,
   VoicePingResult,
@@ -499,6 +502,46 @@ export function renameBoard(
   newName: string
 ): Promise<string> {
   return callGo(PKG, MINDMAP_CTRL, "RenameBoard", sessionId, oldName, newName);
+}
+
+// --- Files (sandboxed to the session workdir) ---
+//
+// All paths are forward-slash relative to the session root ("" = root). The
+// backend emits "files:changed" {sessionId, path: parentDirRel, op} after
+// every successful mutation.
+
+const FILE_CTRL = "fileController";
+
+export function listDir(sessionId: string, relPath: string): Promise<FileEntry[]> {
+  return callGo(PKG, FILE_CTRL, "ListDir", sessionId, relPath);
+}
+
+export function readFile(sessionId: string, relPath: string): Promise<FileReadResult> {
+  return callGo(PKG, FILE_CTRL, "ReadFile", sessionId, relPath);
+}
+
+export function readFileBase64(sessionId: string, relPath: string): Promise<FileBase64Result> {
+  return callGo(PKG, FILE_CTRL, "ReadFileBase64", sessionId, relPath);
+}
+
+export function writeFile(sessionId: string, relPath: string, content: string): Promise<void> {
+  return callGo(PKG, FILE_CTRL, "WriteFile", sessionId, relPath, content);
+}
+
+export function createFile(sessionId: string, relPath: string): Promise<void> {
+  return callGo(PKG, FILE_CTRL, "CreateFile", sessionId, relPath);
+}
+
+export function createDir(sessionId: string, relPath: string): Promise<void> {
+  return callGo(PKG, FILE_CTRL, "CreateDir", sessionId, relPath);
+}
+
+export function renamePath(sessionId: string, oldRel: string, newRel: string): Promise<void> {
+  return callGo(PKG, FILE_CTRL, "RenamePath", sessionId, oldRel, newRel);
+}
+
+export function deletePath(sessionId: string, relPath: string, recursive: boolean): Promise<void> {
+  return callGo(PKG, FILE_CTRL, "DeletePath", sessionId, relPath, recursive);
 }
 
 // --- Changelog ---

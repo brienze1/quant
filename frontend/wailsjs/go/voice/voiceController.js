@@ -34,6 +34,10 @@ export function Transcribe(arg1, arg2) {
   return window['go']['voice']['voiceController']['Transcribe'](arg1, arg2);
 }
 
+export function VoiceListenExtend(arg1) {
+  return window['go']['voice']['voiceController']['VoiceListenExtend'](arg1);
+}
+
 export function VoiceResult(arg1, arg2, arg3) {
   return window['go']['voice']['voiceController']['VoiceResult'](arg1, arg2, arg3);
 }

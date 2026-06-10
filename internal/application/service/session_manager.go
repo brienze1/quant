@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -974,9 +975,15 @@ func (s *sessionManagerService) GitGetFileContent(sessionID string, filePath str
 
 	dir := getWorkDir(session)
 
+	// Validate the client-supplied path before touching the filesystem.
+	rel, err := normalizeRelPath(filePath)
+	if err != nil {
+		return "", err
+	}
+
 	switch version {
 	case "head":
-		cmd := exec.Command("git", "show", "HEAD:"+filePath)
+		cmd := exec.Command("git", "show", "HEAD:"+filepath.ToSlash(rel))
 		cmd.Dir = dir
 		output, err := cmd.Output()
 		if err != nil {
@@ -986,8 +993,13 @@ func (s *sessionManagerService) GitGetFileContent(sessionID string, filePath str
 		return string(output), nil
 
 	case "current":
-		fullPath := dir + "/" + filePath
-		data, err := os.ReadFile(fullPath)
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			return "", fmt.Errorf("failed to open session directory: %w", err)
+		}
+		defer root.Close()
+
+		data, err := root.ReadFile(rel)
 		if err != nil {
 			return "", fmt.Errorf("failed to read file %s: %w", filePath, err)
 		}
@@ -1009,9 +1021,20 @@ func (s *sessionManagerService) GitSaveFileContent(sessionID string, filePath st
 	}
 
 	dir := getWorkDir(session)
-	fullPath := dir + "/" + filePath
 
-	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+	// Validate the client-supplied path before touching the filesystem.
+	rel, err := normalizeRelPath(filePath)
+	if err != nil {
+		return err
+	}
+
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("failed to open session directory: %w", err)
+	}
+	defer root.Close()
+
+	if err := root.WriteFile(rel, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write file %s: %w", filePath, err)
 	}
 

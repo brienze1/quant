@@ -266,7 +266,8 @@ export function SessionPanel({
   // session it was opened on and must survive active-tab switches, so it is
   // mounted at App scope (keyed by voiceSessionId) and rendered as a persistent
   // right-docked panel — not inside this per-active-tab SessionPanel, which
-  // unmounts on tab switch. SessionPanel only owns the mindmap dock now.
+  // unmounts on tab switch. Files moved out too (right files panel + center
+  // file tabs, both App-owned). SessionPanel only owns the mindmap dock now.
   const dockOpen = mindmapPaneOpen;
   const dockSplitState: SplitState = {
     open: dockOpen,
@@ -440,8 +441,8 @@ export function SessionPanel({
             </div>
           )}
 
-          {/* Mindmap dock layout toggle (controls where the mindmap dock sits
-              relative to the session — shown only when the mindmap is open). */}
+          {/* Dock layout toggle (controls where the mindmap dock sits
+              relative to the session — shown only when the dock is open). */}
           {dockOpen && (
             <div className="flex items-center gap-0.5">
               <LayoutIcon
@@ -490,9 +491,9 @@ export function SessionPanel({
       </div>
 
       {/* Outer split: the whole terminal block on the primary side, the
-          voice/mindmap dock on the secondary side. Both splits are
-          independent, so the embedded terminal and the dock can show at the
-          same time without overlapping. */}
+          mindmap dock on the secondary side. Both splits are independent, so
+          the embedded terminal and the dock can show at the same time without
+          overlapping. */}
       <SplitContainer
         splitContainerRef={mindmapContainerRef}
         splitState={dockSplitState}
