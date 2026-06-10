@@ -44,6 +44,7 @@ interface Props {
 const STATE_LABEL: Record<VoiceServiceState, string> = {
   idle: "idle",
   listening: "listening",
+  recording: "recording",
   thinking: "thinking",
   speaking: "speaking",
 };
@@ -52,9 +53,17 @@ const STATE_LABEL: Record<VoiceServiceState, string> = {
 const STATE_COLOR: Record<VoiceServiceState, string> = {
   idle: "var(--q-fg-muted)",
   listening: "var(--q-accent)",
+  recording: "var(--q-error)",
   thinking: "var(--q-blue)",
   speaking: "var(--q-term-green)",
 };
+
+/** mm:ss for the recording elapsed indicator. */
+function formatElapsed(totalSecs: number): string {
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 // WI-5.5: map an error kind to an actionable, human banner. `title` is short
 // (status bar), `detail` is the actionable line, `action` (optional) hints what
@@ -133,6 +142,13 @@ export function VoicePane({ sessionId, className, style }: Props) {
   const [hasLabels, setHasLabels] = useState(true);
   // 0..METER_SEGMENTS-1 lit segments, driven by getInputLevel() via rAF.
   const [meterLevel, setMeterLevel] = useState(0);
+  // Seconds elapsed in the current recording (drives the mm:ss indicator).
+  const [recordSecs, setRecordSecs] = useState(0);
+  // Live draft transcript while recording: the accumulated text so far, grown
+  // segment by segment as each STT resolves (onRecordingTranscript). Rendered
+  // as an in-progress `you ▸` line; removed when the final transcript line
+  // lands (onUserTranscript) so there's never a duplicate.
+  const [draft, setDraft] = useState("");
 
   const serviceRef = useRef<IAudioService | null>(null);
   // Live mirror of `state` for the orb's per-frame level callback (avoids stale
@@ -247,11 +263,18 @@ export function VoicePane({ sessionId, className, style }: Props) {
       // an extra re-render the orb ignores).
       const offState = service.onState((s) => setState(s));
       const offError = service.onError((e) => setError(e));
+      // Live recording draft: the service emits the accumulated transcript as
+      // each segment's STT resolves ("" on reset → clears the draft).
+      const offRecTranscript = service.onRecordingTranscript((text) => setDraft(text));
 
       // Bridge: Go MCP voice tools → this pane's audio service. The transcript
       // callbacks surface each turn into the conversation view.
       const offBridge = registerVoiceBridge(sessionId, service, {
-        onUserTranscript: (text) => addLine("you", text),
+        onUserTranscript: (text) => {
+          // The final line replaces the in-progress draft (no duplicate).
+          setDraft("");
+          addLine("you", text);
+        },
         onAgentSpeak: (text) => addLine("quant", text),
       });
 
@@ -303,6 +326,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
         offBridge();
         offState();
         offError();
+        offRecTranscript();
         void service.dispose();
         serviceRef.current = null;
       });
@@ -369,11 +393,50 @@ export function VoicePane({ sessionId, className, style }: Props) {
     })();
   };
 
-  // Keep the newest transcript line in view (scroll to bottom on append).
+  // Toggle long-form recording on the active listen turn. Start is sync; stop
+  // flushes/joins the segments and resolves the listen (state → thinking).
+  const handleToggleRecording = () => {
+    const svc = serviceRef.current;
+    if (!svc) return;
+    if (svc.isRecording()) {
+      void svc.stopRecording();
+    } else {
+      svc.startRecording();
+    }
+  };
+
+  // Tick the mm:ss elapsed indicator while recording.
+  useEffect(() => {
+    if (state !== "recording") {
+      setRecordSecs(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setRecordSecs(0);
+    const t = setInterval(() => {
+      setRecordSecs(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [state]);
+
+  // The draft only makes sense while recording (and through the brief
+  // "thinking" after stop, until the final line arrives). Any other state means
+  // the turn ended some other way (cancel/error/no speech) — drop the draft.
+  useEffect(() => {
+    if (state !== "recording" && state !== "thinking") setDraft("");
+  }, [state]);
+
+  // The in-progress recording draft, shown while recording + the post-stop
+  // thinking beat. Empty (no segment recognized yet / user never spoke) → no
+  // draft line at all.
+  const showDraft = !!draft.trim() && (state === "recording" || state === "thinking");
+
+  // Keep the newest transcript line in view (scroll to bottom on append —
+  // including when the live draft appears/grows).
   useEffect(() => {
     const el = transcriptRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [lines]);
+  }, [lines, draft, showDraft]);
 
   // (The "voice not configured" gate is derived in the service-init effect above
   // from the same getConfig() it already performs — see setNotConfigured there.)
@@ -452,7 +515,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
           gap: 8,
         }}
       >
-        {lines.length === 0 ? (
+        {lines.length === 0 && !showDraft ? (
           <div
             style={{
               color: "var(--q-fg-muted)",
@@ -481,31 +544,72 @@ export function VoicePane({ sessionId, className, style }: Props) {
             )}
           </div>
         ) : (
-          lines.map((line) => (
-            <div key={line.id} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-              <span
+          <>
+            {lines.map((line) => (
+              <div key={line.id} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                <span
+                  style={{
+                    flex: "none",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: line.who === "you" ? "var(--q-accent)" : "var(--q-term-green)",
+                  }}
+                >
+                  {line.who} ▸
+                </span>
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    lineHeight: 1.5,
+                    color: "var(--q-fg)",
+                    overflowWrap: "anywhere",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {line.text}
+                </span>
+              </div>
+            ))}
+            {/* Live recording draft: same `you ▸` layout as a real line, but
+                dimmed + italic to read as in-progress. It grows as each speech
+                segment is transcribed and is replaced by the final line on stop. */}
+            {showDraft && (
+              <div
                 style={{
-                  flex: "none",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: line.who === "you" ? "var(--q-accent)" : "var(--q-term-green)",
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "baseline",
+                  opacity: 0.72,
                 }}
               >
-                {line.who} ▸
-              </span>
-              <span
-                style={{
-                  fontSize: 12.5,
-                  lineHeight: 1.5,
-                  color: "var(--q-fg)",
-                  overflowWrap: "anywhere",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {line.text}
-              </span>
-            </div>
-          ))
+                <span
+                  style={{
+                    flex: "none",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "var(--q-accent)",
+                  }}
+                >
+                  you ▸
+                </span>
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    lineHeight: 1.5,
+                    fontStyle: "italic",
+                    color: "var(--q-fg-secondary)",
+                    overflowWrap: "anywhere",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {draft}
+                  <span style={{ color: "var(--q-fg-muted)", fontStyle: "normal" }}>
+                    {state === "recording" ? " · listening…" : " · finishing…"}
+                  </span>
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -684,6 +788,53 @@ export function VoicePane({ sessionId, className, style }: Props) {
           <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>
             {STATE_LABEL[state]}
           </span>
+
+          {/* Record toggle: visible while a listen turn is active. Pressing it
+              pins the turn open (recording: speak as long as you want, across
+              pauses); pressing again stops + finalizes the full transcript. */}
+          {(state === "listening" || state === "recording") && (
+            <button
+              onClick={handleToggleRecording}
+              title={
+                state === "recording"
+                  ? "stop recording and send the full transcript (you can also say 'stop recording')"
+                  : "record a long message (keeps listening across pauses until you tap stop or say 'stop recording')"
+              }
+              style={{
+                flex: "none",
+                marginLeft: 8,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10.5,
+                color: "var(--q-error)",
+                backgroundColor: "var(--q-bg-hover)",
+                border:
+                  state === "recording"
+                    ? "1px solid var(--q-error)"
+                    : "1px solid var(--q-border)",
+                borderRadius: 4,
+                padding: "1px 6px",
+                cursor: "pointer",
+              }}
+            >
+              {state === "recording" ? (
+                <>
+                  <span style={{ fontSize: 9, lineHeight: 1 }}>■</span>
+                  stop
+                  <span style={{ color: "var(--q-fg-secondary)" }}>
+                    {formatElapsed(recordSecs)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: 9, lineHeight: 1 }}>●</span>
+                  rec
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {error ? (

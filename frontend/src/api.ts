@@ -264,16 +264,9 @@ export function saveConfig(config: Config): Promise<void> {
   return callGo(PKG, CONFIG_CTRL, "SaveConfig", config);
 }
 
-// Lift the mindmap pane open/close flag to a single global, config-backed
-// value. The backend persists it and emits a "mindmap:pane" event so every
-// session tab and remote client stays in sync.
-export function setMindmapPaneOpen(open: boolean): Promise<void> {
-  return callGo(PKG, CONFIG_CTRL, "SetMindmapPaneOpen", open);
-}
-
 // Lift the voice pane open/close flag to a single global, config-backed value.
-// Mirrors setMindmapPaneOpen: the backend persists it and emits a "voice:pane"
-// event so every session tab and remote client stays in sync.
+// The backend persists it and emits a "voice:pane" event so every session tab
+// and remote client stays in sync.
 export function setVoicePaneOpen(open: boolean): Promise<void> {
   return callGo(PKG, CONFIG_CTRL, "SetVoicePaneOpen", open);
 }
@@ -649,6 +642,19 @@ export function voiceResult(
  */
 export function voiceResultClosed(requestId: string): Promise<void> {
   return callGo(VOICE_PKG, VOICE_CTRL, "VoiceResultClosed", requestId);
+}
+
+/**
+ * Keepalive for a long-form listen: while the user holds the voice pane in
+ * recording mode, the frontend bridge pings this (~every 30s) with the
+ * in-flight requestId so the Go bridge resets that request's ListenTimeout
+ * timer and the recording isn't cut off mid-speech. Unknown/settled requestIds
+ * are ignored Go-side, and non-recording listens never call this.
+ *
+ * @param requestId correlation id from the "voice:request" event
+ */
+export function voiceListenExtend(requestId: string): Promise<void> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "VoiceListenExtend", requestId);
 }
 
 /**

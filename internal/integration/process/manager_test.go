@@ -60,6 +60,37 @@ func TestPersonaArgs(t *testing.T) {
 	})
 }
 
+func TestWithMCPToolTimeout(t *testing.T) {
+	t.Run("default applied when absent", func(t *testing.T) {
+		env := []string{"PATH=/usr/bin", "QUANT_SESSION_ID=abc"}
+		got := withMCPToolTimeout(env)
+		want := "MCP_TOOL_TIMEOUT=" + defaultMCPToolTimeoutMS
+		if len(got) != len(env)+1 || got[len(got)-1] != want {
+			t.Fatalf("withMCPToolTimeout(%v) = %v, want %q appended", env, got, want)
+		}
+	})
+
+	t.Run("user-provided value is not overridden", func(t *testing.T) {
+		env := []string{"PATH=/usr/bin", "MCP_TOOL_TIMEOUT=90000"}
+		got := withMCPToolTimeout(env)
+		if len(got) != len(env) {
+			t.Fatalf("withMCPToolTimeout(%v) = %v, want unchanged", env, got)
+		}
+		count := 0
+		for _, kv := range got {
+			if strings.HasPrefix(kv, "MCP_TOOL_TIMEOUT=") {
+				count++
+				if kv != "MCP_TOOL_TIMEOUT=90000" {
+					t.Fatalf("user value overridden: got %q", kv)
+				}
+			}
+		}
+		if count != 1 {
+			t.Fatalf("expected exactly one MCP_TOOL_TIMEOUT entry, got %d in %v", count, got)
+		}
+	})
+}
+
 func TestPersonaBaseContent(t *testing.T) {
 	if persona.Base == "" {
 		t.Fatal("persona.Base is empty")
