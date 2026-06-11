@@ -39,6 +39,7 @@ import { TabBar } from "./components/TabBar";
 import { MoveSessionModal } from "./components/MoveSessionModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { RenameModal } from "./components/RenameModal";
+import { ChangeSessionIdModal } from "./components/ChangeSessionIdModal";
 import { RenameTaskModal } from "./components/RenameTaskModal";
 import { Settings } from "./components/Settings";
 import { DiffView } from "./components/DiffView";
@@ -72,6 +73,7 @@ type ModalState =
   | { type: "moveSession"; sessionId: string; repoId: string }
   | { type: "confirm"; message: string; onConfirm: () => void; confirmLabel?: string }
   | { type: "renameSession"; sessionId: string; currentName: string }
+  | { type: "changeClaudeSession"; sessionId: string }
   | { type: "renameTask"; taskId: string; currentTag: string; currentName: string }
   | { type: "gitCommit"; sessionId: string; sessionName: string }
   | { type: "gitPull"; sessionId: string; currentBranch: string }
@@ -1512,6 +1514,10 @@ function App() {
     }
   }
 
+  function handleChangeClaudeSession(sessionId: string) {
+    setModal({ type: "changeClaudeSession", sessionId });
+  }
+
   function handleMoveSession(sessionId: string, repoId: string) {
     setModal({ type: "moveSession", sessionId, repoId });
   }
@@ -2491,6 +2497,7 @@ function App() {
         onDoubleClickSession={handleDoubleClickSession}
         onRenameTask={handleRenameTask}
         onRenameSession={handleRenameSession}
+        onChangeClaudeSession={handleChangeClaudeSession}
         onDropSession={(sessionId, targetTaskId) => handleMoveSessionSelect(sessionId, targetTaskId)}
         boardsBySession={boardsBySession}
         activeBoardBySession={activeBoardBySession}
@@ -2693,6 +2700,21 @@ function App() {
           onCancel={() => setModal({ type: "none" })}
         />
       )}
+
+      {modal.type === "changeClaudeSession" && (() => {
+        const target = findSession(modal.sessionId, sessionsByRepo, sessionsByTask);
+        if (!target) return null;
+        return (
+          <ChangeSessionIdModal
+            session={target}
+            onDone={async () => {
+              setModal({ type: "none" });
+              await loadAll();
+            }}
+            onCancel={() => setModal({ type: "none" })}
+          />
+        );
+      })()}
 
       {modal.type === "renameTask" && (
         <RenameTaskModal

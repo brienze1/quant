@@ -25,6 +25,8 @@ type SessionManager interface {
 	GetSessionOutput(id string) (string, error)
 	UpdateSessionTask(sessionID string, newTaskID string) error
 	RenameSession(id string, newName string) error
+	SetClaudeSessionID(sessionID string, claudeID string) error
+	ListAdoptableSessions(directory string) ([]entity.ExternalClaudeSession, error)
 	UpdateSessionWorkspace(id string, workspaceID string) error
 	CheckBranchExists(repoID string, branchName string) (bool, error)
 	RunShortcut(sessionID string, command string) error

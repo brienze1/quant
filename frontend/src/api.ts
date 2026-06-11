@@ -31,6 +31,7 @@ import type {
   RemoteStatus,
   VoiceSpeechResult,
   VoicePingResult,
+  ExternalSession,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -190,6 +191,18 @@ export function moveSessionToTask(sessionId: string, newTaskId: string): Promise
 
 export function renameSession(id: string, newName: string): Promise<void> {
   return callGo(PKG, SESSION_CTRL, "RenameSession", id, newName);
+}
+
+export function listAdoptableSessions(directory: string): Promise<ExternalSession[]> {
+  return callGo<ExternalSession[] | null>(PKG, SESSION_CTRL, "ListAdoptableSessions", directory).then(
+    (r) => r ?? []
+  );
+}
+
+// Re-point a stopped quant session at a different claude conversation;
+// empty claudeId detaches (fresh conversation on next start).
+export function setClaudeSessionId(sessionId: string, claudeId: string): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "SetClaudeSessionID", sessionId, claudeId);
 }
 
 export function checkBranchExists(repoId: string, branchName: string): Promise<boolean> {

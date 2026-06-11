@@ -29,6 +29,8 @@ type SessionController interface {
 	GetSessionOutput(id string) (string, error)
 	MoveSessionToTask(sessionID string, newTaskID string) error
 	RenameSession(id string, newName string) error
+	SetClaudeSessionID(sessionID string, claudeID string) error
+	ListAdoptableSessions(directory string) ([]dto.ExternalSessionResponse, error)
 	CheckBranchExists(repoID string, branchName string) (bool, error)
 	RunShortcut(sessionID string, command string) error
 	GitCommit(sessionID string, message string) error

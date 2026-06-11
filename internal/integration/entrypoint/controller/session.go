@@ -57,6 +57,7 @@ func (c *sessionController) CreateSession(request dto.CreateSessionRequest) (*dt
 		DirectoryOverride: request.DirectoryOverride,
 		WorkspaceID:       request.WorkspaceID,
 		NoFlicker:         true, // Regular sessions always use NO_FLICKER
+		ClaudeSessionID:   request.ClaudeSessionID,
 	}
 	session, err := c.sessionManager.CreateSession(request.Name, request.Description, request.SessionType, request.RepoID, request.TaskID, opts)
 	if err != nil {
@@ -163,6 +164,23 @@ func (c *sessionController) MoveSessionToTask(sessionID string, newTaskID string
 // RenameSession updates the name of a session.
 func (c *sessionController) RenameSession(id string, newName string) error {
 	return c.sessionManager.RenameSession(id, newName)
+}
+
+// SetClaudeSessionID attaches an existing claude CLI conversation to a session,
+// or detaches the current one when claudeID is empty.
+func (c *sessionController) SetClaudeSessionID(sessionID string, claudeID string) error {
+	return c.sessionManager.SetClaudeSessionID(sessionID, claudeID)
+}
+
+// ListAdoptableSessions returns claude CLI sessions found on disk for a directory
+// that are not yet attached to any quant session.
+func (c *sessionController) ListAdoptableSessions(directory string) ([]dto.ExternalSessionResponse, error) {
+	sessions, err := c.sessionManager.ListAdoptableSessions(directory)
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.ExternalSessionResponseListFromEntities(sessions), nil
 }
 
 // CheckBranchExists checks if a git branch already exists in the given repo.

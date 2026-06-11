@@ -83,6 +83,19 @@ export interface CreateSessionRequest {
   extraCliArgs: string;
   directoryOverride?: string;
   workspaceId?: string;
+  // When set, the new session adopts (resumes) this existing claude
+  // conversation; the backend overrides the working directory to the
+  // transcript's cwd and rejects worktree mode.
+  claudeSessionId?: string;
+}
+
+// An on-disk claude CLI conversation not yet tracked by quant.
+export interface ExternalSession {
+  id: string;
+  cwd: string;
+  firstMessage: string;
+  modTime: string;
+  sizeBytes: number;
 }
 
 // --- Jobs ---
