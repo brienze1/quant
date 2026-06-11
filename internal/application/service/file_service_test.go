@@ -422,6 +422,74 @@ func TestFileServiceRenameRejections(t *testing.T) {
 	}
 }
 
+func TestFileServiceOpenFileForUser(t *testing.T) {
+	svc, dir, emitter := newTestFileService(t)
+
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs", "notes.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.OpenFileForUser("s1", "docs/notes.md"); err != nil {
+		t.Fatalf("OpenFileForUser: %v", err)
+	}
+
+	if len(emitter.names) != 1 || emitter.names[0] != "files:open" {
+		t.Fatalf("emitted events = %v, want exactly one files:open", emitter.names)
+	}
+	payload, ok := emitter.payloads[0].(map[string]any)
+	if !ok {
+		t.Fatalf("payload type = %T, want map[string]any", emitter.payloads[0])
+	}
+	if payload["sessionId"] != "s1" {
+		t.Fatalf("payload sessionId = %v, want s1", payload["sessionId"])
+	}
+	if payload["path"] != "docs/notes.md" {
+		t.Fatalf("payload path = %v, want docs/notes.md", payload["path"])
+	}
+}
+
+func TestFileServiceOpenFileForUserRejections(t *testing.T) {
+	svc, dir, emitter := newTestFileService(t)
+
+	if err := os.MkdirAll(filepath.Join(dir, "somedir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.OpenFileForUser("s1", "nope.txt"); err == nil {
+		t.Fatal("OpenFileForUser of missing file should error")
+	} else if !strings.Contains(err.Error(), "file not found") {
+		t.Fatalf("missing file error = %v, want 'file not found'", err)
+	}
+	if err := svc.OpenFileForUser("s1", "somedir"); err == nil {
+		t.Fatal("OpenFileForUser of a directory should error")
+	} else if !strings.Contains(err.Error(), "cannot open a directory") {
+		t.Fatalf("directory error = %v, want 'cannot open a directory'", err)
+	}
+	if err := svc.OpenFileForUser("s1", "../escape.txt"); err == nil {
+		t.Fatal("OpenFileForUser escape should error")
+	}
+
+	if len(emitter.names) != 0 {
+		t.Fatalf("failed opens must not emit, got %v", emitter.names)
+	}
+}
+
+func TestFileServiceOpenFileForUserNilEmitter(t *testing.T) {
+	dir := t.TempDir()
+	svc := NewFileManagerService(&stubFindSession{dir: dir}, nil)
+
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.OpenFileForUser("s1", "a.txt"); err != nil {
+		t.Fatalf("OpenFileForUser with nil emitter: %v", err)
+	}
+}
+
 func TestFileServiceSessionNotFound(t *testing.T) {
 	svc, _, _ := newTestFileService(t)
 

@@ -172,6 +172,8 @@ function App() {
   openTabIdsRef.current = openTabIds;
   const fileTabDirtyRef = useRef(fileTabDirty);
   fileTabDirtyRef.current = fileTabDirty;
+  const handleOpenTabRef = useRef(handleOpenTab);
+  handleOpenTabRef.current = handleOpenTab;
   const embeddedTerminalMapRef = useRef(embeddedTerminalMap);
   embeddedTerminalMapRef.current = embeddedTerminalMap;
   const expandedSessionIdRef = useRef(expandedSessionId);
@@ -821,6 +823,27 @@ function App() {
           if (existing.includes(board)) return prev;
           return { ...prev, [sessionId]: [...existing, board] };
         });
+      }
+    );
+    return () => cancel && cancel();
+  }, []);
+
+  // Agent-driven "show the user this file" (files_open MCP tool): open the
+  // files panel for the owning session and open+activate the file tab. The
+  // effect mounts once, so the tab open goes through a ref (same pattern as
+  // fileTabDirtyRef above) to avoid capturing a stale handler.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w?.runtime?.EventsOn) return;
+    const cancel = w.runtime.EventsOn(
+      "files:open",
+      (d: { sessionId?: string; path?: string }) => {
+        if (!d || typeof d.sessionId !== "string" || d.sessionId === "") return;
+        if (typeof d.path !== "string" || d.path === "") return;
+        const { sessionId, path } = d;
+        setFilesPanelOpenMap((prev) => ({ ...prev, [sessionId]: true }));
+        handleOpenTabRef.current(makeFileTabId(sessionId, path));
       }
     );
     return () => cancel && cancel();

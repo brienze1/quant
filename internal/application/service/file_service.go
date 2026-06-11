@@ -275,6 +275,39 @@ func (s *fileManagerService) ReadFileBase64(sessionID, relPath string) (entity.F
 	}, nil
 }
 
+// OpenFileForUser asks the frontend to open a file as a tab and reveal it in
+// the files panel tree. The file must exist inside the session's working
+// directory and must not be a directory.
+func (s *fileManagerService) OpenFileForUser(sessionID, relPath string) error {
+	rel, err := normalizeRelPath(relPath)
+	if err != nil {
+		return err
+	}
+
+	root, err := s.sessionRoot(sessionID)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	info, err := root.Stat(rel)
+	if err != nil {
+		return fmt.Errorf("file not found: %s", relPath)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("cannot open a directory: %s", relPath)
+	}
+
+	if s.emitter != nil {
+		s.emitter.Emit("files:open", map[string]any{
+			"sessionId": sessionID,
+			"path":      filepath.ToSlash(rel),
+		})
+	}
+
+	return nil
+}
+
 // WriteFile writes content to an existing or new file. The parent directory
 // must already exist.
 func (s *fileManagerService) WriteFile(sessionID, relPath, content string) error {
