@@ -5,7 +5,7 @@ import { isMac } from "./os";
 export interface KeyBinding {
   id: string;
   label: string;
-  category: "tabs" | "workspace" | "theme" | "palette" | "session";
+  category: "tabs" | "workspace" | "theme" | "palette" | "session" | "voice";
   /** Key combo string, e.g. "Meta+]", "Meta+Shift+1" */
   keys: string;
 }
@@ -20,7 +20,9 @@ export type KeyActionId =
   | "workspace1" | "workspace2" | "workspace3" | "workspace4" | "workspace5"
   | "workspace6" | "workspace7" | "workspace8" | "workspace9"
   | "themePicker"
-  | "commandPalette";
+  | "commandPalette"
+  | "pttHold"
+  | "pttToggle";
 
 export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   // Session tabs
@@ -54,6 +56,10 @@ export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
 
   // Command palette
   { id: "commandPalette", label: "Open command palette", category: "palette", keys: "Meta+k" },
+
+  // Voice / push-to-talk
+  { id: "pttHold", label: "Push-to-talk (hold)", category: "voice", keys: "Ctrl+Shift+Space" },
+  { id: "pttToggle", label: "Push-to-talk (toggle)", category: "voice", keys: "Ctrl+Shift+v" },
 ];
 
 const STORAGE_KEY = "quant:keybindings";
@@ -61,7 +67,18 @@ const STORAGE_KEY = "quant:keybindings";
 export function getStoredKeybindings(): Record<string, string> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const stored: Record<string, string> = raw ? JSON.parse(raw) : {};
+    // Migrate combos recorded before Space normalization: a trailing " " or
+    // "Spacebar" main-key token would never match eventToKeyString again.
+    for (const [id, keys] of Object.entries(stored)) {
+      const parts = keys.split("+");
+      const last = parts[parts.length - 1];
+      if (last === " " || last === "Spacebar") {
+        parts[parts.length - 1] = "Space";
+        stored[id] = parts.join("+");
+      }
+    }
+    return stored;
   } catch {
     return {};
   }
@@ -94,6 +111,8 @@ export function eventToKeyString(e: KeyboardEvent): string {
     // good
   } else if (key === "[" || key === "]") {
     // good
+  } else if (key === " " || key === "Spacebar") {
+    key = "Space";
   } else {
     key = key.toLowerCase();
   }

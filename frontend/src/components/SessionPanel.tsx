@@ -5,6 +5,8 @@ import { StatusDot } from "./StatusDot";
 import { TerminalPane } from "./TerminalPane";
 import { MindmapPane } from "./MindmapPane";
 import * as api from "../api";
+import { pttService, type PttState } from "../voice/pttService";
+import { getActiveKeybindings, formatKeyCombo } from "../keybindings";
 
 type SplitLayout = "horizontal" | "vertical";
 
@@ -99,6 +101,43 @@ export function SessionPanel({
 
   const isArchived = displayStatus === "archived";
   const isPaused = displayStatus === "paused";
+
+  // PTT button mirrors the shared pttService singleton, so a hotkey-started
+  // capture can be stopped by clicking the button (and vice versa).
+  const [pttState, setPttState] = useState<PttState>(pttService.getState());
+  // Set while a mousedown on the button started the current capture: a quick
+  // release (<300ms) leaves it recording (toggle), a long hold stops on release.
+  const pttPressRef = useRef<{ downAt: number } | null>(null);
+  useEffect(() => pttService.onState(setPttState), []);
+
+  function handlePttMouseDown() {
+    if (pttState === "transcribing") return;
+    if (pttService.isCapturing()) {
+      void pttService.stop();
+      return;
+    }
+    pttPressRef.current = { downAt: Date.now() };
+    // Starts as a hold (cancelled if the window blurs mid-press); a quick
+    // release below upgrades it to a toggle that survives blur.
+    void pttService.start(session.id, "hold");
+  }
+
+  function handlePttMouseUp() {
+    const press = pttPressRef.current;
+    pttPressRef.current = null;
+    if (!press) return;
+    if (Date.now() - press.downAt >= 300) {
+      void pttService.stop();
+    } else {
+      pttService.setMode("toggle");
+    }
+  }
+
+  function handlePttMouseLeave() {
+    if (!pttPressRef.current) return;
+    pttPressRef.current = null;
+    void pttService.stop();
+  }
 
   // Load terminal config on mount
   useEffect(() => {
@@ -421,6 +460,65 @@ export function SessionPanel({
                 }}
               >
                 <span>voice</span>
+              </button>
+            );
+          })()}
+
+          {/* Push-to-talk button (same gate as the voice button). Quick click
+              toggles a capture on/off; press-and-hold captures while held and
+              stops on release. Shares the pttService singleton with the global
+              hotkeys, so either side can stop a capture the other started. */}
+          {!isArchived && (() => {
+            const voiceEnabled = termConfig?.voice?.enabled ?? false;
+            const agentAlive =
+              displayStatus === "running" ||
+              displayStatus === "waiting" ||
+              displayStatus === "done";
+            const canPtt = voiceEnabled && agentAlive;
+            const bindings = getActiveKeybindings();
+            const holdKeys = bindings.find((b) => b.id === "pttHold")?.keys;
+            const toggleKeys = bindings.find((b) => b.id === "pttToggle")?.keys;
+            const tooltip = !voiceEnabled
+              ? "Enable voice in Settings"
+              : !agentAlive
+                ? "Start the session's agent first"
+                : `push-to-talk — hold ${holdKeys ? formatKeyCombo(holdKeys) : "?"} / toggle ${toggleKeys ? formatKeyCombo(toggleKeys) : "?"} (click = toggle, press & hold = talk)`;
+            const recording = pttState === "recording";
+            const transcribing = pttState === "transcribing";
+            const errored = pttState === "error";
+            const label = recording ? "● ptt" : transcribing ? "… ptt" : errored ? "! ptt" : "ptt";
+            const fg = recording
+              ? "var(--q-bg)"
+              : transcribing
+                ? "var(--q-fg-secondary)"
+                : errored
+                  ? "var(--q-error)"
+                  : "var(--q-magenta)";
+            const border = recording || errored ? "var(--q-error)" : "var(--q-border)";
+            return (
+              <button
+                onMouseDown={(e) => { if (e.button === 0 && canPtt) handlePttMouseDown(); }}
+                onMouseUp={(e) => { if (e.button === 0 && canPtt) handlePttMouseUp(); }}
+                disabled={!canPtt}
+                title={tooltip}
+                className="flex items-center gap-1 px-2 py-1 text-[11px]"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: fg,
+                  backgroundColor: recording ? "var(--q-error)" : "var(--q-bg-hover)",
+                  border: `1px solid ${border}`,
+                  opacity: canPtt ? 1 : 0.4,
+                  cursor: canPtt ? "pointer" : "not-allowed",
+                }}
+                onMouseEnter={(e) => {
+                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-border)";
+                }}
+                onMouseLeave={(e) => {
+                  if (canPtt) handlePttMouseLeave();
+                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                }}
+              >
+                <span>{label}</span>
               </button>
             );
           })()}

@@ -71,7 +71,7 @@ const MAX_THINKING_MS = 45_000;
 /** localStorage key for the (browser/machine-scoped) selected input deviceId. */
 const INPUT_DEVICE_LS_KEY = "quant.voice.inputDeviceId";
 
-function readPersistedInputDevice(): string | null {
+export function readPersistedInputDevice(): string | null {
   try {
     const v = window.localStorage.getItem(INPUT_DEVICE_LS_KEY);
     return v && v.trim() ? v : null;
@@ -192,6 +192,39 @@ function stripStopPhrase(text: string): { text: string; matched: boolean } {
     return { text: prefix, matched: true };
   }
   return { text, matched: false };
+}
+
+// Browser audio-processing chain shared by every mic open (voice pane + PTT).
+// echoCancellation keeps speaker-played TTS out of the capture; noise
+// suppression + auto gain improve STT quality.
+const MIC_PROCESSING = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+} as const;
+
+function micConstraints(deviceId: string | null): MediaStreamConstraints {
+  return {
+    audio: deviceId ? { ...MIC_PROCESSING, deviceId: { exact: deviceId } } : { ...MIC_PROCESSING },
+  };
+}
+
+/**
+ * Open the mic for `deviceId` (null = browser default) with the shared
+ * processing chain, falling back to the default device when the requested one
+ * is gone/unavailable. Standalone so non-VAD captures (PTT) reuse the exact
+ * device handling the voice pane uses.
+ */
+export async function openMicStreamFor(deviceId: string | null): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia(micConstraints(deviceId));
+  } catch (e) {
+    const name = (e as { name?: string } | null)?.name;
+    if (deviceId && (name === "OverconstrainedError" || name === "NotFoundError")) {
+      return navigator.mediaDevices.getUserMedia(micConstraints(null));
+    }
+    throw e;
+  }
 }
 
 /** Default transport = the real Wails-bridged api.ts wrappers. */
@@ -600,21 +633,8 @@ export class AudioService implements IAudioService {
    */
   private async openMicStream(): Promise<MediaStream> {
     const id = this.inputDeviceId;
-    // Enable the browser's audio processing chain. echoCancellation is the
-    // important one for the voice loop: without it, a speaker-played TTS reply
-    // leaks back into the mic and the VAD mistakes the agent's own voice for the
-    // user speaking (self-barge-in / echo). Noise suppression + auto gain also
-    // improve STT quality.
-    const processing = {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    };
-    const constraints: MediaStreamConstraints = {
-      audio: id ? { ...processing, deviceId: { exact: id } } : { ...processing },
-    };
     try {
-      return await navigator.mediaDevices.getUserMedia(constraints);
+      return await navigator.mediaDevices.getUserMedia(micConstraints(id));
     } catch (e) {
       // A specific device that's gone/unavailable → fall back to default and
       // surface a soft error rather than failing the whole pipeline.
@@ -629,9 +649,7 @@ export class AudioService implements IAudioService {
         this.inputDeviceId = null;
         writePersistedInputDevice(null);
         try {
-          return await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          });
+          return await navigator.mediaDevices.getUserMedia(micConstraints(null));
         } catch (e2) {
           const err: VoiceError = {
             kind: "permission",
