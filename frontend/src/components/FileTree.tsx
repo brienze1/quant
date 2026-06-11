@@ -137,6 +137,36 @@ export function FileTree({
     }
   }, [sessionId, loadDir]);
 
+  // Auto-reveal the open file: sequentially load each unloaded ancestor dir
+  // (parents must be in `data` before children can attach), expand them, then
+  // scroll the file into view (scrollTo waits internally for the row to
+  // appear). The cancelled flag keeps rapid openPath changes from
+  // interleaving their loads/expands.
+  useEffect(() => {
+    if (!openPath) return;
+    let cancelled = false;
+    const ancestors: string[] = [];
+    for (
+      let idx = openPath.indexOf("/");
+      idx !== -1;
+      idx = openPath.indexOf("/", idx + 1)
+    ) {
+      ancestors.push(openPath.slice(0, idx));
+    }
+    void (async () => {
+      for (const dir of ancestors) {
+        if (cancelled) return;
+        if (!loadedRef.current.has(dir)) await loadDir(dir);
+      }
+      if (cancelled) return;
+      for (const dir of ancestors) treeRef.current?.open(dir);
+      void treeRef.current?.scrollTo(openPath);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [openPath, loadDir]);
+
   function submitName(name: string) {
     const target = naming;
     setNaming(null);

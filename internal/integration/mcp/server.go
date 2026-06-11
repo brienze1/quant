@@ -40,6 +40,7 @@ type QuantMCPServer struct {
 	repoManager      appAdapter.RepoManager
 	jobGroupManager  appAdapter.JobGroupManager
 	mindmapManager   appAdapter.MindmapManager
+	fileManager      appAdapter.FileManager
 	voiceBridge      *voice.Bridge
 	httpServer       *http.Server
 	listener         net.Listener
@@ -48,7 +49,7 @@ type QuantMCPServer struct {
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
 // It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, voiceBridge *voice.Bridge) *QuantMCPServer {
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, voiceBridge *voice.Bridge) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
 	s := &QuantMCPServer{
@@ -59,6 +60,7 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 		repoManager:      repoManager,
 		jobGroupManager:  jobGroupManager,
 		mindmapManager:   mindmapManager,
+		fileManager:      fileManager,
 		voiceBridge:      voiceBridge,
 	}
 
@@ -1013,6 +1015,20 @@ Example flow: run_job("health-check") → get_pipeline_status(runId) shows:
 		),
 		s.handleMindmapListBoards,
 	)
+
+	// ---------------------------------------------------------------------------
+	// Files tools — open files in the user's UI.
+	// ---------------------------------------------------------------------------
+
+	// files_open
+	mcpServer.AddTool(
+		mcp.NewTool("files_open",
+			mcp.WithDescription(`Open a file in the user's quant UI: shows it as a file tab and reveals it in the files panel file tree. Use it to point the user at a specific file. Path is relative to the session's working directory.`),
+			mcp.WithString("path", mcp.Required(), mcp.Description("File path relative to the session's working directory, e.g. \"internal/app/foo.go\".")),
+			mcp.WithString("sessionId", mcp.Description("Open the file in ANOTHER session's UI by its session id. Omit to open in THIS session's UI.")),
+		),
+		s.handleFilesOpen,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -1845,6 +1861,28 @@ func (s *QuantMCPServer) handleMindmapListBoards(ctx context.Context, request mc
 	}
 
 	return marshalResult(result)
+}
+
+// ---------------------------------------------------------------------------
+// Files handlers
+// ---------------------------------------------------------------------------
+
+func (s *QuantMCPServer) handleFilesOpen(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	path, err := requiredString(request, "path")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	scopeType, scopeID := s.scopeForArgs(ctx, request.GetArguments())
+	if scopeType != "session" || scopeID == "" {
+		return mcp.NewToolResultError("no session in scope — pass sessionId or call from within a quant session"), nil
+	}
+
+	if err := s.fileManager.OpenFileForUser(scopeID, path); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("opened %s in the user's UI", path)), nil
 }
 
 // ---------------------------------------------------------------------------

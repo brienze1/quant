@@ -14,4 +14,5 @@ type FileManager interface {
 	CreateDir(sessionID, relPath string) error
 	RenamePath(sessionID, oldRelPath, newRelPath string) error
 	DeletePath(sessionID, relPath string, recursive bool) error
+	OpenFileForUser(sessionID, relPath string) error
 }
