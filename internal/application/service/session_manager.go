@@ -30,6 +30,7 @@ type sessionManagerService struct {
 	manageWorktree usecase.ManageWorktree
 	loadConfig     usecase.LoadConfig
 	saveConfig     usecase.SaveConfig
+	transcripts    claudeTranscripts
 }
 
 // NewSessionManagerService creates a new SessionManager service.
@@ -55,6 +56,7 @@ func NewSessionManagerService(
 		manageWorktree: manageWorktree,
 		loadConfig:     loadConfig,
 		saveConfig:     saveConfig,
+		transcripts:    newClaudeTranscripts(),
 	}
 }
 
@@ -88,6 +90,36 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 			directory = opts.DirectoryOverride
 		}
 	}
+	var claudeConvID string
+	if opts.ClaudeSessionID != "" {
+		if opts.UseWorktree {
+			return nil, fmt.Errorf("cannot use a worktree when adopting an existing claude session")
+		}
+		if _, err := uuid.Parse(opts.ClaudeSessionID); err != nil {
+			return nil, fmt.Errorf("invalid claude session id: %s", opts.ClaudeSessionID)
+		}
+		existing, err := s.findSession.FindAll()
+		if err != nil {
+			return nil, fmt.Errorf("failed to list sessions: %w", err)
+		}
+		for i := range existing {
+			if existing[i].ClaudeConvID == opts.ClaudeSessionID || existing[i].ID == opts.ClaudeSessionID {
+				return nil, fmt.Errorf("claude session %s is already attached to session %s", opts.ClaudeSessionID, existing[i].Name)
+			}
+		}
+		_, cwd, err := s.transcripts.findByID(opts.ClaudeSessionID)
+		if err != nil {
+			return nil, err
+		}
+		if info, statErr := os.Stat(cwd); statErr != nil || !info.IsDir() {
+			return nil, fmt.Errorf("the claude session's working directory %s no longer exists", cwd)
+		}
+		// --resume only finds the transcript when the process cwd matches it,
+		// so the transcript's cwd overrides the repo path.
+		directory = cwd
+		claudeConvID = opts.ClaudeSessionID
+	}
+
 	var worktreePath, branchName string
 
 	if opts.UseWorktree && repoID != "" {
@@ -117,6 +149,7 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 		Directory:       directory,
 		WorktreePath:    worktreePath,
 		BranchName:      branchName,
+		ClaudeConvID:    claudeConvID,
 		RepoID:          repoID,
 		TaskID:          taskID,
 		SkipPermissions: opts.SkipPermissions,
@@ -581,7 +614,15 @@ func (s *sessionManagerService) UpdateSessionWorkspace(id string, workspaceID st
 	return s.updateSession.Update(*session)
 }
 
-// RenameSession updates the name of a session.
+// renameSubmitKeyDelay is the pause between writing the /rename command to a
+// session's PTY and writing the Enter keystroke that submits it. It gives the
+// Claude CLI TUI time to process the pasted text before the carriage return
+// arrives as a discrete submit rather than a multi-line newline.
+const renameSubmitKeyDelay = 120 * time.Millisecond
+
+// RenameSession updates the name of a session. For a running claude session it
+// also injects claude's /rename slash command into the PTY (best-effort) so the
+// claude CLI's own session title stays in sync.
 func (s *sessionManagerService) RenameSession(id string, newName string) error {
 	session, err := s.findSession.FindByID(id)
 	if err != nil {
@@ -592,7 +633,105 @@ func (s *sessionManagerService) RenameSession(id string, newName string) error {
 	}
 	session.Name = newName
 	session.UpdatedAt = time.Now()
+	if err := s.updateSession.Update(*session); err != nil {
+		return err
+	}
+
+	if session.SessionType != sessiontype.Terminal && session.Status == sessionstatus.Running {
+		go func() {
+			if err := s.spawnProcess.SendMessage(id, "/rename "+newName); err != nil {
+				log.Printf("rename sync: failed to type /rename into session %s: %v", id, err)
+				return
+			}
+			time.Sleep(renameSubmitKeyDelay)
+			if err := s.spawnProcess.SendMessage(id, "\r"); err != nil {
+				log.Printf("rename sync: failed to submit /rename in session %s: %v", id, err)
+			}
+		}()
+	}
+
+	return nil
+}
+
+// SetClaudeSessionID attaches an existing claude CLI conversation to a session,
+// or detaches the current one when claudeID is empty. Detaching clears
+// ClaudeConvID so the next start begins a fresh conversation with
+// --session-id <quant ID>; if claude already consumed that UUID (the session
+// ran before), claude rejects the reused id visibly in the terminal.
+func (s *sessionManagerService) SetClaudeSessionID(sessionID string, claudeID string) error {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+	if session.SessionType != sessiontype.Claude {
+		return fmt.Errorf("session %s is not a claude session", session.Name)
+	}
+	if session.Status == sessionstatus.Running {
+		return fmt.Errorf("session %s is running — stop the session first", session.Name)
+	}
+
+	if claudeID != "" {
+		if _, err := uuid.Parse(claudeID); err != nil {
+			return fmt.Errorf("invalid claude session id: %s", claudeID)
+		}
+		all, err := s.findSession.FindAll()
+		if err != nil {
+			return fmt.Errorf("failed to list sessions: %w", err)
+		}
+		for i := range all {
+			if all[i].ID == sessionID {
+				continue
+			}
+			if all[i].ClaudeConvID == claudeID || all[i].ID == claudeID {
+				return fmt.Errorf("claude session %s is already attached to session %s", claudeID, all[i].Name)
+			}
+		}
+		_, cwd, err := s.transcripts.findByID(claudeID)
+		if err != nil {
+			return err
+		}
+		workDir := getWorkDir(session)
+		if cwd != workDir {
+			return fmt.Errorf("claude session %s belongs to directory %s but this session runs in %s — directories must match for --resume to find the conversation", claudeID, cwd, workDir)
+		}
+	}
+
+	session.ClaudeConvID = claudeID
+	session.UpdatedAt = time.Now()
 	return s.updateSession.Update(*session)
+}
+
+// ListAdoptableSessions returns claude CLI sessions recorded for a directory
+// that are not yet attached to any quant session.
+func (s *sessionManagerService) ListAdoptableSessions(directory string) ([]entity.ExternalClaudeSession, error) {
+	candidates, err := s.transcripts.listForDir(directory)
+	if err != nil {
+		return nil, err
+	}
+
+	existing, err := s.findSession.FindAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+	used := make(map[string]bool, len(existing)*2)
+	for i := range existing {
+		used[existing[i].ID] = true
+		if existing[i].ClaudeConvID != "" {
+			used[existing[i].ClaudeConvID] = true
+		}
+	}
+
+	adoptable := make([]entity.ExternalClaudeSession, 0, len(candidates))
+	for _, c := range candidates {
+		if used[c.ID] {
+			continue
+		}
+		adoptable = append(adoptable, c)
+	}
+	return adoptable, nil
 }
 
 // CheckBranchExists checks if a git branch already exists in the given repo.

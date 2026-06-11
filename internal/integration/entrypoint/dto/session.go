@@ -23,6 +23,37 @@ type CreateSessionRequest struct {
 	ExtraCliArgs      string `json:"extraCliArgs"`
 	DirectoryOverride string `json:"directoryOverride"`
 	WorkspaceID       string `json:"workspaceId"`
+	ClaudeSessionID   string `json:"claudeSessionId"`
+}
+
+// ExternalSessionResponse represents a claude CLI session found on disk that
+// can be adopted into quant.
+type ExternalSessionResponse struct {
+	ID           string `json:"id"`
+	Cwd          string `json:"cwd"`
+	FirstMessage string `json:"firstMessage"`
+	ModTime      string `json:"modTime"`
+	SizeBytes    int64  `json:"sizeBytes"`
+}
+
+// ExternalSessionResponseFromEntity converts a domain entity to an ExternalSessionResponse DTO.
+func ExternalSessionResponseFromEntity(session entity.ExternalClaudeSession) ExternalSessionResponse {
+	return ExternalSessionResponse{
+		ID:           session.ID,
+		Cwd:          session.Cwd,
+		FirstMessage: session.FirstMessage,
+		ModTime:      session.ModTime.Format("2006-01-02T15:04:05Z07:00"),
+		SizeBytes:    session.SizeBytes,
+	}
+}
+
+// ExternalSessionResponseListFromEntities converts a slice of domain entities to a slice of ExternalSessionResponse DTOs.
+func ExternalSessionResponseListFromEntities(sessions []entity.ExternalClaudeSession) []ExternalSessionResponse {
+	responses := make([]ExternalSessionResponse, len(sessions))
+	for i, session := range sessions {
+		responses[i] = ExternalSessionResponseFromEntity(session)
+	}
+	return responses
 }
 
 // SessionResponse represents the response payload for session data.

@@ -1,6 +1,18 @@
 {
   "entries": [
     {
+      "version": "v3.1.35",
+      "date": "2026-06-11",
+      "changes": {
+        "features": [
+          "adopt claude sessions born outside quant — \"new session\" gains a \"resume an existing session\" option: pick from the untracked claude conversations found for the repo's directory (with first message and age) or paste a session id, and quant resumes that conversation instead of starting fresh",
+          "re-point or detach a session's conversation — right-click a stopped session and \"change claude session id\" to attach a different claude conversation, or detach it so the next start begins a fresh one",
+          "agents can adopt sessions too — create_session accepts a claudeSessionId, plus new list_adoptable_sessions and set_session_claude_id MCP tools",
+          "renaming a session now renames the claude conversation too — quant runs /rename inside the running session so claude's own session title stays in sync"
+        ]
+      }
+    },
+    {
       "version": "v3.1.33",
       "date": "2026-06-10",
       "changes": {

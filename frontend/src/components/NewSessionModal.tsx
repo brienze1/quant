@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { Repo, Task, CreateSessionRequest, SessionType, Config } from "../types";
 import * as api from "../api";
+import { ClaudeSessionPicker, CLAUDE_UUID_RE } from "./ChangeSessionIdModal";
 
 const MODEL_OPTIONS = ["cli default", "claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001"];
 
@@ -28,6 +29,11 @@ export function NewSessionModal({
   const [taskId, setTaskId] = useState(defaultTaskId ?? "");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [configLoaded, setConfigLoaded] = useState(false);
+
+  // Conversation: start fresh, or adopt an existing claude CLI conversation.
+  const [convMode, setConvMode] = useState<"new" | "resume">("new");
+  const [selectedClaudeId, setSelectedClaudeId] = useState("");
+  const [pastedClaudeId, setPastedClaudeId] = useState("");
 
   // Advanced options — initialized from config defaults
   const [useWorktree, setUseWorktree] = useState(false);
@@ -61,6 +67,16 @@ export function NewSessionModal({
   const selectedRepo = repos.find((r) => r.id === repoId);
   const selectedTask = tasks.find((t) => t.id === taskId);
 
+  // A pasted valid UUID takes precedence over the list selection.
+  const pastedClaude = pastedClaudeId.trim();
+  const claudeSessionId =
+    sessionType === "claude" && convMode === "resume"
+      ? CLAUDE_UUID_RE.test(pastedClaude)
+        ? pastedClaude.toLowerCase()
+        : selectedClaudeId
+      : "";
+  const adopting = claudeSessionId !== "";
+
   function buildRequest(): CreateSessionRequest {
     return {
       name: name.trim().toLowerCase(),
@@ -68,13 +84,14 @@ export function NewSessionModal({
       repoId,
       taskId,
       sessionType,
-      useWorktree,
+      useWorktree: adopting ? false : useWorktree,
       skipPermissions: sessionType === "claude" ? skipPermissions : false,
       autoPull,
       pullBranch,
       branchNamePattern,
       model: sessionType === "claude" ? model : "",
       extraCliArgs: sessionType === "claude" ? extraCliArgs : "",
+      ...(adopting ? { claudeSessionId } : {}),
     };
   }
 
@@ -86,9 +103,11 @@ export function NewSessionModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !repoId || !taskId) return;
+    if (sessionType === "claude" && convMode === "resume" && !adopting) return;
 
     // If worktree enabled and not already confirmed, check if branch exists.
-    if (useWorktree && !branchExistsWarning) {
+    // Adoption forces worktree off, so the check is irrelevant then.
+    if (useWorktree && !adopting && !branchExistsWarning) {
       setChecking(true);
       try {
         const exists = await api.checkBranchExists(repoId, resolveBranchName());
@@ -175,7 +194,7 @@ export function NewSessionModal({
             <span className="text-[10px] lowercase block mb-1" style={{ color: "var(--q-fg-secondary)" }}>repo</span>
             <CustomSelect
               value={repoId}
-              onChange={(v) => { setRepoId(v); setTaskId(""); }}
+              onChange={(v) => { setRepoId(v); setTaskId(""); setSelectedClaudeId(""); }}
               options={repos.map((r) => ({ value: r.id, label: `${r.name} (${r.path})` }))}
               placeholder="select a repo"
               displayValue={selectedRepo ? `${selectedRepo.name} (${selectedRepo.path})` : ""}
@@ -223,6 +242,51 @@ export function NewSessionModal({
             />
           </label>
 
+          {/* conversation — new vs adopt an existing claude session */}
+          {sessionType === "claude" && (
+            <div>
+              <span className="text-[10px] lowercase block mb-1" style={{ color: "var(--q-fg-secondary)" }}>conversation</span>
+              <div className="flex flex-col gap-2">
+                {([
+                  { key: "new", label: "new conversation" },
+                  { key: "resume", label: "resume an existing session" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setConvMode(opt.key)}
+                    className="flex items-center gap-2 text-left"
+                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                  >
+                    <span style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                      {convMode === opt.key ? "(x)" : "( )"}
+                    </span>
+                    <span
+                      style={{
+                        color: convMode === opt.key ? "var(--q-accent)" : "var(--q-fg)",
+                        fontSize: 11,
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >
+                      {opt.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {convMode === "resume" && (
+                <div className="mt-2">
+                  <ClaudeSessionPicker
+                    directory={selectedRepo?.path ?? ""}
+                    selectedId={selectedClaudeId}
+                    onSelect={setSelectedClaudeId}
+                    pastedId={pastedClaudeId}
+                    onPaste={setPastedClaudeId}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* advanced options toggle */}
           <button
             type="button"
@@ -246,7 +310,13 @@ export function NewSessionModal({
               {/* session section */}
               <div className="flex flex-col gap-3">
                 <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>session</span>
-                <AdvancedToggle label="use worktree" description="create isolated git worktree" checked={useWorktree} onChange={setUseWorktree} />
+                <AdvancedToggle
+                  label="use worktree"
+                  description={adopting ? "unavailable when adopting — resumes in the original directory" : "create isolated git worktree"}
+                  checked={adopting ? false : useWorktree}
+                  onChange={setUseWorktree}
+                  disabled={adopting}
+                />
                 {sessionType === "claude" && (
                   <AdvancedToggle label="skip permissions" description="pass --dangerously-skip-permissions" checked={skipPermissions} onChange={setSkipPermissions} />
                 )}
@@ -339,7 +409,7 @@ export function NewSessionModal({
             </button>
             <button
               type="submit"
-              disabled={!name.trim() || !repoId || !taskId || checking}
+              disabled={!name.trim() || !repoId || !taskId || checking || (sessionType === "claude" && convMode === "resume" && !adopting)}
               className="px-4 py-2 text-xs lowercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 backgroundColor: "var(--q-accent)",
@@ -358,20 +428,22 @@ export function NewSessionModal({
 
 // --- Advanced option row components ---
 
-function AdvancedToggle({ label, description, checked, onChange }: {
+function AdvancedToggle({ label, description, checked, onChange, disabled }: {
   label: string;
   description: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between" style={{ opacity: disabled ? 0.4 : 1 }}>
       <div className="flex flex-col" style={{ gap: 2 }}>
         <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
         <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
       </div>
       <button
         type="button"
+        disabled={disabled}
         onClick={() => onChange(!checked)}
         className="flex items-center justify-center"
         style={{
@@ -379,6 +451,7 @@ function AdvancedToggle({ label, description, checked, onChange }: {
           height: 14,
           backgroundColor: "var(--q-bg)",
           border: `1px solid ${checked ? "var(--q-accent)" : "var(--q-border)"}`,
+          cursor: disabled ? "default" : "pointer",
         }}
       >
         {checked && <span style={{ color: "var(--q-accent)", fontSize: 10, lineHeight: 1 }}>x</span>}

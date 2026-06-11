@@ -14,4 +14,5 @@ type SessionOptions struct {
 	DirectoryOverride string // If set, use this directory instead of repo path
 	WorkspaceID       string // Workspace to assign the session to
 	NoFlicker         bool   // Enable NO_FLICKER terminal mode
+	ClaudeSessionID   string // If set, adopt this existing claude CLI session (resume its conversation)
 }

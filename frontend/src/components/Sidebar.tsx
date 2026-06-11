@@ -41,6 +41,7 @@ interface SidebarProps {
   onUnarchiveTask: (taskId: string) => void;
   onRenameTask?: (taskId: string, currentTag: string, currentName: string) => void;
   onRenameSession?: (sessionId: string, currentName: string) => void;
+  onChangeClaudeSession?: (sessionId: string) => void;
   onMoveSession?: (sessionId: string, repoId: string) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
@@ -135,6 +136,7 @@ export function Sidebar({
   onUnarchiveTask,
   onRenameTask,
   onRenameSession,
+  onChangeClaudeSession,
   onMoveSession,
   onDoubleClickSession,
   onDropSession,
@@ -385,6 +387,17 @@ export function Sidebar({
         label: "rename",
         onClick: () => onRenameSession?.(session.id, session.name),
       });
+
+      // Re-point a stopped claude session at a different claude conversation.
+      if (session.sessionType === "claude" && displaySt !== "running" && onChangeClaudeSession) {
+        items.push({
+          type: "item",
+          icon: "$",
+          iconColor: "var(--q-fg-secondary)",
+          label: "change claude session id",
+          onClick: () => onChangeClaudeSession(session.id),
+        });
+      }
 
       // Only show "move to task" if there are >= 2 tasks in the repo
       const repoTasks = tasksByRepo[session.repoId] ?? [];

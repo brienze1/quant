@@ -66,6 +66,10 @@ export function GitSaveFileContent(arg1, arg2, arg3) {
   return window['go']['controller']['sessionController']['GitSaveFileContent'](arg1, arg2, arg3);
 }
 
+export function ListAdoptableSessions(arg1) {
+  return window['go']['controller']['sessionController']['ListAdoptableSessions'](arg1);
+}
+
 export function ListBranches(arg1) {
   return window['go']['controller']['sessionController']['ListBranches'](arg1);
 }
@@ -116,6 +120,10 @@ export function RunShortcut(arg1, arg2) {
 
 export function SendMessage(arg1, arg2) {
   return window['go']['controller']['sessionController']['SendMessage'](arg1, arg2);
+}
+
+export function SetClaudeSessionID(arg1, arg2) {
+  return window['go']['controller']['sessionController']['SetClaudeSessionID'](arg1, arg2);
 }
 
 export function StartAssistantSession(arg1) {

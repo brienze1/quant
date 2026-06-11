@@ -383,6 +383,7 @@ export namespace dto {
 	    extraCliArgs: string;
 	    directoryOverride: string;
 	    workspaceId: string;
+	    claudeSessionId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new CreateSessionRequest(source);
@@ -404,6 +405,7 @@ export namespace dto {
 	        this.extraCliArgs = source["extraCliArgs"];
 	        this.directoryOverride = source["directoryOverride"];
 	        this.workspaceId = source["workspaceId"];
+	        this.claudeSessionId = source["claudeSessionId"];
 	    }
 	}
 	export class CreateTaskRequest {
@@ -452,6 +454,26 @@ export namespace dto {
 	        this.path = source["path"];
 	        this.status = source["status"];
 	        this.oldPath = source["oldPath"];
+	    }
+	}
+	export class ExternalSessionResponse {
+	    id: string;
+	    cwd: string;
+	    firstMessage: string;
+	    modTime: string;
+	    sizeBytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExternalSessionResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.cwd = source["cwd"];
+	        this.firstMessage = source["firstMessage"];
+	        this.modTime = source["modTime"];
+	        this.sizeBytes = source["sizeBytes"];
 	    }
 	}
 	export class FileBase64Response {

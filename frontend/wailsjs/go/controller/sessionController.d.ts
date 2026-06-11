@@ -35,6 +35,8 @@ export function GitPush(arg1:string):Promise<void>;
 
 export function GitSaveFileContent(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function ListAdoptableSessions(arg1:string):Promise<Array<dto.ExternalSessionResponse>>;
+
 export function ListBranches(arg1:string):Promise<Array<string>>;
 
 export function ListSessions():Promise<Array<dto.SessionResponse>>;
@@ -60,6 +62,8 @@ export function ResumeSession(arg1:string,arg2:number,arg3:number):Promise<void>
 export function RunShortcut(arg1:string,arg2:string):Promise<void>;
 
 export function SendMessage(arg1:string,arg2:string):Promise<void>;
+
+export function SetClaudeSessionID(arg1:string,arg2:string):Promise<void>;
 
 export function StartAssistantSession(arg1:string):Promise<dto.SessionResponse>;
 

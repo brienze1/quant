@@ -674,6 +674,7 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithBoolean("useWorktree", mcp.Description("Create a git worktree for this session. Default: false")),
 			mcp.WithBoolean("skipPermissions", mcp.Description("Skip permission prompts (--dangerously-skip-permissions). Default: false")),
 			mcp.WithString("model", mcp.Description("Claude model for claude sessions (e.g. 'claude-sonnet-4-6')")),
+			mcp.WithString("claudeSessionId", mcp.Description("Adopt an existing claude CLI session: its UUID from another terminal. The session will resume that conversation; incompatible with useWorktree.")),
 		),
 		s.handleCreateSession,
 	)
@@ -746,6 +747,24 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("newName", mcp.Required(), mcp.Description("New name for the session")),
 		),
 		s.handleRenameSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("set_session_claude_id",
+			mcp.WithDescription(`Attach an existing claude CLI conversation to a session, or detach the current one. The session must be a claude session and must not be running. The claude session's working directory must match the session's working directory for --resume to find the conversation.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Session ID (get from list_sessions)")),
+			mcp.WithString("claudeSessionId", mcp.Description("Claude CLI session UUID to attach. Empty string detaches so the next start begins a fresh conversation.")),
+		),
+		s.handleSetSessionClaudeID,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_adoptable_sessions",
+			mcp.WithDescription(`List claude CLI sessions found on this machine for a working directory that are not yet attached to any quant session. Provide either directory or repoId. Returns id, cwd, firstMessage, modTime, and sizeBytes for each adoptable session.`),
+			mcp.WithString("directory", mcp.Description("Absolute path of the working directory to scan")),
+			mcp.WithString("repoId", mcp.Description("Repository ID whose path is used as the directory (get from list_repos)")),
+		),
+		s.handleListAdoptableSessions,
 	)
 
 	// -----------------------------------------------------------------------
@@ -2208,6 +2227,7 @@ func (s *QuantMCPServer) handleCreateSession(_ context.Context, request mcp.Call
 		Model:           stringArg(args, "model"),
 		WorkspaceID:     stringArg(args, "workspaceId"),
 		NoFlicker:       true,
+		ClaudeSessionID: stringArg(args, "claudeSessionId"),
 	}
 
 	session, err := s.sessionManager.CreateSession(name, description, sessionType, repoID, taskID, opts)
@@ -2357,6 +2377,60 @@ func (s *QuantMCPServer) handleRenameSession(_ context.Context, request mcp.Call
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s renamed to '%s'", id, newName)), nil
+}
+
+func (s *QuantMCPServer) handleSetSessionClaudeID(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	claudeID := stringArg(request.GetArguments(), "claudeSessionId")
+
+	if err := s.sessionManager.SetClaudeSessionID(sessionID, claudeID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if claudeID == "" {
+		return mcp.NewToolResultText(fmt.Sprintf("Session %s detached from its claude conversation — the next start begins fresh", sessionID)), nil
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("Session %s attached to claude session %s", sessionID, claudeID)), nil
+}
+
+func (s *QuantMCPServer) handleListAdoptableSessions(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	directory := stringArg(args, "directory")
+	repoID := stringArg(args, "repoId")
+
+	if directory == "" && repoID == "" {
+		return mcp.NewToolResultError("either directory or repoId is required"), nil
+	}
+	if directory == "" {
+		repo, err := s.repoManager.GetRepo(repoID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		directory = repo.Path
+	}
+
+	sessions, err := s.sessionManager.ListAdoptableSessions(directory)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result := make([]map[string]any, 0, len(sessions))
+	for i := range sessions {
+		sess := &sessions[i]
+		result = append(result, map[string]any{
+			"id":           sess.ID,
+			"cwd":          sess.Cwd,
+			"firstMessage": sess.FirstMessage,
+			"modTime":      sess.ModTime.Format(time.RFC3339),
+			"sizeBytes":    sess.SizeBytes,
+		})
+	}
+
+	return marshalResult(result)
 }
 
 // ---------------------------------------------------------------------------
