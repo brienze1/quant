@@ -852,17 +852,19 @@ function App() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // PTT transcript → the target session's PTY input line. Raw text only (no
-  // \r — never auto-submit); trailing space so consecutive dictations compose.
+  // PTT live transcript deltas → the target session's PTY input line. The
+  // service streams append-only word groups while recording (spacing already
+  // baked in, never \r/\n — never auto-submits) and a final suffix + trailing
+  // space on stop; we just write each delta through as-is.
   useEffect(() => {
-    const offTranscript = pttService.onTranscript((sessionId, transcript) => {
-      api.sendMessage(sessionId, transcript + " ").catch(() => {
+    const offPartial = pttService.onPartialText((sessionId, deltaText) => {
+      api.sendMessage(sessionId, deltaText).catch(() => {
         pttToast("push-to-talk: failed to write the transcript to the session");
       });
     });
     const offError = pttService.onError((message) => pttToast(`push-to-talk: ${message}`));
     return () => {
-      offTranscript();
+      offPartial();
       offError();
     };
   }, [pttToast]);

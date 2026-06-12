@@ -464,65 +464,6 @@ export function SessionPanel({
             );
           })()}
 
-          {/* Push-to-talk button (same gate as the voice button). Quick click
-              toggles a capture on/off; press-and-hold captures while held and
-              stops on release. Shares the pttService singleton with the global
-              hotkeys, so either side can stop a capture the other started. */}
-          {!isArchived && (() => {
-            const voiceEnabled = termConfig?.voice?.enabled ?? false;
-            const agentAlive =
-              displayStatus === "running" ||
-              displayStatus === "waiting" ||
-              displayStatus === "done";
-            const canPtt = voiceEnabled && agentAlive;
-            const bindings = getActiveKeybindings();
-            const holdKeys = bindings.find((b) => b.id === "pttHold")?.keys;
-            const toggleKeys = bindings.find((b) => b.id === "pttToggle")?.keys;
-            const tooltip = !voiceEnabled
-              ? "Enable voice in Settings"
-              : !agentAlive
-                ? "Start the session's agent first"
-                : `push-to-talk — hold ${holdKeys ? formatKeyCombo(holdKeys) : "?"} / toggle ${toggleKeys ? formatKeyCombo(toggleKeys) : "?"} (click = toggle, press & hold = talk)`;
-            const recording = pttState === "recording";
-            const transcribing = pttState === "transcribing";
-            const errored = pttState === "error";
-            const label = recording ? "● ptt" : transcribing ? "… ptt" : errored ? "! ptt" : "ptt";
-            const fg = recording
-              ? "var(--q-bg)"
-              : transcribing
-                ? "var(--q-fg-secondary)"
-                : errored
-                  ? "var(--q-error)"
-                  : "var(--q-magenta)";
-            const border = recording || errored ? "var(--q-error)" : "var(--q-border)";
-            return (
-              <button
-                onMouseDown={(e) => { if (e.button === 0 && canPtt) handlePttMouseDown(); }}
-                onMouseUp={(e) => { if (e.button === 0 && canPtt) handlePttMouseUp(); }}
-                disabled={!canPtt}
-                title={tooltip}
-                className="flex items-center gap-1 px-2 py-1 text-[11px]"
-                style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  color: fg,
-                  backgroundColor: recording ? "var(--q-error)" : "var(--q-bg-hover)",
-                  border: `1px solid ${border}`,
-                  opacity: canPtt ? 1 : 0.4,
-                  cursor: canPtt ? "pointer" : "not-allowed",
-                }}
-                onMouseEnter={(e) => {
-                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-border)";
-                }}
-                onMouseLeave={(e) => {
-                  if (canPtt) handlePttMouseLeave();
-                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-                }}
-              >
-                <span>{label}</span>
-              </button>
-            );
-          })()}
-
           {/* Terminal split layout toggle (only when the terminal split is open) */}
           {splitState.open && (
             <div className="flex items-center gap-0.5">
@@ -658,6 +599,137 @@ export function SessionPanel({
           ) : null
         }
       />
+
+      {/* Bottom strip: push-to-talk. shrink-0 sibling of the flex-1 split
+          container above, so opening it just shrinks the split — its
+          ResizeObserver re-measures and the terminal refits cleanly. Quick
+          click toggles a capture on/off; press-and-hold captures while held
+          and stops on release. Shares the pttService singleton with the
+          global hotkeys, so either side can stop a capture the other started. */}
+      {!isArchived && (() => {
+        const voiceEnabled = termConfig?.voice?.enabled ?? false;
+        const agentAlive =
+          displayStatus === "running" ||
+          displayStatus === "waiting" ||
+          displayStatus === "done";
+        const canPtt = voiceEnabled && agentAlive;
+        const bindings = getActiveKeybindings();
+        const holdKeys = bindings.find((b) => b.id === "pttHold")?.keys;
+        const toggleKeys = bindings.find((b) => b.id === "pttToggle")?.keys;
+        const tooltip = !voiceEnabled
+          ? "Enable voice in Settings"
+          : !agentAlive
+            ? "Start the session's agent first"
+            : `push-to-talk — hold ${holdKeys ? formatKeyCombo(holdKeys) : "?"} / toggle ${toggleKeys ? formatKeyCombo(toggleKeys) : "?"} (click = toggle, press & hold = talk)`;
+        const recording = pttState === "recording";
+        const transcribing = pttState === "transcribing";
+        const errored = pttState === "error";
+        const label = recording ? "● ptt" : transcribing ? "… ptt" : errored ? "! ptt" : "ptt";
+        const fg = recording
+          ? "var(--q-bg)"
+          : transcribing
+            ? "var(--q-fg-secondary)"
+            : errored
+              ? "var(--q-error)"
+              : "var(--q-magenta)";
+        const border = recording || errored ? "var(--q-error)" : "var(--q-border)";
+        return (
+          <div
+            className="flex items-center gap-2 px-5 shrink-0"
+            style={{
+              height: 28,
+              backgroundColor: "var(--q-bg)",
+              borderTop: "1px solid var(--q-border)",
+              fontFamily: "'JetBrains Mono', monospace",
+            }}
+          >
+            <button
+              onMouseDown={(e) => { if (e.button === 0 && canPtt) handlePttMouseDown(); }}
+              onMouseUp={(e) => { if (e.button === 0 && canPtt) handlePttMouseUp(); }}
+              disabled={!canPtt}
+              title={tooltip}
+              className="flex items-center gap-1 px-2 text-[11px]"
+              style={{
+                height: 20,
+                fontFamily: "'JetBrains Mono', monospace",
+                color: fg,
+                backgroundColor: recording ? "var(--q-error)" : "var(--q-bg-hover)",
+                border: `1px solid ${border}`,
+                opacity: canPtt ? 1 : 0.4,
+                cursor: canPtt ? "pointer" : "not-allowed",
+              }}
+              onMouseEnter={(e) => {
+                if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-border)";
+              }}
+              onMouseLeave={(e) => {
+                if (canPtt) handlePttMouseLeave();
+                if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+              }}
+            >
+              <span>{label}</span>
+            </button>
+            {recording && <PttLevelMeter />}
+            {recording && (
+              <span style={{ fontSize: 10, color: "var(--q-fg-muted)" }}>
+                dictating into input — release / click to finish
+              </span>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// Minimal live mic-level meter for the PTT strip (a slimmed-down version of
+// VoicePane's meter). Mounted only while recording; polls pttService.getLevel()
+// per animation frame.
+const PTT_METER_SEGMENTS = 6;
+
+function PttLevelMeter() {
+  const [lit, setLit] = useState(0);
+
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const lvl = pttService.getLevel();
+      // Small noise floor so an idle mic shows 0 segments rather than flicker.
+      const n = lvl <= 0.02 ? 0 : Math.max(1, Math.round(lvl * PTT_METER_SEGMENTS));
+      setLit((prev) => (prev === n ? prev : n));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <div
+      aria-label="mic level"
+      title="mic level"
+      style={{ flex: "none", display: "flex", alignItems: "center", gap: 1.5 }}
+    >
+      {Array.from({ length: PTT_METER_SEGMENTS }).map((_, i) => {
+        const on = i < lit;
+        const color =
+          i < PTT_METER_SEGMENTS * 0.6
+            ? "var(--q-term-green)"
+            : i < PTT_METER_SEGMENTS * 0.85
+              ? "var(--q-warning)"
+              : "var(--q-error)";
+        return (
+          <span
+            key={i}
+            style={{
+              width: 3,
+              height: 10,
+              borderRadius: 1,
+              backgroundColor: on ? color : "var(--q-border)",
+              opacity: on ? 1 : 0.5,
+              transition: "background-color .05s linear, opacity .05s linear",
+            }}
+          />
+        );
+      })}
     </div>
   );
 }

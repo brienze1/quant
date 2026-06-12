@@ -1,8 +1,12 @@
 // Push-to-talk capture service. No VAD: the press/release (or toggle) defines
-// the utterance. Captures raw PCM from the mic, encodes a 16kHz WAV, runs STT
-// via the Go proxy, and emits the transcript for insertion into the target
-// session's input line. Singleton shared by the toolbar button and the global
-// hotkeys so either can stop a capture the other started.
+// the utterance. Captures raw PCM from the mic and streams the transcript LIVE
+// into the target session's input line: while recording, the full accumulated
+// audio is re-transcribed every ~2.5s and only the words the last two
+// consecutive partials AGREE on are committed (LocalAgreement-2). Whisper
+// revises its tail between passes and text written to the PTY cannot be taken
+// back, so commits are strictly append-only; a final full-audio pass on stop
+// emits whatever suffix remains. Singleton shared by the toolbar button and
+// the global hotkeys so either can stop a capture the other started.
 
 import { utils } from "@ricky0123/vad-web";
 import * as api from "../api";
@@ -11,10 +15,11 @@ import { openMicStreamFor, readPersistedInputDevice } from "./audioService";
 export type PttState = "idle" | "recording" | "transcribing" | "error";
 export type PttMode = "hold" | "toggle";
 export type PttStateCb = (state: PttState) => void;
-export type PttTranscriptCb = (sessionId: string, transcript: string) => void;
+export type PttPartialTextCb = (sessionId: string, deltaText: string) => void;
 export type PttErrorCb = (message: string) => void;
 
-// Captures shorter than this are treated as accidental taps and discarded.
+// Captures shorter than this are treated as accidental taps and discarded —
+// but only when nothing has been streamed into the input yet.
 const MIN_CAPTURE_MS = 300;
 // Safety ceiling: auto-stop (and transcribe) a forgotten capture.
 const MAX_CAPTURE_MS = 90_000;
@@ -22,6 +27,11 @@ const MAX_CAPTURE_MS = 90_000;
 const ERROR_RESET_MS = 2500;
 // STT expects what the voice pane sends: 16kHz mono float32 WAV.
 const TARGET_SAMPLE_RATE = 16_000;
+// Partial-transcription cadence while recording. A tick is skipped while the
+// previous transcribe call is still in flight.
+const PARTIAL_INTERVAL_MS = 2500;
+// Whisper non-speech artifacts: [BLANK_AUDIO], [ Silence ], (music), ♪ …
+const ARTIFACT_RE = /\[[^\]]*\]|\([^)]*\)|♪+/g;
 
 // Mic contention with the voice pane: the pane mirrors its AudioService state
 // into this flag (non-idle = busy) so PTT refuses to grab the mic mid-turn.
@@ -50,10 +60,37 @@ function downsample(input: Float32Array, fromRate: number, toRate: number): Floa
   return out;
 }
 
+// Normalize a raw Whisper transcript into words: strip non-speech artifacts,
+// collapse all whitespace (incl. \r\n — a newline reaching the PTY would
+// auto-submit), and split. An all-artifact transcript yields [].
+function transcriptWords(raw: string): string[] {
+  return raw
+    .replace(ARTIFACT_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter((w) => w.length > 0);
+}
+
+// Whisper flips punctuation/capitalization on earlier words between passes
+// ("world" vs "world,"); compare normalized so cosmetic revisions don't break
+// prefix agreement and re-emit already-committed words.
+function wordsMatch(a: string, b: string): boolean {
+  const norm = (w: string) => w.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+  return norm(a) === norm(b);
+}
+
+function normalizedCommonPrefixLen(a: string[], b: string[]): number {
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && wordsMatch(a[i], b[i])) i++;
+  return i;
+}
+
 class PttService {
   private state: PttState = "idle";
   private readonly stateCbs = new Set<PttStateCb>();
-  private readonly transcriptCbs = new Set<PttTranscriptCb>();
+  private readonly partialTextCbs = new Set<PttPartialTextCb>();
   private readonly errorCbs = new Set<PttErrorCb>();
 
   private stream: MediaStream | null = null;
@@ -76,15 +113,33 @@ class PttService {
   private errorTimer: ReturnType<typeof setTimeout> | null = null;
   private levelBuf: Uint8Array | null = null;
 
+  // --- Live-streaming state (reset per capture) ---
+  // Words already emitted into the input this capture. Append-only.
+  private committedWords: string[] = [];
+  // The previous partial transcript's words: the LocalAgreement-2 reference.
+  private lastPartialWords: string[] = [];
+  private partialTimer: ReturnType<typeof setInterval> | null = null;
+  private partialInFlight = false;
+  // Bumped on every start/stop/cancel so a partial result that lands after the
+  // capture ended is discarded instead of committing into the next capture.
+  private captureGen = 0;
+  // Whether the last text we wrote into each session's input ended with a
+  // space — decides if a delta needs a leading separator space.
+  private readonly sentEndsWithSpace = new Map<string, boolean>();
+
   onState(cb: PttStateCb): () => void {
     this.stateCbs.add(cb);
     return () => this.stateCbs.delete(cb);
   }
 
-  /** Fires with the trimmed transcript for BOTH manual stops and the auto-cap. */
-  onTranscript(cb: PttTranscriptCb): () => void {
-    this.transcriptCbs.add(cb);
-    return () => this.transcriptCbs.delete(cb);
+  /**
+   * Fires with append-only text deltas (live partial commits while recording,
+   * then the final suffix + trailing space on stop). Spacing between word
+   * groups is already baked into the delta; never contains \r or \n.
+   */
+  onPartialText(cb: PttPartialTextCb): () => void {
+    this.partialTextCbs.add(cb);
+    return () => this.partialTextCbs.delete(cb);
   }
 
   onError(cb: PttErrorCb): () => void {
@@ -181,7 +236,12 @@ class PttService {
       this.chunks = [];
       this.targetSessionId = sessionId;
       this.startedAt = performance.now();
+      this.committedWords = [];
+      this.lastPartialWords = [];
+      this.partialInFlight = false;
+      this.captureGen++;
       this.capTimer = setTimeout(() => void this.stop(), MAX_CAPTURE_MS);
+      this.partialTimer = setInterval(() => void this.partialTick(), PARTIAL_INTERVAL_MS);
       this.setState("recording");
     } catch {
       this.teardownCapture();
@@ -191,77 +251,140 @@ class PttService {
     }
   }
 
+  // One live-streaming tick: re-transcribe the FULL accumulated audio (cheap
+  // enough — local Whisper, 90s cap) and commit only the words the last two
+  // partials agree on, past what's already been emitted.
+  private async partialTick(): Promise<void> {
+    if (this.partialInFlight || this.state !== "recording") return;
+    const gen = this.captureGen;
+    const sessionId = this.targetSessionId;
+    if (!sessionId || this.chunks.length === 0) return;
+    this.partialInFlight = true;
+    try {
+      const audioB64 = this.encodeAudio(this.chunks.slice(), this.captureRate);
+      const raw = await api.transcribe(audioB64, "audio/wav");
+      // Capture ended (or was replaced) while transcribing — drop the result.
+      if (gen !== this.captureGen || this.state !== "recording") return;
+      const words = transcriptWords(raw);
+      const agreed = normalizedCommonPrefixLen(this.lastPartialWords, words);
+      // Only commit if the new hypothesis still extends the committed prefix;
+      // on index shift (inserted/merged leading words) skip and let the final
+      // pass resolve.
+      const extendsCommitted =
+        normalizedCommonPrefixLen(this.committedWords, words) === this.committedWords.length;
+      if (extendsCommitted && agreed > this.committedWords.length) {
+        const fresh = words.slice(this.committedWords.length, agreed);
+        this.committedWords.push(...fresh);
+        this.emitDelta(sessionId, fresh, false);
+      }
+      this.lastPartialWords = words;
+    } catch {
+      // Whisper down mid-stream: stop the loop, one error, already-inserted
+      // text stays (it can't be retracted anyway).
+      if (gen !== this.captureGen || this.state !== "recording") return;
+      this.captureGen++;
+      this.chunks = [];
+      this.teardownCapture();
+      this.fail("Push-to-talk transcription failed.");
+    } finally {
+      this.partialInFlight = false;
+    }
+  }
+
   /**
-   * Stop capturing, transcribe, emit + return the trimmed transcript. Returns
-   * "" for too-short captures, empty transcripts, or when not recording.
+   * Stop capturing and run the final full-audio pass: emit the final
+   * transcript's suffix beyond the committed words, plus one trailing space.
+   * Committed text always stands — if the final transcript diverges from it,
+   * the suffix past their common word-prefix is appended as-is.
    */
-  async stop(): Promise<string> {
+  async stop(): Promise<void> {
     if (this.starting) {
       this.abortRequested = true;
-      return "";
+      return;
     }
-    if (this.state !== "recording") return "";
+    if (this.state !== "recording") return;
     const sessionId = this.targetSessionId;
     const elapsed = performance.now() - this.startedAt;
     const chunks = this.chunks;
     const rate = this.captureRate;
+    const committed = this.committedWords;
+    this.captureGen++;
     this.chunks = [];
     this.teardownCapture();
-    if (elapsed < MIN_CAPTURE_MS || chunks.length === 0) {
+    if ((elapsed < MIN_CAPTURE_MS && committed.length === 0) || chunks.length === 0 || !sessionId) {
       this.setState("idle");
-      return "";
+      return;
     }
     this.setState("transcribing");
     try {
-      let total = 0;
-      for (const c of chunks) total += c.length;
-      const merged = new Float32Array(total);
-      let off = 0;
-      for (const c of chunks) {
-        merged.set(c, off);
-        off += c.length;
-      }
-      const samples = downsample(merged, rate, TARGET_SAMPLE_RATE);
-      const wav = utils.encodeWAV(samples); // defaults match the voice pane: 16kHz mono float32
-      const audioB64 = utils.arrayBufferToBase64(wav);
-      // Whisper's text format can carry interior newlines (one per segment);
-      // collapse them so no \r/\n ever reaches the PTY (would auto-submit).
-      const transcript = (await api.transcribe(audioB64, "audio/wav"))
-        .replace(/\s*[\r\n]+\s*/g, " ")
-        .trim();
+      const audioB64 = this.encodeAudio(chunks, rate);
+      const finalWords = transcriptWords(await api.transcribe(audioB64, "audio/wav"));
+      const agreed = normalizedCommonPrefixLen(committed, finalWords);
+      this.emitDelta(sessionId, finalWords.slice(agreed), true);
       this.setState("idle");
-      if (transcript && sessionId) {
-        for (const cb of this.transcriptCbs) {
-          try {
-            cb(sessionId, transcript);
-          } catch {
-            /* never let a subscriber break the pipeline */
-          }
-        }
-      }
-      return transcript;
     } catch {
       this.fail("Push-to-talk transcription failed.");
-      return "";
     }
   }
 
-  /** Discard the current capture without transcribing. */
+  /**
+   * Abort the current capture: no final pass, but whatever was already
+   * streamed into the input stays — it cannot be retracted.
+   */
   cancel(): void {
     if (this.starting) {
       this.abortRequested = true;
       return;
     }
     if (this.state !== "recording") return;
+    this.captureGen++;
     this.chunks = [];
     this.teardownCapture();
     this.setState("idle");
+  }
+
+  private encodeAudio(chunks: Float32Array[], rate: number): string {
+    let total = 0;
+    for (const c of chunks) total += c.length;
+    const merged = new Float32Array(total);
+    let off = 0;
+    for (const c of chunks) {
+      merged.set(c, off);
+      off += c.length;
+    }
+    const samples = downsample(merged, rate, TARGET_SAMPLE_RATE);
+    const wav = utils.encodeWAV(samples); // defaults match the voice pane: 16kHz mono float32
+    return utils.arrayBufferToBase64(wav);
+  }
+
+  // Build + emit one append-only delta. Words are space-joined; a leading
+  // separator space is added only when the last text written to this session
+  // didn't already end with one. `trailingSpace` (final pass) makes the next
+  // dictation compose cleanly.
+  private emitDelta(sessionId: string, words: string[], trailingSpace: boolean): void {
+    const endsWithSpace = this.sentEndsWithSpace.get(sessionId) ?? true;
+    let delta = words.join(" ");
+    if (delta && !endsWithSpace) delta = " " + delta;
+    if (trailingSpace && !delta.endsWith(" ") && (delta || !endsWithSpace)) delta += " ";
+    if (!delta) return;
+    this.sentEndsWithSpace.set(sessionId, delta.endsWith(" "));
+    for (const cb of this.partialTextCbs) {
+      try {
+        cb(sessionId, delta);
+      } catch {
+        /* never let a subscriber break the pipeline */
+      }
+    }
   }
 
   private teardownCapture(): void {
     if (this.capTimer) {
       clearTimeout(this.capTimer);
       this.capTimer = null;
+    }
+    if (this.partialTimer) {
+      clearInterval(this.partialTimer);
+      this.partialTimer = null;
     }
     if (this.processor) {
       this.processor.onaudioprocess = null;
