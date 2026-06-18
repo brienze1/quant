@@ -58,8 +58,8 @@ export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   { id: "commandPalette", label: "Open command palette", category: "palette", keys: "Meta+k" },
 
   // Voice / push-to-talk
-  { id: "pttHold", label: "Push-to-talk (hold)", category: "voice", keys: "Ctrl+Shift+Space" },
-  { id: "pttToggle", label: "Push-to-talk (toggle)", category: "voice", keys: "Ctrl+Shift+v" },
+  { id: "pttHold", label: "Push-to-talk (hold)", category: "voice", keys: "Meta+Shift+Space" },
+  { id: "pttToggle", label: "Push-to-talk (toggle)", category: "voice", keys: "Meta+Shift+v" },
 ];
 
 const STORAGE_KEY = "quant:keybindings";

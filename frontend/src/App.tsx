@@ -803,7 +803,11 @@ function App() {
           // firing while held — ignore those), stop+insert on keyup below.
           if (e.repeat || pttService.getState() !== "idle") break;
           const target = pttTargetRef.current;
-          if (!target) break;
+          if (!target) {
+            pttHoldKeyRef.current = null;
+            pttToast("push-to-talk: open a session first");
+            break;
+          }
           pttHoldKeyRef.current = e.key.toLowerCase();
           void startPttFromHotkey(target, "hold");
           break;
@@ -816,7 +820,11 @@ function App() {
             void pttService.stop();
           } else if (pttService.getState() === "idle") {
             const target = pttTargetRef.current;
-            if (target) void startPttFromHotkey(target, "toggle");
+            if (target) {
+              void startPttFromHotkey(target, "toggle");
+            } else {
+              pttToast("push-to-talk: open a session first");
+            }
           }
           break;
         }
