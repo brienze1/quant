@@ -1,6 +1,17 @@
 {
   "entries": [
     {
+      "version": "v3.1.36",
+      "date": "2026-06-18",
+      "changes": {
+        "features": [
+          "push-to-talk dictation — hold the mic button (next to the voice button) or press Cmd+Shift+Space and speak; your words are transcribed by the local Whisper backend and streamed into the session's input line as you talk. It never submits for you — review the text and press Enter yourself",
+          "two ways to talk — press and hold for as long as you speak, or tap Cmd+Shift+V to toggle recording on and off for longer dictation; both shortcuts are rebindable under Settings → Keybindings → Voice",
+          "live streaming with no garbled text — partial transcripts are committed word-by-word only once they're stable, so what lands in the input reads cleanly and is never retracted or duplicated mid-sentence"
+        ]
+      }
+    },
+    {
       "version": "v3.1.35",
       "date": "2026-06-11",
       "changes": {
