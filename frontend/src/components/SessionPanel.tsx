@@ -5,6 +5,8 @@ import { StatusDot } from "./StatusDot";
 import { TerminalPane } from "./TerminalPane";
 import { MindmapPane } from "./MindmapPane";
 import * as api from "../api";
+import { pttService, type PttState } from "../voice/pttService";
+import { getActiveKeybindings, formatKeyCombo } from "../keybindings";
 
 type SplitLayout = "horizontal" | "vertical";
 
@@ -99,6 +101,43 @@ export function SessionPanel({
 
   const isArchived = displayStatus === "archived";
   const isPaused = displayStatus === "paused";
+
+  // PTT button mirrors the shared pttService singleton, so a hotkey-started
+  // capture can be stopped by clicking the button (and vice versa).
+  const [pttState, setPttState] = useState<PttState>(pttService.getState());
+  // Set while a mousedown on the button started the current capture: a quick
+  // release (<300ms) leaves it recording (toggle), a long hold stops on release.
+  const pttPressRef = useRef<{ downAt: number } | null>(null);
+  useEffect(() => pttService.onState(setPttState), []);
+
+  function handlePttMouseDown() {
+    if (pttState === "transcribing") return;
+    if (pttService.isCapturing()) {
+      void pttService.stop();
+      return;
+    }
+    pttPressRef.current = { downAt: Date.now() };
+    // Starts as a hold (cancelled if the window blurs mid-press); a quick
+    // release below upgrades it to a toggle that survives blur.
+    void pttService.start(session.id, "hold");
+  }
+
+  function handlePttMouseUp() {
+    const press = pttPressRef.current;
+    pttPressRef.current = null;
+    if (!press) return;
+    if (Date.now() - press.downAt >= 300) {
+      void pttService.stop();
+    } else {
+      pttService.setMode("toggle");
+    }
+  }
+
+  function handlePttMouseLeave() {
+    if (!pttPressRef.current) return;
+    pttPressRef.current = null;
+    void pttService.stop();
+  }
 
   // Load terminal config on mount
   useEffect(() => {
@@ -425,6 +464,68 @@ export function SessionPanel({
             );
           })()}
 
+          {/* Push-to-talk mic button (peer of the voice button). Quick click
+              toggles a capture on/off; press-and-hold captures while held and
+              stops on release. Shares the pttService singleton with the global
+              hotkeys, so either side can stop a capture the other started. While
+              recording the mic glyph fills red and a thin level cue shows right
+              of it. */}
+          {!isArchived && (() => {
+            const voiceEnabled = termConfig?.voice?.enabled ?? false;
+            const agentAlive =
+              displayStatus === "running" ||
+              displayStatus === "waiting" ||
+              displayStatus === "done";
+            const canPtt = voiceEnabled && agentAlive;
+            const bindings = getActiveKeybindings();
+            const holdKeys = bindings.find((b) => b.id === "pttHold")?.keys;
+            const toggleKeys = bindings.find((b) => b.id === "pttToggle")?.keys;
+            const tooltip = !voiceEnabled
+              ? "Enable voice in Settings"
+              : !agentAlive
+                ? "Start the session's agent first"
+                : `Push-to-talk — hold ${holdKeys ? formatKeyCombo(holdKeys) : "?"} / toggle ${toggleKeys ? formatKeyCombo(toggleKeys) : "?"} (click = toggle, press & hold = talk)`;
+            const recording = pttState === "recording";
+            const transcribing = pttState === "transcribing";
+            const errored = pttState === "error";
+            const fg = recording || errored
+              ? "var(--q-error)"
+              : transcribing
+                ? "var(--q-fg-muted)"
+                : canPtt
+                  ? "var(--q-magenta)"
+                  : "var(--q-fg-muted)";
+            const border = recording || errored ? "var(--q-error)" : "var(--q-border)";
+            return (
+              <button
+                onMouseDown={(e) => { if (e.button === 0 && canPtt) handlePttMouseDown(); }}
+                onMouseUp={(e) => { if (e.button === 0 && canPtt) handlePttMouseUp(); }}
+                disabled={!canPtt}
+                title={tooltip}
+                aria-label={tooltip}
+                className="flex items-center gap-1 px-2 py-1 text-[11px]"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: fg,
+                  backgroundColor: "var(--q-bg-hover)",
+                  border: `1px solid ${border}`,
+                  opacity: canPtt ? (transcribing ? 0.7 : 1) : 0.4,
+                  cursor: canPtt ? "pointer" : "not-allowed",
+                }}
+                onMouseEnter={(e) => {
+                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-border)";
+                }}
+                onMouseLeave={(e) => {
+                  if (canPtt) handlePttMouseLeave();
+                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                }}
+              >
+                <MicIcon filled={recording} />
+                {recording && <PttLevelCue />}
+              </button>
+            );
+          })()}
+
           {/* Terminal split layout toggle (only when the terminal split is open) */}
           {splitState.open && (
             <div className="flex items-center gap-0.5">
@@ -561,6 +662,74 @@ export function SessionPanel({
         }
       />
     </div>
+  );
+}
+
+// Microphone glyph for the PTT button: rounded capsule + stand + base.
+// Inherits the button's `currentColor`; `filled` paints the capsule solid
+// (recording state) instead of an outline.
+function MicIcon({ filled }: { filled?: boolean }) {
+  return (
+    <svg
+      width={14}
+      height={14}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x={9} y={2} width={6} height={11} rx={3} fill={filled ? "currentColor" : "none"} />
+      <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
+      <line x1={12} y1={18} x2={12} y2={22} />
+      <line x1={8} y1={22} x2={16} y2={22} />
+    </svg>
+  );
+}
+
+// Compact inline mic-level cue for the action bar (no room for the full 6-bar
+// meter). Three thin segments sized to the bar row; mounted only while
+// recording, polling pttService.getLevel() per animation frame.
+const PTT_CUE_SEGMENTS = 3;
+
+function PttLevelCue() {
+  const [lit, setLit] = useState(0);
+
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const lvl = pttService.getLevel();
+      // Small noise floor so an idle mic shows 0 segments rather than flicker.
+      const n = lvl <= 0.02 ? 0 : Math.max(1, Math.round(lvl * PTT_CUE_SEGMENTS));
+      setLit((prev) => (prev === n ? prev : n));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <span
+      aria-label="mic level"
+      title="mic level"
+      style={{ display: "inline-flex", alignItems: "center", gap: 1 }}
+    >
+      {Array.from({ length: PTT_CUE_SEGMENTS }).map((_, i) => (
+        <span
+          key={i}
+          style={{
+            width: 2,
+            height: 10,
+            borderRadius: 1,
+            backgroundColor: i < lit ? "var(--q-error)" : "var(--q-border)",
+            opacity: i < lit ? 1 : 0.5,
+            transition: "background-color .05s linear, opacity .05s linear",
+          }}
+        />
+      ))}
+    </span>
   );
 }
 

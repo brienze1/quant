@@ -55,6 +55,7 @@ import { ChangelogModal } from "./components/ChangelogModal";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { ThemeQuickPicker } from "./components/ThemeQuickPicker";
 import { getActiveKeybindings, findMatchingAction, formatKeyCombo } from "./keybindings";
+import { pttService } from "./voice/pttService";
 import type { ChangelogEntry } from "./types";
 
 // localStorage key carrying WHICH session voice is attached to. The Go-backed
@@ -187,6 +188,18 @@ function App() {
 
   // find active session object (the one shown in the main panel)
   const activeSession = findSession(activeTabId, sessionsByRepo, sessionsByTask);
+
+  // PTT hotkey target: the active session, if its agent has a live PTY to
+  // write the transcript into (same liveness gate as the voice button).
+  const pttTargetRef = useRef<string | null>(null);
+  {
+    const live =
+      activeSession &&
+      ["running", "waiting", "done"].includes(
+        getDisplayStatus(activeSession.id, activeSession.status),
+      );
+    pttTargetRef.current = live ? activeSession.id : null;
+  }
 
   // If the active tab is a file tab, its parsed {sessionId, relPath}.
   const activeFileTab = activeTabId ? parseFileTabId(activeTabId) : null;
@@ -642,9 +655,49 @@ function App() {
   commandPaletteOpenRef.current = commandPaletteOpen;
   const themePickerOpenRef = useRef(themePickerOpen);
   themePickerOpenRef.current = themePickerOpen;
+  // Main key of an active hold-to-talk press (lowercased e.key); null when no
+  // hold capture is in flight. Lets keyup/blur pair with the registry's keydown.
+  const pttHoldKeyRef = useRef<string | null>(null);
+
+  const pttToast = useCallback((message: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  }, []);
 
   useEffect(() => {
+    // Hotkey start path: same voice-enabled gate as the SessionPanel button —
+    // refuse with a toast instead of recording into a failing transcribe.
+    async function startPttFromHotkey(sessionId: string, mode: "hold" | "toggle") {
+      let enabled = false;
+      try {
+        enabled = (await api.getConfig()).voice.enabled;
+      } catch {
+        /* treat as disabled */
+      }
+      if (!enabled) {
+        pttHoldKeyRef.current = null;
+        pttToast("push-to-talk: enable voice in Settings first");
+        return;
+      }
+      // Hold released while the gate check was in flight — don't start a
+      // capture nothing will stop.
+      if (mode === "hold" && pttHoldKeyRef.current === null) return;
+      void pttService.start(sessionId, mode);
+    }
+
     function handleGlobalKeyDown(e: KeyboardEvent) {
+      // While a hold-to-talk press is active, swallow every repeat of the held
+      // key: releasing a modifier mid-hold stops the combo matching, and the
+      // bare-key repeats would otherwise leak into the terminal.
+      if (pttHoldKeyRef.current && e.key.toLowerCase() === pttHoldKeyRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       // Skip when an overlay (command palette, theme picker) is open — they handle their own keys
       if (commandPaletteOpenRef.current || themePickerOpenRef.current) return;
 
@@ -664,6 +717,9 @@ function App() {
           "workspace1", "workspace2", "workspace3", "workspace4", "workspace5",
           "workspace6", "workspace7", "workspace8", "workspace9",
           "commandPalette", "themePicker",
+          // PTT must work while typing in the terminal — that's the primary
+          // use case (dictating into the session's input line).
+          "pttHold", "pttToggle",
         ]);
         if (!allowedInTerminal.has(matched.id)) return;
       }
@@ -742,12 +798,84 @@ function App() {
           setCommandPaletteOpen(true);
           break;
         }
+        case "pttHold": {
+          // Hold-to-talk: start on the initial keydown (auto-repeat keeps
+          // firing while held — ignore those), stop+insert on keyup below.
+          if (e.repeat || pttService.getState() !== "idle") break;
+          const target = pttTargetRef.current;
+          if (!target) {
+            pttHoldKeyRef.current = null;
+            pttToast("push-to-talk: open a session first");
+            break;
+          }
+          pttHoldKeyRef.current = e.key.toLowerCase();
+          void startPttFromHotkey(target, "hold");
+          break;
+        }
+        case "pttToggle": {
+          if (e.repeat) break;
+          if (pttService.isCapturing()) {
+            // Also stops a capture started by hold/button.
+            pttHoldKeyRef.current = null;
+            void pttService.stop();
+          } else if (pttService.getState() === "idle") {
+            const target = pttTargetRef.current;
+            if (target) {
+              void startPttFromHotkey(target, "toggle");
+            } else {
+              pttToast("push-to-talk: open a session first");
+            }
+          }
+          break;
+        }
       }
     }
 
+    // Hold mode: the keybinding registry is keydown-only, so pair it with a
+    // capture-phase keyup on the held main key to stop+insert on release.
+    function handleGlobalKeyUp(e: KeyboardEvent) {
+      const held = pttHoldKeyRef.current;
+      if (!held || e.key.toLowerCase() !== held) return;
+      pttHoldKeyRef.current = null;
+      e.preventDefault();
+      e.stopPropagation();
+      void pttService.stop();
+    }
+
+    // Keyup/mouseup can be lost on app switch — never leave the mic hot in
+    // that case. Covers hotkey-holds AND button-holds; only toggle-started
+    // captures survive blur intentionally.
+    function handleWindowBlur() {
+      pttHoldKeyRef.current = null;
+      if (pttService.getMode() === "hold") pttService.cancel();
+    }
+
     window.addEventListener("keydown", handleGlobalKeyDown, true);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown, true);
+    window.addEventListener("keyup", handleGlobalKeyUp, true);
+    window.addEventListener("blur", handleWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown, true);
+      window.removeEventListener("keyup", handleGlobalKeyUp, true);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // PTT live transcript deltas → the target session's PTY input line. The
+  // service streams append-only word groups while recording (spacing already
+  // baked in, never \r/\n — never auto-submits) and a final suffix + trailing
+  // space on stop; we just write each delta through as-is.
+  useEffect(() => {
+    const offPartial = pttService.onPartialText((sessionId, deltaText) => {
+      api.sendMessage(sessionId, deltaText).catch(() => {
+        pttToast("push-to-talk: failed to write the transcript to the session");
+      });
+    });
+    const offError = pttService.onError((message) => pttToast(`push-to-talk: ${message}`));
+    return () => {
+      offPartial();
+      offError();
+    };
+  }, [pttToast]);
 
   // poll sessions every 3s
   useEffect(() => {

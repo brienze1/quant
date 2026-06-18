@@ -79,6 +79,7 @@ export function KeybindingsTab() {
     { key: "workspace", label: "Workspace" },
     { key: "theme", label: "Theme" },
     { key: "palette", label: "Command Palette" },
+    { key: "voice", label: "Voice" },
   ] as const;
 
   const hasOverrides = Object.keys(getStoredKeybindings()).length > 0;

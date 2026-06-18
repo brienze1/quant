@@ -17,6 +17,7 @@ import VoiceOrb from "./VoiceOrb";
 import * as api from "../api";
 import { useTheme } from "../theme";
 import { createAudioService } from "../voice/audioService";
+import { setVoicePaneMicBusy } from "../voice/pttService";
 import { registerVoiceBridge } from "../voice/voiceBridge";
 import { loadTranscript, saveTranscript, nextLineId } from "../voice/transcriptStore";
 import type {
@@ -261,7 +262,12 @@ export function VoicePane({ sessionId, className, style }: Props) {
       // The orb is driven entirely by the per-frame orbGetLevel callback below,
       // so we don't hand it AnalyserNodes per state transition (which would force
       // an extra re-render the orb ignores).
-      const offState = service.onState((s) => setState(s));
+      // Mirror non-idle states into the shared PTT flag so push-to-talk won't
+      // grab the mic while this pane owns a turn.
+      const offState = service.onState((s) => {
+        setState(s);
+        setVoicePaneMicBusy(s !== "idle");
+      });
       const offError = service.onError((e) => setError(e));
       // Live recording draft: the service emits the accumulated transcript as
       // each segment's STT resolves ("" on reset → clears the draft).
@@ -327,6 +333,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
         offState();
         offError();
         offRecTranscript();
+        setVoicePaneMicBusy(false);
         void service.dispose();
         serviceRef.current = null;
       });
