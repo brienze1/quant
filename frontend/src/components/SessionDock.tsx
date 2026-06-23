@@ -145,13 +145,13 @@ function PaneShell({
 }) {
   return (
     <div
+      className="panel"
       style={{
         flex: 1,
         minWidth: 0,
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        background: "var(--panel)",
         overflow: "hidden",
       }}
     >
@@ -460,8 +460,6 @@ export function SessionDock(props: SessionDockProps) {
         style={{
           width,
           flex: "none",
-          borderLeft: "1px solid var(--border-2)",
-          backgroundColor: "var(--bg)",
           fontFamily: "var(--sans)",
           display: "flex",
         }}

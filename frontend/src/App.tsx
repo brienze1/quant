@@ -2660,7 +2660,7 @@ function App() {
         </div>
       )}
 
-    <div key={view} className="view-swap flex h-full w-full" style={{ backgroundColor: "var(--bg)" }}>
+    <div key={view} className="view-swap flex h-full w-full" style={{ backgroundColor: "var(--bg)", gap: 8, padding: "0 8px 8px" }}>
       {!sidebarHidden && (
       <Sidebar
         repos={repos}
@@ -2715,7 +2715,7 @@ function App() {
       />
       )}
 
-      <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "var(--bg)" }}>
+      <main className="panel flex-1 flex flex-col relative">
         {error && (
           <div
             className="absolute top-0 left-0 right-0 z-40 text-xs px-4 py-2 flex justify-between"
@@ -2841,8 +2841,7 @@ function App() {
             active-tab switches: the SessionPanel below remounts/swaps with the
             active tab, but the dock's pane instances stay mounted (portaled into
             their tiles) and only unmount when their pane is actually closed. */}
-        <div className="flex-1 flex min-h-0">
-          <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
             {activeSession ? (
               <SessionPanel
                 session={activeSession}
@@ -2897,13 +2896,15 @@ function App() {
               );
             })}
           </div>
+      </main>
 
-          {/* Right-hand drag-tileable dock: files / embedded terminal / mindmap
-              / voice panes live here as resizable, re-tileable tiles. The heavy
-              panes (terminal xterm, voice bridge) are mounted ONCE inside
-              SessionDock and portaled into their tiles, so re-tiling never
-              unmounts them. Tree + width persist per active session. Voice may
-              be pinned to a non-active session and still appears here. */}
+      {/* Right-hand drag-tileable dock: files / embedded terminal / mindmap
+          / voice panes live here as resizable, re-tileable tiles. They float as
+          their own column beside the main panel. The heavy panes (terminal
+          xterm, voice bridge) are mounted ONCE inside SessionDock and portaled
+          into their tiles, so re-tiling never unmounts them. Tree + width
+          persist per active session. Voice may be pinned to a non-active
+          session and still appears here. */}
           <SessionDock
             activeSession={activeSession}
             present={dockPresent}
@@ -2937,8 +2938,6 @@ function App() {
             voiceIsActiveTab={voiceSessionId === activeTabId}
             onVoiceClose={detachVoice}
           />
-        </div>
-      </main>
 
       {modal.type === "openRepo" && (
         <OpenRepoModal
