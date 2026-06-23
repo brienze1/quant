@@ -22,8 +22,8 @@ import * as api from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPanel } from "./components/SessionPanel";
 import { EmptyState } from "./components/EmptyState";
-import { FileTabPanel } from "./components/FileTabPanel";
-import { SessionDock, type DockLeafKey } from "./components/SessionDock";
+import { FileTabPanel, clearFileDraftCache } from "./components/FileTabPanel";
+import { SessionDock } from "./components/SessionDock";
 import {
   fileBasename,
   isFileTabId,
@@ -59,6 +59,7 @@ import { IconButton } from "./components/IconButton";
 import { Icon } from "./components/Icon";
 import { Kbd } from "./components/Kbd";
 import { getActiveKeybindings, findMatchingAction, formatKeyCombo } from "./keybindings";
+import { isMac } from "./os";
 import { pttService } from "./voice/pttService";
 import type { ChangelogEntry } from "./types";
 
@@ -178,6 +179,11 @@ function App() {
   // FileTabPanel; consumed by the tab bar (dot), the files panel (tree dots)
   // and the close-confirmation guard.
   const [fileTabDirty, setFileTabDirty] = useState<Record<string, boolean>>({});
+  // File-tab ids ("file:…") DETACHED from the center strip into the dock. They
+  // leave openTabIds and render as their own re-tileable dock panels instead;
+  // reattaching moves them back to a center tab. Scoped to a session via their
+  // id, so they only show in the dock while that session is the dock context.
+  const [detachedFileTabs, setDetachedFileTabs] = useState<string[]>([]);
   // Mindmap pane open/closed is PER-SESSION (like the terminal pane above):
   // sessionId -> boolean, kept in local state only. Opening it for one session
   // must not open it for the others. Ephemeral — resets to closed on restart.
@@ -329,12 +335,19 @@ function App() {
   // leaf is present only once its embedded terminal session actually exists.
   // Voice is global (pinned to voiceSessionId) so it shows regardless of which
   // tab is active — matching the old persistent VoiceDock behaviour.
-  const dockPresent = ((): DockLeafKey[] => {
-    const out: DockLeafKey[] = [];
+  // The session the dock keys its tree/panes to — mirrors SessionDock's own
+  // internal fallback so detached file panels show under the same context.
+  const dockSessionId = activeSession?.id ?? filesPanelSession?.id ?? voiceSessionId ?? null;
+  const dockPresent = ((): string[] => {
+    const out: string[] = [];
     if (filesPanelOpen) out.push("files");
     if (activeTerminalPaneOpen && activeEmbeddedTerminalSession) out.push("terminal");
     if (activeMindmapPaneOpen && activeSession) out.push("mindmap");
     if (voiceSessionId) out.push("voice");
+    // Detached file panels belonging to the dock's current session.
+    for (const id of detachedFileTabs) {
+      if (parseFileTabId(id)?.sessionId === dockSessionId) out.push(id);
+    }
     return out;
   })();
 
@@ -1257,24 +1270,64 @@ function App() {
     return [id, ...openTabIdsRef.current.filter((t) => isFileTabOfSession(t, id))];
   }
 
+  // Remove a set of ids from the center strip and, when the active tab is in
+  // the set, pick the next active tab from the POST-removal array (indexing the
+  // pre-removal array picks an already-closed neighbor when several close at
+  // once). Pure tab-strip surgery — no dirty/cache/terminal cleanup, so it's
+  // shared by both close (which adds that cleanup) and detach (which doesn't).
+  function pruneCenterTabs(ids: string[]) {
+    const closing = new Set(ids);
+    const tabs = openTabIdsRef.current;
+    const remaining = tabs.filter((t) => !closing.has(t));
+    setOpenTabIds(remaining);
+
+    const current = activeTabIdRef.current;
+    if (current && closing.has(current)) {
+      let nextActive: string | null = null;
+      if (remaining.length > 0) {
+        const beforeActive = tabs
+          .slice(0, tabs.indexOf(current))
+          .filter((t) => !closing.has(t)).length;
+        nextActive = remaining[Math.min(beforeActive, remaining.length - 1)];
+      }
+      setActiveTabId(nextActive);
+      setSelectedSessionId(nextActive ? sessionIdForTab(nextActive) : null);
+    }
+  }
+
   // Close a set of tabs unconditionally: prune them from openTabIds and
-  // fileTabDirty, clean up embedded terminals, and — when the active tab is in
-  // the set — pick the next active tab from the POST-removal array (indexing
-  // the pre-removal array picks an already-closed neighbor when several tabs
-  // close at once).
+  // fileTabDirty, clean up embedded terminals + cached file drafts, drop any
+  // detached file panels owned by a closed session, and repick the active tab.
   function doCloseTab(ids: string[]) {
     if (ids.length === 0) return;
-    const closing = new Set(ids);
 
     for (const id of ids) {
-      if (isFileTabId(id)) continue;
+      if (isFileTabId(id)) {
+        const f = parseFileTabId(id);
+        if (f) clearFileDraftCache(f.sessionId, f.relPath);
+        continue;
+      }
       const embeddedTermId = embeddedTerminalMapRef.current[id];
       if (embeddedTermId) handleDeleteEmbeddedTerminal(embeddedTermId);
     }
 
-    const tabs = openTabIdsRef.current;
-    const remaining = tabs.filter((t) => !closing.has(t));
-    setOpenTabIds(remaining);
+    // Closing a session also discards its detached file panels.
+    const closedSessionIds = ids.filter((id) => !isFileTabId(id));
+    if (closedSessionIds.length > 0) {
+      setDetachedFileTabs((prev) =>
+        prev.filter((fid) => {
+          const sid = parseFileTabId(fid)?.sessionId;
+          if (sid && closedSessionIds.includes(sid)) {
+            const f = parseFileTabId(fid);
+            if (f) clearFileDraftCache(f.sessionId, f.relPath);
+            return false;
+          }
+          return true;
+        })
+      );
+    }
+
+    pruneCenterTabs(ids);
     setFileTabDirty((prev) => {
       let changed = false;
       const next = { ...prev };
@@ -1286,21 +1339,59 @@ function App() {
       }
       return changed ? next : prev;
     });
+  }
 
-    const current = activeTabIdRef.current;
-    if (current && closing.has(current)) {
-      let nextActive: string | null = null;
-      if (remaining.length > 0) {
-        // Number of surviving tabs left of the old active position = the index
-        // (in `remaining`) of the closed tab's right-hand neighbor; clamp to
-        // the last tab when the active tab was rightmost.
-        const beforeActive = tabs
-          .slice(0, tabs.indexOf(current))
-          .filter((t) => !closing.has(t)).length;
-        nextActive = remaining[Math.min(beforeActive, remaining.length - 1)];
-      }
-      setActiveTabId(nextActive);
-      setSelectedSessionId(nextActive ? sessionIdForTab(nextActive) : null);
+  // Detach a file tab into the dock: it leaves the center strip (keeping its
+  // dirty flag + cached draft) and renders as its own re-tileable dock panel.
+  // The dock is scoped to the active session, so when the detached tab was the
+  // active one, focus its OWNING session tab (rather than an arbitrary
+  // neighbor) so the new panel stays in view; otherwise repick normally.
+  function handleDetachFile(id: string) {
+    if (!isFileTabId(id)) return;
+    const sid = parseFileTabId(id)?.sessionId ?? null;
+    setDetachedFileTabs((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    if (activeTabIdRef.current === id && sid && openTabIdsRef.current.includes(sid)) {
+      setOpenTabIds((prev) => prev.filter((t) => t !== id));
+      setActiveTabId(sid);
+      setSelectedSessionId(sid);
+    } else {
+      pruneCenterTabs([id]);
+    }
+  }
+
+  // Reattach a detached file panel back to a center tab (and focus it).
+  function handleReattachFile(id: string) {
+    setDetachedFileTabs((prev) => prev.filter((x) => x !== id));
+    setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setActiveTabId(id);
+    setSelectedSessionId(sessionIdForTab(id));
+  }
+
+  // Close a detached file panel outright (dirty-guarded, mirroring tab close).
+  function handleCloseDetachedFile(id: string) {
+    const finish = () => {
+      setDetachedFileTabs((prev) => prev.filter((x) => x !== id));
+      setFileTabDirty((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      const f = parseFileTabId(id);
+      if (f) clearFileDraftCache(f.sessionId, f.relPath);
+    };
+    if (fileTabDirtyRef.current[id]) {
+      setModal({
+        type: "confirm",
+        message: `discard unsaved changes to ${parseFileTabId(id)?.relPath ?? id}?`,
+        confirmLabel: "discard",
+        onConfirm: () => {
+          setModal({ type: "none" });
+          finish();
+        },
+      });
+    } else {
+      finish();
     }
   }
 
@@ -2418,6 +2509,10 @@ function App() {
 
   const renderTitleBar = () => {
     const segValue: View = view === "jobs" || view === "agents" ? view : "dashboard";
+    // On macOS the native title bar is merged into this toolbar (HiddenInset),
+    // so reserve room on the left for the traffic-light buttons (~78px) and make
+    // the bar itself a window-drag region. Interactive children opt out below.
+    const noDrag = { "--wails-draggable": "no-drag" } as React.CSSProperties;
     return (
       <div
         style={{
@@ -2427,19 +2522,24 @@ function App() {
           alignItems: "center",
           gap: 12,
           height: 44,
-          padding: "0 14px",
+          padding: isMac() ? "0 14px 0 92px" : "0 14px",
           borderBottom: "1px solid var(--border-2)",
           backgroundColor: "var(--bg)",
           zIndex: 30,
+          // @ts-expect-error custom Wails drag property
+          "--wails-draggable": "drag",
         }}
       >
         {/* Left: sidebar toggle + view switcher */}
-        <IconButton
-          name="panelRight"
-          label="Toggle sidebar"
-          active={!sidebarHidden}
-          onClick={() => setSidebarHidden((v) => !v)}
-        />
+        <span style={noDrag}>
+          <IconButton
+            name="panelRight"
+            label="Toggle sidebar"
+            active={!sidebarHidden}
+            onClick={() => setSidebarHidden((v) => !v)}
+          />
+        </span>
+        <span style={{ ...noDrag, display: "inline-flex" }}>
         <Segmented
           options={[
             { value: "dashboard", label: "Sessions", icon: "terminal" },
@@ -2453,6 +2553,7 @@ function App() {
             else setView("dashboard");
           }}
         />
+        </span>
 
         {/* Center: command palette pill (absolutely centered) */}
         <button
@@ -2476,6 +2577,7 @@ function App() {
             border: "1px solid var(--border)",
             cursor: "text",
             textAlign: "left",
+            ...noDrag,
           }}
         >
           <Icon name="search" size={14} color="var(--fg-3)" />
@@ -2486,25 +2588,86 @@ function App() {
         <span style={{ flex: 1 }} />
 
 
-        <IconButton
-          name="folder"
+        <span style={{ ...noDrag, display: "inline-flex", alignItems: "center", gap: 12 }}>
+          <IconButton
+            name="message"
+            label="Quant Assistant"
+            active={assistantOpen}
+            onClick={() => setAssistantOpen((v) => !v)}
+          />
+          <IconButton
+            name="settings"
+            label="Settings  ⌘,"
+            active={view === "settings"}
+            onClick={() => setView("settings")}
+          />
+        </span>
+      </div>
+    );
+  };
+
+  // Pane-toggle pills (Files / Terminal / Mindmap / Voice) rendered inside the
+  // active SessionPanel's header (passed via the paneToggles prop). Assistant
+  // lives in the title bar, so it's intentionally not here.
+  const renderPaneToggles = () => {
+    const hasSession = !!activeSession;
+    const voiceEnabled = dockTermConfig?.voice?.enabled ?? false;
+    const agentAlive = activeSession
+      ? (() => {
+          const s = getDisplayStatus(activeSession.id, activeSession.status);
+          return s === "running" || s === "waiting" || s === "done";
+        })()
+      : false;
+    const voiceCanToggle = hasSession && voiceEnabled && agentAlive;
+    const voiceOn = !!activeSession && voiceSessionId === activeSession.id;
+    const onToggleTerminal = async () => {
+      if (!activeSession) return;
+      if (activeTerminalPaneOpen) { handleTerminalPaneOpenChange(false); return; }
+      if (activeEmbeddedTerminalSession) { handleTerminalPaneOpenChange(true); return; }
+      try {
+        await handleCreateEmbeddedTerminal(activeSession);
+        handleTerminalPaneOpenChange(true);
+      } catch {
+        /* failed to create embedded terminal */
+      }
+    };
+    return (
+      <>
+        <PaneToggle
+          icon="folder"
           label="Files"
           active={filesPanelOpen}
-          onClick={() => { setView("dashboard"); handleFilesPanelOpenChange(!filesPanelOpen); }}
+          onClick={() => handleFilesPanelOpenChange(!filesPanelOpen)}
         />
-        <IconButton
-          name="message"
-          label="Quant Assistant"
-          active={assistantOpen}
-          onClick={() => setAssistantOpen((v) => !v)}
+        <PaneToggle
+          icon="terminal"
+          label="Terminal"
+          active={activeTerminalPaneOpen}
+          disabled={!hasSession}
+          onClick={() => { void onToggleTerminal(); }}
         />
-        <IconButton
-          name="settings"
-          label="Settings  ⌘,"
-          active={view === "settings"}
-          onClick={() => setView("settings")}
+        <PaneToggle
+          icon="waypoints"
+          label="Mindmap"
+          active={activeMindmapPaneOpen}
+          disabled={!hasSession}
+          onClick={() => { if (activeSession) handleMindmapPaneOpenChange(!activeMindmapPaneOpen); }}
         />
-      </div>
+        <PaneToggle
+          icon="waveform"
+          label="Voice"
+          active={voiceOn}
+          disabled={!voiceCanToggle}
+          title={
+            !voiceEnabled
+              ? "Enable voice in Settings"
+              : !agentAlive
+                ? "Start the session's agent first"
+                : "Toggle voice pane"
+          }
+          onClick={() => { if (voiceCanToggle) handleVoicePaneOpenChange(!voiceOn); }}
+        />
+      </>
     );
   };
 
@@ -2750,90 +2913,9 @@ function App() {
             onCloseTabsToLeft={handleCloseTabsToLeft}
             onCloseTabsToRight={handleCloseTabsToRight}
             onNewSession={handleNewSessionFromTabBar}
+            onDetachFile={handleDetachFile}
           />
         )}
-
-        {/* Action bar: pane toggles (Files / Terminal / Mindmap / Voice /
-            Assistant) for the active session. Replaces the old vertical rail. */}
-        {(() => {
-          const hasSession = !!activeSession;
-          const voiceEnabled = dockTermConfig?.voice?.enabled ?? false;
-          const agentAlive = activeSession
-            ? (() => {
-                const s = getDisplayStatus(activeSession.id, activeSession.status);
-                return s === "running" || s === "waiting" || s === "done";
-              })()
-            : false;
-          const voiceCanToggle = hasSession && voiceEnabled && agentAlive;
-          const voiceOn = !!activeSession && voiceSessionId === activeSession.id;
-          const onToggleTerminal = async () => {
-            if (!activeSession) return;
-            if (activeTerminalPaneOpen) { handleTerminalPaneOpenChange(false); return; }
-            if (activeEmbeddedTerminalSession) { handleTerminalPaneOpenChange(true); return; }
-            try {
-              await handleCreateEmbeddedTerminal(activeSession);
-              handleTerminalPaneOpenChange(true);
-            } catch {
-              /* failed to create embedded terminal */
-            }
-          };
-          return (
-            <div
-              style={{
-                flex: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 9,
-                height: 46,
-                padding: "0 10px 0 16px",
-                borderBottom: "1px solid var(--border-2)",
-                backgroundColor: "var(--panel)",
-              }}
-            >
-              <span style={{ flex: 1, minWidth: 8 }} />
-              <PaneToggle
-                icon="folder"
-                label="Files"
-                active={filesPanelOpen}
-                onClick={() => handleFilesPanelOpenChange(!filesPanelOpen)}
-              />
-              <PaneToggle
-                icon="terminal"
-                label="Terminal"
-                active={activeTerminalPaneOpen}
-                disabled={!hasSession}
-                onClick={() => { void onToggleTerminal(); }}
-              />
-              <PaneToggle
-                icon="waypoints"
-                label="Mindmap"
-                active={activeMindmapPaneOpen}
-                disabled={!hasSession}
-                onClick={() => { if (activeSession) handleMindmapPaneOpenChange(!activeMindmapPaneOpen); }}
-              />
-              <PaneToggle
-                icon="waveform"
-                label="Voice"
-                active={voiceOn}
-                disabled={!voiceCanToggle}
-                title={
-                  !voiceEnabled
-                    ? "Enable voice in Settings"
-                    : !agentAlive
-                      ? "Start the session's agent first"
-                      : "Toggle voice pane"
-                }
-                onClick={() => { if (voiceCanToggle) handleVoicePaneOpenChange(!voiceOn); }}
-              />
-              <PaneToggle
-                icon="message"
-                label="Assistant"
-                active={assistantOpen}
-                onClick={() => setAssistantOpen((v) => !v)}
-              />
-            </div>
-          );
-        })()}
 
         {/* Session area + right-hand drag-tileable dock, side by side. The dock
             (SessionDock) is mounted HERE (App scope) — NOT inside SessionPanel —
@@ -2859,6 +2941,7 @@ function App() {
                 voicePaneOpen={voiceSessionId === activeSession.id}
                 onVoicePaneOpenChange={handleVoicePaneOpenChange}
                 onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}
+                paneToggles={renderPaneToggles()}
               />
             ) : (
               !activeFileTab && <EmptyState />
@@ -2937,6 +3020,17 @@ function App() {
             voiceSessionName={voiceSession?.name ?? voiceSessionId ?? ""}
             voiceIsActiveTab={voiceSessionId === activeTabId}
             onVoiceClose={detachVoice}
+            detachedFiles={detachedFileTabs
+              .map((id) => {
+                const f = parseFileTabId(id);
+                return f ? { key: id, sessionId: f.sessionId, relPath: f.relPath } : null;
+              })
+              .filter((f): f is { key: string; sessionId: string; relPath: string } => f !== null)}
+            onFileDirtyChange={(id, dirty) =>
+              setFileTabDirty((prev) => (!!prev[id] === dirty ? prev : { ...prev, [id]: dirty }))
+            }
+            onReattachFile={handleReattachFile}
+            onCloseDetachedFile={handleCloseDetachedFile}
           />
 
       {modal.type === "openRepo" && (

@@ -4,7 +4,7 @@ import * as api from "../api";
 import type { VoiceConfig } from "../types";
 import { ThemeSettings } from "./ThemeSettings";
 import { KeybindingsTab } from "./KeybindingsTab";
-import { getOS, type OS } from "../os";
+import { getOS, isMac, type OS } from "../os";
 import { Icon, type IconName } from "./Icon";
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";
@@ -104,18 +104,23 @@ export function Settings({ repos, onBack }: Props) {
           background: "var(--panel)",
         }}
       >
-        {/* Header */}
+        {/* Header — this overlay covers the window's title bar, so on macOS pad
+            the left so the inset traffic-light buttons don't overlap "settings".
+            The strip is also a window-drag region (back button opts out). */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             gap: 10,
             height: 56,
-            padding: "0 16px",
+            padding: isMac() ? "0 16px 0 80px" : "0 16px",
             borderBottom: "1px solid var(--border-2)",
-          }}
+            ["--wails-draggable" as string]: "drag",
+          } as React.CSSProperties}
         >
-          <IconButton name="arrowLeft" size={16} label="Back" onClick={onBack} />
+          <span style={{ ["--wails-draggable" as string]: "no-drag" } as React.CSSProperties}>
+            <IconButton name="arrowLeft" size={16} label="Back" onClick={onBack} />
+          </span>
           <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--fg)" }}>settings</span>
         </div>
 

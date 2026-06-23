@@ -23,6 +23,7 @@ import { FilesPanel } from "./FilesPanel";
 import { TerminalPane } from "./TerminalPane";
 import { MindmapPane } from "./MindmapPane";
 import { VoicePane } from "./VoicePane";
+import { FileTabPanel } from "./FileTabPanel";
 
 /* ============================================================
    SessionDock — the right-hand drag-tileable dock.
@@ -39,6 +40,15 @@ import { VoicePane } from "./VoicePane";
    ============================================================ */
 
 export type DockLeafKey = "files" | "terminal" | "mindmap" | "voice";
+
+/** A file tab detached from the center strip into the dock. Its dock leaf key
+ *  is the file-tab id itself (always prefixed "file:"), so it can't collide
+ *  with the fixed leaf keys above. */
+export interface DetachedFile {
+  key: string;
+  sessionId: string;
+  relPath: string;
+}
 
 const TREE_KEY = "quant.dockTree.";
 const WIDTH_KEY = "quant.dockWidth.";
@@ -90,8 +100,9 @@ function nudgePanes() {
 export interface SessionDockProps {
   /** the currently-active session — drives tree persistence + mindmap target */
   activeSession: Session | null;
-  /** which leaves are currently open for the active session */
-  present: DockLeafKey[];
+  /** which leaves are currently open for the active session — the fixed pane
+   *  keys (DockLeafKey) plus any detached file-tab ids ("file:…") */
+  present: string[];
 
   /* ---- files leaf ---- */
   filesSession: Session | null;
@@ -119,6 +130,12 @@ export interface SessionDockProps {
   voiceSessionName: string;
   voiceIsActiveTab: boolean;
   onVoiceClose: () => void;
+
+  /* ---- detached file leaves ("file:…") ---- */
+  detachedFiles: DetachedFile[];
+  onFileDirtyChange: (key: string, dirty: boolean) => void;
+  onReattachFile: (key: string) => void;
+  onCloseDetachedFile: (key: string) => void;
 }
 
 /* Marks the pane header as the drag grip. The DockTree drag is forwarded from
@@ -134,6 +151,7 @@ function PaneShell({
   sub,
   onClose,
   closeLabel,
+  leadingActions,
   children,
 }: {
   eyebrow: string;
@@ -141,6 +159,8 @@ function PaneShell({
   sub?: string;
   onClose: () => void;
   closeLabel: string;
+  /** extra header actions rendered left of the close button (e.g. reattach) */
+  leadingActions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -161,7 +181,12 @@ function PaneShell({
         eyebrow={eyebrow}
         sub={sub}
         grip={GRIP_PROPS}
-        actions={<IconButton name="x" size={13} label={closeLabel} onClick={onClose} />}
+        actions={
+          <>
+            {leadingActions}
+            <IconButton name="x" size={13} label={closeLabel} onClick={onClose} />
+          </>
+        }
       />
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
         {children}
@@ -193,6 +218,10 @@ export function SessionDock(props: SessionDockProps) {
     voiceSessionName,
     voiceIsActiveTab,
     onVoiceClose,
+    detachedFiles,
+    onFileDirtyChange,
+    onReattachFile,
+    onCloseDetachedFile,
   } = props;
 
   // The dock's persistence/identity is keyed to the active session when there is
@@ -438,8 +467,39 @@ export function SessionDock(props: SessionDockProps) {
             </div>
           </PaneShell>
         ) : null;
-      default:
+      default: {
+        // Detached file tab ("file:<sessionId>:<relPath>").
+        if (key.startsWith("file:")) {
+          const f = detachedFiles.find((d) => d.key === key);
+          if (!f) return null;
+          const base = f.relPath.split("/").pop() || f.relPath;
+          return (
+            <PaneShell
+              eyebrow="file"
+              dotColor="var(--warn)"
+              sub={base}
+              onClose={() => onCloseDetachedFile(key)}
+              closeLabel="Close file"
+              leadingActions={
+                <IconButton
+                  name="cornerUpLeft"
+                  size={13}
+                  label="Reattach to tab"
+                  onClick={() => onReattachFile(key)}
+                />
+              }
+            >
+              <FileTabPanel
+                sessionId={f.sessionId}
+                relPath={f.relPath}
+                active
+                onDirtyChange={(dirty) => onFileDirtyChange(key, dirty)}
+              />
+            </PaneShell>
+          );
+        }
         return null;
+      }
     }
   };
 

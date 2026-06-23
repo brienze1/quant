@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import type { Session, Task, Config } from "../types";
 import { StatusDot } from "./StatusDot";
@@ -31,6 +31,9 @@ interface Props {
   voicePaneOpen: boolean;
   onVoicePaneOpenChange: (open: boolean) => void;
   onCreateEmbeddedTerminal: (parentSession: Session) => Promise<Session>;
+  // Pane-toggle pills (Files / Terminal / Mindmap / Voice) rendered in this
+  // header's right group, owned and built by App (it holds the pane state).
+  paneToggles?: ReactNode;
 }
 
 export function SessionPanel({
@@ -49,6 +52,7 @@ export function SessionPanel({
   voicePaneOpen,
   onVoicePaneOpenChange,
   onCreateEmbeddedTerminal,
+  paneToggles,
 }: Props) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [termConfig, setTermConfig] = useState<Config | null>(null);
@@ -177,8 +181,16 @@ export function SessionPanel({
           )}
         </div>
 
-        {/* Right: terminal btn + layout toggle + hamburger */}
+        {/* Right: pane toggles + mic + hamburger */}
         <div className="flex items-center gap-1.5 shrink-0">
+
+          {/* Pane-toggle pills (Files / Terminal / Mindmap / Voice), built by
+              App and passed in. Sit left of the mic/menu in this header. */}
+          {paneToggles && (
+            <div className="flex items-center" style={{ gap: 9, marginRight: 6 }}>
+              {paneToggles}
+            </div>
+          )}
 
           {/* Unarchive button */}
           {isArchived && onUnarchive && (

@@ -21,6 +21,8 @@ interface TabBarProps {
   onCloseTabsToRight: (id: string) => void;
   /** Trailing `+` opens the new-session flow (optional — hidden when absent). */
   onNewSession?: () => void;
+  /** Detach a file tab into the dock as its own panel (file tabs only). */
+  onDetachFile?: (id: string) => void;
 }
 
 // Git-status letter tone for file tabs (M=modified, A=added, D=deleted).
@@ -69,12 +71,14 @@ function TabCell({
   active,
   onSelect,
   onClose,
+  onDetach,
   onContextMenu,
 }: {
   tab: Tab;
   active: boolean;
   onSelect: () => void;
   onClose: () => void;
+  onDetach?: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -150,6 +154,31 @@ function TabCell({
         </span>
       )}
 
+      {isFile && onDetach && (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            onDetach();
+          }}
+          title="Detach to panel"
+          style={{
+            display: "flex",
+            width: 16,
+            height: 16,
+            borderRadius: 4,
+            alignItems: "center",
+            justifyContent: "center",
+            flex: "none",
+            opacity: hovered || active ? 1 : 0,
+            color: "var(--fg-3)",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-3)")}
+        >
+          <Icon name="columns" size={11} />
+        </span>
+      )}
+
       <span
         onClick={(e) => {
           e.stopPropagation();
@@ -185,6 +214,7 @@ export function TabBar({
   onCloseTabsToLeft,
   onCloseTabsToRight,
   onNewSession,
+  onDetachFile,
 }: TabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -282,6 +312,7 @@ export function TabBar({
             active={tab.id === activeTabId}
             onSelect={() => onSelectTab(tab.id)}
             onClose={() => onCloseTab(tab.id)}
+            onDetach={onDetachFile && tab.kind === "file" ? () => onDetachFile(tab.id) : undefined}
             onContextMenu={(e) => openTabContextMenu(e, tab.id)}
           />
         ))}
