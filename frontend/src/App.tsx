@@ -1943,12 +1943,12 @@ function App() {
       <div
         style={{
           width: 40,
-          backgroundColor: "var(--q-bg)",
-          borderLeft: "1px solid var(--q-border)",
+          backgroundColor: "var(--bg)",
+          borderLeft: "1px solid var(--border)",
           display: "flex",
           flexDirection: "column",
           padding: "8px 0",
-          fontFamily: "'JetBrains Mono', monospace",
+          fontFamily: "var(--mono)",
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -1959,16 +1959,16 @@ function App() {
                 style={{
                   width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
                   background: "none", border: "none", cursor: "pointer",
-                  color: currentView === item.view ? "var(--q-fg)" : "var(--q-fg-secondary)",
-                  borderRight: currentView === item.view ? "2px solid var(--q-accent)" : "2px solid transparent",
+                  color: currentView === item.view ? "var(--fg)" : "var(--fg-2)",
+                  borderRight: currentView === item.view ? "2px solid var(--accent)" : "2px solid transparent",
                 }}
                 onMouseEnter={(e) => {
-                  if (currentView !== item.view) e.currentTarget.style.color = "var(--q-fg)";
+                  if (currentView !== item.view) e.currentTarget.style.color = "var(--fg)";
                   const tooltip = e.currentTarget.parentElement?.querySelector("[data-tooltip]") as HTMLElement;
                   if (tooltip) tooltip.style.opacity = "1";
                 }}
                 onMouseLeave={(e) => {
-                  if (currentView !== item.view) e.currentTarget.style.color = "var(--q-fg-secondary)";
+                  if (currentView !== item.view) e.currentTarget.style.color = "var(--fg-2)";
                   const tooltip = e.currentTarget.parentElement?.querySelector("[data-tooltip]") as HTMLElement;
                   if (tooltip) tooltip.style.opacity = "0";
                 }}
@@ -1982,13 +1982,13 @@ function App() {
                   right: 44,
                   top: "50%",
                   transform: "translateY(-50%)",
-                  backgroundColor: "var(--q-bg-surface)",
-                  color: "var(--q-fg)",
+                  backgroundColor: "var(--panel)",
+                  color: "var(--fg)",
                   fontSize: 11,
-                  fontFamily: "'JetBrains Mono', monospace",
+                  fontFamily: "var(--mono)",
                   padding: "4px 8px",
                   borderRadius: 4,
-                  border: "1px solid var(--q-border)",
+                  border: "1px solid var(--border)",
                   whiteSpace: "nowrap",
                   pointerEvents: "none",
                   opacity: 0,
@@ -2011,11 +2011,11 @@ function App() {
             style={{
               width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
               background: "none", border: "none", cursor: "pointer",
-              color: filesPanelOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
-              borderRight: filesPanelOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
+              color: filesPanelOpen ? "var(--fg)" : "var(--fg-2)",
+              borderRight: filesPanelOpen ? "2px solid var(--accent)" : "2px solid transparent",
             }}
-            onMouseEnter={(e) => { if (!filesPanelOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
-            onMouseLeave={(e) => { if (!filesPanelOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+            onMouseEnter={(e) => { if (!filesPanelOpen) e.currentTarget.style.color = "var(--fg)"; }}
+            onMouseLeave={(e) => { if (!filesPanelOpen) e.currentTarget.style.color = "var(--fg-2)"; }}
             title="Files"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2030,11 +2030,11 @@ function App() {
             style={{
               width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
               background: "none", border: "none", cursor: "pointer",
-              color: assistantOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
-              borderRight: assistantOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
+              color: assistantOpen ? "var(--fg)" : "var(--fg-2)",
+              borderRight: assistantOpen ? "2px solid var(--accent)" : "2px solid transparent",
             }}
-            onMouseEnter={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
-            onMouseLeave={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+            onMouseEnter={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--fg)"; }}
+            onMouseLeave={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--fg-2)"; }}
             title="Quant Assistant"
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2049,11 +2049,11 @@ function App() {
             style={{
               width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
               background: "none", border: "none", cursor: "pointer",
-              color: workspaceDropdownOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
-              borderRight: workspaceDropdownOpen ? "2px solid var(--q-accent)" : "2px solid transparent",
+              color: workspaceDropdownOpen ? "var(--fg)" : "var(--fg-2)",
+              borderRight: workspaceDropdownOpen ? "2px solid var(--accent)" : "2px solid transparent",
             }}
-            onMouseEnter={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
-            onMouseLeave={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+            onMouseEnter={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--fg)"; }}
+            onMouseLeave={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--fg-2)"; }}
             title={`Workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? "Default"}`}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2068,18 +2068,18 @@ function App() {
                 position: "absolute",
                 right: 44,
                 bottom: 0,
-                backgroundColor: "var(--q-bg-surface)",
-                border: "1px solid var(--q-border)",
+                backgroundColor: "var(--panel)",
+                border: "1px solid var(--border)",
                 borderRadius: 6,
                 padding: "4px 0",
                 minWidth: 180,
                 zIndex: 9999,
-                fontFamily: "'JetBrains Mono', monospace",
+                fontFamily: "var(--mono)",
                 fontSize: 12,
                 boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
               }}
             >
-              <div style={{ padding: "4px 12px", color: "var(--q-fg-secondary)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+              <div style={{ padding: "4px 12px", color: "var(--fg-2)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
                 Workspaces
               </div>
               {workspaces.map((ws) => {
@@ -2089,10 +2089,10 @@ function App() {
 
                 if (isConfirmingDelete) {
                   return (
-                    <div key={ws.id} style={{ padding: "6px 12px", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ color: "var(--q-fg)", marginBottom: 6 }}>
+                    <div key={ws.id} style={{ padding: "6px 12px", fontSize: 11, fontFamily: "var(--mono)" }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ color: "var(--fg)", marginBottom: 6 }}>
                         Delete "{ws.name}"?
-                        <br /><span style={{ color: "var(--q-fg-secondary)" }}>All items will be deleted.</span>
+                        <br /><span style={{ color: "var(--fg-2)" }}>All items will be deleted.</span>
                       </div>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button
@@ -2107,17 +2107,17 @@ function App() {
                             }
                           }}
                           style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-error)",
-                            backgroundColor: "var(--q-error)", color: "var(--q-fg)", cursor: "pointer",
-                            fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--danger)",
+                            backgroundColor: "var(--danger)", color: "var(--fg)", cursor: "pointer",
+                            fontSize: 11, fontFamily: "var(--mono)",
                           }}
                         >Delete</button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setDeletingWorkspaceId(null); }}
                           style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-border-light)",
-                            backgroundColor: "transparent", color: "var(--q-fg-secondary)", cursor: "pointer",
-                            fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
+                            backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
+                            fontSize: 11, fontFamily: "var(--mono)",
                           }}
                         >Cancel</button>
                       </div>
@@ -2128,9 +2128,9 @@ function App() {
                 if (editingWorkspaceId === ws.id) {
                   const inputStyle = {
                     width: "100%", padding: "4px 8px", marginTop: 4,
-                    backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border-light)", borderRadius: 4,
-                    color: "var(--q-fg)", fontSize: 11, outline: "none",
-                    fontFamily: "'JetBrains Mono', monospace",
+                    backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
+                    color: "var(--fg)", fontSize: 11, outline: "none",
+                    fontFamily: "var(--mono)",
                   } as const;
                   return (
                     <form
@@ -2159,7 +2159,7 @@ function App() {
                       style={{ padding: "6px 12px" }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div style={{ color: "var(--q-fg-secondary)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Edit workspace</div>
+                      <div style={{ color: "var(--fg-2)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Edit workspace</div>
                       <input
                         autoFocus
                         value={editWorkspaceForm.name}
@@ -2167,8 +2167,8 @@ function App() {
                         onKeyDown={(e) => { if (e.key === "Escape") setEditingWorkspaceId(null); }}
                         placeholder="Name"
                         style={{ ...inputStyle, marginTop: 0 }}
-                        onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
-                        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                        onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
                       />
                       <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                         <input
@@ -2177,8 +2177,8 @@ function App() {
                           placeholder=".claude root"
                           title="Project root containing .claude/skills/"
                           style={{ ...inputStyle, marginTop: 0, flex: 1 }}
-                          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
                         />
                         <button
                           type="button"
@@ -2186,13 +2186,13 @@ function App() {
                             const path = await api.browseClaudeConfigDir();
                             if (path) setEditWorkspaceForm((f) => ({ ...f, claudeConfigPath: path }));
                           }}
-                          style={{ padding: "4px 8px", backgroundColor: "var(--q-bg-inset)", border: "1px solid var(--q-border-light)", borderRadius: 4, color: "var(--q-fg-secondary)", cursor: "pointer", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                          style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
                           title="Browse project root for .claude"
                         >...</button>
                       </div>
-                      {pathErrors.claude && <div style={{ color: "var(--q-error)", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.claude}</div>}
+                      {pathErrors.claude && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.claude}</div>}
                       <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                         <input
                           value={editWorkspaceForm.mcpConfigPath}
@@ -2200,8 +2200,8 @@ function App() {
                           placeholder=".mcp.json root"
                           title="Project root containing .mcp.json"
                           style={{ ...inputStyle, marginTop: 0, flex: 1 }}
-                          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
                         />
                         <button
                           type="button"
@@ -2209,29 +2209,29 @@ function App() {
                             const path = await api.browseMcpConfigFile();
                             if (path) setEditWorkspaceForm((f) => ({ ...f, mcpConfigPath: path }));
                           }}
-                          style={{ padding: "4px 8px", backgroundColor: "var(--q-bg-inset)", border: "1px solid var(--q-border-light)", borderRadius: 4, color: "var(--q-fg-secondary)", cursor: "pointer", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                          style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
                           title="Browse project root for .mcp.json"
                         >...</button>
                       </div>
-                      {pathErrors.mcp && <div style={{ color: "var(--q-error)", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.mcp}</div>}
+                      {pathErrors.mcp && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.mcp}</div>}
                       <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                         <button
                           type="submit"
                           style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-accent)",
-                            backgroundColor: "var(--q-accent)", color: "var(--q-bg)", cursor: "pointer",
-                            fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--accent)",
+                            backgroundColor: "var(--accent)", color: "var(--bg)", cursor: "pointer",
+                            fontSize: 11, fontFamily: "var(--mono)",
                           }}
                         >Save</button>
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setEditingWorkspaceId(null); }}
                           style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-border-light)",
-                            backgroundColor: "transparent", color: "var(--q-fg-secondary)", cursor: "pointer",
-                            fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
+                            backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
+                            fontSize: 11, fontFamily: "var(--mono)",
                           }}
                         >Cancel</button>
                       </div>
@@ -2244,9 +2244,9 @@ function App() {
                     key={ws.id}
                     style={{
                       display: "flex", alignItems: "center",
-                      background: isActive ? "var(--q-border)" : "none",
+                      background: isActive ? "var(--border)" : "none",
                     }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-inset)"; }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
                     onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "transparent"; }}
                   >
                     <button
@@ -2258,15 +2258,15 @@ function App() {
                         display: "flex", alignItems: "center", gap: 8,
                         flex: 1, padding: "6px 12px",
                         background: "none", border: "none", cursor: "pointer",
-                        color: isActive ? "var(--q-accent)" : "var(--q-fg)",
+                        color: isActive ? "var(--accent)" : "var(--fg)",
                         textAlign: "left", fontSize: 12,
-                        fontFamily: "'JetBrains Mono', monospace",
+                        fontFamily: "var(--mono)",
                       }}
                     >
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: isActive ? "var(--q-accent)" : "var(--q-border-light)", flexShrink: 0 }} />
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: isActive ? "var(--accent)" : "var(--border-2)", flexShrink: 0 }} />
                       {ws.name}
                       {isActive && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--q-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       )}
@@ -2285,10 +2285,10 @@ function App() {
                         display: "flex", alignItems: "center", justifyContent: "center",
                         width: 28, height: 28, flexShrink: 0,
                         background: "none", border: "none", cursor: "pointer",
-                        color: "var(--q-fg-secondary)",
+                        color: "var(--fg-2)",
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
                       title={`Settings for ${ws.name}`}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2302,10 +2302,10 @@ function App() {
                           display: "flex", alignItems: "center", justifyContent: "center",
                           width: 28, height: 28, flexShrink: 0,
                           background: "none", border: "none", cursor: "pointer",
-                          color: "var(--q-fg-secondary)", marginRight: 4,
+                          color: "var(--fg-2)", marginRight: 4,
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-error)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
                         title={`Delete ${ws.name}`}
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2316,7 +2316,7 @@ function App() {
                   </div>
                 );
               })}
-              <div style={{ borderTop: "1px solid var(--q-border)", margin: "4px 0" }} />
+              <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
               {creatingWorkspace ? (
                 <form
                   onSubmit={async (e) => {
@@ -2357,12 +2357,12 @@ function App() {
                     placeholder="Workspace name..."
                     style={{
                       width: "100%", padding: "4px 8px",
-                      backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border-light)", borderRadius: 4,
-                      color: "var(--q-fg)", fontSize: 12, outline: "none",
-                      fontFamily: "'JetBrains Mono', monospace",
+                      backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
+                      color: "var(--fg)", fontSize: 12, outline: "none",
+                      fontFamily: "var(--mono)",
                     }}
-                    onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
-                    onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
                   />
                   <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                     <input
@@ -2372,12 +2372,12 @@ function App() {
                       title="Project root containing .claude/skills/ (e.g. /path/to/project)"
                       style={{
                         flex: 1, padding: "4px 8px",
-                        backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border-light)", borderRadius: 4,
-                        color: "var(--q-fg)", fontSize: 11, outline: "none",
-                        fontFamily: "'JetBrains Mono', monospace",
+                        backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
+                        color: "var(--fg)", fontSize: 11, outline: "none",
+                        fontFamily: "var(--mono)",
                       }}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
                     />
                     <button
                       type="button"
@@ -2385,13 +2385,13 @@ function App() {
                         const path = await api.browseClaudeConfigDir();
                         if (path) setNewClaudeConfigPath(path);
                       }}
-                      style={{ padding: "4px 8px", backgroundColor: "var(--q-bg-inset)", border: "1px solid var(--q-border-light)", borderRadius: 4, color: "var(--q-fg-secondary)", cursor: "pointer", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                      style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
                       title="Browse project root for .claude"
                     >...</button>
                   </div>
-                  {pathErrors.claude && <div style={{ color: "var(--q-error)", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.claude}</div>}
+                  {pathErrors.claude && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.claude}</div>}
                   <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                     <input
                       value={newMcpConfigPath}
@@ -2400,12 +2400,12 @@ function App() {
                       title="Project root containing .mcp.json (e.g. /path/to/project)"
                       style={{
                         flex: 1, padding: "4px 8px",
-                        backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border-light)", borderRadius: 4,
-                        color: "var(--q-fg)", fontSize: 11, outline: "none",
-                        fontFamily: "'JetBrains Mono', monospace",
+                        backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
+                        color: "var(--fg)", fontSize: 11, outline: "none",
+                        fontFamily: "var(--mono)",
                       }}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--q-accent)"; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--q-border-light)"; }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
                     />
                     <button
                       type="button"
@@ -2413,29 +2413,29 @@ function App() {
                         const path = await api.browseMcpConfigFile();
                         if (path) setNewMcpConfigPath(path);
                       }}
-                      style={{ padding: "4px 8px", backgroundColor: "var(--q-bg-inset)", border: "1px solid var(--q-border-light)", borderRadius: 4, color: "var(--q-fg-secondary)", cursor: "pointer", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                      style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
                       title="Browse project root for .mcp.json"
                     >...</button>
                   </div>
-                  {pathErrors.mcp && <div style={{ color: "var(--q-error)", fontSize: 10, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>{pathErrors.mcp}</div>}
+                  {pathErrors.mcp && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.mcp}</div>}
                   <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                     <button
                       type="submit"
                       style={{
-                        padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-accent)",
-                        backgroundColor: "var(--q-accent)", color: "var(--q-bg)", cursor: "pointer",
-                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                        padding: "3px 10px", borderRadius: 4, border: "1px solid var(--accent)",
+                        backgroundColor: "var(--accent)", color: "var(--bg)", cursor: "pointer",
+                        fontSize: 11, fontFamily: "var(--mono)",
                       }}
                     >Save</button>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setCreatingWorkspace(false); setNewWorkspaceName(""); setNewClaudeConfigPath(""); setNewMcpConfigPath(""); }}
                       style={{
-                        padding: "3px 10px", borderRadius: 4, border: "1px solid var(--q-border-light)",
-                        backgroundColor: "transparent", color: "var(--q-fg-secondary)", cursor: "pointer",
-                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                        padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
+                        backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
+                        fontSize: 11, fontFamily: "var(--mono)",
                       }}
                     >Cancel</button>
                   </div>
@@ -2450,11 +2450,11 @@ function App() {
                     display: "flex", alignItems: "center", gap: 8,
                     width: "100%", padding: "6px 12px",
                     background: "none", border: "none", cursor: "pointer",
-                    color: "var(--q-fg-secondary)", textAlign: "left", fontSize: 12,
-                    fontFamily: "'JetBrains Mono', monospace",
+                    color: "var(--fg-2)", textAlign: "left", fontSize: 12,
+                    fontFamily: "var(--mono)",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-fg)"; e.currentTarget.style.backgroundColor = "var(--q-bg-inset)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-secondary)"; e.currentTarget.style.backgroundColor = "transparent"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -2578,7 +2578,7 @@ function App() {
       {renderQuantiOverlay()}
 
       {view === "jobs" && (
-        <div className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
+        <div className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
           <JobsView
             jobs={filteredJobs}
             agents={filteredAgents}
@@ -2594,7 +2594,7 @@ function App() {
       )}
 
       {view === "agents" && (
-        <div className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
+        <div className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
           <AgentsView
             agents={filteredAgents}
             onCreateAgent={() => setModal({ type: "createAgent" })}
@@ -2609,7 +2609,7 @@ function App() {
         </div>
       )}
 
-    <div key={view} className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)" }}>
+    <div key={view} className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
       <Sidebar
         repos={repos}
         tasksByRepo={tasksByRepo}
@@ -2661,24 +2661,24 @@ function App() {
         onShowChangelog={() => setModal({ type: "changelog" })}
       />
 
-      <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "var(--q-bg)" }}>
+      <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "var(--bg)" }}>
         {error && (
           <div
             className="absolute top-0 left-0 right-0 z-40 text-xs px-4 py-2 flex justify-between"
             style={{
-              backgroundColor: "var(--q-error-bg)",
-              color: "var(--q-error)",
-              borderBottom: "1px solid var(--q-border)",
-              fontFamily: "'JetBrains Mono', monospace",
+              backgroundColor: "color-mix(in srgb, var(--danger) 14%, transparent)",
+              color: "var(--danger)",
+              borderBottom: "1px solid var(--border)",
+              fontFamily: "var(--mono)",
             }}
           >
             <span>// error: {error}</span>
             <button
               onClick={() => setError(null)}
               className="ml-2 transition-colors"
-              style={{ color: "var(--q-error)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-error)")}
+              style={{ color: "var(--danger)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--danger)")}
             >
               [x]
             </button>
@@ -2945,7 +2945,7 @@ function App() {
             display: "flex",
             flexDirection: "column",
             gap: 8,
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: "var(--mono)",
           }}
         >
           {toasts.map((toast) => (
@@ -2958,9 +2958,9 @@ function App() {
                 }
               }}
               style={{
-                backgroundColor: "var(--q-bg-hover)",
-                border: "1px solid var(--q-accent)",
-                color: "var(--q-fg)",
+                backgroundColor: "var(--hover)",
+                border: "1px solid var(--accent)",
+                color: "var(--fg)",
                 fontSize: 12,
                 padding: "10px 16px",
                 borderRadius: 4,
@@ -2974,7 +2974,7 @@ function App() {
               }}
             >
               <span style={{ flex: 1 }}>
-                <span style={{ color: "var(--q-accent)", marginRight: 8 }}>~</span>
+                <span style={{ color: "var(--accent)", marginRight: 8 }}>~</span>
                 {toast.message}
               </span>
               <span
@@ -2984,7 +2984,7 @@ function App() {
                 }}
                 style={{
                   cursor: "pointer",
-                  color: "var(--q-fg-muted)",
+                  color: "var(--fg-3)",
                   fontSize: 14,
                   lineHeight: 1,
                   padding: "0 2px",

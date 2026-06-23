@@ -168,7 +168,7 @@ function StatusNode({ id, data }: NodeProps<FlowNode>) {
 
 function NoteNode({ id, data }: NodeProps<FlowNode>) {
   // Per-note color tints the sticky bg + border; empty falls back to the CSS
-  // var(--q-warning) styling defined in MindmapPane.css.
+  // var(--warn) styling defined in MindmapPane.css.
   const colorStyle: React.CSSProperties | undefined = data.color
     ? {
         background: `color-mix(in srgb, ${data.color} 14%, var(--panel-2))`,
@@ -290,7 +290,7 @@ function EditNodeModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
+      style={{ backgroundColor: "var(--scrim)" }}
     >
       <form
         onSubmit={handleSubmit}
@@ -1088,7 +1088,7 @@ function BoardNameModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
+      style={{ backgroundColor: "var(--scrim)" }}
       onClick={onCancel}
     >
       <form

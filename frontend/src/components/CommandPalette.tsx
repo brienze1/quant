@@ -96,7 +96,7 @@ export function CommandPalette({ commands, onClose }: Props) {
       onClick={onClose}
     >
       {/* backdrop */}
-      <div style={{ position: "absolute", inset: 0, backgroundColor: "var(--q-modal-backdrop)" }} />
+      <div style={{ position: "absolute", inset: 0, backgroundColor: "var(--scrim)" }} />
 
       {/* palette */}
       <div

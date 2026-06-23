@@ -389,7 +389,7 @@ function NameModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
+      style={{ backgroundColor: "var(--scrim)" }}
       onClick={onCancel}
     >
       <form

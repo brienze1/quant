@@ -1209,7 +1209,7 @@ function TextInput({
 
 // ComboInput is a pick-or-type field: a themed text input bound to a <datalist>
 // so the user keeps free typing while discovered/curated options show in the
-// dropdown. Styled identically to TextInput (same --q-* tokens) so it blends in.
+// dropdown. Styled identically to TextInput (same --* tokens) so it blends in.
 function ComboInput({
   value,
   onChange,
@@ -2172,7 +2172,7 @@ function pingStateColor(state: "untested" | "pending" | "ok" | "fail"): string {
 }
 
 // StatusChip renders a small "LABEL ●" pill whose dot + label color reflect a
-// ping state. Themed with --q-* tokens only.
+// ping state. Themed with --* tokens only.
 function StatusChip({ label, state }: { label: string; state: "untested" | "ok" | "fail" }) {
   const color = pingStateColor(state);
   const text = state === "ok" ? "connected" : state === "fail" ? "not reachable" : "untested";
@@ -2200,7 +2200,7 @@ function StatusChip({ label, state }: { label: string; state: "untested" | "ok" 
 
 // Segmented is a generic segmented control (a row of mutually-exclusive tabs).
 // Used for the install-card OS tabs (3-way) and the Kokoro install-method picker
-// (2-way). Themed with --q-* tokens only.
+// (2-way). Themed with --* tokens only.
 function Segmented<T extends string>({
   items,
   value,
@@ -2281,7 +2281,7 @@ function CommandLine({ cmd }: { cmd: string }) {
 
 // ScriptBlock renders a multi-line, copy-paste setup script with a copy button.
 // Unlike CommandLine it preserves newlines and does NOT break-all (so indentation
-// and line structure stay readable). Themed with --q-* tokens only.
+// and line structure stay readable). Themed with --* tokens only.
 function ScriptBlock({ text }: { text: string }) {
   return (
     <div
@@ -2344,7 +2344,7 @@ function InstallCard({
 // AutoStartSection is the collapsible "Auto-start on login (optional)" block shown
 // inside each install card. Collapsed by default so it doesn't bury the primary
 // install steps. Renders the per-OS template blocks (notes + copyable code +
-// links) for the currently-selected OS. Themed with --q-* tokens only.
+// links) for the currently-selected OS. Themed with --* tokens only.
 function AutoStartSection({
   os,
   blocks,

@@ -2399,7 +2399,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         style={{
           position: "fixed",
           inset: 0,
-          backgroundColor: "var(--q-modal-backdrop)",
+          backgroundColor: "var(--scrim)",
           zIndex: 1000,
           display: "flex",
           alignItems: "center",
@@ -2958,7 +2958,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const h = Math.abs(selectionBox.currentY - selectionBox.startY);
             if (w < 2 && h < 2) return null;
             return (
-              <div style={{ position: "absolute", left: x, top: y, width: w, height: h, border: "1px solid var(--q-selection-bg)", backgroundColor: "var(--accent-soft)", pointerEvents: "none", borderRadius: 2 }} />
+              <div style={{ position: "absolute", left: x, top: y, width: w, height: h, border: "1px solid var(--accent-soft)", backgroundColor: "var(--accent-soft)", pointerEvents: "none", borderRadius: 2 }} />
             );
           })()}
 

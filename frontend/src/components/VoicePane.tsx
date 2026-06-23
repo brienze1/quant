@@ -69,7 +69,7 @@ function formatElapsed(totalSecs: number): string {
 
 // WI-5.5: map an error kind to an actionable, human banner. `title` is short
 // (status bar), `detail` is the actionable line, `action` (optional) hints what
-// the user should do. Themed with --q-* by the renderer.
+// the user should do. Themed with --* by the renderer.
 interface BannerCopy {
   title: string;
   detail: string;

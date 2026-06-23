@@ -3,7 +3,7 @@ import type { SchemaField } from "../types";
 
 const TYPES = ["string", "number", "boolean", "object", "array"] as const;
 const SOURCES = ["passthrough", "produced"] as const;
-const font = "'JetBrains Mono', monospace";
+const font = "var(--mono)";
 
 interface Props {
   kind: "input" | "output";
@@ -45,9 +45,9 @@ export function SchemaFieldEditor({ kind, fields, onChange }: Props) {
   }
 
   const inputStyle: React.CSSProperties = {
-    backgroundColor: "var(--q-bg-hover)",
-    border: "1px solid var(--q-border)",
-    color: "var(--q-fg)",
+    backgroundColor: "var(--hover)",
+    border: "1px solid var(--border)",
+    color: "var(--fg)",
     fontSize: 11,
     fontFamily: font,
     padding: "4px 8px",
@@ -62,7 +62,7 @@ export function SchemaFieldEditor({ kind, fields, onChange }: Props) {
       {fields.length === 0 && (
         <div
           style={{
-            color: "var(--q-fg-muted)",
+            color: "var(--fg-3)",
             fontSize: 10,
             fontFamily: font,
           }}
@@ -84,8 +84,8 @@ export function SchemaFieldEditor({ kind, fields, onChange }: Props) {
             onChange={(e) => updateRow(i, { key: e.target.value })}
             placeholder="key"
             style={{ ...inputStyle, flex: 1, minWidth: 0 }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
           />
 
           <FieldSelect
@@ -127,13 +127,13 @@ export function SchemaFieldEditor({ kind, fields, onChange }: Props) {
               width: 24,
               height: 24,
               flexShrink: 0,
-              color: "var(--q-fg-secondary)",
+              color: "var(--fg-2)",
               background: "none",
               border: "none",
               cursor: "pointer",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-error)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--danger)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-2)")}
           >
             <svg
               width="13"
@@ -168,26 +168,26 @@ export function SchemaFieldEditor({ kind, fields, onChange }: Props) {
             }
           }}
           style={{ ...inputStyle, flex: 1, minWidth: 0 }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
         />
         <button
           type="button"
           data-testid={`schema-field-add-${kind}`}
           onClick={addRow}
           style={{
-            color: "var(--q-fg-muted)",
+            color: "var(--fg-3)",
             fontSize: 11,
             fontFamily: font,
-            border: "1px dashed var(--q-border)",
+            border: "1px dashed var(--border)",
             padding: "4px 10px",
             background: "none",
             cursor: "pointer",
           }}
           onMouseEnter={(e) =>
-            (e.currentTarget.style.color = "var(--q-fg-secondary)")
+            (e.currentTarget.style.color = "var(--fg-2)")
           }
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-3)")}
         >
           + add field
         </button>
@@ -234,9 +234,9 @@ function FieldSelect({
         style={{
           width,
           height: 26,
-          backgroundColor: "var(--q-bg-hover)",
-          border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
-          color: "var(--q-accent)",
+          backgroundColor: "var(--hover)",
+          border: `1px solid ${open ? "var(--accent)" : "var(--border)"}`,
+          color: "var(--accent)",
           fontSize: 11,
           fontFamily: font,
           padding: "0 8px",
@@ -257,8 +257,8 @@ function FieldSelect({
             top: 28,
             left: 0,
             zIndex: 60,
-            backgroundColor: "var(--q-bg)",
-            border: "1px solid var(--q-border)",
+            backgroundColor: "var(--bg)",
+            border: "1px solid var(--border)",
             width: "100%",
           }}
         >
@@ -278,21 +278,21 @@ function FieldSelect({
                 gap: 6,
                 fontFamily: font,
                 fontSize: 11,
-                color: opt === value ? "var(--q-accent)" : "var(--q-fg-dimmed)",
-                backgroundColor: opt === value ? "var(--q-bg-hover)" : "transparent",
+                color: opt === value ? "var(--accent)" : "var(--fg-4)",
+                backgroundColor: opt === value ? "var(--hover)" : "transparent",
                 border: "none",
                 cursor: "pointer",
               }}
               onMouseEnter={(e) => {
                 if (opt !== value)
-                  e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                  e.currentTarget.style.backgroundColor = "var(--hover)";
               }}
               onMouseLeave={(e) => {
                 if (opt !== value)
                   e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
+              <span style={{ color: "var(--accent)", flexShrink: 0 }}>~</span>
               <span>{opt}</span>
             </button>
           ))}
@@ -325,7 +325,7 @@ function FieldToggle({
           width: 32,
           height: 18,
           borderRadius: 9,
-          backgroundColor: checked ? "var(--q-accent)" : "var(--q-border)",
+          backgroundColor: checked ? "var(--accent)" : "var(--border)",
           border: "none",
           cursor: "pointer",
           position: "relative",
@@ -338,7 +338,7 @@ function FieldToggle({
             width: 14,
             height: 14,
             borderRadius: 7,
-            backgroundColor: "var(--q-fg)",
+            backgroundColor: "var(--fg)",
             position: "absolute",
             top: 2,
             left: checked ? 16 : 2,
@@ -350,7 +350,7 @@ function FieldToggle({
         style={{
           fontFamily: font,
           fontSize: 11,
-          color: "var(--q-fg-secondary)",
+          color: "var(--fg-2)",
           userSelect: "none",
         }}
       >
