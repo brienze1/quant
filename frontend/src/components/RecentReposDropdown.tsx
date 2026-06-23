@@ -45,6 +45,7 @@ export function RecentReposDropdown({
   const [hasMore, setHasMore] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [emptyChecked, setEmptyChecked] = useState(false);
+  const [filterFocused, setFilterFocused] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -163,56 +164,65 @@ export function RecentReposDropdown({
   // position the panel below the anchor button. Clamp to viewport.
   const PANEL_WIDTH = 380;
   const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - PANEL_WIDTH - 8));
-  const top = anchorRect.bottom + 4;
-
-  const font = "'JetBrains Mono', monospace";
+  const top = anchorRect.bottom + 6;
 
   return (
     <div
       ref={containerRef}
-      className="fixed z-50"
+      className="fixed"
       style={{
         left,
         top,
         width: PANEL_WIDTH,
         maxHeight: 380,
-        backgroundColor: "var(--q-bg)",
-        border: "1px solid var(--q-border)",
+        zIndex: 240,
         display: "flex",
         flexDirection: "column",
-        fontFamily: font,
+        background: "var(--panel)",
+        border: "1px solid var(--border)",
+        borderRadius: 12,
+        boxShadow: "var(--shadow-pop)",
+        animation: "fadeUp .12s ease",
+        fontFamily: "var(--mono)",
       }}
       onKeyDown={handleKeyDown}
       data-testid="recent-repos-dropdown"
     >
       <div
-        className="px-3 py-2"
-        style={{ borderBottom: "1px solid var(--q-border)", color: "var(--q-fg)" }}
+        className="mono"
+        style={{ padding: "10px 14px", borderBottom: "1px solid var(--border-2)", fontSize: 12.5, color: "var(--fg)" }}
       >
-        <span style={{ color: "var(--q-accent)" }}>{">"}</span>{" "}
-        <span style={{ fontSize: 11 }}>open_repo</span>
+        <span style={{ color: "var(--accent)" }}>&gt;</span> open_repo
       </div>
 
-      <div className="px-3 py-2" style={{ borderBottom: "1px solid var(--q-border)" }}>
+      <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border-2)" }}>
         <input
           ref={inputRef}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="filter recent repos..."
-          className="w-full px-2 py-1 text-xs focus:outline-none"
+          placeholder="filter recent repos…"
+          spellCheck={false}
+          className="mono"
+          onFocus={() => setFilterFocused(true)}
+          onBlur={() => setFilterFocused(false)}
           style={{
-            backgroundColor: "var(--q-bg)",
-            border: "1px solid var(--q-border)",
-            color: "var(--q-fg)",
+            width: "100%",
+            height: 30,
+            padding: "0 10px",
+            borderRadius: 8,
+            outline: "none",
+            background: "var(--panel-3)",
+            border: `1px solid ${filterFocused ? "var(--accent)" : "var(--border-2)"}`,
+            color: "var(--fg)",
+            fontSize: 12,
+            boxSizing: "border-box",
           }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
         />
       </div>
 
       <div
-        className="px-3 pt-2 pb-1"
-        style={{ fontSize: 9, color: "var(--q-fg-muted)" }}
+        className="mono"
+        style={{ padding: "8px 14px 4px", fontSize: 9.5, letterSpacing: "0.06em", color: "var(--fg-4)" }}
       >
         recent
       </div>
@@ -220,12 +230,13 @@ export function RecentReposDropdown({
       <div
         ref={listRef}
         onScroll={handleScroll}
-        style={{ flex: 1, overflowY: "auto", minHeight: 0 }}
+        className="scroll"
+        style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingBottom: 4 }}
       >
         {filtered.length === 0 ? (
           <div
-            className="px-3 py-4 text-center"
-            style={{ fontSize: 11, color: "var(--q-fg-muted)" }}
+            className="mono"
+            style={{ padding: "16px 14px", textAlign: "center", fontSize: 11, color: "var(--fg-4)" }}
           >
             no repos match
           </div>
@@ -238,24 +249,26 @@ export function RecentReposDropdown({
                 data-testid="recent-repo-item"
                 onClick={() => onSelect(repo)}
                 onMouseEnter={() => setSelectedIndex(i)}
-                className="w-full flex items-center text-left"
                 style={{
-                  padding: "6px 12px",
+                  display: "flex",
+                  alignItems: "center",
                   gap: 8,
-                  backgroundColor: selected ? "var(--q-bg-hover)" : "transparent",
+                  width: "100%",
+                  padding: "7px 14px",
                   border: "none",
                   cursor: "pointer",
-                  fontFamily: font,
+                  textAlign: "left",
+                  background: selected ? "var(--hover)" : "transparent",
+                  fontFamily: "var(--mono)",
                 }}
               >
-                <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>▸</span>
+                <span style={{ color: "var(--accent)", flex: "none" }}>▸</span>
                 <span
                   style={{
-                    fontSize: 11,
-                    color: "var(--q-fg)",
-                    minWidth: 0,
-                    flexShrink: 0,
-                    maxWidth: "30%",
+                    fontSize: 11.5,
+                    color: "var(--fg)",
+                    flex: "none",
+                    maxWidth: "34%",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -265,8 +278,8 @@ export function RecentReposDropdown({
                 </span>
                 <span
                   style={{
-                    fontSize: 10,
-                    color: "var(--q-fg-secondary)",
+                    fontSize: 10.5,
+                    color: "var(--fg-3)",
                     flex: 1,
                     minWidth: 0,
                     overflow: "hidden",
@@ -276,13 +289,7 @@ export function RecentReposDropdown({
                 >
                   {repo.path}
                 </span>
-                <span
-                  style={{
-                    fontSize: 9,
-                    color: "var(--q-fg-muted)",
-                    flexShrink: 0,
-                  }}
-                >
+                <span style={{ fontSize: 9.5, color: "var(--fg-4)", flex: "none" }}>
                   {relativeTime(repo.closedAt)}
                 </span>
               </button>
@@ -291,10 +298,10 @@ export function RecentReposDropdown({
         )}
         {loading && (
           <div
-            className="px-3 py-2 text-center"
-            style={{ fontSize: 10, color: "var(--q-fg-muted)" }}
+            className="mono"
+            style={{ padding: "8px 14px", textAlign: "center", fontSize: 10, color: "var(--fg-4)" }}
           >
-            loading...
+            loading…
           </div>
         )}
       </div>
@@ -305,25 +312,27 @@ export function RecentReposDropdown({
           onOpenNewPath();
         }}
         onMouseEnter={() => setSelectedIndex(openNewPathIndex)}
-        className="w-full flex items-center text-left"
         style={{
-          padding: "8px 12px",
+          display: "flex",
+          alignItems: "center",
           gap: 8,
-          borderTop: "1px solid var(--q-border)",
-          backgroundColor:
-            selectedIndex === openNewPathIndex ? "var(--q-bg-hover)" : "transparent",
+          width: "100%",
+          padding: "9px 14px",
+          borderTop: "1px solid var(--border-2)",
+          background: selectedIndex === openNewPathIndex ? "var(--hover)" : "transparent",
           border: "none",
           borderTopWidth: 1,
           borderTopStyle: "solid",
-          borderTopColor: "var(--q-border)",
+          borderTopColor: "var(--border-2)",
           cursor: "pointer",
-          fontFamily: font,
-          fontSize: 11,
-          color: "var(--q-fg-secondary)",
+          fontFamily: "var(--mono)",
+          fontSize: 11.5,
+          color: "var(--fg-3)",
+          textAlign: "left",
         }}
       >
-        <span style={{ color: "var(--q-accent)" }}>+</span>
-        <span>open new path...</span>
+        <span style={{ color: "var(--accent)" }}>+</span>
+        <span>open new path…</span>
       </button>
     </div>
   );

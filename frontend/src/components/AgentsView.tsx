@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent } from "../types";
+import { Button } from "./Button";
+import { Icon } from "./Icon";
+import { PaneHeader } from "./PaneHeader";
+import { Pill } from "./Pill";
 
 interface Props {
   agents: Agent[];
@@ -18,7 +22,7 @@ const SPRITE_H = 10;
 const TICK_INTERVAL = 5;
 const CANVAS_W = 760;
 const CANVAS_H = 500;
-const SIDEBAR_W = 220;
+const SIDEBAR_W = 248;
 
 // CSS variable helper – reads a custom property from :root at call time
 function getCSSVar(name: string, fallback: string): string {
@@ -883,18 +887,18 @@ function drawBubble(ctx: CanvasRenderingContext2D, npc: Npc) {
   ctx.globalAlpha = alpha;
 
   // Background
-  ctx.fillStyle = getCSSVar("--q-fg", C_TEXT);
+  ctx.fillStyle = getCSSVar("--fg", C_TEXT);
   ctx.beginPath();
   ctx.roundRect(bx, by, bw, bh, 3);
   ctx.fill();
 
   // Border
-  ctx.strokeStyle = getCSSVar("--q-border", C_BORDER);
+  ctx.strokeStyle = getCSSVar("--border", C_BORDER);
   ctx.lineWidth = 1;
   ctx.stroke();
 
   // Tail
-  ctx.fillStyle = getCSSVar("--q-fg", C_TEXT);
+  ctx.fillStyle = getCSSVar("--fg", C_TEXT);
   ctx.beginPath();
   ctx.moveTo(px - 3, by + bh);
   ctx.lineTo(px, by + bh + 4);
@@ -902,7 +906,7 @@ function drawBubble(ctx: CanvasRenderingContext2D, npc: Npc) {
   ctx.fill();
 
   // Text
-  ctx.fillStyle = getCSSVar("--q-bg-elevated", "#111111");
+  ctx.fillStyle = getCSSVar("--panel-2", "#111111");
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(npc.bubbleText, px, by + bh / 2);
@@ -997,7 +1001,7 @@ export default function AgentsView({ agents, onCreateAgent, onEditAgent, onDelet
           }
         }
 
-        ctx.fillStyle = getCSSVar("--q-bg", C_BG);
+        ctx.fillStyle = getCSSVar("--bg", C_BG);
         ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
         drawFloor(ctx, CANVAS_W, CANVAS_H);
@@ -1073,65 +1077,46 @@ export default function AgentsView({ agents, onCreateAgent, onEditAgent, onDelet
   // Empty state
   if (agents.length === 0) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, height: "100%", overflow: "hidden", background: "var(--q-bg)", fontFamily: FONT }}>
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, height: "100%", overflow: "hidden", background: "var(--bg)", fontFamily: FONT }}>
         {/* Header */}
-        <div style={{
-          height: 56, minHeight: 56, display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "0 20px", borderBottom: "1px solid var(--q-border)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: "var(--q-fg)", fontSize: 14, fontWeight: 600 }}>agents</span>
-            <span style={{ color: "var(--q-fg-muted)", fontSize: 12 }}>0</span>
-          </div>
-          <button onClick={onCreateAgent} style={{
-            background: "transparent", border: "1px solid var(--q-accent)", color: "var(--q-accent)",
-            fontFamily: FONT, fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer",
-          }}>+ new agent</button>
-        </div>
+        <PaneHeader
+          title="agents"
+          sub={<Pill tone="muted" soft>0</Pill>}
+          actions={<Button variant="primary" size="sm" icon="plus" onClick={onCreateAgent}>new agent</Button>}
+        />
         <div style={{
           flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12,
         }}>
-          <span style={{ color: "var(--q-fg-muted)", fontSize: 13 }}>no agents yet</span>
-          <button onClick={onCreateAgent} style={{
-            background: "transparent", border: "1px solid var(--q-border)", color: "var(--q-fg-secondary)",
-            fontFamily: FONT, fontSize: 12, padding: "8px 16px", borderRadius: 4, cursor: "pointer",
-          }}>create your first agent</button>
+          <span style={{ color: "var(--fg-3)", fontSize: 13 }}>no agents yet</span>
+          <Button variant="ghost" size="md" icon="plus" onClick={onCreateAgent}>create your first agent</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, height: "100%", overflow: "hidden", background: "var(--q-bg)", fontFamily: FONT }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, height: "100%", overflow: "hidden", background: "var(--bg)", fontFamily: FONT }}>
       {/* Header */}
-      <div style={{
-        height: 56, minHeight: 56, display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 20px", borderBottom: "1px solid var(--q-border)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ color: "var(--q-fg)", fontSize: 14, fontWeight: 600 }}>agents</span>
-          <span style={{ color: "var(--q-fg-muted)", fontSize: 12 }}>{agents.length}</span>
-        </div>
-        <button onClick={onCreateAgent} style={{
-          background: "transparent", border: "1px solid var(--q-accent)", color: "var(--q-accent)",
-          fontFamily: FONT, fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer",
-        }}>+ new agent</button>
-      </div>
+      <PaneHeader
+        title="agents"
+        sub={<Pill tone="muted" soft>{agents.length}</Pill>}
+        actions={<Button variant="primary" size="sm" icon="plus" onClick={onCreateAgent}>new agent</Button>}
+      />
 
       {/* Body: sidebar + office */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Agent List Sidebar */}
         <div style={{
-          width: SIDEBAR_W, minWidth: SIDEBAR_W, background: "var(--q-bg-elevated)", borderRight: "1px solid var(--q-border)",
+          width: SIDEBAR_W, minWidth: SIDEBAR_W, flex: "none", background: "var(--panel)", borderRight: "1px solid var(--border)",
           display: "flex", flexDirection: "column", overflow: "hidden",
         }}>
           {/* Sidebar header */}
-          <div style={{ padding: "10px 12px 6px 12px" }}>
-            <span style={{ color: "var(--q-fg-muted)", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>agents</span>
+          <div style={{ padding: "14px 16px 8px" }}>
+            <span className="mono" style={{ color: "var(--fg-3)", fontSize: 9.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.13em" }}>Agents</span>
           </div>
 
           {/* Agent list */}
-          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+          <div className="scroll" style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 8px" }}>
             {agents.map((agent) => {
               const isSelected = selectedAgentId === agent.id;
               const isHovered = hoveredSidebarId === agent.id;
@@ -1142,26 +1127,25 @@ export default function AgentsView({ agents, onCreateAgent, onEditAgent, onDelet
                   onMouseEnter={() => setHoveredSidebarId(agent.id)}
                   onMouseLeave={() => setHoveredSidebarId(null)}
                   style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "6px 12px",
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "8px 12px", borderRadius: 9,
                     cursor: "pointer",
-                    background: isHovered ? "var(--q-bg-surface)" : "transparent",
-                    borderLeft: isSelected ? "2px solid var(--q-accent)" : "2px solid transparent",
+                    background: isSelected ? "var(--accent-soft)" : (isHovered ? "var(--hover)" : "transparent"),
                   }}
                 >
                   {/* Color dot */}
                   <div style={{
-                    width: 6, height: 6, minWidth: 6, borderRadius: "50%",
-                    background: agent.color || "var(--q-accent)",
+                    width: 9, height: 9, minWidth: 9, borderRadius: "50%", flex: "none",
+                    background: agent.color || "var(--accent)",
                   }} />
                   {/* Name + model */}
-                  <div style={{ flex: 1, overflow: "hidden" }}>
-                    <div style={{
-                      color: "var(--q-fg)", fontSize: 11, fontWeight: 600, fontFamily: FONT,
+                  <div style={{ flex: 1, overflow: "hidden", lineHeight: 1.3 }}>
+                    <div className="mono" style={{
+                      color: "var(--fg)", fontSize: 12, fontWeight: 600,
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     }}>{agent.name}</div>
-                    <div style={{
-                      color: "var(--q-fg-muted)", fontSize: 9, fontFamily: FONT,
+                    <div className="mono" style={{
+                      color: "var(--fg-3)", fontSize: 9.5,
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     }}>{agent.model}</div>
                   </div>
@@ -1176,15 +1160,15 @@ export default function AgentsView({ agents, onCreateAgent, onEditAgent, onDelet
             onMouseEnter={() => setHoveredSidebarId("__create__")}
             onMouseLeave={() => setHoveredSidebarId(null)}
             style={{
-              display: "flex", alignItems: "center", gap: 8,
-              padding: "10px 12px",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "10px 14px", flex: "none",
               cursor: "pointer",
-              borderTop: "1px solid var(--q-border)",
-              background: hoveredSidebarId === "__create__" ? "var(--q-bg-surface)" : "transparent",
+              borderTop: "1px solid var(--border-2)",
+              color: "var(--fg-3)", fontSize: 11.5,
+              background: hoveredSidebarId === "__create__" ? "var(--hover)" : "transparent",
             }}
           >
-            <span style={{ color: "var(--q-fg-muted)", fontSize: 12 }}>+</span>
-            <span style={{ color: "var(--q-fg-muted)", fontSize: 11, fontFamily: FONT }}>create agent</span>
+            <Icon name="plus" size={13} /> create agent
           </div>
         </div>
 
@@ -1195,6 +1179,9 @@ export default function AgentsView({ agents, onCreateAgent, onEditAgent, onDelet
           style={{
             flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
             overflow: "hidden", position: "relative",
+            backgroundColor: "var(--bg)",
+            backgroundImage: "radial-gradient(var(--grid-dot) 1px, transparent 1px)",
+            backgroundSize: "26px 26px",
           }}
         >
           <div style={{ position: "relative" }}>
@@ -1225,32 +1212,33 @@ export default function AgentsView({ agents, onCreateAgent, onEditAgent, onDelet
                     left: popupX,
                     top: popupY,
                     width: popupW,
-                    background: "var(--q-bg-surface)",
-                    border: "1px solid var(--q-border)",
-                    borderRadius: 6,
+                    background: "var(--panel-2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--r2)",
                     padding: "8px 10px",
                     cursor: "pointer",
                     zIndex: 10,
                     fontFamily: FONT,
+                    boxShadow: "var(--shadow-pop)",
                   }}
                 >
                   <div style={{
-                    color: popup.agent.color || "var(--q-fg)", fontSize: 12, fontWeight: 700,
+                    color: popup.agent.color || "var(--fg)", fontSize: 12, fontWeight: 700,
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     marginBottom: 4,
                   }}>{popup.agent.name}</div>
                   <div style={{
-                    color: "var(--q-fg-secondary)", fontSize: 10,
+                    color: "var(--fg-2)", fontSize: 10,
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     marginBottom: 2,
                   }}>{popup.agent.role || "no role"}</div>
                   <div style={{
-                    color: "var(--q-fg-muted)", fontSize: 9,
+                    color: "var(--fg-3)", fontSize: 9,
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     marginBottom: 6,
                   }}>{popup.agent.goal || "no goal"}</div>
                   <div style={{
-                    color: "var(--q-fg-muted)", fontSize: 8, fontStyle: "italic",
+                    color: "var(--fg-3)", fontSize: 8, fontStyle: "italic",
                   }}>click to edit</div>
                 </div>
               );

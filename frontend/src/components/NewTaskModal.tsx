@@ -1,110 +1,73 @@
 import { useState } from "react";
-import type { CreateTaskRequest } from "../types";
+import type { CreateTaskRequest, Repo } from "../types";
+import { ModalShell, ModalTitle, Field, ModalInput, ModalSelect, ModalCancel, ModalSubmit } from "./ModalShell";
 
 interface Props {
-  repoId: string;
+  repoId?: string;
   repoName?: string;
+  repos?: Repo[];
   onSubmit: (req: CreateTaskRequest) => void;
   onCancel: () => void;
 }
 
-export function NewTaskModal({ repoId, repoName, onSubmit, onCancel }: Props) {
+export function NewTaskModal({ repoId, repoName, repos, onSubmit, onCancel }: Props) {
   const [tag, setTag] = useState("");
   const [name, setName] = useState("");
+  // When no fixed repo is supplied, let the user pick one in-modal.
+  const showRepoSelect = !repoId && !!repos && repos.length > 0;
+  const [selectedRepoId, setSelectedRepoId] = useState(repoId ?? repos?.[0]?.id ?? "");
+
+  const effectiveRepoId = repoId ?? selectedRepoId;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!tag.trim()) return;
+    if (!tag.trim() || !effectiveRepoId) return;
     onSubmit({
-      repoId,
+      repoId: effectiveRepoId,
       tag: tag.trim().toLowerCase(),
       name: name.trim().toLowerCase(),
     });
   }
 
-  const inputStyle: React.CSSProperties = {
-    backgroundColor: "var(--q-bg)",
-    border: "1px solid var(--q-border)",
-    color: "var(--q-fg)",
-    fontFamily: "'JetBrains Mono', monospace",
-  };
+  const canCreate = !!tag.trim() && !!effectiveRepoId;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-md p-8"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        <h2 className="text-sm font-bold lowercase mb-5" style={{ color: "var(--q-fg)" }}>
-          <span style={{ color: "var(--q-accent)" }}>{">"}</span> new_task
-        </h2>
-
-        <label className="block mb-4">
-          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>tag</span>
-          <input
+    <ModalShell width={440} onClose={onCancel}>
+      <form onSubmit={handleSubmit} style={{ padding: "22px 26px 18px", display: "flex", flexDirection: "column", gap: 16 }}>
+        <ModalTitle>new_task</ModalTitle>
+        {showRepoSelect && (
+          <Field label="repo">
+            <ModalSelect
+              value={selectedRepoId}
+              onChange={setSelectedRepoId}
+              options={repos!.map((r) => ({ value: r.id, label: `${r.name} (${r.path})` }))}
+              placeholder="select a repo"
+            />
+          </Field>
+        )}
+        <Field label="tag">
+          <ModalInput
             autoFocus
             value={tag}
             onChange={(e) => setTag(e.target.value)}
             placeholder="PLT-123"
-            className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
-            style={inputStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
           />
-        </label>
-
-        <label className="block mb-4">
-          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>name</span>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="fix auth flow"
-            className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
-            style={inputStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-          />
-        </label>
-
-        {repoName && (
-          <p
-            className="mb-5 text-[10px]"
-            style={{ color: "var(--q-fg-muted)", fontFamily: "'IBM Plex Mono', monospace" }}
-          >
+        </Field>
+        <Field label="name">
+          <ModalInput value={name} onChange={(e) => setName(e.target.value)} placeholder="fix auth flow" />
+        </Field>
+        {!showRepoSelect && repoName && (
+          <span className="mono" style={{ fontSize: 10, color: "var(--fg-4)" }}>
             // repo: {repoName}
-          </p>
+          </span>
         )}
-
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!tag.trim()}
-            className="px-4 py-2 text-xs lowercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              backgroundColor: "var(--q-accent)",
-              color: "var(--q-bg)",
-              fontWeight: 500,
-            }}
-          >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, marginTop: 4 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit type="submit" disabled={!canCreate}>
             create
-          </button>
+          </ModalSubmit>
         </div>
       </form>
-    </div>
+    </ModalShell>
   );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 
 export type MenuItem =
   | { type: "label"; text: string }
@@ -21,6 +22,24 @@ interface ContextMenuProps {
 
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; ready: boolean }>({
+    left: x,
+    top: y,
+    ready: false,
+  });
+
+  // Auto-flip / clamp into the viewport once measured.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pad = 8;
+    let left = x;
+    let top = y;
+    if (left + r.width > window.innerWidth - pad) left = Math.max(pad, x - r.width);
+    if (top + r.height > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - r.height - pad);
+    setPos({ left, top, ready: true });
+  }, [x, y]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -31,42 +50,56 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         onClose();
       }
     }
+    const close = () => onClose();
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("mousedown", handleClick);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("blur", close);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("blur", close);
     };
   }, [onClose]);
 
-  // Adjust position so menu doesn't overflow the viewport
-  const adjustedX = Math.min(x, window.innerWidth - 200);
-  const adjustedY = Math.min(y, window.innerHeight - items.length * 28 - 20);
+  const reduced =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const wrapStyle: CSSProperties = {
+    position: "fixed",
+    left: pos.left,
+    top: pos.top,
+    zIndex: 400,
+    minWidth: 196,
+    opacity: pos.ready ? 1 : 0,
+    transform: pos.ready ? "none" : "translateY(-3px)",
+    transition: reduced ? "none" : "opacity .1s ease, transform .1s ease",
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
+    borderRadius: 11,
+    padding: 5,
+    boxShadow: "var(--shadow-pop)",
+    fontFamily: "var(--sans)",
+  };
 
   return (
-    <div
-      ref={menuRef}
-      className="fixed z-50"
-      style={{
-        left: adjustedX,
-        top: adjustedY,
-        backgroundColor: "var(--q-bg)",
-        border: "1px solid var(--q-border)",
-        borderRadius: 0,
-        minWidth: 180,
-      }}
-    >
+    <div ref={menuRef} style={wrapStyle}>
       {items.map((item, i) => {
         if (item.type === "label") {
           return (
             <div
               key={i}
-              className="px-3 pt-2 pb-1"
+              className="mono"
               style={{
-                fontFamily: "'IBM Plex Mono', monospace",
-                fontSize: 9,
-                color: "var(--q-fg-muted)",
-                lineHeight: "16px",
+                padding: "6px 11px 3px",
+                fontSize: 9.5,
+                letterSpacing: "0.04em",
+                color: "var(--fg-4)",
               }}
             >
               {item.text}
@@ -77,42 +110,55 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           return (
             <div
               key={i}
-              style={{
-                height: 1,
-                backgroundColor: "var(--q-border)",
-                margin: "2px 0",
-              }}
+              style={{ height: 1, background: "var(--border-2)", margin: "5px 8px" }}
             />
           );
         }
-        return (
-          <button
-            key={i}
-            onClick={() => {
-              item.onClick();
-              onClose();
-            }}
-            className="w-full flex items-center text-left transition-colors"
-            style={{
-              height: 28,
-              padding: "0 12px",
-              gap: 8,
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 11,
-              color: item.labelColor ?? "var(--q-fg-dimmed)",
-              backgroundColor: "transparent",
-              border: "none",
-              borderRadius: 0,
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-          >
-            <span style={{ color: item.iconColor, flexShrink: 0 }}>{item.icon}</span>
-            <span>{item.label}</span>
-          </button>
-        );
+        return <ContextMenuItem key={i} item={item} onClose={onClose} />;
       })}
     </div>
+  );
+}
+
+function ContextMenuItem({
+  item,
+  onClose,
+}: {
+  item: Extract<MenuItem, { type: "item" }>;
+  onClose: () => void;
+}) {
+  const [h, setH] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        item.onClick();
+        onClose();
+      }}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "7px 10px",
+        borderRadius: 7,
+        border: "none",
+        cursor: "pointer",
+        textAlign: "left",
+        whiteSpace: "nowrap",
+        fontFamily: "var(--sans)",
+        fontSize: 12.5,
+        fontWeight: 500,
+        color: item.labelColor ?? "var(--fg-2)",
+        background: h ? "var(--hover)" : "transparent",
+      }}
+    >
+      <span style={{ color: item.iconColor, flexShrink: 0, display: "flex", alignItems: "center" }}>
+        {item.icon}
+      </span>
+      <span style={{ flex: 1 }}>{item.label}</span>
+    </button>
   );
 }

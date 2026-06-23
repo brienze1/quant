@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { StatusDot } from "./StatusDot";
-import { ContextMenu } from "./ContextMenu";
+import { Icon } from "./Icon";
+import { IconButton } from "./IconButton";
+import { useMenu, type HostMenuItem } from "./MenuHost";
 import type { DisplayStatus } from "./StatusBadge";
-import type { MenuItem } from "./ContextMenu";
 
 // Session tabs and file tabs share the bar, discriminated by `kind` (App's
 // tabs derivation always tags it).
@@ -18,7 +19,18 @@ interface TabBarProps {
   onCloseAllTabs: () => void;
   onCloseTabsToLeft: (id: string) => void;
   onCloseTabsToRight: (id: string) => void;
+  /** Trailing `+` opens the new-session flow (optional — hidden when absent). */
+  onNewSession?: () => void;
+  /** Detach a file tab into the dock as its own panel (file tabs only). */
+  onDetachFile?: (id: string) => void;
 }
+
+// Git-status letter tone for file tabs (M=modified, A=added, D=deleted).
+const FILE_TAB_TONE: Record<string, string> = {
+  M: "var(--warn)",
+  A: "var(--accent)",
+  D: "var(--danger)",
+};
 
 function ScrollButton({
   direction,
@@ -29,38 +41,185 @@ function ScrollButton({
   onClick: () => void;
   visible: boolean;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   if (!visible) return null;
-
   return (
     <button
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       className="shrink-0 flex items-center justify-center"
       style={{
-        width: 24,
-        backgroundColor: hovered ? "var(--q-bg-hover)" : "var(--q-bg)",
-        color: hovered ? "var(--q-fg)" : "var(--q-fg-secondary)",
-        borderRight: direction === "left" ? "1px solid var(--q-border)" : "none",
-        borderLeft: direction === "right" ? "1px solid var(--q-border)" : "none",
+        width: 26,
+        alignSelf: "stretch",
+        background: "var(--panel)",
+        color: "var(--fg-3)",
+        border: "none",
+        borderRight: direction === "left" ? "1px solid var(--border-2)" : "none",
+        borderLeft: direction === "right" ? "1px solid var(--border-2)" : "none",
         cursor: "pointer",
-        fontSize: 12,
-        fontFamily: "'JetBrains Mono', monospace",
       }}
+      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg)")}
+      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-3)")}
       title={`Scroll ${direction}`}
     >
-      {direction === "left" ? "<" : ">"}
+      <Icon name={direction === "left" ? "chevronRight" : "chevronRight"} size={13} style={{ transform: direction === "left" ? "scaleX(-1)" : undefined }} />
     </button>
   );
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllTabs, onCloseTabsToLeft, onCloseTabsToRight }: TabBarProps) {
+/** A single tab cell — session (status dot) or file (git-status letter). */
+function TabCell({
+  tab,
+  active,
+  onSelect,
+  onClose,
+  onDetach,
+  onContextMenu,
+}: {
+  tab: Tab;
+  active: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+  onDetach?: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const isFile = tab.kind === "file";
+  const status = isFile && (tab as Extract<Tab, { kind: "file" }>).dirty ? "M" : undefined;
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+      title={isFile ? (tab as Extract<Tab, { kind: "file" }>).tooltip : undefined}
+      className="shrink-0"
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        gap: isFile ? 7 : 8,
+        height: 46,
+        padding: "0 10px 0 12px",
+        cursor: "pointer",
+        maxWidth: isFile ? 210 : 190,
+        background: active ? "var(--panel)" : hovered ? "var(--hover)" : "transparent",
+        color: active ? "var(--fg)" : "var(--fg-3)",
+        borderRight: "1px solid var(--border-2)",
+      }}
+    >
+      {active && (
+        <span
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: -1,
+            height: 2,
+            background: "var(--accent)",
+          }}
+        />
+      )}
+
+      {isFile ? (
+        <Icon name="file" size={12} color={active ? "var(--fg-2)" : "var(--fg-4)"} />
+      ) : (
+        <StatusDot
+          status={(tab as Extract<Tab, { kind: "session" }>).displayStatus}
+          size={7}
+        />
+      )}
+
+      <span
+        className="overflow-hidden whitespace-nowrap"
+        style={{
+          fontSize: isFile ? 11.5 : 12,
+          fontWeight: active ? 600 : 500,
+          fontFamily: isFile ? "var(--mono)" : "var(--sans)",
+          letterSpacing: isFile ? undefined : "-0.01em",
+          textOverflow: "ellipsis",
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
+        {tab.name}
+      </span>
+
+      {status && (
+        <span
+          className="mono shrink-0"
+          style={{ fontSize: 10, fontWeight: 700, color: FILE_TAB_TONE[status] || "var(--fg-3)" }}
+          title="unsaved changes"
+        >
+          {status}
+        </span>
+      )}
+
+      {isFile && onDetach && (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            onDetach();
+          }}
+          title="Detach to panel"
+          style={{
+            display: "flex",
+            width: 16,
+            height: 16,
+            borderRadius: 4,
+            alignItems: "center",
+            justifyContent: "center",
+            flex: "none",
+            opacity: hovered || active ? 1 : 0,
+            color: "var(--fg-3)",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-3)")}
+        >
+          <Icon name="columns" size={11} />
+        </span>
+      )}
+
+      <span
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        title="close tab"
+        style={{
+          display: "flex",
+          width: 16,
+          height: 16,
+          borderRadius: 4,
+          alignItems: "center",
+          justifyContent: "center",
+          flex: "none",
+          opacity: hovered || active ? 1 : 0,
+          color: "var(--fg-3)",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg)")}
+        onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-3)")}
+      >
+        <Icon name="x" size={11} />
+      </span>
+    </div>
+  );
+}
+
+export function TabBar({
+  tabs,
+  activeTabId,
+  onSelectTab,
+  onCloseTab,
+  onCloseAllTabs,
+  onCloseTabsToLeft,
+  onCloseTabsToRight,
+  onNewSession,
+  onDetachFile,
+}: TabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  const openMenu = useMenu();
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -100,56 +259,43 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
   function openTabContextMenu(e: React.MouseEvent, tabId: string) {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, tabId });
-  }
-
-  function getContextMenuItems(tabId: string): MenuItem[] {
     const idx = tabs.findIndex((t) => t.id === tabId);
-    return [
+    const items: HostMenuItem[] = [
       {
-        type: "item",
-        icon: "×",
-        iconColor: "var(--q-error)",
+        icon: "x",
         label: "close all tabs",
+        tone: "danger",
         onClick: () => onCloseAllTabs(),
       },
       {
-        type: "item",
-        icon: "←",
-        iconColor: "var(--q-fg-secondary)",
+        icon: "arrowLeft",
         label: "close tabs to the left",
+        disabled: idx <= 0,
         onClick: () => onCloseTabsToLeft(tabId),
-        ...(idx === 0 ? { labelColor: "var(--q-fg-muted)" } : {}),
       },
       {
-        type: "item",
-        icon: "→",
-        iconColor: "var(--q-fg-secondary)",
+        icon: "arrowRight",
         label: "close tabs to the right",
+        disabled: idx >= tabs.length - 1,
         onClick: () => onCloseTabsToRight(tabId),
-        ...(idx === tabs.length - 1 ? { labelColor: "var(--q-fg-muted)" } : {}),
       },
     ];
+    openMenu(e, items);
   }
 
   return (
-    <>
     <div
-      className="flex items-center shrink-0 min-w-0 overflow-hidden"
+      className="flex items-stretch shrink-0 min-w-0 overflow-hidden"
       style={{
-        backgroundColor: "var(--q-bg)",
-        borderBottom: "1px solid var(--q-border)",
-        fontFamily: "'JetBrains Mono', monospace",
+        height: 46,
+        background: "var(--panel)",
+        borderBottom: "1px solid var(--border-2)",
       }}
     >
-      <ScrollButton
-        direction="left"
-        onClick={() => scroll("left")}
-        visible={canScrollLeft}
-      />
+      <ScrollButton direction="left" onClick={() => scroll("left")} visible={canScrollLeft} />
       <div
         ref={scrollRef}
-        className="flex items-center flex-1 min-w-0 overflow-x-auto"
+        className="flex items-stretch flex-1 min-w-0 overflow-x-auto"
         style={{ scrollbarWidth: "none" }}
         onWheel={(e) => {
           const el = scrollRef.current;
@@ -159,78 +305,27 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onCloseAllT
           }
         }}
       >
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeTabId;
-          return (
-            <div
-              key={tab.id}
-              className="flex items-center gap-1.5 px-3 py-2 shrink-0 cursor-pointer"
-              style={{
-                backgroundColor: isActive ? "var(--q-bg-hover)" : "transparent",
-                borderRight: "1px solid var(--q-border)",
-                maxWidth: 200,
-              }}
-              title={tab.kind === "file" ? tab.tooltip : undefined}
-              onClick={() => onSelectTab(tab.id)}
-              onContextMenu={(e) => openTabContextMenu(e, tab.id)}
-              onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              {tab.kind !== "file" && <StatusDot status={tab.displayStatus} />}
-              <span
-                className="text-xs overflow-hidden whitespace-nowrap flex-1"
-                style={{
-                  color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {tab.name}
-              </span>
-              {tab.kind === "file" && tab.dirty && (
-                <span
-                  className="shrink-0 text-[9px]"
-                  style={{ color: "var(--q-warning)" }}
-                  title="unsaved changes"
-                >
-                  ●
-                </span>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCloseTab(tab.id);
-                }}
-                className="shrink-0 ml-1 text-[10px] transition-colors"
-                style={{ color: "var(--q-fg-muted)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
-                title="close tab"
-              >
-                [x]
-              </button>
-            </div>
-          );
-        })}
+        {tabs.map((tab) => (
+          <TabCell
+            key={tab.id}
+            tab={tab}
+            active={tab.id === activeTabId}
+            onSelect={() => onSelectTab(tab.id)}
+            onClose={() => onCloseTab(tab.id)}
+            onDetach={onDetachFile && tab.kind === "file" ? () => onDetachFile(tab.id) : undefined}
+            onContextMenu={(e) => openTabContextMenu(e, tab.id)}
+          />
+        ))}
       </div>
-      <ScrollButton
-        direction="right"
-        onClick={() => scroll("right")}
-        visible={canScrollRight}
-      />
-    </div>
-
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={getContextMenuItems(contextMenu.tabId)}
-          onClose={() => setContextMenu(null)}
-        />
+      <ScrollButton direction="right" onClick={() => scroll("right")} visible={canScrollRight} />
+      {onNewSession && (
+        <div
+          className="shrink-0 flex items-center"
+          style={{ padding: "0 6px", borderLeft: "1px solid var(--border-2)" }}
+        >
+          <IconButton name="plus" label="New session" onClick={onNewSession} />
+        </div>
       )}
-    </>
+    </div>
   );
 }

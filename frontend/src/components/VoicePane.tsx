@@ -9,11 +9,12 @@
 // drive listen()/speak() through the browser pipeline, and surfaces the spoken
 // turns into the transcript via the bridge's transcript callbacks.
 //
-// Mirrors the mindmap pane conventions: themed entirely with --q-* tokens,
+// Mirrors the mindmap pane conventions: themed entirely with design tokens,
 // rendered as a split inside SessionPanel.
 
 import { useEffect, useRef, useState } from "react";
 import VoiceOrb from "./VoiceOrb";
+import { Icon } from "./Icon";
 import * as api from "../api";
 import { useTheme } from "../theme";
 import { createAudioService } from "../voice/audioService";
@@ -52,11 +53,11 @@ const STATE_LABEL: Record<VoiceServiceState, string> = {
 
 // The status dot color tracks the orb's active accent role per state.
 const STATE_COLOR: Record<VoiceServiceState, string> = {
-  idle: "var(--q-fg-muted)",
-  listening: "var(--q-accent)",
-  recording: "var(--q-error)",
-  thinking: "var(--q-blue)",
-  speaking: "var(--q-term-green)",
+  idle: "var(--fg-3)",
+  listening: "var(--accent)",
+  recording: "var(--danger)",
+  thinking: "var(--info)",
+  speaking: "var(--ok)",
 };
 
 /** mm:ss for the recording elapsed indicator. */
@@ -68,7 +69,7 @@ function formatElapsed(totalSecs: number): string {
 
 // WI-5.5: map an error kind to an actionable, human banner. `title` is short
 // (status bar), `detail` is the actionable line, `action` (optional) hints what
-// the user should do. Themed with --q-* by the renderer.
+// the user should do. Themed with --* by the renderer.
 interface BannerCopy {
   title: string;
   detail: string;
@@ -449,14 +450,14 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // from the same getConfig() it already performs — see setNotConfigured there.)
 
   // Orb stage backing. In DARK themes the stage is just the plain app
-  // background (var(--q-bg)) — no purple tint. In LIGHT themes the neon orb
+  // background (var(--bg)) — no purple tint. In LIGHT themes the neon orb
   // needs a dark-ish backing to read, so keep the dark "well" gradient. Read
-  // once per render off the active --q-* tokens (a full theme-type flip
+  // once per render off the active design tokens (a full theme-type flip
   // re-renders the pane).
   const stageIsLight = theme.type === "light";
   const stageBackground = stageIsLight
     ? "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)"
-    : "var(--q-bg)";
+    : "var(--bg)";
 
   return (
     <div
@@ -466,8 +467,8 @@ export function VoicePane({ sessionId, className, style }: Props) {
         flexDirection: "column",
         height: "100%",
         minHeight: 0,
-        backgroundColor: "var(--q-bg)",
-        fontFamily: "'JetBrains Mono', monospace",
+        backgroundColor: "var(--bg)",
+        fontFamily: "var(--sans)",
         ...style,
       }}
     >
@@ -488,7 +489,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
           alignItems: "center",
           justifyContent: "center",
           background: stageBackground,
-          borderBottom: "1px solid var(--q-border)",
+          borderBottom: "1px solid var(--border-2)",
           overflow: "hidden",
         }}
       >
@@ -516,16 +517,16 @@ export function VoicePane({ sessionId, className, style }: Props) {
           flex: "3 1 0",
           minHeight: 0,
           overflowY: "auto",
-          padding: "10px 12px",
+          padding: "12px 14px",
           display: "flex",
           flexDirection: "column",
-          gap: 8,
+          gap: 11,
         }}
       >
         {lines.length === 0 && !showDraft ? (
           <div
             style={{
-              color: "var(--q-fg-muted)",
+              color: "var(--fg-4)",
               fontSize: 11.5,
               lineHeight: 1.6,
               margin: "auto",
@@ -536,14 +537,14 @@ export function VoicePane({ sessionId, className, style }: Props) {
             {/* WI-5.5 idle/empty state. */}
             {notConfigured ? (
               <>
-                <div style={{ color: "var(--q-fg-secondary)", marginBottom: 4 }}>
+                <div style={{ color: "var(--fg-2)", marginBottom: 4 }}>
                   {NOT_CONFIGURED.title}
                 </div>
                 {NOT_CONFIGURED.detail}
               </>
             ) : (
               <>
-                <div style={{ color: "var(--q-fg-secondary)", marginBottom: 4 }}>
+                <div style={{ color: "var(--fg-2)", marginBottom: 4 }}>
                   open mic to start talking
                 </div>
                 say something and quant will reply — the orb lights up while it listens.
@@ -553,13 +554,16 @@ export function VoicePane({ sessionId, className, style }: Props) {
         ) : (
           <>
             {lines.map((line) => (
-              <div key={line.id} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              <div key={line.id} style={{ display: "flex", gap: 9, alignItems: "baseline" }}>
                 <span
                   style={{
                     flex: "none",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: line.who === "you" ? "var(--q-accent)" : "var(--q-term-green)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    paddingTop: 1,
+                    color: line.who === "you" ? "var(--accent)" : "var(--info)",
                   }}
                 >
                   {line.who} ▸
@@ -567,8 +571,8 @@ export function VoicePane({ sessionId, className, style }: Props) {
                 <span
                   style={{
                     fontSize: 12.5,
-                    lineHeight: 1.5,
-                    color: "var(--q-fg)",
+                    lineHeight: 1.55,
+                    color: "var(--fg-2)",
                     overflowWrap: "anywhere",
                     whiteSpace: "pre-wrap",
                   }}
@@ -584,7 +588,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
               <div
                 style={{
                   display: "flex",
-                  gap: 8,
+                  gap: 9,
                   alignItems: "baseline",
                   opacity: 0.72,
                 }}
@@ -592,9 +596,12 @@ export function VoicePane({ sessionId, className, style }: Props) {
                 <span
                   style={{
                     flex: "none",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "var(--q-accent)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    paddingTop: 1,
+                    color: "var(--accent)",
                   }}
                 >
                   you ▸
@@ -602,15 +609,15 @@ export function VoicePane({ sessionId, className, style }: Props) {
                 <span
                   style={{
                     fontSize: 12.5,
-                    lineHeight: 1.5,
+                    lineHeight: 1.55,
                     fontStyle: "italic",
-                    color: "var(--q-fg-secondary)",
+                    color: "var(--fg-2)",
                     overflowWrap: "anywhere",
                     whiteSpace: "pre-wrap",
                   }}
                 >
                   {draft}
-                  <span style={{ color: "var(--q-fg-muted)", fontStyle: "normal" }}>
+                  <span style={{ color: "var(--fg-4)", fontStyle: "normal" }}>
                     {state === "recording" ? " · listening…" : " · finishing…"}
                   </span>
                 </span>
@@ -626,23 +633,23 @@ export function VoicePane({ sessionId, className, style }: Props) {
         const banner = error ? errorCopy(error) : notConfigured ? NOT_CONFIGURED : null;
         if (!banner) return null;
         const isWarn = notConfigured && !error;
-        const accent = isWarn ? "var(--q-warning)" : "var(--q-error)";
+        const accent = isWarn ? "var(--warn)" : "var(--danger)";
         return (
           <div
             role="alert"
             style={{
               flex: "0 0 auto",
-              padding: "8px 12px",
+              padding: "8px 14px",
               borderTop: `1px solid ${accent}`,
-              backgroundColor: "var(--q-bg-input)",
+              backgroundColor: "var(--panel)",
               display: "flex",
               alignItems: "flex-start",
               gap: 8,
             }}
           >
             <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: accent }}>{banner.title}</div>
-              <div style={{ fontSize: 11, lineHeight: 1.45, color: "var(--q-fg-secondary)" }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: accent }}>{banner.title}</div>
+              <div style={{ fontSize: 11, lineHeight: 1.45, color: "var(--fg-2)" }}>
                 {banner.detail}
               </div>
             </div>
@@ -654,7 +661,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
                   flex: "none",
                   background: "transparent",
                   border: "none",
-                  color: "var(--q-fg-muted)",
+                  color: "var(--fg-4)",
                   cursor: "pointer",
                   fontSize: 13,
                   lineHeight: 1,
@@ -676,20 +683,28 @@ export function VoicePane({ sessionId, className, style }: Props) {
       <div
         className="flex items-center gap-2 px-3 shrink-0"
         style={{
-          minHeight: 30,
-          backgroundColor: "var(--q-bg-input)",
-          borderTop: "1px solid var(--q-border)",
+          minHeight: 34,
+          backgroundColor: "var(--panel)",
+          borderTop: "1px solid var(--border-2)",
         }}
       >
         <span
           title="microphone"
-          style={{ flex: "none", fontSize: 11, color: "var(--q-fg-muted)" }}
+          style={{
+            flex: "none",
+            fontSize: 10.5,
+            color: "var(--fg-3)",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
         >
+          <Icon name="mic" size={13} />
           mic
         </span>
 
         {devices.length === 0 ? (
-          <span style={{ fontSize: 10.5, color: "var(--q-fg-muted)" }}>
+          <span style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
             no microphones found
           </span>
         ) : (
@@ -701,13 +716,13 @@ export function VoicePane({ sessionId, className, style }: Props) {
               flex: "1 1 auto",
               minWidth: 0,
               maxWidth: 200,
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10.5,
-              color: "var(--q-fg)",
-              backgroundColor: "var(--q-bg)",
-              border: "1px solid var(--q-border)",
-              borderRadius: 4,
-              padding: "2px 4px",
+              fontFamily: "var(--sans)",
+              fontSize: 11,
+              color: "var(--fg-2)",
+              backgroundColor: "var(--panel-2)",
+              border: "1px solid var(--border-2)",
+              borderRadius: 7,
+              padding: "3px 7px",
             }}
           >
             <option value="">system default</option>
@@ -723,25 +738,25 @@ export function VoicePane({ sessionId, className, style }: Props) {
         <div
           aria-label="input level"
           title="input level"
-          style={{ flex: "none", display: "flex", alignItems: "center", gap: 1.5 }}
+          style={{ flex: "none", display: "flex", alignItems: "center", gap: 2 }}
         >
           {Array.from({ length: METER_SEGMENTS }).map((_, i) => {
             const on = i < meterLevel;
             // Green → amber → red gradient across the bar.
             const color =
               i < METER_SEGMENTS * 0.6
-                ? "var(--q-term-green)"
+                ? "var(--ok)"
                 : i < METER_SEGMENTS * 0.85
-                  ? "var(--q-warning)"
-                  : "var(--q-error)";
+                  ? "var(--warn)"
+                  : "var(--danger)";
             return (
               <span
                 key={i}
                 style={{
                   width: 3,
-                  height: 10,
+                  height: 11,
                   borderRadius: 1,
-                  backgroundColor: on ? color : "var(--q-border)",
+                  backgroundColor: on ? color : "var(--border)",
                   opacity: on ? 1 : 0.5,
                   transition: "background-color .05s linear, opacity .05s linear",
                 }}
@@ -756,13 +771,13 @@ export function VoicePane({ sessionId, className, style }: Props) {
             title="grant microphone access to list and meter devices"
             style={{
               flex: "none",
-              fontFamily: "'JetBrains Mono', monospace",
+              fontFamily: "var(--sans)",
               fontSize: 10.5,
-              color: "var(--q-term-green)",
-              backgroundColor: "var(--q-bg-hover)",
-              border: "1px solid var(--q-border)",
-              borderRadius: 4,
-              padding: "2px 6px",
+              color: "var(--accent)",
+              backgroundColor: "var(--panel-3)",
+              border: "1px solid var(--border-2)",
+              borderRadius: 7,
+              padding: "3px 7px",
               cursor: "pointer",
             }}
           >
@@ -775,9 +790,9 @@ export function VoicePane({ sessionId, className, style }: Props) {
       <div
         className="flex items-center justify-between px-3 shrink-0"
         style={{
-          height: 28,
-          backgroundColor: "var(--q-bg-input)",
-          borderTop: "1px solid var(--q-border)",
+          height: 32,
+          backgroundColor: "var(--panel)",
+          borderTop: "1px solid var(--border-2)",
         }}
       >
         <div className="flex items-center gap-1.5">
@@ -792,7 +807,13 @@ export function VoicePane({ sessionId, className, style }: Props) {
               transition: "background-color .2s ease, box-shadow .2s ease",
             }}
           />
-          <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--fg-2)",
+              textTransform: "capitalize",
+            }}
+          >
             {STATE_LABEL[state]}
           </span>
 
@@ -813,15 +834,15 @@ export function VoicePane({ sessionId, className, style }: Props) {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 5,
-                fontFamily: "'JetBrains Mono', monospace",
+                fontFamily: "var(--sans)",
                 fontSize: 10.5,
-                color: "var(--q-error)",
-                backgroundColor: "var(--q-bg-hover)",
+                color: "var(--danger)",
+                backgroundColor: "var(--panel-3)",
                 border:
                   state === "recording"
-                    ? "1px solid var(--q-error)"
-                    : "1px solid var(--q-border)",
-                borderRadius: 4,
+                    ? "1px solid var(--danger)"
+                    : "1px solid var(--border-2)",
+                borderRadius: 7,
                 padding: "1px 6px",
                 cursor: "pointer",
               }}
@@ -830,7 +851,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
                 <>
                   <span style={{ fontSize: 9, lineHeight: 1 }}>■</span>
                   stop
-                  <span style={{ color: "var(--q-fg-secondary)" }}>
+                  <span style={{ color: "var(--fg-2)" }}>
                     {formatElapsed(recordSecs)}
                   </span>
                 </>
@@ -849,7 +870,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
             title={error.message}
             style={{
               fontSize: 10,
-              color: "var(--q-error)",
+              color: "var(--danger)",
               maxWidth: "70%",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -859,9 +880,9 @@ export function VoicePane({ sessionId, className, style }: Props) {
             {errorCopy(error).title}
           </span>
         ) : notConfigured ? (
-          <span style={{ fontSize: 10, color: "var(--q-warning)" }}>not configured</span>
+          <span style={{ fontSize: 10, color: "var(--warn)" }}>not configured</span>
         ) : (
-          <span style={{ fontSize: 10, color: "var(--q-fg-muted)" }}>mic ready</span>
+          <span style={{ fontSize: 10, color: "var(--fg-4)" }}>mic ready</span>
         )}
       </div>
     </div>

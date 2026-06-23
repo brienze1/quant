@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import * as api from "../api";
+import { ModalShell, ModalCancel, ModalSubmit } from "./ModalShell";
 
 interface Props {
   sessionId: string;
@@ -7,8 +8,6 @@ interface Props {
   onSubmit: () => void;
   onCancel: () => void;
 }
-
-const font = "'JetBrains Mono', monospace";
 
 export function GitPushModal({ sessionId, currentBranch, onSubmit, onCancel }: Props) {
   const [commits, setCommits] = useState<string[] | null>(null);
@@ -20,41 +19,38 @@ export function GitPushModal({ sessionId, currentBranch, onSubmit, onCancel }: P
       .catch((err) => setError(String(err)));
   }, [sessionId]);
 
+  const nothingToPush = commits !== null && commits.length === 0;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-      <div
-        className="w-full p-6"
-        style={{
-          maxWidth: 480,
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: font,
-        }}
-      >
-        <label className="block text-[10px] mb-1 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
-          // git push
-        </label>
-        <div className="text-[10px] mb-4" style={{ color: "var(--q-fg-muted)" }}>
-          branch: <span style={{ color: "var(--q-accent)" }}>{currentBranch}</span>
+    <ModalShell width={480} onClose={onCancel} align="center">
+      <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--fg-3)" }}>
+            // git push
+          </span>
+          <div className="mono" style={{ fontSize: 10, color: "var(--fg-4)", marginTop: 6 }}>
+            branch: <span style={{ color: "var(--accent)" }}>{currentBranch}</span>
+          </div>
         </div>
 
         <div
-          className="mb-5"
+          className="scroll"
           style={{
-            border: "1px solid var(--q-border)",
+            border: "1px solid var(--border-2)",
+            borderRadius: 9,
             minHeight: 80,
             maxHeight: 240,
             overflowY: "auto",
           }}
         >
           {commits === null && !error && (
-            <div className="px-3 py-3 text-[10px]" style={{ color: "var(--q-fg-muted)" }}>loading commits...</div>
+            <div className="mono" style={{ padding: "12px", fontSize: 10.5, color: "var(--fg-4)" }}>loading commits…</div>
           )}
           {error && (
-            <div className="px-3 py-3 text-[10px]" style={{ color: "var(--q-error)" }}>{error}</div>
+            <div className="mono" style={{ padding: "12px", fontSize: 10.5, color: "var(--danger)" }}>{error}</div>
           )}
-          {commits !== null && commits.length === 0 && (
-            <div className="px-3 py-3 text-[10px]" style={{ color: "var(--q-fg-muted)" }}>
+          {nothingToPush && (
+            <div className="mono" style={{ padding: "12px", fontSize: 10.5, color: "var(--fg-4)" }}>
               no unpushed commits
             </div>
           )}
@@ -65,42 +61,30 @@ export function GitPushModal({ sessionId, currentBranch, onSubmit, onCancel }: P
             return (
               <div
                 key={i}
-                className="flex items-start gap-3 px-3 py-2 text-[11px]"
-                style={{ borderBottom: i < commits.length - 1 ? "1px solid var(--q-border)" : "none" }}
+                className="mono"
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 12,
+                  padding: "8px 12px",
+                  fontSize: 11,
+                  borderBottom: i < commits.length - 1 ? "1px solid var(--border-2)" : "none",
+                }}
               >
-                <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>{hash}</span>
-                <span style={{ color: "var(--q-fg)" }}>{msg}</span>
+                <span style={{ color: "var(--accent)", flex: "none" }}>{hash}</span>
+                <span style={{ color: "var(--fg)" }}>{msg}</span>
               </div>
             );
           })}
         </div>
 
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={commits !== null && commits.length === 0}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{
-              backgroundColor: commits !== null && commits.length === 0 ? "var(--q-bg-hover)" : "var(--q-accent)",
-              color: commits !== null && commits.length === 0 ? "var(--q-fg-muted)" : "var(--q-bg)",
-              fontWeight: 500,
-            }}
-          >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit onClick={onSubmit} disabled={nothingToPush}>
             push
-          </button>
+          </ModalSubmit>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

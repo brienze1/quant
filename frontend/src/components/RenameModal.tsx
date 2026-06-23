@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ModalShell, ModalInput, ModalCancel, ModalSubmit } from "./ModalShell";
 
 interface Props {
   currentName: string;
@@ -24,55 +25,22 @@ export function RenameModal({ currentName, onSubmit, onCancel }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm p-6"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        <label className="block text-[10px] mb-3 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
+    <ModalShell width={400} onClose={onCancel} align="center">
+      <form onSubmit={handleSubmit} style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
+        <span className="mono" style={{ fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--fg-3)" }}>
           // rename
-        </label>
-        <input
+        </span>
+        <ModalInput
           ref={inputRef}
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full px-3 py-2 text-xs mb-5"
-          style={{
-            backgroundColor: "var(--q-bg-hover)",
-            border: "1px solid var(--q-border)",
-            color: "var(--q-fg)",
-            fontFamily: "'JetBrains Mono', monospace",
-            outline: "none",
-          }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
         />
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
-          <button
-            type="submit"
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ backgroundColor: "var(--q-accent)", color: "var(--q-bg)", fontWeight: 500 }}
-          >
-            rename
-          </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit type="submit" disabled={!name.trim() || name.trim() === currentName}>rename</ModalSubmit>
         </div>
       </form>
-    </div>
+    </ModalShell>
   );
 }

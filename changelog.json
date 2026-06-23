@@ -1,6 +1,18 @@
 {
   "entries": [
     {
+      "version": "v3.2.0",
+      "date": "2026-06-23",
+      "changes": {
+        "features": [
+          "a brand-new look — Quant has been re-skinned top to bottom with the new Quant Design System: refreshed colors, typography, and iconography across every screen, and panels that now float with soft shadows and rounded corners for a lighter, more focused, Apple-like feel",
+          "a unified title bar on macOS — the window's traffic-light buttons are now inset into Quant's own top toolbar instead of sitting in a separate grey strip, so the whole top of the window is one clean bar you can still drag to move the window",
+          "session controls moved where you'd expect them — the Files / Terminal / Mindmap / Voice pane toggles now live in the session's own header next to its name and mic, instead of a separate row, and the duplicate top-bar icons were cleaned up",
+          "detach a file into its own panel — open a file and click the new detach button on its tab to pop it out into the right-hand dock as a floating, resizable, re-tileable panel beside your terminal and mindmap; reattach it to a tab anytime, and your unsaved edits come along either way"
+        ]
+      }
+    },
+    {
       "version": "v3.1.36",
       "date": "2026-06-18",
       "changes": {

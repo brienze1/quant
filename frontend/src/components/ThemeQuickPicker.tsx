@@ -6,7 +6,7 @@ interface Props {
   onClose: () => void;
 }
 
-const font = "'JetBrains Mono', monospace";
+const font = "var(--mono)";
 
 export function ThemeQuickPicker({ onClose }: Props) {
   const { theme, themes, setTheme } = useTheme();
@@ -93,7 +93,7 @@ export function ThemeQuickPicker({ onClose }: Props) {
       onClick={cancel}
     >
       {/* backdrop */}
-      <div style={{ position: "absolute", inset: 0, backgroundColor: "var(--q-modal-backdrop)" }} />
+      <div style={{ position: "absolute", inset: 0, backgroundColor: "var(--scrim)" }} />
 
       {/* picker */}
       <div
@@ -102,10 +102,10 @@ export function ThemeQuickPicker({ onClose }: Props) {
           position: "relative",
           width: 400,
           maxHeight: "50vh",
-          backgroundColor: "var(--q-bg-elevated)",
-          border: "1px solid var(--q-border)",
-          borderRadius: 8,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          backgroundColor: "var(--panel-2)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r2)",
+          boxShadow: "var(--shadow-pop)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -113,7 +113,7 @@ export function ThemeQuickPicker({ onClose }: Props) {
         }}
       >
         {/* search */}
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--q-border)" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
           <input
             ref={inputRef}
             type="text"
@@ -126,7 +126,7 @@ export function ThemeQuickPicker({ onClose }: Props) {
               backgroundColor: "transparent",
               border: "none",
               outline: "none",
-              color: "var(--q-fg)",
+              color: "var(--fg)",
               fontFamily: font,
               fontSize: 14,
             }}
@@ -143,7 +143,7 @@ export function ThemeQuickPicker({ onClose }: Props) {
           }}
         >
           {filtered.length === 0 && (
-            <div style={{ padding: "12px 16px", color: "var(--q-fg-muted)", fontSize: 12 }}>
+            <div style={{ padding: "12px 16px", color: "var(--fg-3)", fontSize: 12 }}>
               no matching themes
             </div>
           )}
@@ -164,8 +164,8 @@ export function ThemeQuickPicker({ onClose }: Props) {
                   alignItems: "center",
                   justifyContent: "space-between",
                   cursor: "pointer",
-                  backgroundColor: isSelected ? "var(--q-bg-hover)" : "transparent",
-                  color: isSelected ? "var(--q-fg)" : "var(--q-fg-secondary)",
+                  backgroundColor: isSelected ? "var(--hover)" : "transparent",
+                  color: isSelected ? "var(--fg)" : "var(--fg-2)",
                   fontSize: 13,
                 }}
               >
@@ -176,7 +176,7 @@ export function ThemeQuickPicker({ onClose }: Props) {
                       width: 14,
                       height: 14,
                       borderRadius: 3,
-                      border: "1px solid var(--q-border-light)",
+                      border: "1px solid var(--border-2)",
                       backgroundColor: t.colors.bg,
                       display: "flex",
                       alignItems: "center",
@@ -188,11 +188,11 @@ export function ThemeQuickPicker({ onClose }: Props) {
                   <span>{t.name}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 10, color: "var(--q-fg-muted)" }}>
+                  <span style={{ fontSize: 10, color: "var(--fg-3)" }}>
                     {t.type}
                   </span>
                   {isCurrent && (
-                    <span style={{ fontSize: 10, color: "var(--q-accent)" }}>current</span>
+                    <span style={{ fontSize: 10, color: "var(--accent)" }}>current</span>
                   )}
                 </div>
               </div>
@@ -204,27 +204,27 @@ export function ThemeQuickPicker({ onClose }: Props) {
         <div
           style={{
             padding: "8px 16px",
-            borderTop: "1px solid var(--q-border)",
+            borderTop: "1px solid var(--border)",
             display: "flex",
             gap: 16,
             fontSize: 10,
-            color: "var(--q-fg-muted)",
+            color: "var(--fg-3)",
           }}
         >
           <span>
-            <kbd style={{ backgroundColor: "var(--q-bg-input)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--q-border-light)" }}>
+            <kbd style={{ backgroundColor: "var(--panel-2)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--border-2)" }}>
               ↑↓
             </kbd>{" "}
             preview
           </span>
           <span>
-            <kbd style={{ backgroundColor: "var(--q-bg-input)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--q-border-light)" }}>
+            <kbd style={{ backgroundColor: "var(--panel-2)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--border-2)" }}>
               ↵
             </kbd>{" "}
             confirm
           </span>
           <span>
-            <kbd style={{ backgroundColor: "var(--q-bg-input)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--q-border-light)" }}>
+            <kbd style={{ backgroundColor: "var(--panel-2)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--border-2)" }}>
               esc
             </kbd>{" "}
             cancel

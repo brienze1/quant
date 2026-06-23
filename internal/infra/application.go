@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 
 	"quant/internal/infra/db"
 	"quant/internal/infra/dependency"
@@ -302,6 +303,13 @@ func Run(assets embed.FS, changelogData []byte) error {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 10, A: 1},
+		// macOS only: merge the native title bar into the app's own top toolbar.
+		// HiddenInset keeps the traffic-light buttons but removes the separate OS
+		// title strip and the ">_ quant" title text, giving a single unified bar.
+		// Windows/Linux are unaffected by Mac options.
+		Mac: &mac.Options{
+			TitleBar: mac.TitleBarHiddenInset(),
+		},
 		OnStartup: func(ctx context.Context) {
 			processManager.SetContext(ctx)
 			injector.EventEmitter().SetContext(ctx)

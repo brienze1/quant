@@ -25,6 +25,7 @@ import {
 } from "../api";
 import { ContextMenu } from "./ContextMenu";
 import type { MenuItem } from "./ContextMenu";
+import { Icon } from "./Icon";
 
 const STATUS_LABEL: Record<string, string> = {
   planned: "planned",
@@ -121,11 +122,11 @@ function StatusNode({ id, data }: NodeProps<FlowNode>) {
   const colorStyle: React.CSSProperties | undefined = data.color
     ? {
         borderColor: data.color,
-        background: `color-mix(in srgb, ${data.color} 14%, var(--q-bg-elevated))`,
+        background: `color-mix(in srgb, ${data.color} 14%, var(--panel-2))`,
       }
     : undefined;
   const headStyle: React.CSSProperties | undefined = data.color
-    ? { background: `color-mix(in srgb, ${data.color} 16%, var(--q-bg-elevated))` }
+    ? { background: `color-mix(in srgb, ${data.color} 16%, var(--panel-2))` }
     : undefined;
   return (
     <div
@@ -151,7 +152,7 @@ function StatusNode({ id, data }: NodeProps<FlowNode>) {
               : undefined
           }
         >
-          <span className="ico">📝</span>
+          <span className="ico"><Icon name="note" size={12} /></span>
           <span>{data.note}</span>
         </div>
       )}
@@ -167,18 +168,18 @@ function StatusNode({ id, data }: NodeProps<FlowNode>) {
 
 function NoteNode({ id, data }: NodeProps<FlowNode>) {
   // Per-note color tints the sticky bg + border; empty falls back to the CSS
-  // var(--q-warning) styling defined in MindmapPane.css.
+  // var(--warn) styling defined in MindmapPane.css.
   const colorStyle: React.CSSProperties | undefined = data.color
     ? {
-        background: `color-mix(in srgb, ${data.color} 14%, var(--q-bg-elevated))`,
-        border: `1px solid color-mix(in srgb, ${data.color} 45%, var(--q-border))`,
+        background: `color-mix(in srgb, ${data.color} 14%, var(--panel-2))`,
+        border: `1px solid color-mix(in srgb, ${data.color} 45%, var(--border))`,
       }
     : undefined;
   return (
     <div className="sticky" style={colorStyle} onContextMenu={(e) => data.onContext?.(e, id)}>
       <Handle type="target" position={Position.Left} />
       <div className="sticky-head">
-        <span>📌</span>
+        <Icon name="pin" size={11} />
         <span>note</span>
       </div>
       <div className="sticky-body">{data.text}</div>
@@ -279,28 +280,28 @@ function EditNodeModal({
   }
 
   const inputStyle: React.CSSProperties = {
-    backgroundColor: "var(--q-bg-hover)",
-    border: "1px solid var(--q-border)",
-    color: "var(--q-fg)",
-    fontFamily: "'JetBrains Mono', monospace",
+    backgroundColor: "var(--panel-3)",
+    border: "1px solid var(--border)",
+    color: "var(--fg)",
+    borderRadius: "var(--r2)",
     outline: "none",
   };
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
+      style={{ backgroundColor: "var(--scrim)" }}
     >
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-sm p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
         style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
+          backgroundColor: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r3)",
         }}
       >
-        <label className="block text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>
+        <label className="block text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>
           // {isNew ? "new" : "edit"} {d.kind}
         </label>
 
@@ -314,9 +315,10 @@ function EditNodeModal({
                 onClick={() => set("kind", k)}
                 className="px-3 py-1.5 text-[11px] lowercase"
                 style={{
-                  color: d.kind === k ? "var(--q-bg)" : "var(--q-fg-secondary)",
-                  backgroundColor: d.kind === k ? "var(--q-accent)" : "var(--q-bg-hover)",
-                  border: `1px solid ${d.kind === k ? "var(--q-accent)" : "var(--q-border)"}`,
+                  color: d.kind === k ? "var(--on-accent)" : "var(--fg-2)",
+                  backgroundColor: d.kind === k ? "var(--accent)" : "var(--panel-3)",
+                  border: `1px solid ${d.kind === k ? "var(--accent)" : "var(--border)"}`,
+                  borderRadius: "var(--r2)",
                 }}
               >
                 {k}
@@ -327,7 +329,7 @@ function EditNodeModal({
 
         {d.kind === "note" ? (
           <label className="block">
-            <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>text</span>
+            <span className="text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>text</span>
             <textarea
               autoFocus
               value={d.text}
@@ -335,44 +337,44 @@ function EditNodeModal({
               rows={3}
               className="mt-1 block w-full px-3 py-2 text-xs"
               style={inputStyle}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
             />
           </label>
         ) : (
           <>
             <label className="block">
-              <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>label</span>
+              <span className="text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>label</span>
               <input
                 autoFocus
                 value={d.label}
                 onChange={(e) => set("label", e.target.value)}
                 className="mt-1 block w-full px-3 py-2 text-xs"
                 style={inputStyle}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
               />
             </label>
 
             <label className="block">
-              <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>note</span>
+              <span className="text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>note</span>
               <input
                 value={d.note}
                 onChange={(e) => set("note", e.target.value)}
                 className="mt-1 block w-full px-3 py-2 text-xs"
                 style={inputStyle}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
               />
             </label>
 
             <div className="flex gap-3">
               <label className="block flex-1">
-                <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>status</span>
+                <span className="text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>status</span>
                 <PlainSelect value={d.status} options={STATUS_OPTIONS} onChange={(v) => set("status", v)} />
               </label>
               <label className="block" style={{ width: 90 }}>
-                <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>progress</span>
+                <span className="text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>progress</span>
                 <input
                   type="number"
                   min={0}
@@ -383,8 +385,8 @@ function EditNodeModal({
                   }
                   className="mt-1 block w-full px-3 py-2 text-xs"
                   style={inputStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
                 />
               </label>
             </div>
@@ -393,7 +395,7 @@ function EditNodeModal({
 
         {/* color swatches (no native <input type=color> in WKWebView) */}
         <div className="block">
-          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>color</span>
+          <span className="text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>color</span>
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             <button
               type="button"
@@ -403,10 +405,10 @@ function EditNodeModal({
               style={{
                 width: 22,
                 height: 22,
-                color: "var(--q-fg-secondary)",
-                backgroundColor: "var(--q-bg-hover)",
-                border: `1px solid ${d.color === "" ? "var(--q-accent)" : "var(--q-border)"}`,
-                outline: d.color === "" ? "1px solid var(--q-accent)" : "none",
+                color: "var(--fg-2)",
+                backgroundColor: "var(--hover)",
+                border: `1px solid ${d.color === "" ? "var(--accent)" : "var(--border)"}`,
+                outline: d.color === "" ? "1px solid var(--accent)" : "none",
               }}
             >
               ×
@@ -421,8 +423,8 @@ function EditNodeModal({
                   width: 22,
                   height: 22,
                   backgroundColor: sw.value,
-                  border: `1px solid ${d.color === sw.value ? "var(--q-fg)" : "transparent"}`,
-                  outline: d.color === sw.value ? "2px solid var(--q-accent)" : "none",
+                  border: `1px solid ${d.color === sw.value ? "var(--fg)" : "transparent"}`,
+                  outline: d.color === sw.value ? "2px solid var(--accent)" : "none",
                   outlineOffset: 1,
                   cursor: "pointer",
                 }}
@@ -433,7 +435,7 @@ function EditNodeModal({
 
         {/* parent */}
         <label className="block">
-          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>parent</span>
+          <span className="text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>parent</span>
           <PlainSelect
             value={d.parentId}
             options={["", ...parentOptions.map((o) => o.value)]}
@@ -447,9 +449,9 @@ function EditNodeModal({
             type="button"
             onClick={onCancel}
             className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
+            style={{ color: "var(--fg-2)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-2)")}
           >
             cancel
           </button>
@@ -460,7 +462,7 @@ function EditNodeModal({
               handleSubmit(e);
             }}
             className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ backgroundColor: "var(--q-accent)", color: "var(--q-bg)", fontWeight: 500 }}
+            style={{ backgroundColor: "var(--accent)", color: "var(--on-accent)", fontWeight: 500, borderRadius: "var(--r2)" }}
           >
             {isNew ? "create" : "save"}
           </button>
@@ -488,15 +490,15 @@ function PlainSelect({
       onChange={(e) => onChange(e.target.value)}
       className="mt-1 block w-full px-3 py-2 text-xs"
       style={{
-        backgroundColor: "var(--q-bg-hover)",
-        border: "1px solid var(--q-border)",
-        color: "var(--q-fg)",
+        backgroundColor: "var(--hover)",
+        border: "1px solid var(--border)",
+        color: "var(--fg)",
         fontFamily: "'JetBrains Mono', monospace",
         outline: "none",
       }}
     >
       {options.map((o) => (
-        <option key={o} value={o} style={{ backgroundColor: "var(--q-bg)" }}>
+        <option key={o} value={o} style={{ backgroundColor: "var(--bg)" }}>
           {labels?.[o] ?? o}
         </option>
       ))}
@@ -912,14 +914,14 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
         {
           type: "item",
           icon: "✎",
-          iconColor: "var(--q-accent)",
+          iconColor: "var(--accent)",
           label: "edit",
           onClick: () => openEdit(menu!.nodeId),
         },
         {
           type: "item",
           icon: "+",
-          iconColor: "var(--q-accent)",
+          iconColor: "var(--accent)",
           label: "add child",
           onClick: () => openCreate(menu!.nodeId),
         },
@@ -927,17 +929,17 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
         {
           type: "item",
           icon: "×",
-          iconColor: "var(--q-error)",
+          iconColor: "var(--danger)",
           label: "delete",
-          labelColor: "var(--q-error)",
+          labelColor: "var(--danger)",
           onClick: () => deleteNode(menu!.nodeId, false),
         },
         {
           type: "item",
           icon: "×",
-          iconColor: "var(--q-error)",
+          iconColor: "var(--danger)",
           label: "delete subtree",
-          labelColor: "var(--q-error)",
+          labelColor: "var(--danger)",
           onClick: () => deleteNode(menu!.nodeId, true),
         },
       ]
@@ -954,7 +956,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
           onChange={(e) => setActiveBoard(e.target.value)}
         >
           {boardOptions.map((b) => (
-            <option key={b} value={b} style={{ backgroundColor: "var(--q-bg)" }}>
+            <option key={b} value={b} style={{ backgroundColor: "var(--bg)" }}>
               {b}
             </option>
           ))}
@@ -968,15 +970,21 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
           rename
         </button>
         <button type="button" className="mindmap-tool-btn" onClick={() => setCreatingBoard(true)}>
-          + board
+          <Icon name="plus" size={12} />
+          board
         </button>
         <div className="mindmap-tool-spacer" />
-        <button type="button" className="mindmap-tool-btn" onClick={() => openCreate("")}>
-          + node
+        <button
+          type="button"
+          className="mindmap-tool-btn mindmap-tool-btn--accent"
+          onClick={() => openCreate("")}
+        >
+          <Icon name="plus" size={12} />
+          node
         </button>
         <button
           type="button"
-          className="mindmap-tool-btn"
+          className="mindmap-tool-btn mindmap-tool-btn--accent"
           onClick={() => {
             setEditDraft({
               id: "",
@@ -992,7 +1000,8 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
             setEditIsNew(true);
           }}
         >
-          + note
+          <Icon name="note" size={12} />
+          note
         </button>
         <button
           type="button"
@@ -1000,7 +1009,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
           title="Fullscreen (Esc to exit)"
           onClick={() => setFullscreen((v) => !v)}
         >
-          {fullscreen ? "🗗" : "⛶"}
+          <Icon name="maximize" size={12} color={fullscreen ? "var(--accent)" : undefined} />
         </button>
       </div>
 
@@ -1027,7 +1036,7 @@ function MindmapInner({ sessionId }: { sessionId: string }) {
             nodesDraggable
             nodesConnectable
           >
-            <Background color="var(--q-border-light)" gap={22} size={1} />
+            <Background color="var(--border-2)" gap={22} size={1} />
             <Controls showInteractive={false} />
           </ReactFlow>
         )}
@@ -1079,7 +1088,7 @@ function BoardNameModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
+      style={{ backgroundColor: "var(--scrim)" }}
       onClick={onCancel}
     >
       <form
@@ -1090,12 +1099,13 @@ function BoardNameModal({
         }}
         className="w-full max-w-xs p-6 flex flex-col gap-4"
         style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
+          backgroundColor: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r3)",
           fontFamily: "'JetBrains Mono', monospace",
         }}
       >
-        <label className="block text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>
+        <label className="block text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>
           // {isRename ? "rename board" : "new board"}
         </label>
         <input
@@ -1105,9 +1115,10 @@ function BoardNameModal({
           placeholder={isRename ? "new board name" : "board name"}
           className="nodrag px-2 py-1.5 text-xs"
           style={{
-            backgroundColor: "var(--q-bg-hover)",
-            border: "1px solid var(--q-border)",
-            color: "var(--q-fg)",
+            backgroundColor: "var(--panel-3)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r2)",
+            color: "var(--fg)",
             fontFamily: "'JetBrains Mono', monospace",
             outline: "none",
           }}
@@ -1117,7 +1128,7 @@ function BoardNameModal({
             type="button"
             onClick={onCancel}
             className="px-3 py-1 text-[11px]"
-            style={{ color: "var(--q-fg-secondary)", border: "1px solid var(--q-border)", backgroundColor: "transparent" }}
+            style={{ color: "var(--fg-2)", border: "1px solid var(--border)", borderRadius: "var(--r2)", backgroundColor: "transparent" }}
           >
             cancel
           </button>
@@ -1128,7 +1139,7 @@ function BoardNameModal({
               onSubmit(name);
             }}
             className="px-3 py-1 text-[11px]"
-            style={{ color: "var(--q-bg)", backgroundColor: "var(--q-accent)", border: "1px solid var(--q-accent)" }}
+            style={{ color: "var(--on-accent)", backgroundColor: "var(--accent)", border: "1px solid var(--accent)", borderRadius: "var(--r2)" }}
           >
             {isRename ? "rename" : "create"}
           </button>

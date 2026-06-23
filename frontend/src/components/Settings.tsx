@@ -4,24 +4,22 @@ import * as api from "../api";
 import type { VoiceConfig } from "../types";
 import { ThemeSettings } from "./ThemeSettings";
 import { KeybindingsTab } from "./KeybindingsTab";
-import { useTheme } from "../theme";
-import { getOS, type OS } from "../os";
+import { getOS, isMac, type OS } from "../os";
+import { Icon, type IconName } from "./Icon";
+import { Button } from "./Button";
+import { IconButton } from "./IconButton";
 
-const chevronBg = (hex: string) =>
-  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='none' stroke='${hex.replace("#", "%23")}' stroke-width='1.5'/%3E%3C/svg%3E")`;
+type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "voice" | "remote" | "themes" | "keybindings";
 
-type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "quanti" | "voice" | "remote" | "themes" | "keybindings";
-
-const NAV_ITEMS: { key: SettingsTab; label: string; icon: string }[] = [
+const NAV_ITEMS: { key: SettingsTab; label: string; icon: IconName }[] = [
   { key: "general", label: "general", icon: "settings" },
   { key: "keybindings", label: "keybindings", icon: "keyboard" },
   { key: "themes", label: "themes", icon: "palette" },
-  { key: "git", label: "git & branches", icon: "git-branch" },
+  { key: "git", label: "git & branches", icon: "branch" },
   { key: "sessions", label: "sessions", icon: "terminal" },
-  { key: "storage", label: "storage & data", icon: "hard-drive" },
+  { key: "storage", label: "storage & data", icon: "hardDrive" },
   { key: "terminal", label: "terminal", icon: "monitor" },
-  { key: "claude", label: "claude cli", icon: "bot" },
-  { key: "quanti", label: "quanti", icon: "message-square" },
+  { key: "claude", label: "claude cli", icon: "sparkles" },
   { key: "voice", label: "voice", icon: "mic" },
   { key: "remote", label: "remote access", icon: "globe" },
 ];
@@ -35,7 +33,7 @@ interface Props {
   onBack: () => void;
 }
 
-const font = "'JetBrains Mono', monospace";
+const font = "var(--mono)";
 
 // True when the app is served over the remote tunnel (browser), not the Wails
 // desktop webview. The remote-access controls are desktop-only.
@@ -82,94 +80,108 @@ export function Settings({ repos, onBack }: Props) {
 
   if (!config) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center" style={{ backgroundColor: "var(--q-bg)", fontFamily: font }}>
-        <span style={{ color: "var(--q-fg-secondary)", fontSize: 12 }}>loading settings...</span>
+      <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+        <span style={{ color: "var(--fg-3)", fontSize: 12 }}>loading settings...</span>
       </div>
     );
   }
 
-  return (
-    <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", fontFamily: font }}>
-      {/* Settings Sidebar */}
-      <div
-        className="flex flex-col h-full"
-        style={{ width: 240, borderRight: "1px solid var(--q-border)", backgroundColor: "var(--q-bg)" }}
-      >
-        {/* Header */}
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 px-5 text-left transition-colors"
-          style={{ height: 48, borderBottom: "1px solid var(--q-border)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--q-fg-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12" />
-            <polyline points="12 19 5 12 12 5" />
-          </svg>
-          <span style={{ color: "var(--q-fg)", fontSize: 14, fontWeight: 700 }}>settings</span>
-        </button>
+  const activeLabel = NAV_ITEMS.find((n) => n.key === tab)?.label;
 
-        {/* Nav Items */}
-        <div className="flex flex-col gap-0.5 py-3">
-          {VISIBLE_NAV_ITEMS.map((item) => {
-            const active = tab === item.key;
-            return (
-              <button
-                key={item.key}
-                onClick={() => setTab(item.key)}
-                className="flex items-center gap-2 px-5 text-left transition-colors"
-                style={{
-                  height: 32,
-                  backgroundColor: active ? "var(--q-bg-hover)" : "transparent",
-                  color: active ? "var(--q-fg)" : "var(--q-fg-secondary)",
-                  fontSize: 12,
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.backgroundColor = "transparent";
-                }}
-              >
-                <span style={{ color: active ? "var(--q-accent)" : "var(--q-fg-secondary)", fontSize: 14 }}>
-                  {navIcon(item.icon)}
-                </span>
-                {item.label}
-              </button>
-            );
-          })}
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", background: "var(--bg)" }}>
+      {/* Drop the trailing divider on the last row of every settings panel so it
+          sits flush against the panel's rounded bottom edge (spec `last` prop). */}
+      <style>{`.q-settings-panel > *:last-child { border-bottom: none !important; }`}</style>
+      {/* Nav */}
+      <div
+        style={{
+          width: 248,
+          flex: "none",
+          display: "flex",
+          flexDirection: "column",
+          borderRight: "1px solid var(--border)",
+          background: "var(--panel)",
+        }}
+      >
+        {/* Header — this overlay covers the window's title bar, so on macOS pad
+            the left so the inset traffic-light buttons don't overlap "settings".
+            The strip is also a window-drag region (back button opts out). */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            height: 56,
+            padding: isMac() ? "0 16px 0 80px" : "0 16px",
+            borderBottom: "1px solid var(--border-2)",
+            ["--wails-draggable" as string]: "drag",
+          } as React.CSSProperties}
+        >
+          <span style={{ ["--wails-draggable" as string]: "no-drag" } as React.CSSProperties}>
+            <IconButton name="arrowLeft" size={16} label="Back" onClick={onBack} />
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--fg)" }}>settings</span>
+        </div>
+
+        {/* Nav items */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
+          {VISIBLE_NAV_ITEMS.map((item) => (
+            <NavItem
+              key={item.key}
+              icon={item.icon}
+              label={item.label}
+              active={tab === item.key}
+              onClick={() => setTab(item.key)}
+            />
+          ))}
         </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Content Header */}
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {/* Sticky header */}
         <div
-          className="flex items-center px-8 shrink-0"
-          style={{ height: 48, borderBottom: "1px solid var(--q-border)" }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            height: 56,
+            padding: "0 32px",
+            borderBottom: "1px solid var(--border-2)",
+            position: "sticky",
+            top: 0,
+            background: "var(--bg)",
+            zIndex: 1,
+          }}
         >
-          <span style={{ color: "var(--q-fg)", fontSize: 16, fontWeight: 700 }}>
-            {NAV_ITEMS.find((n) => n.key === tab)?.label}
-          </span>
-          {saving && (
-            <span className="ml-3" style={{ color: "var(--q-accent)", fontSize: 10 }}>saving...</span>
-          )}
+          <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--fg)" }}>{activeLabel}</span>
+          {saving && <span className="mono" style={{ color: "var(--accent)", fontSize: 10 }}>saving…</span>}
+          <span style={{ flex: 1 }} />
+          <Button variant="ghost" size="sm" icon="x" onClick={onBack}>close</Button>
         </div>
 
         {/* Error bar */}
         {error && (
           <div
-            className="flex items-center justify-between px-8 py-2 text-xs shrink-0"
-            style={{ backgroundColor: "var(--q-error-bg)", color: "var(--q-error)", borderBottom: "1px solid var(--q-border)" }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "8px 32px",
+              fontSize: 12,
+              background: "color-mix(in srgb, var(--danger) 12%, transparent)",
+              color: "var(--danger)",
+              borderBottom: "1px solid var(--border-2)",
+            }}
           >
-            <span>// error: {error}</span>
-            <button onClick={() => setError(null)} style={{ color: "var(--q-error)" }}>[x]</button>
+            <span className="mono">// error: {error}</span>
+            <button onClick={() => setError(null)} style={{ color: "var(--danger)", background: "none", border: "none", cursor: "pointer" }}>[x]</button>
           </div>
         )}
 
-        {/* Scroll Content */}
-        <div className="flex-1 overflow-y-auto p-8" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+        {/* Scroll content */}
+        <div style={{ maxWidth: 880, padding: "28px 32px 60px" }}>
           {tab === "general" && <GeneralTab config={config} update={update} />}
           {tab === "keybindings" && <KeybindingsTab />}
           {tab === "themes" && <ThemeSettings />}
@@ -178,12 +190,41 @@ export function Settings({ repos, onBack }: Props) {
           {tab === "storage" && <StorageTab config={config} update={update} onError={setError} onReload={loadConfig} />}
           {tab === "terminal" && <TerminalTab config={config} update={update} />}
           {tab === "claude" && <ClaudeTab config={config} update={update} />}
-          {tab === "quanti" && <QuantiTab config={config} update={update} />}
           {tab === "voice" && <VoiceTab config={config} update={update} />}
           {tab === "remote" && <RemoteTab />}
         </div>
       </div>
     </div>
+  );
+}
+
+function NavItem({ icon, label, active, onClick }: { icon: IconName; label: string; active: boolean; onClick: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        width: "100%",
+        padding: "8px 12px",
+        borderRadius: 9,
+        border: "none",
+        cursor: "pointer",
+        textAlign: "left",
+        fontFamily: "var(--sans)",
+        fontSize: 13,
+        fontWeight: active ? 600 : 500,
+        background: active ? "var(--accent-soft)" : hover ? "var(--hover)" : "transparent",
+        color: active ? "var(--accent)" : "var(--fg-2)",
+      }}
+    >
+      <Icon name={icon} size={15} color={active ? "var(--accent)" : "var(--fg-3)"} />
+      {label}
+    </button>
   );
 }
 
@@ -228,35 +269,40 @@ function GeneralTab({ config, update }: TabProps) {
 
       <Section title="left click shortcuts" description="commands executed when left-clicking a session (runs in session folder)">
         {shortcuts.map((sc, i) => (
-          <div key={i} className="flex items-center justify-between">
-            <div className="flex flex-col" style={{ gap: 2 }}>
-              <span style={{ color: "var(--q-fg)", fontSize: 12 }}>{sc.name}</span>
-              <span style={{ color: "var(--q-accent)", fontSize: 10 }}>{sc.command}</span>
-            </div>
-            <button
-              onClick={() => removeShortcut(i)}
-              style={{ color: "var(--q-error)", fontSize: 11, fontFamily: font }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-            >
-              x
-            </button>
-          </div>
+          <SettingRow
+            key={i}
+            label={sc.name}
+            description={sc.command}
+            right={
+              <button
+                onClick={() => removeShortcut(i)}
+                style={{ color: "var(--danger)", fontSize: 12, fontFamily: "var(--mono)", background: "none", border: "none", cursor: "pointer" }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+              >
+                x
+              </button>
+            }
+          />
         ))}
-        <div className="flex gap-2" style={{ marginTop: shortcuts.length > 0 ? 4 : 0 }}>
+        <div style={{ display: "flex", gap: 8, padding: 14 }}>
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="name"
             onKeyDown={(e) => e.key === "Enter" && addShortcut()}
+            spellCheck={false}
+            className="mono"
             style={{
-              flex: 1,
-              backgroundColor: "var(--q-bg-hover)",
-              border: "1px solid var(--q-border)",
-              color: "var(--q-fg)",
-              fontSize: 11,
-              fontFamily: font,
-              padding: "4px 8px",
+              width: 180,
+              height: 32,
+              padding: "0 10px",
+              borderRadius: 8,
+              boxSizing: "border-box",
+              background: "var(--panel-3)",
+              border: "1px solid var(--border-2)",
+              color: "var(--fg)",
+              fontSize: 12,
               outline: "none",
             }}
           />
@@ -265,28 +311,37 @@ function GeneralTab({ config, update }: TabProps) {
             onChange={(e) => setNewCommand(e.target.value)}
             placeholder="command"
             onKeyDown={(e) => e.key === "Enter" && addShortcut()}
+            spellCheck={false}
+            className="mono"
             style={{
-              flex: 2,
-              backgroundColor: "var(--q-bg-hover)",
-              border: "1px solid var(--q-border)",
-              color: "var(--q-accent)",
-              fontSize: 11,
-              fontFamily: font,
-              padding: "4px 8px",
+              flex: 1,
+              minWidth: 0,
+              height: 32,
+              padding: "0 10px",
+              borderRadius: 8,
+              boxSizing: "border-box",
+              background: "var(--panel-3)",
+              border: "1px solid var(--border-2)",
+              color: "var(--accent)",
+              fontSize: 12,
               outline: "none",
             }}
           />
           <button
             onClick={addShortcut}
             style={{
-              color: "var(--q-fg-muted)",
+              color: "var(--fg-3)",
               fontSize: 11,
-              fontFamily: font,
-              border: "1px dashed var(--q-border)",
-              padding: "4px 10px",
+              fontFamily: "var(--mono)",
+              border: "1px dashed var(--border)",
+              borderRadius: 8,
+              padding: "0 12px",
+              background: "none",
+              cursor: "pointer",
+              flex: "none",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg-2)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-3)")}
           >
             + add
           </button>
@@ -297,7 +352,6 @@ function GeneralTab({ config, update }: TabProps) {
 }
 
 function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
-  const { theme } = useTheme();
   const [newRepo, setNewRepo] = useState("");
   const [newBranch, setNewBranch] = useState("");
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
@@ -368,90 +422,93 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
       </Section>
 
       <Section title="per-repo overrides" description="override pull branch for specific repositories">
-        <div style={{ border: "1px solid var(--q-border)" }}>
-          {/* Table Header */}
-          <div className="flex" style={{ backgroundColor: "var(--q-bg-hover)", height: 32, borderBottom: "1px solid var(--q-border)" }}>
-            <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontWeight: 700 }}>
-              repository
+        <div style={{ padding: 14 }}>
+          <OverrideTableShell colA="repository" colB="pull branch" entries={Object.entries(config.branchOverrides)} onRemove={removeOverride} />
+          {/* Add override row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+            <div ref={repoDropdownRef} style={{ position: "relative", width: 200 }}>
+              <button
+                onClick={() => setRepoDropdownOpen((prev) => !prev)}
+                className="mono"
+                style={{
+                  width: 200,
+                  height: 32,
+                  borderRadius: 8,
+                  boxSizing: "border-box",
+                  background: "var(--panel-3)",
+                  border: `1px solid ${repoDropdownOpen ? "var(--accent)" : "var(--border-2)"}`,
+                  color: newRepo ? "var(--fg)" : "var(--fg-4)",
+                  fontSize: 12,
+                  padding: "0 10px",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                {newRepo || "select repo"}
+              </button>
+              {repoDropdownOpen && (
+                <DropdownMenu
+                  anchorRef={repoDropdownRef}
+                  onClose={() => setRepoDropdownOpen(false)}
+                  items={repos
+                    .filter((r) => !(r.name in config.branchOverrides))
+                    .map((r) => ({
+                      label: r.name,
+                      onClick: () => {
+                        setNewRepo(r.name);
+                        setRepoDropdownOpen(false);
+                      },
+                    }))}
+                />
+              )}
             </div>
-            <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontWeight: 700 }}>
-              pull branch
-            </div>
-            <div className="flex items-center justify-center" style={{ width: 80, color: "var(--q-fg-secondary)", fontSize: 10 }} />
-          </div>
-          {/* Rows */}
-          {Object.entries(config.branchOverrides).map(([repo, branch]) => (
-            <div
-              key={repo}
-              className="flex"
-              style={{ height: 36, borderBottom: "1px solid var(--q-border)" }}
-            >
-              <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg)", fontSize: 11 }}>
-                {repo}
-              </div>
-              <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-accent)", fontSize: 11 }}>
-                {branch}
-              </div>
-              <div className="flex items-center justify-center" style={{ width: 80 }}>
-                <button
-                  onClick={() => removeOverride(repo)}
-                  style={{ color: "var(--q-error)", fontSize: 11, fontWeight: 700 }}
-                >
-                  x
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-        {/* Add override row */}
-        <div className="flex items-center gap-2 mt-3">
-          <div ref={repoDropdownRef} style={{ position: "relative", width: 200 }}>
+            <TextInput value={newBranch} onChange={setNewBranch} width={160} placeholder="branch" />
             <button
-              onClick={() => setRepoDropdownOpen((prev) => !prev)}
-              style={{
-                width: 200,
-                height: 32,
-                backgroundColor: "var(--q-bg-input)",
-                border: `1px solid ${repoDropdownOpen ? "var(--q-accent)" : "var(--q-border)"}`,
-                color: newRepo ? "var(--q-fg)" : "var(--q-fg-muted)",
-                fontSize: 12,
-                fontFamily: font,
-                padding: "0 12px",
-                textAlign: "left",
-                cursor: "pointer",
-                backgroundImage: chevronBg(theme.colors.fgMuted),
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: "right 12px center",
-              }}
+              onClick={addOverride}
+              style={{ color: "var(--accent)", fontSize: 11, fontFamily: "var(--mono)", background: "none", border: "none", cursor: "pointer", padding: "4px 6px" }}
             >
-              {newRepo || "select repo"}
+              + add override
             </button>
-            {repoDropdownOpen && (
-              <DropdownMenu
-                anchorRef={repoDropdownRef}
-                onClose={() => setRepoDropdownOpen(false)}
-                items={repos
-                  .filter((r) => !(r.name in config.branchOverrides))
-                  .map((r) => ({
-                    label: r.name,
-                    onClick: () => {
-                      setNewRepo(r.name);
-                      setRepoDropdownOpen(false);
-                    },
-                  }))}
-              />
-            )}
           </div>
-          <TextInput value={newBranch} onChange={setNewBranch} width={160} placeholder="branch" />
-          <button
-            onClick={addOverride}
-            style={{ color: "var(--q-accent)", fontSize: 11 }}
-          >
-            + add override
-          </button>
         </div>
       </Section>
     </>
+  );
+}
+
+// OverrideTableShell renders the read-only key/value table used by the git
+// per-repo and claude per-path override sections (new design tokens).
+function OverrideTableShell({
+  colA,
+  colB,
+  entries,
+  onRemove,
+}: {
+  colA: string;
+  colB: string;
+  entries: [string, string][];
+  onRemove: (key: string) => void;
+}) {
+  return (
+    <div style={{ border: "1px solid var(--border-2)", borderRadius: 9, overflow: "hidden" }}>
+      <div style={{ display: "flex", height: 32, background: "var(--panel-3)", borderBottom: "1px solid var(--border-2)" }}>
+        <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 12px", fontSize: 10, fontWeight: 700, color: "var(--fg-3)" }}>{colA}</div>
+        <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 12px", fontSize: 10, fontWeight: 700, color: "var(--fg-3)" }}>{colB}</div>
+        <div style={{ width: 60 }} />
+      </div>
+      {entries.length === 0 && (
+        <div className="mono" style={{ padding: "10px 12px", fontSize: 11, color: "var(--fg-4)" }}>// none configured</div>
+      )}
+      {entries.map(([k, v]) => (
+        <div key={k} style={{ display: "flex", height: 36, borderBottom: "1px solid var(--border-2)" }}>
+          <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 12px", fontSize: 11, color: "var(--fg)" }}>{k}</div>
+          <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 12px", fontSize: 11, color: "var(--accent)" }}>{v}</div>
+          <div style={{ width: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={() => onRemove(k)} style={{ color: "var(--danger)", fontSize: 12, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }}>x</button>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -558,15 +615,20 @@ function StorageTab({ config, update, onError, onReload }: TabProps & { onError:
           description="sqlite database file location (read-only)"
           right={
             <div
-              className="flex items-center px-3"
+              className="mono"
               style={{
-                backgroundColor: "var(--q-bg-input)",
-                border: "1px solid var(--q-border)",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 12px",
+                background: "var(--panel-3)",
+                border: "1px solid var(--border-2)",
+                borderRadius: 8,
+                boxSizing: "border-box",
                 height: 32,
                 width: 280,
-                opacity: 0.5,
-                color: "var(--q-fg-secondary)",
-                fontSize: 12,
+                opacity: 0.6,
+                color: "var(--fg-3)",
+                fontSize: 11.5,
               }}
             >
               {homeDir ? `~${homeDir}/quant.db` : "~/.quant/quant.db"}
@@ -597,35 +659,26 @@ function StorageTab({ config, update, onError, onReload }: TabProps & { onError:
 
 function RestartModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "var(--scrim)" }}>
       <div
-        className="flex flex-col gap-6 p-8"
+        className="flex flex-col gap-6"
         style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
+          background: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 14,
+          boxShadow: "var(--shadow-pop)",
+          padding: 28,
           maxWidth: 400,
         }}
       >
         <div className="flex flex-col gap-2">
-          <span style={{ color: "var(--q-warning)", fontSize: 12, fontWeight: 700 }}>~ restart required</span>
-          <span style={{ color: "var(--q-fg-secondary)", fontSize: 11 }}>
+          <span style={{ color: "var(--warn)", fontSize: 12, fontWeight: 700 }}>~ restart required</span>
+          <span style={{ color: "var(--fg-2)", fontSize: 11.5, lineHeight: 1.5 }}>
             storage paths have changed. please restart quant for the changes to take effect.
           </span>
         </div>
         <div className="flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-xs transition-colors"
-            style={{
-              backgroundColor: "var(--q-warning)",
-              color: "var(--q-bg)",
-              fontWeight: 500,
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            ok, got it
-          </button>
+          <Button variant="primary" size="sm" onClick={onClose}>ok, got it</Button>
         </div>
       </div>
     </div>
@@ -777,95 +830,65 @@ function ClaudeTab({ config, update }: TabProps) {
         title="agent persona"
         description="the base system prompt appended to every session quant spawns — it tells the agent it is quant, what quant is, and how to use the live mindmap + quant tools. Layered on top of each project's own context. Leave empty to use the built-in default."
       >
-        <textarea
-          value={config.basePersona ?? ""}
-          onChange={(e) => update("basePersona", e.target.value)}
-          placeholder={config.defaultBasePersona || "Leave empty to use the built-in Quant persona…"}
-          spellCheck={false}
-          style={{
-            width: "100%",
-            minHeight: 160,
-            resize: "vertical",
-            boxSizing: "border-box",
-            backgroundColor: "var(--q-bg-input)",
-            border: "1px solid var(--q-border)",
-            color: "var(--q-fg)",
-            fontFamily: font,
-            fontSize: 12,
-            lineHeight: 1.5,
-            padding: 8,
-            outline: "none",
-          }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-        />
-        <div className="flex items-center gap-3 mt-2">
-          <button
-            onClick={() => update("basePersona", config.defaultBasePersona ?? "")}
-            disabled={!config.defaultBasePersona}
-            style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: font, opacity: config.defaultBasePersona ? 1 : 0.4 }}
-          >
-            load default to edit
-          </button>
-          <button
-            onClick={() => update("basePersona", "")}
-            disabled={!(config.basePersona ?? "").trim()}
-            style={{ color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font, opacity: (config.basePersona ?? "").trim() ? 1 : 0.4 }}
-          >
-            reset to default
-          </button>
-          <span style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: font }}>
-            {(config.basePersona ?? "").trim() ? "using your custom persona" : "using built-in default"}
-          </span>
+        <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+          <textarea
+            value={config.basePersona ?? ""}
+            onChange={(e) => update("basePersona", e.target.value)}
+            placeholder={config.defaultBasePersona || "Leave empty to use the built-in Quant persona…"}
+            spellCheck={false}
+            className="mono"
+            style={{
+              width: "100%",
+              minHeight: 150,
+              resize: "vertical",
+              boxSizing: "border-box",
+              padding: 10,
+              borderRadius: 9,
+              outline: "none",
+              background: "var(--panel-3)",
+              border: "1px solid var(--border-2)",
+              color: "var(--fg)",
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <button
+              onClick={() => update("basePersona", config.defaultBasePersona ?? "")}
+              disabled={!config.defaultBasePersona}
+              style={{ color: "var(--accent)", fontSize: 11, fontFamily: "var(--mono)", background: "none", border: "none", cursor: "pointer", opacity: config.defaultBasePersona ? 1 : 0.4 }}
+            >
+              load default to edit
+            </button>
+            <button
+              onClick={() => update("basePersona", "")}
+              disabled={!(config.basePersona ?? "").trim()}
+              style={{ color: "var(--fg-4)", fontSize: 11, fontFamily: "var(--mono)", background: "none", border: "none", cursor: "pointer", opacity: (config.basePersona ?? "").trim() ? 1 : 0.4 }}
+            >
+              reset to default
+            </button>
+            <span style={{ color: "var(--fg-4)", fontSize: 10, fontFamily: "var(--mono)" }}>
+              {(config.basePersona ?? "").trim() ? "using your custom persona" : "using built-in default"}
+            </span>
+          </div>
         </div>
       </Section>
 
       <Section title="per-path command overrides" description="use a different claude command for sessions whose path contains the given substring">
-        <div style={{ border: "1px solid var(--q-border)" }}>
-          {/* Table Header */}
-          <div className="flex" style={{ backgroundColor: "var(--q-bg-hover)", height: 32, borderBottom: "1px solid var(--q-border)" }}>
-            <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontWeight: 700 }}>
-              path contains
-            </div>
-            <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontWeight: 700 }}>
-              command
-            </div>
-            <div className="flex items-center justify-center" style={{ width: 80, color: "var(--q-fg-secondary)", fontSize: 10 }} />
-          </div>
-          {/* Rows */}
-          {Object.entries(commandOverrides).map(([path, cmd]) => (
-            <div
-              key={path}
-              className="flex"
-              style={{ height: 36, borderBottom: "1px solid var(--q-border)" }}
+        <div style={{ padding: 14 }}>
+          <OverrideTableShell colA="path contains" colB="command" entries={Object.entries(commandOverrides)} onRemove={removeCommandOverride} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+            <TextInput value={newPath} onChange={setNewPath} width={200} placeholder="e.g. /work/projects/" />
+            <TextInput value={newCommand} onChange={setNewCommand} width={160} placeholder="e.g. claude-bl" />
+            <button
+              onClick={addCommandOverride}
+              style={{ color: "var(--accent)", fontSize: 11, fontFamily: "var(--mono)", background: "none", border: "none", cursor: "pointer", padding: "4px 6px" }}
             >
-              <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-fg)", fontSize: 11 }}>
-                {path}
-              </div>
-              <div className="flex-1 flex items-center px-3" style={{ color: "var(--q-accent)", fontSize: 11 }}>
-                {cmd}
-              </div>
-              <div className="flex items-center justify-center" style={{ width: 80 }}>
-                <button
-                  onClick={() => removeCommandOverride(path)}
-                  style={{ color: "var(--q-error)", fontSize: 11, fontWeight: 700 }}
-                >
-                  x
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-        {/* Add override row */}
-        <div className="flex items-center gap-2 mt-3">
-          <TextInput value={newPath} onChange={setNewPath} width={200} placeholder="e.g. /work/projects/" />
-          <TextInput value={newCommand} onChange={setNewCommand} width={160} placeholder="e.g. claude-bl" />
-          <button
-            onClick={addCommandOverride}
-            style={{ color: "var(--q-accent)", fontSize: 11 }}
-          >
-            + add override
-          </button>
+              + add override
+            </button>
+          </div>
         </div>
       </Section>
     </>
@@ -890,7 +913,7 @@ function RemoteTab() {
   if (isRemote) {
     return (
       <Section title="remote access" description="manage remote access from the quant desktop app">
-        <p style={{ color: "var(--q-fg-secondary)", fontSize: 12 }}>
+        <p style={{ color: "var(--fg-2)", fontSize: 12 }}>
           you are connected remotely. enabling, disabling, and the passcode are managed from the
           desktop app for security.
         </p>
@@ -946,13 +969,13 @@ function RemoteTabControls() {
         {!installed && (
           <div
             className="flex flex-col"
-            style={{ gap: 8, padding: 12, border: "1px solid var(--q-border)", backgroundColor: "var(--q-bg-input)", fontSize: 11, color: "var(--q-fg-secondary)" }}
+            style={{ gap: 8, padding: 12, border: "1px solid var(--border)", backgroundColor: "var(--panel-3)", fontSize: 11, color: "var(--fg-2)" }}
           >
-            <span style={{ color: "var(--q-fg)" }}>cloudflared is required and was not found.</span>
+            <span style={{ color: "var(--fg)" }}>cloudflared is required and was not found.</span>
             <span>install it, then re-check:</span>
             <CodeLine text="brew install cloudflared" />
             <CodeLine text="winget install --id Cloudflare.cloudflared" />
-            <a href={CLOUDFLARED_GUIDE} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+            <a href={CLOUDFLARED_GUIDE} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
               installation guide →
             </a>
             <div>
@@ -980,13 +1003,13 @@ function RemoteTabControls() {
               right={
                 status?.url ? (
                   <div className="flex items-center gap-2">
-                    <a href={status.url} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)", fontSize: 12 }}>
+                    <a href={status.url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 12 }}>
                       {status.url}
                     </a>
                     <CopyButton text={status.url} />
                   </div>
                 ) : (
-                  <span style={{ color: "var(--q-fg-dimmed)", fontSize: 12 }}>starting tunnel…</span>
+                  <span style={{ color: "var(--fg-4)", fontSize: 12 }}>starting tunnel…</span>
                 )
               }
             />
@@ -995,7 +1018,7 @@ function RemoteTabControls() {
               description="required to unlock the remote session"
               right={
                 <div className="flex items-center gap-2">
-                  <span style={{ fontFamily: font, fontSize: 13, letterSpacing: 2, color: "var(--q-fg)" }}>
+                  <span style={{ fontFamily: font, fontSize: 13, letterSpacing: 2, color: "var(--fg)" }}>
                     {status?.passcode || "—"}
                   </span>
                   <CopyButton text={status?.passcode || ""} />
@@ -1006,15 +1029,15 @@ function RemoteTabControls() {
             <SettingRow
               label="connected clients"
               description="active browser sessions"
-              right={<span style={{ color: "var(--q-fg)", fontSize: 12 }}>{status?.clients ?? 0}</span>}
+              right={<span style={{ color: "var(--fg)", fontSize: 12 }}>{status?.clients ?? 0}</span>}
             />
           </>
         )}
 
         {status?.error && enabled && (
-          <span style={{ color: "var(--q-error)", fontSize: 11 }}>{status.error}</span>
+          <span style={{ color: "var(--danger)", fontSize: 11 }}>{status.error}</span>
         )}
-        {error && <span style={{ color: "var(--q-error)", fontSize: 11 }}>{error}</span>}
+        {error && <span style={{ color: "var(--danger)", fontSize: 11 }}>{error}</span>}
       </Section>
     </>
   );
@@ -1022,8 +1045,8 @@ function RemoteTabControls() {
 
 function CodeLine({ text }: { text: string }) {
   return (
-    <div className="flex items-center justify-between" style={{ gap: 8, padding: "4px 8px", backgroundColor: "var(--q-bg)", border: "1px solid var(--q-border)" }}>
-      <code style={{ fontFamily: font, fontSize: 11, color: "var(--q-fg)" }}>{text}</code>
+    <div className="flex items-center justify-between" style={{ gap: 8, padding: "6px 9px", background: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 7 }}>
+      <code className="mono" style={{ fontSize: 11, color: "var(--fg-2)" }}>{text}</code>
       <CopyButton text={text} />
     </div>
   );
@@ -1034,13 +1057,15 @@ function SmallButton({ label, onClick, disabled }: { label: string; onClick: () 
     <button
       onClick={onClick}
       disabled={disabled}
-      className="px-2"
+      className="mono"
       style={{
-        height: 26,
-        fontSize: 10,
-        color: disabled ? "var(--q-fg-dimmed)" : "var(--q-fg-secondary)",
-        border: "1px solid var(--q-border)",
-        backgroundColor: "transparent",
+        height: 32,
+        padding: "0 12px",
+        borderRadius: 8,
+        fontSize: 11,
+        color: disabled ? "var(--fg-4)" : "var(--fg-3)",
+        border: "1px solid var(--border)",
+        background: "transparent",
         cursor: disabled ? "default" : "pointer",
       }}
     >
@@ -1072,36 +1097,45 @@ function CopyButton({ text }: { text: string }) {
 
 // --- Reusable UI Components ---
 
-function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function Section({ title, description, children, danger }: { title: string; description: string; children: React.ReactNode; danger?: boolean }) {
   return (
-    <div className="flex flex-col" style={{ gap: 16 }}>
-      <span style={{ color: "var(--q-accent)", fontSize: 12, fontWeight: 700 }}>{title}</span>
-      <span style={{ color: "var(--q-fg-muted)", fontSize: 11 }}>// {description}</span>
-      <div style={{ height: 1, backgroundColor: "var(--q-border)" }} />
-      {children}
+    <div style={{ marginBottom: 30 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: danger ? "var(--danger)" : "var(--accent)", letterSpacing: "0.01em" }}>{title}</span>
+        <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)", lineHeight: 1.5 }}>// {description}</span>
+      </div>
+      <div
+        className="q-settings-panel"
+        style={{
+          background: "var(--panel)",
+          border: `1px solid ${danger ? "color-mix(in srgb, var(--danger) 35%, var(--border))" : "var(--border)"}`,
+          borderRadius: 13,
+          overflow: "hidden",
+          boxShadow: "var(--shadow-panel)",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
 
 function DangerSection({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col" style={{ gap: 16 }}>
-      <span style={{ color: "var(--q-error)", fontSize: 12, fontWeight: 700 }}>danger zone</span>
-      <span style={{ color: "var(--q-fg-muted)", fontSize: 11 }}>// destructive actions — use with caution</span>
-      <div style={{ height: 1, backgroundColor: "var(--q-error-bg)" }} />
+    <Section title="danger zone" description="destructive actions — use with caution" danger>
       {children}
-    </div>
+    </Section>
   );
 }
 
 function SettingRow({ label, description, right }: { label: string; description: string; right: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex flex-col" style={{ gap: 2 }}>
-        <span style={{ color: "var(--q-fg)", fontSize: 12 }}>{label}</span>
-        <span style={{ color: "var(--q-fg-muted)", fontSize: 10 }}>{description}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "13px 16px", borderBottom: "1px solid var(--border-2)" }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)", letterSpacing: "-0.01em" }}>{label}</div>
+        <div style={{ fontSize: 11.5, color: "var(--fg-3)", marginTop: 2, lineHeight: 1.4 }}>{description}</div>
       </div>
-      {right}
+      <div style={{ flex: "none" }}>{right}</div>
     </div>
   );
 }
@@ -1110,31 +1144,24 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   return (
     <button
       onClick={() => onChange(!checked)}
-      className="flex items-center gap-2"
+      style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", background: "none", border: "none", padding: 0 }}
     >
-      {checked ? (
-        <div
-          className="flex items-center justify-center"
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: 2,
-            backgroundColor: "var(--q-accent)",
-          }}
-        >
-          <span style={{ color: "var(--q-bg)", fontSize: 9, fontWeight: 700 }}>x</span>
-        </div>
-      ) : (
-        <div
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: 2,
-            border: "1px solid var(--q-fg-secondary)",
-          }}
-        />
-      )}
-      <span style={{ color: checked ? "var(--q-accent)" : "var(--q-fg-secondary)", fontSize: 11 }}>
+      <span
+        style={{
+          width: 17,
+          height: 17,
+          borderRadius: 5,
+          flex: "none",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: checked ? "var(--accent)" : "transparent",
+          border: `1.5px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+        }}
+      >
+        {checked && <Icon name="check" size={11} color="var(--on-accent)" stroke={3} />}
+      </span>
+      <span style={{ fontSize: 11.5, color: checked ? "var(--accent)" : "var(--fg-3)", minWidth: 50, textAlign: "left" }}>
         {checked ? "enabled" : "disabled"}
       </span>
     </button>
@@ -1162,25 +1189,30 @@ function TextInput({
       onBlur={() => { if (local !== value) onChange(local); }}
       onKeyDown={(e) => { if (e.key === "Enter") onChange(local); }}
       placeholder={placeholder}
-      className="px-3 focus:outline-none"
+      spellCheck={false}
+      className="mono"
       style={{
         width,
         height: 32,
-        backgroundColor: "var(--q-bg-input)",
-        border: "1px solid var(--q-border)",
-        color: "var(--q-fg)",
+        padding: "0 10px",
+        borderRadius: 8,
+        boxSizing: "border-box",
+        outline: "none",
+        background: "var(--panel-3)",
+        border: "1px solid var(--border-2)",
+        color: "var(--fg)",
         fontSize: 12,
-        fontFamily: font,
+        fontFamily: "var(--mono)",
       }}
-      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
     />
   );
 }
 
 // ComboInput is a pick-or-type field: a themed text input bound to a <datalist>
 // so the user keeps free typing while discovered/curated options show in the
-// dropdown. Styled identically to TextInput (same --q-* tokens) so it blends in.
+// dropdown. Styled identically to TextInput (same --* tokens) so it blends in.
 function ComboInput({
   value,
   onChange,
@@ -1208,18 +1240,23 @@ function ComboInput({
         onBlur={() => { if (local !== value) onChange(local); }}
         onKeyDown={(e) => { if (e.key === "Enter") onChange(local); }}
         placeholder={placeholder}
-        className="px-3 focus:outline-none"
+        spellCheck={false}
+        className="mono"
         style={{
           width,
           height: 32,
-          backgroundColor: "var(--q-bg-input)",
-          border: "1px solid var(--q-border)",
-          color: "var(--q-fg)",
+          padding: "0 10px",
+          borderRadius: 8,
+          boxSizing: "border-box",
+          outline: "none",
+          background: "var(--panel-3)",
+          border: "1px solid var(--border-2)",
+          color: "var(--fg)",
           fontSize: 12,
-          fontFamily: font,
+          fontFamily: "var(--mono)",
         }}
-        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-        onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+        onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
       />
       <datalist id={listId}>
         {options.map((opt) => (
@@ -1266,19 +1303,23 @@ function NumberInput({
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
       disabled={disabled}
-      className="px-3 focus:outline-none"
+      className="mono"
       style={{
         width,
         height: 32,
-        backgroundColor: "var(--q-bg-input)",
-        border: "1px solid var(--q-border)",
-        color: disabled ? "var(--q-fg-muted)" : "var(--q-fg)",
+        padding: "0 10px",
+        borderRadius: 8,
+        boxSizing: "border-box",
+        outline: "none",
+        background: "var(--panel-3)",
+        border: "1px solid var(--border-2)",
+        color: disabled ? "var(--fg-4)" : "var(--fg)",
         fontSize: 12,
-        fontFamily: font,
+        fontFamily: "var(--mono)",
         opacity: disabled ? 0.5 : 1,
       }}
-      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
     />
   );
 }
@@ -1312,18 +1353,22 @@ function FloatInput({
       onChange={(e) => setLocal(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
-      className="px-3 focus:outline-none"
+      className="mono"
       style={{
         width,
         height: 32,
-        backgroundColor: "var(--q-bg-input)",
-        border: "1px solid var(--q-border)",
-        color: "var(--q-fg)",
+        padding: "0 10px",
+        borderRadius: 8,
+        boxSizing: "border-box",
+        outline: "none",
+        background: "var(--panel-3)",
+        border: "1px solid var(--border-2)",
+        color: "var(--fg)",
         fontSize: 12,
-        fontFamily: font,
+        fontFamily: "var(--mono)",
       }}
-      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+      onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
     />
   );
 }
@@ -1339,85 +1384,26 @@ function SelectInput({
   onChange: (v: string) => void;
   width: number;
 }) {
-  const { theme } = useTheme();
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open]);
-
   return (
-    <div ref={wrapRef} style={{ position: "relative", width }}>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          width,
-          height: 32,
-          backgroundColor: "var(--q-bg-input)",
-          border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
-          color: "var(--q-fg)",
-          fontSize: 12,
-          fontFamily: font,
-          padding: "0 12px",
-          textAlign: "left",
-          cursor: "pointer",
-          backgroundImage: chevronBg(theme.colors.fgMuted),
-          backgroundRepeat: "no-repeat",
-          backgroundPosition: "right 12px center",
-        }}
-      >
-        {value}
-      </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: 36,
-            left: 0,
-            zIndex: 50,
-            backgroundColor: "var(--q-bg)",
-            border: "1px solid var(--q-border)",
-            width: "100%",
-          }}
-        >
-          {options.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => { onChange(opt); setOpen(false); }}
-              className="w-full flex items-center text-left transition-colors"
-              style={{
-                height: 28,
-                padding: "0 12px",
-                gap: 8,
-                fontFamily: font,
-                fontSize: 11,
-                color: opt === value ? "var(--q-accent)" : "var(--q-fg-dimmed)",
-                backgroundColor: opt === value ? "var(--q-bg-hover)" : "transparent",
-                border: "none",
-                cursor: "pointer",
-              }}
-              onMouseEnter={(e) => {
-                if (opt !== value) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
-              onMouseLeave={(e) => {
-                if (opt !== value) e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
-              <span>{opt}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        width,
+        fontFamily: "var(--mono)",
+        fontSize: 12,
+        color: "var(--fg)",
+        background: "var(--panel-2)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        padding: "6px 9px",
+        cursor: "pointer",
+      }}
+    >
+      {options.map((opt) => (
+        <option key={opt} value={opt}>{opt}</option>
+      ))}
+    </select>
   );
 }
 
@@ -1425,22 +1411,17 @@ function BrowseButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-center shrink-0 transition-colors"
       style={{
-        width: 72,
         height: 32,
-        backgroundColor: "var(--q-bg)",
-        border: "1px solid var(--q-border)",
-        color: "var(--q-fg-secondary)",
+        padding: "0 14px",
+        flex: "none",
+        borderRadius: 8,
+        cursor: "pointer",
+        background: "var(--panel-2)",
+        border: "1px solid var(--border)",
+        color: "var(--fg-3)",
+        fontFamily: "var(--mono)",
         fontSize: 11,
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = "var(--q-accent)";
-        e.currentTarget.style.color = "var(--q-accent)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "var(--q-border)";
-        e.currentTarget.style.color = "var(--q-fg-secondary)";
       }}
     >
       browse
@@ -1484,20 +1465,21 @@ function DropdownMenu({
       ref={menuRef}
       style={{
         position: "absolute",
-        top: 36,
+        top: 38,
         left: 0,
         zIndex: 50,
-        backgroundColor: "var(--q-bg)",
-        border: "1px solid var(--q-border)",
+        background: "var(--panel)",
+        border: "1px solid var(--border)",
+        borderRadius: 9,
+        boxShadow: "var(--shadow-pop)",
         minWidth: 180,
         width: "100%",
+        overflow: "hidden",
+        padding: 4,
       }}
     >
       {items.length === 0 && (
-        <div
-          className="px-3 py-2"
-          style={{ color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font }}
-        >
+        <div className="mono" style={{ padding: "6px 10px", color: "var(--fg-4)", fontSize: 11 }}>
           no repos available
         </div>
       )}
@@ -1505,22 +1487,26 @@ function DropdownMenu({
         <button
           key={item.label}
           onClick={item.onClick}
-          className="w-full flex items-center text-left transition-colors"
+          className="mono"
           style={{
-            height: 28,
-            padding: "0 12px",
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
             gap: 8,
-            fontFamily: font,
+            textAlign: "left",
+            height: 28,
+            padding: "0 8px",
+            borderRadius: 6,
             fontSize: 11,
-            color: "var(--q-fg-dimmed)",
-            backgroundColor: "transparent",
+            color: "var(--fg-2)",
+            background: "transparent",
             border: "none",
             cursor: "pointer",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
         >
-          <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
+          <span style={{ color: "var(--accent)", flexShrink: 0 }}>~</span>
           <span>{item.label}</span>
         </button>
       ))}
@@ -1532,14 +1518,17 @@ function DangerButton({ label, onClick }: { label: string; onClick: () => void }
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-center px-4"
       style={{
         height: 32,
-        borderRadius: 2,
-        backgroundColor: "var(--q-error)",
-        color: "var(--q-fg)",
+        padding: "0 14px",
+        borderRadius: 8,
+        cursor: "pointer",
+        border: "none",
+        background: "var(--danger)",
+        color: "#fff",
+        fontFamily: "var(--mono)",
         fontSize: 11,
-        fontWeight: 500,
+        fontWeight: 600,
       }}
     >
       {label}
@@ -1547,257 +1536,6 @@ function DangerButton({ label, onClick }: { label: string; onClick: () => void }
   );
 }
 
-// SVG nav icons
-function navIcon(name: string): React.ReactNode {
-  const props = { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  switch (name) {
-    case "settings":
-      return (
-        <svg {...props}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      );
-    case "git-branch":
-      return (
-        <svg {...props}>
-          <line x1="6" y1="3" x2="6" y2="15" />
-          <circle cx="18" cy="6" r="3" />
-          <circle cx="6" cy="18" r="3" />
-          <path d="M18 9a9 9 0 0 1-9 9" />
-        </svg>
-      );
-    case "terminal":
-      return (
-        <svg {...props}>
-          <polyline points="4 17 10 11 4 5" />
-          <line x1="12" y1="19" x2="20" y2="19" />
-        </svg>
-      );
-    case "hard-drive":
-      return (
-        <svg {...props}>
-          <ellipse cx="12" cy="5" rx="9" ry="3" />
-          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-        </svg>
-      );
-    case "monitor":
-      return (
-        <svg {...props}>
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-      );
-    case "bot":
-      return (
-        <svg {...props}>
-          <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z" />
-          <circle cx="9" cy="13" r="1.5" fill="currentColor" />
-          <circle cx="15" cy="13" r="1.5" fill="currentColor" />
-        </svg>
-      );
-    case "keyboard":
-      return (
-        <svg {...props}>
-          <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
-          <line x1="6" y1="8" x2="6.01" y2="8" />
-          <line x1="10" y1="8" x2="10.01" y2="8" />
-          <line x1="14" y1="8" x2="14.01" y2="8" />
-          <line x1="18" y1="8" x2="18.01" y2="8" />
-          <line x1="6" y1="12" x2="6.01" y2="12" />
-          <line x1="18" y1="12" x2="18.01" y2="12" />
-          <line x1="8" y1="16" x2="16" y2="16" />
-        </svg>
-      );
-    case "palette":
-      return (
-        <svg {...props}>
-          <circle cx="13.5" cy="6.5" r="2.5" />
-          <circle cx="17.5" cy="10.5" r="2.5" />
-          <circle cx="8.5" cy="7.5" r="2.5" />
-          <circle cx="6.5" cy="12.5" r="2.5" />
-          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.04-.24-.3-.39-.65-.39-1.04 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-5.17-4.49-8.92-10-8.92z" />
-        </svg>
-      );
-    case "message-square":
-      return (
-        <svg {...props}>
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      );
-    case "globe":
-      return (
-        <svg {...props}>
-          <circle cx="12" cy="12" r="10" />
-          <line x1="2" y1="12" x2="22" y2="12" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-        </svg>
-      );
-    case "mic":
-      return (
-        <svg {...props}>
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          <line x1="12" y1="19" x2="12" y2="23" />
-          <line x1="8" y1="23" x2="16" y2="23" />
-        </svg>
-      );
-    default:
-      return "*";
-  }
-}
-
-// --- Quanti Tab ---
-
-const QUANTI_FILES = [
-  { name: "CLAUDE.md", label: "soul / personality", description: "Quanti's identity, personality, memory protocol and role definition" },
-  { name: "short_term.md", label: "short-term memory", description: "Current session notes — cleared and consolidated on each startup" },
-  { name: "medium_term.md", label: "medium-term memory", description: "Multi-session patterns and user preferences" },
-  { name: "long_term.md", label: "long-term memory", description: "Core stable knowledge about you and your setup" },
-];
-
-function QuantiTab({ config, update }: TabProps) {
-  const [activeFile, setActiveFile] = useState<string | null>(null);
-  const [fileContent, setFileContent] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  async function openFile(name: string) {
-    setActiveFile(name);
-    setLoading(true);
-    setFileContent("");
-    setSaved(false);
-    try {
-      const content = await api.getQuantiFile(name);
-      setFileContent(content ?? "");
-    } catch (err) {
-      console.error("failed to read file:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveFile() {
-    if (!activeFile) return;
-    setSaving(true);
-    try {
-      await api.saveQuantiFile(activeFile, fileContent);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error("failed to save file:", err);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const activeFileMeta = QUANTI_FILES.find(f => f.name === activeFile);
-
-  return (
-    <>
-      <Section title="model" description="model used for the Quanti chat panel">
-        <SettingRow
-          label="model"
-          description="faster models respond quicker; smarter models handle complex pipelines better"
-          right={
-            <SelectInput
-              value={config.assistantModel || "claude-sonnet-4-6"}
-              options={MODEL_OPTIONS}
-              onChange={(v) => update("assistantModel", v)}
-              width={280}
-            />
-          }
-        />
-      </Section>
-
-      <Section title="files" description="view and edit Quanti's personality and memory — changes take effect on the next Quanti session">
-        <div style={{ display: "flex", gap: 0, border: "1px solid var(--q-border)" }}>
-          {/* File list sidebar */}
-          <div style={{ width: 200, borderRight: "1px solid var(--q-border)", flexShrink: 0 }}>
-            {QUANTI_FILES.map((f) => (
-              <button
-                key={f.name}
-                onClick={() => openFile(f.name)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  padding: "10px 14px",
-                  textAlign: "left",
-                  background: activeFile === f.name ? "var(--q-bg-surface)" : "none",
-                  border: "none",
-                  borderBottom: "1px solid var(--q-bg-hover)",
-                  cursor: "pointer",
-                  fontFamily: font,
-                }}
-              >
-                <div style={{ fontSize: 11, color: activeFile === f.name ? "var(--q-fg)" : "var(--q-fg-tertiary)", fontWeight: activeFile === f.name ? 600 : 400 }}>
-                  {f.label}
-                </div>
-                <div style={{ fontSize: 9, color: "var(--q-fg-muted)", marginTop: 2 }}>{f.name}</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Editor area */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 360 }}>
-            {!activeFile ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font }}>
-                select a file to view and edit
-              </div>
-            ) : loading ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--q-fg-muted)", fontSize: 11, fontFamily: font }}>
-                loading…
-              </div>
-            ) : (
-              <>
-                <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--q-bg-hover)", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 10, color: "var(--q-fg-secondary)", fontFamily: font, flex: 1 }}>{activeFileMeta?.description}</span>
-                  <button
-                    onClick={saveFile}
-                    disabled={saving}
-                    style={{
-                      padding: "4px 12px",
-                      backgroundColor: saved ? "#065F46" : "var(--q-accent)",
-                      border: "none",
-                      borderRadius: 4,
-                      color: "var(--q-bg)",
-                      fontSize: 10,
-                      fontFamily: font,
-                      cursor: saving ? "default" : "pointer",
-                      transition: "background-color 0.2s",
-                    }}
-                  >
-                    {saved ? "saved ✓" : saving ? "saving…" : "save"}
-                  </button>
-                </div>
-                <textarea
-                  value={fileContent}
-                  onChange={(e) => { setFileContent(e.target.value); setSaved(false); }}
-                  style={{
-                    flex: 1,
-                    resize: "none",
-                    backgroundColor: "var(--q-bg)",
-                    border: "none",
-                    color: "var(--q-fg-dimmed)",
-                    fontFamily: font,
-                    fontSize: 11,
-                    lineHeight: 1.6,
-                    padding: "12px",
-                    outline: "none",
-                  }}
-                  spellCheck={false}
-                />
-              </>
-            )}
-          </div>
-        </div>
-      </Section>
-    </>
-  );
-}
 
 // --- Voice Tab ---
 
@@ -2283,36 +2021,39 @@ const KOKORO_DOCKER_BLOCKS: AutoStartBlock[] = [
 // fail → error, anything else (untested/pending) → muted neutral. Shared by the
 // StatusChip pill and the inline ping detail line so they stay consistent.
 function pingStateColor(state: "untested" | "pending" | "ok" | "fail"): string {
-  return state === "ok" ? "var(--q-term-green)" : state === "fail" ? "var(--q-error)" : "var(--q-fg-muted)";
+  return state === "ok" ? "var(--ok)" : state === "fail" ? "var(--danger)" : "var(--fg-4)";
 }
 
 // StatusChip renders a small "LABEL ●" pill whose dot + label color reflect a
-// ping state. Themed with --q-* tokens only.
+// ping state. Themed with --* tokens only.
 function StatusChip({ label, state }: { label: string; state: "untested" | "ok" | "fail" }) {
   const color = pingStateColor(state);
   const text = state === "ok" ? "connected" : state === "fail" ? "not reachable" : "untested";
+  const borderC = state === "ok" ? "var(--accent-line)" : state === "fail" ? "color-mix(in srgb, var(--danger) 45%, var(--border))" : "var(--border-2)";
   return (
     <span
-      className="flex items-center gap-1.5 px-2"
+      className="mono"
       style={{
-        height: 22,
-        fontSize: 10,
-        border: "1px solid var(--q-border)",
-        backgroundColor: "var(--q-bg-input)",
-        color: "var(--q-fg-secondary)",
-        borderRadius: 2,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "3px 9px",
+        borderRadius: 6,
+        fontSize: 10.5,
+        border: `1px solid ${borderC}`,
+        background: "var(--panel-3)",
+        color,
       }}
     >
-      <span style={{ color: "var(--q-fg)", fontWeight: 700 }}>{label}</span>
-      <span style={{ color, fontSize: 12, lineHeight: 1 }}>●</span>
-      <span style={{ color }}>{text}</span>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+      <span style={{ color: "var(--fg-2)" }}>{label}</span> · {text}
     </span>
   );
 }
 
 // Segmented is a generic segmented control (a row of mutually-exclusive tabs).
 // Used for the install-card OS tabs (3-way) and the Kokoro install-method picker
-// (2-way). Themed with --q-* tokens only.
+// (2-way). Themed with --* tokens only.
 function Segmented<T extends string>({
   items,
   value,
@@ -2323,19 +2064,23 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex" style={{ border: "1px solid var(--q-border)", width: "fit-content" }}>
+    <div style={{ display: "inline-flex", padding: 2, gap: 2, borderRadius: 9, background: "var(--panel-3)", border: "1px solid var(--border-2)", width: "fit-content" }}>
       {items.map((it) => {
         const active = it.key === value;
         return (
           <button
             key={it.key}
             onClick={() => onChange(it.key)}
-            className="px-3"
             style={{
-              height: 26,
-              fontSize: 10,
-              color: active ? "var(--q-bg)" : "var(--q-fg-secondary)",
-              backgroundColor: active ? "var(--q-accent)" : "transparent",
+              padding: "4px 10px",
+              borderRadius: 7,
+              fontSize: 11.5,
+              fontWeight: 500,
+              fontFamily: "var(--sans)",
+              color: active ? "var(--fg)" : "var(--fg-3)",
+              background: active ? "var(--panel)" : "transparent",
+              boxShadow: active ? "0 1px 2px rgba(0,0,0,.18), inset 0 1px 0 var(--top-hi)" : "none",
+              border: "none",
               cursor: "pointer",
             }}
           >
@@ -2364,17 +2109,18 @@ function CommandLine({ cmd }: { cmd: string }) {
     <div
       className="flex items-center gap-2"
       style={{
-        padding: "6px 8px",
-        backgroundColor: "var(--q-bg-input)",
-        border: "1px solid var(--q-border)",
+        padding: "6px 9px",
+        background: "var(--panel-3)",
+        border: "1px solid var(--border-2)",
+        borderRadius: 7,
       }}
     >
       <code
+        className="mono"
         style={{
           flex: 1,
           fontSize: 10.5,
-          color: "var(--q-fg)",
-          fontFamily: font,
+          color: "var(--fg-2)",
           whiteSpace: "pre-wrap",
           wordBreak: "break-all",
         }}
@@ -2388,26 +2134,27 @@ function CommandLine({ cmd }: { cmd: string }) {
 
 // ScriptBlock renders a multi-line, copy-paste setup script with a copy button.
 // Unlike CommandLine it preserves newlines and does NOT break-all (so indentation
-// and line structure stay readable). Themed with --q-* tokens only.
+// and line structure stay readable). Themed with --* tokens only.
 function ScriptBlock({ text }: { text: string }) {
   return (
     <div
       className="flex flex-col"
       style={{
-        backgroundColor: "var(--q-bg-input)",
-        border: "1px solid var(--q-border)",
+        background: "var(--panel-3)",
+        border: "1px solid var(--border-2)",
+        borderRadius: 7,
       }}
     >
       <div className="flex justify-end" style={{ padding: "6px 8px 0 8px" }}>
         <CopyButton text={text} />
       </div>
       <pre
+        className="mono"
         style={{
           margin: 0,
           padding: "4px 8px 8px 8px",
           fontSize: 10.5,
-          color: "var(--q-fg)",
-          fontFamily: font,
+          color: "var(--fg-2)",
           whiteSpace: "pre",
           overflowX: "auto",
           lineHeight: 1.5,
@@ -2436,8 +2183,9 @@ function InstallCard({
       style={{
         gap: 10,
         padding: 12,
-        border: "1px solid var(--q-border)",
-        backgroundColor: "var(--q-bg-surface)",
+        border: "1px solid var(--border-2)",
+        borderRadius: 9,
+        background: "var(--panel-2)",
       }}
     >
       <Segmented items={OS_SEGMENTS} value={os} onChange={onOs} />
@@ -2449,7 +2197,7 @@ function InstallCard({
 // AutoStartSection is the collapsible "Auto-start on login (optional)" block shown
 // inside each install card. Collapsed by default so it doesn't bury the primary
 // install steps. Renders the per-OS template blocks (notes + copyable code +
-// links) for the currently-selected OS. Themed with --q-* tokens only.
+// links) for the currently-selected OS. Themed with --* tokens only.
 function AutoStartSection({
   os,
   blocks,
@@ -2466,18 +2214,18 @@ function AutoStartSection({
   return (
     <div
       className="flex flex-col"
-      style={{ gap: 8, borderTop: "1px solid var(--q-border)", paddingTop: 10 }}
+      style={{ gap: 8, borderTop: "1px solid var(--border)", paddingTop: 10 }}
     >
       <button
         onClick={() => setOpen((o) => !o)}
         className="text-left"
-        style={{ color: "var(--q-fg-secondary)", fontSize: 11, cursor: "pointer", background: "transparent" }}
+        style={{ color: "var(--fg-2)", fontSize: 11, cursor: "pointer", background: "transparent" }}
       >
         {open ? "▾" : "▸"} Auto-start on login (optional)
       </button>
       {open && (
         <div className="flex flex-col" style={{ gap: 8 }}>
-          <span style={{ fontSize: 10.5, color: "var(--q-fg-muted)", lineHeight: 1.45 }}>
+          <span style={{ fontSize: 10.5, color: "var(--fg-4)", lineHeight: 1.45 }}>
             {hasScript ? (
               <>
                 Without this, the server stops when you reboot. <b>Set it up automatically — paste
@@ -2500,7 +2248,7 @@ function AutoStartSection({
                   href={b.href}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ fontSize: 10.5, color: "var(--q-accent)" }}
+                  style={{ fontSize: 10.5, color: "var(--accent)" }}
                 >
                   {b.label}
                 </a>
@@ -2510,7 +2258,7 @@ function AutoStartSection({
                 key={i}
                 style={{
                   fontSize: 10.5,
-                  color: b.kind === "muted" ? "var(--q-fg-muted)" : "var(--q-fg-secondary)",
+                  color: b.kind === "muted" ? "var(--fg-4)" : "var(--fg-2)",
                   lineHeight: 1.45,
                 }}
               >
@@ -2626,13 +2374,13 @@ function VoiceTab({ config, update }: TabProps) {
     let color: string;
     if (probeState === "probing") {
       text = "detecting…";
-      color = "var(--q-fg-secondary)";
+      color = "var(--fg-2)";
     } else if (probeState === "ok" && count > 0) {
       text = `${count} found on your server`;
-      color = "var(--q-term-green)";
+      color = "var(--ok)";
     } else {
       text = "server not reachable — showing common options";
-      color = "var(--q-fg-muted)";
+      color = "var(--fg-4)";
     }
     return (
       <span style={{ fontSize: 10, color, marginTop: 4, display: "block" }}>{text}</span>
@@ -2692,23 +2440,24 @@ function VoiceTab({ config, update }: TabProps) {
           description="turn on the voice pane toggle in the session header"
           right={<Toggle checked={voice.enabled} onChange={(v) => updateVoice("enabled", v)} />}
         />
-        <div className="flex items-center gap-2" style={{ marginTop: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px 13px", flexWrap: "wrap" }}>
           <StatusChip label="STT" state={sttPing.state === "pending" ? "untested" : sttPing.state} />
           <StatusChip label="TTS" state={ttsPing.state === "pending" ? "untested" : ttsPing.state} />
         </div>
         {notConfigured && (
           <div
             style={{
-              margin: "4px 0 0",
+              margin: "0 16px 14px",
               padding: "8px 10px",
-              border: "1px solid var(--q-warning)",
-              backgroundColor: "var(--q-bg-input)",
+              border: "1px solid color-mix(in srgb, var(--warn) 45%, var(--border))",
+              borderRadius: 8,
+              background: "var(--panel-3)",
               fontSize: 11,
               lineHeight: 1.45,
             }}
           >
-            <span style={{ color: "var(--q-warning)", fontWeight: 700 }}>voice not configured — </span>
-            <span style={{ color: "var(--q-fg-secondary)" }}>
+            <span style={{ color: "var(--warn)", fontWeight: 700 }}>voice not configured — </span>
+            <span style={{ color: "var(--fg-2)" }}>
               set up the two engines below (Whisper for speech-to-text, Kokoro for text-to-speech), then hit Test connection on each.
             </span>
           </div>
@@ -2719,39 +2468,43 @@ function VoiceTab({ config, update }: TabProps) {
         title="voice persona"
         description="optional — add your own instructions for how quant should behave when talking (role, tone, what to focus on). Appended to the built-in voice behavior."
       >
-        <textarea
-          value={voice.instructions}
-          onChange={(e) => updateVoice("instructions", e.target.value)}
-          placeholder="e.g. You are a concise pair-programming buddy. Be casual, keep replies under ~15 seconds, and always confirm before running commands."
-          spellCheck={false}
-          style={{
-            width: "100%",
-            minHeight: 90,
-            resize: "vertical",
-            boxSizing: "border-box",
-            backgroundColor: "var(--q-bg-input)",
-            border: "1px solid var(--q-border)",
-            color: "var(--q-fg)",
-            fontFamily: font,
-            fontSize: 12,
-            lineHeight: 1.5,
-            padding: 8,
-            outline: "none",
-          }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-        />
+        <div style={{ padding: 14 }}>
+          <textarea
+            value={voice.instructions}
+            onChange={(e) => updateVoice("instructions", e.target.value)}
+            placeholder="e.g. You are a concise pair-programming buddy. Be casual, keep replies under ~15 seconds, and always confirm before running commands."
+            spellCheck={false}
+            className="mono"
+            style={{
+              width: "100%",
+              minHeight: 90,
+              resize: "vertical",
+              boxSizing: "border-box",
+              padding: 10,
+              borderRadius: 9,
+              background: "var(--panel-3)",
+              border: "1px solid var(--border-2)",
+              color: "var(--fg)",
+              fontSize: 12,
+              lineHeight: 1.5,
+              outline: "none",
+            }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
+          />
+        </div>
       </Section>
 
       <Section
         title="speech-to-text (Whisper)"
         description="whisper.cpp runs a local OpenAI-compatible STT server on port 2022 — no api key, fully private"
       >
+        <div style={{ padding: 14 }}>
         <InstallCard os={whisperOs} onOs={setWhisperOs}>
           {WHISPER_STEPS[whisperOs].map((step, i) => (
             <div key={i} className="flex flex-col" style={{ gap: 4 }}>
               {step.note && (
-                <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>{step.note}</span>
+                <span style={{ fontSize: 10.5, color: "var(--fg-2)" }}>{step.note}</span>
               )}
               {step.cmd && <CommandLine cmd={step.cmd} />}
               {step.link && (
@@ -2759,7 +2512,7 @@ function VoiceTab({ config, update }: TabProps) {
                   href={step.link.href}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ fontSize: 10.5, color: "var(--q-accent)" }}
+                  style={{ fontSize: 10.5, color: "var(--accent)" }}
                 >
                   {step.link.label}
                 </a>
@@ -2770,12 +2523,13 @@ function VoiceTab({ config, update }: TabProps) {
             href={WHISPER_HELP}
             target="_blank"
             rel="noreferrer"
-            style={{ fontSize: 10.5, color: "var(--q-accent)" }}
+            style={{ fontSize: 10.5, color: "var(--accent)" }}
           >
             whisper.cpp docs →
           </a>
           <AutoStartSection os={whisperOs} blocks={WHISPER_AUTOSTART} />
         </InstallCard>
+        </div>
 
         <SettingRow
           label="STT (Whisper) URL"
@@ -2829,47 +2583,48 @@ function VoiceTab({ config, update }: TabProps) {
         title="text-to-speech (Kokoro)"
         description="kokoro-fastapi runs a local OpenAI-compatible TTS server on port 8880 — no api key"
       >
+        <div style={{ padding: 14 }}>
         <InstallCard os={kokoroOs} onOs={setKokoroOs}>
           <Segmented items={METHOD_SEGMENTS} value={kokoroMethod} onChange={setKokoroMethod} />
           {kokoroMethod === "native" ? (
             <>
-              <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>
+              <span style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
                 Needs the{" "}
-                <a href={UV_INSTALL} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+                <a href={UV_INSTALL} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
                   uv package manager →
                 </a>{" "}
                 (the start script installs deps + auto-downloads the model). Clone the repo:
               </span>
               <CommandLine cmd={KOKORO_CLONE_CMD} />
-              <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>
+              <span style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
                 then start the TTS server (keep it running):
               </span>
               <CommandLine cmd={KOKORO_NATIVE_SCRIPT[kokoroOs].cmd} />
-              <span style={{ fontSize: 10.5, color: "var(--q-fg-muted)" }}>
+              <span style={{ fontSize: 10.5, color: "var(--fg-4)" }}>
                 {KOKORO_NATIVE_SCRIPT[kokoroOs].note}
               </span>
             </>
           ) : (
             <>
-              <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>
+              <span style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
                 Docker is required.{" "}
                 {kokoroOs === "linux" ? (
-                  <a href={DOCKER_ENGINE} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+                  <a href={DOCKER_ENGINE} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
                     install Docker Engine →
                   </a>
                 ) : (
-                  <a href={DOCKER_DESKTOP} target="_blank" rel="noreferrer" style={{ color: "var(--q-accent)" }}>
+                  <a href={DOCKER_DESKTOP} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
                     install Docker Desktop →
                   </a>
                 )}
               </span>
-              <span style={{ fontSize: 10.5, color: "var(--q-fg-secondary)" }}>
+              <span style={{ fontSize: 10.5, color: "var(--fg-2)" }}>
                 then start the TTS server (the <code style={{ fontFamily: font }}>--restart</code> flag brings it back after reboot):
               </span>
               <CommandLine cmd={KOKORO_RUN_CMD_DURABLE} />
             </>
           )}
-          <a href={KOKORO_HELP} target="_blank" rel="noreferrer" style={{ fontSize: 10.5, color: "var(--q-accent)" }}>
+          <a href={KOKORO_HELP} target="_blank" rel="noreferrer" style={{ fontSize: 10.5, color: "var(--accent)" }}>
             kokoro-fastapi docs →
           </a>
           {kokoroMethod === "docker" ? (
@@ -2878,6 +2633,7 @@ function VoiceTab({ config, update }: TabProps) {
             <AutoStartSection os={kokoroOs} blocks={KOKORO_AUTOSTART} />
           )}
         </InstallCard>
+        </div>
 
         <SettingRow
           label="TTS (Kokoro) URL"
@@ -2947,9 +2703,9 @@ function VoiceTab({ config, update }: TabProps) {
                 step={0.1}
                 value={voice.speed}
                 onChange={(e) => updateVoice("speed", parseFloat(e.target.value))}
-                style={{ width: 160, accentColor: "var(--q-accent)" }}
+                style={{ width: 160, accentColor: "var(--accent)" }}
               />
-              <span style={{ color: "var(--q-fg)", fontSize: 12, width: 32 }}>{voice.speed.toFixed(1)}x</span>
+              <span style={{ color: "var(--fg)", fontSize: 12, width: 32 }}>{voice.speed.toFixed(1)}x</span>
             </div>
           }
         />
@@ -2965,9 +2721,9 @@ function VoiceTab({ config, update }: TabProps) {
                 step={250}
                 value={voice.pauseMs}
                 onChange={(e) => updateVoice("pauseMs", parseInt(e.target.value, 10))}
-                style={{ width: 160, accentColor: "var(--q-accent)" }}
+                style={{ width: 160, accentColor: "var(--accent)" }}
               />
-              <span style={{ color: "var(--q-fg)", fontSize: 12, width: 32 }}>{(voice.pauseMs / 1000).toFixed(1)}s</span>
+              <span style={{ color: "var(--fg)", fontSize: 12, width: 32 }}>{(voice.pauseMs / 1000).toFixed(1)}s</span>
             </div>
           }
         />
@@ -2987,10 +2743,10 @@ function VoiceTab({ config, update }: TabProps) {
                     fontSize: 11,
                     color:
                       testState === "error"
-                        ? "var(--q-error)"
+                        ? "var(--danger)"
                         : testState === "ok"
-                        ? "var(--q-term-green)"
-                        : "var(--q-fg-secondary)",
+                        ? "var(--ok)"
+                        : "var(--fg-2)",
                   }}
                 >
                   {testMsg}
@@ -3007,10 +2763,10 @@ function VoiceTab({ config, update }: TabProps) {
       >
         <button
           onClick={() => setAdvancedOpen((o) => !o)}
-          className="text-left"
-          style={{ color: "var(--q-fg-secondary)", fontSize: 11, cursor: "pointer", background: "transparent" }}
+          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", color: "var(--fg-2)", fontSize: 11.5, cursor: "pointer", background: "transparent", border: "none", textAlign: "left", padding: "13px 16px", borderBottom: advancedOpen ? "1px solid var(--border-2)" : "none" }}
         >
-          {advancedOpen ? "▾ hide advanced settings" : "▸ show advanced settings"}
+          <Icon name={advancedOpen ? "chevronDown" : "chevronRight"} size={13} color="var(--fg-3)" />
+          {advancedOpen ? "hide advanced settings" : "show advanced settings"}
         </button>
         {advancedOpen && (
           <>
@@ -3041,18 +2797,21 @@ function VoiceTab({ config, update }: TabProps) {
                   onBlur={commitApiKey}
                   onKeyDown={(e) => { if (e.key === "Enter") commitApiKey(); }}
                   placeholder={voice.hasApiKey ? "•••• saved" : "(none)"}
-                  className="px-3 focus:outline-none"
+                  className="mono"
                   style={{
                     width: 280,
                     height: 32,
-                    backgroundColor: "var(--q-bg-input)",
-                    border: "1px solid var(--q-border)",
-                    color: "var(--q-fg)",
+                    padding: "0 10px",
+                    borderRadius: 8,
+                    boxSizing: "border-box",
+                    outline: "none",
+                    background: "var(--panel-3)",
+                    border: "1px solid var(--border-2)",
+                    color: "var(--fg)",
                     fontSize: 12,
-                    fontFamily: font,
                   }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                  onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                  onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
                 />
               }
             />

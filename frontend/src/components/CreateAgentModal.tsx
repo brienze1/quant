@@ -1,6 +1,18 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import type { Agent, CreateAgentRequest, UpdateAgentRequest, SkillInfo } from "../types";
 import * as api from "../api";
+import { Icon } from "./Icon";
+import { IconButton } from "./IconButton";
+import {
+  ModalShell,
+  Field,
+  ModalInput,
+  ModalTextarea,
+  ModalSelect,
+  Toggle,
+  ModalCancel,
+  ModalSubmit,
+} from "./ModalShell";
 
 const MODEL_OPTIONS = ["claude-sonnet-4-20250514", "claude-opus-4-6", "claude-haiku-4-5-20251001", "cli default"];
 const COLOR_SWATCHES = ["#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#3B82F6", "#EC4899"];
@@ -45,175 +57,7 @@ function agentToForm(agent: Agent): CreateAgentRequest {
   };
 }
 
-// --- Inline SVG icons ---
-
-function IconX({ size = 16, color = "var(--q-fg-secondary)" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <path d="M4 4l8 8M12 4l-8 8" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconPlus({ size = 14, color = "var(--q-error)" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
-      <path d="M7 2v10M2 7h10" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconLock({ size = 12, color = "var(--q-fg-secondary)" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 12 12" fill="none">
-      <rect x="2" y="5" width="8" height="6" rx="1" stroke={color} strokeWidth="1.2" />
-      <path d="M4 5V3.5a2 2 0 014 0V5" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconTrash({ size = 14, color = "var(--q-error)" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
-      <path d="M2.5 4h9M5 4V2.5h4V4M3.5 4l.5 8h6l.5-8" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-// --- Sub-components ---
-
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      style={{
-        width: 32,
-        height: 16,
-        borderRadius: 8,
-        backgroundColor: checked ? "var(--q-accent)" : "var(--q-border)",
-        border: "none",
-        cursor: "pointer",
-        position: "relative",
-        transition: "background-color 150ms",
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          width: 12,
-          height: 12,
-          borderRadius: 6,
-          backgroundColor: checked ? "var(--q-fg)" : "var(--q-fg-secondary)",
-          position: "absolute",
-          top: 2,
-          left: checked ? 18 : 2,
-          transition: "left 150ms",
-        }}
-      />
-    </button>
-  );
-}
-
-function MiniSelect({
-  value,
-  options,
-  onChange,
-  width,
-}: {
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-  width: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [open]);
-
-  return (
-    <div ref={ref} style={{ position: "relative", width }}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        style={{
-          width,
-          height: 36,
-          backgroundColor: "var(--q-bg)",
-          border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
-          color: "var(--q-fg)",
-          fontSize: 11,
-          fontFamily: "'JetBrains Mono', monospace",
-          padding: "0 12px",
-          textAlign: "left",
-          cursor: "pointer",
-          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='none' stroke='%236B7280' stroke-width='1.5'/%3E%3C/svg%3E")`,
-          backgroundRepeat: "no-repeat",
-          backgroundPosition: "right 12px center",
-        }}
-      >
-        {value}
-      </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: 40,
-            left: 0,
-            zIndex: 50,
-            backgroundColor: "var(--q-bg)",
-            border: "1px solid var(--q-border)",
-            width: "100%",
-          }}
-        >
-          {options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => {
-                onChange(opt);
-                setOpen(false);
-              }}
-              className="w-full flex items-center text-left transition-colors"
-              style={{
-                height: 28,
-                padding: "0 12px",
-                gap: 8,
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 11,
-                color: opt === value ? "var(--q-accent)" : "var(--q-fg-dimmed)",
-                backgroundColor: opt === value ? "var(--q-bg-hover)" : "transparent",
-                border: "none",
-                cursor: "pointer",
-              }}
-              onMouseEnter={(e) => {
-                if (opt !== value) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
-              onMouseLeave={(e) => {
-                if (opt !== value) e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
-              <span>{opt}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// --- Main component ---
+const sectionLabel: React.CSSProperties = { color: "var(--fg-4)", fontSize: 10, fontFamily: "var(--mono)" };
 
 export function CreateAgentModal({ agent, workspaceId, onSubmit, onDelete, onCancel }: Props) {
   const isEdit = !!agent;
@@ -246,8 +90,7 @@ export function CreateAgentModal({ agent, workspaceId, onSubmit, onDelete, onCan
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit() {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
@@ -278,597 +121,357 @@ export function CreateAgentModal({ agent, workspaceId, onSubmit, onDelete, onCan
     { key: "skills", label: "skills" },
   ];
 
-  const inputStyle: React.CSSProperties = {
-    backgroundColor: "var(--q-bg)",
-    border: "1px solid var(--q-border)",
-    color: "var(--q-fg)",
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 12,
-    padding: "0 12px",
-    height: 36,
-    width: "100%",
-    outline: "none",
-    boxSizing: "border-box",
-  };
-
-  const labelStyle: React.CSSProperties = {
-    color: "var(--q-fg-secondary)",
-    fontSize: 10,
-    fontFamily: "'JetBrains Mono', monospace",
-    display: "block",
-    marginBottom: 4,
-    textTransform: "lowercase",
-  };
-
   const enabledSkillsCount = Object.values(form.skills).filter(Boolean).length;
   const totalSkillsCount = availableSkills.length;
+  const canSave = !!form.name.trim() && !saving;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
-    >
-      <form
-        onSubmit={handleSubmit}
-        className="flex flex-col"
-        style={{
-          width: 720,
-          maxHeight: "90vh",
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        {/* header - 56px */}
-        <div
-          className="flex items-center justify-between px-8 shrink-0"
-          style={{ height: 56 }}
-        >
-          <div className="flex items-center" style={{ gap: 10 }}>
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: "var(--q-accent)",
-              }}
-            />
-            <h2 style={{ color: "var(--q-fg)", fontSize: 14, fontWeight: 700, margin: 0 }}>
-              <span style={{ color: "var(--q-accent)" }}>{">"}</span>{" "}
-              {isEdit ? `edit_agent: ${agent!.name}` : "new_agent"}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 4,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.querySelector("svg path") as SVGPathElement | null)?.setAttribute("stroke", "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.querySelector("svg path") as SVGPathElement | null)?.setAttribute("stroke", "var(--q-fg-secondary)")}
-          >
-            <IconX size={16} color="var(--q-fg-secondary)" />
-          </button>
-        </div>
+    <ModalShell width={640} onClose={onCancel}>
+      {/* header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "18px 26px 0" }}>
+        <span style={{ width: 8, height: 8, borderRadius: 4, background: form.color || "var(--accent)" }} />
+        <h2 className="mono" style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--fg)" }}>
+          <span style={{ color: "var(--accent)" }}>&gt;</span> {isEdit ? `edit_agent: ${agent!.name}` : "new_agent"}
+        </h2>
+      </div>
 
-        {/* tab bar - 36px */}
-        <div
-          className="flex px-8 shrink-0"
-          style={{ height: 36, borderBottom: "1px solid var(--q-border)" }}
-        >
-          {tabs.map((tab) => (
+      {/* tabs */}
+      <div style={{ display: "flex", gap: 4, padding: "14px 22px 0", borderBottom: "1px solid var(--border-2)" }}>
+        {tabs.map((tb) => {
+          const on = activeTab === tb.key;
+          return (
             <button
-              key={tab.key}
+              key={tb.key}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => setActiveTab(tb.key)}
               style={{
-                padding: "0 16px",
-                fontSize: 11,
-                color: activeTab === tab.key ? "var(--q-accent)" : "var(--q-fg-secondary)",
-                fontWeight: activeTab === tab.key ? 500 : 400,
-                fontFamily: "'JetBrains Mono', monospace",
-                background: "none",
+                padding: "8px 14px",
                 border: "none",
-                borderBottom: activeTab === tab.key ? "2px solid var(--q-accent)" : "2px solid transparent",
-                marginBottom: -1,
+                background: "transparent",
                 cursor: "pointer",
-                textTransform: "lowercase",
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
+                fontFamily: "var(--mono)",
+                fontSize: 12,
+                color: on ? "var(--accent)" : "var(--fg-3)",
+                fontWeight: on ? 600 : 400,
+                borderBottom: `2px solid ${on ? "var(--accent)" : "transparent"}`,
+                marginBottom: -1,
               }}
             >
-              {tab.label}
+              {tb.label}
             </button>
-          ))}
-        </div>
+          );
+        })}
+      </div>
 
-        {/* body - scrollable */}
-        <div className="px-8 pt-4 pb-6 flex flex-col gap-4 overflow-y-auto" style={{ flex: 1 }}>
-          {/* TAB: Personality */}
-          {activeTab === "personality" && (
-            <>
-              {/* Identity section */}
-              <div className="flex items-start" style={{ gap: 16 }}>
-                {/* Avatar preview */}
-                <div
-                  style={{
-                    width: 64,
-                    height: 64,
-                    backgroundColor: form.color || "var(--q-accent)",
-                    borderRadius: 4,
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 24,
-                    fontWeight: 700,
-                    color: "var(--q-bg)",
-                    fontFamily: "'JetBrains Mono', monospace",
-                  }}
-                >
-                  {form.name ? form.name[0].toUpperCase() : "?"}
-                </div>
-
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {/* Name */}
-                  <div>
-                    <span style={labelStyle}>name</span>
-                    <input
-                      autoFocus
-                      value={form.name}
-                      onChange={(e) => update("name", e.target.value)}
-                      placeholder="agent-name"
-                      style={inputStyle}
-                      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                      onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-                    />
-                  </div>
-
-                  {/* Color picker */}
-                  <div>
-                    <span style={labelStyle}>color</span>
-                    <div className="flex items-center" style={{ gap: 6 }}>
-                      {COLOR_SWATCHES.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => update("color", c)}
-                          style={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: 4,
-                            backgroundColor: c,
-                            border: form.color === c ? "2px solid var(--q-fg)" : "2px solid transparent",
-                            cursor: "pointer",
-                            padding: 0,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
+      {/* body */}
+      <div className="scroll" style={{ flex: 1, overflowY: "auto", padding: "20px 26px 22px", display: "flex", flexDirection: "column", gap: 16 }}>
+        {activeTab === "personality" && (
+          <>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+              <div
+                style={{
+                  width: 64,
+                  height: 64,
+                  flex: "none",
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: form.color || "var(--accent)",
+                  color: "#0a0c0b",
+                  fontFamily: "var(--mono)",
+                  fontSize: 26,
+                  fontWeight: 700,
+                }}
+              >
+                {form.name ? form.name[0].toUpperCase() : "?"}
               </div>
-
-              {/* Role */}
-              <div>
-                <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-                  <span style={{ ...labelStyle, marginBottom: 0 }}>role</span>
-                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                    {form.role.length} / 500
-                  </span>
-                </div>
-                <textarea
-                  value={form.role}
-                  onChange={(e) => update("role", e.target.value)}
-                  maxLength={500}
-                  placeholder="describe the agent's role..."
-                  style={{
-                    ...inputStyle,
-                    height: 72,
-                    resize: "none",
-                    padding: "8px 12px",
-                  }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-                />
-              </div>
-
-              {/* Goal */}
-              <div>
-                <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-                  <span style={{ ...labelStyle, marginBottom: 0 }}>goal</span>
-                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                    {form.goal.length} / 500
-                  </span>
-                </div>
-                <textarea
-                  value={form.goal}
-                  onChange={(e) => update("goal", e.target.value)}
-                  maxLength={500}
-                  placeholder="what should this agent accomplish?"
-                  style={{
-                    ...inputStyle,
-                    height: 72,
-                    resize: "none",
-                    padding: "8px 12px",
-                  }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-                />
-              </div>
-
-              {/* Model */}
-              <div>
-                <span style={labelStyle}>model</span>
-                <MiniSelect
-                  value={form.model || "cli default"}
-                  options={MODEL_OPTIONS}
-                  onChange={(v) => update("model", v)}
-                  width={300}
-                />
-              </div>
-            </>
-          )}
-
-          {/* TAB: Access */}
-          {activeTab === "access" && (
-            <>
-              {/* Autonomous mode toggle */}
-              <div className="flex items-center justify-between">
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
-                    autonomous mode
-                  </span>
-                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                    allow agent to run without manual approval for each action
-                  </span>
-                </div>
-                <ToggleSwitch
-                  checked={form.autonomousMode}
-                  onChange={(v) => update("autonomousMode", v)}
-                />
-              </div>
-
-              {/* MCP Servers */}
-              <div style={{ borderTop: "1px solid var(--q-border)", paddingTop: 12, marginTop: 4 }}>
-                <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
-                  # mcp servers
-                </span>
-                <div style={{ display: "flex", flexDirection: "column", gap: 0, marginTop: 8 }}>
-                  {mcpServers.length === 0 && (
-                    <div style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 0" }}>
-                      // no mcp servers available
-                    </div>
-                  )}
-                  {mcpServers.map((server) => (
-                    <div
-                      key={server}
-                      className="flex items-center justify-between"
-                      style={{
-                        height: 36,
-                        borderBottom: "1px solid var(--q-bg-hover)",
-                      }}
-                    >
-                      <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
-                        {server}
-                      </span>
-                      <ToggleSwitch
-                        checked={!!form.mcpServers[server]}
-                        onChange={(v) => {
-                          update("mcpServers", { ...form.mcpServers, [server]: v });
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Environment Variables */}
-              <div style={{ borderTop: "1px solid var(--q-border)", paddingTop: 12, marginTop: 4 }}>
-                <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
-                  # environment variables
-                </span>
-                <div
-                  style={{
-                    border: "1px solid var(--q-border)",
-                    backgroundColor: "var(--q-bg)",
-                    maxHeight: 160,
-                    overflowY: "auto",
-                    marginTop: 8,
-                  }}
-                >
-                  {Object.entries(form.envVariables).map(([key, val]) => (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between px-3"
-                      style={{ height: 32, borderBottom: "1px solid var(--q-bg-hover)" }}
-                    >
-                      <div className="flex items-center" style={{ gap: 8, flex: 1, minWidth: 0 }}>
-                        <span style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
-                          {key}
-                        </span>
-                        <span style={{ color: "var(--q-fg-secondary)", fontSize: 11 }}>=</span>
-                        <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {envValueVisible[key] ? val : "********"}
-                        </span>
-                      </div>
-                      <div className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
-                        <button
-                          type="button"
-                          onClick={() => setEnvValueVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
-                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
-                        >
-                          <IconLock size={12} color={envValueVisible[key] ? "var(--q-accent)" : "var(--q-fg-secondary)"} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = { ...form.envVariables };
-                            delete next[key];
-                            update("envVariables", next);
-                          }}
-                          style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
-                        >
-                          <IconX size={12} color="var(--q-fg-secondary)" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {Object.keys(form.envVariables).length === 0 && (
-                    <div style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 12px" }}>
-                      // no variables
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center" style={{ gap: 4, marginTop: 8 }}>
-                  <input
-                    value={newEnvKey}
-                    onChange={(e) => setNewEnvKey(e.target.value)}
-                    placeholder="KEY"
-                    style={{ ...inputStyle, width: 120, height: 28, fontSize: 10 }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+                <Field label="name">
+                  <ModalInput
+                    autoFocus
+                    value={form.name}
+                    onChange={(e) => update("name", e.target.value)}
+                    placeholder="agent-name"
                   />
-                  <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>=</span>
-                  <input
-                    value={newEnvValue}
-                    onChange={(e) => setNewEnvValue(e.target.value)}
-                    placeholder="VALUE"
-                    style={{ ...inputStyle, flex: 1, width: "auto", height: 28, fontSize: 10 }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (newEnvKey.trim()) {
-                        update("envVariables", { ...form.envVariables, [newEnvKey.trim()]: newEnvValue });
-                        setNewEnvKey("");
-                        setNewEnvValue("");
-                      }
-                    }}
-                    style={{
-                      fontSize: 10,
-                      color: "var(--q-accent)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontFamily: "'JetBrains Mono', monospace",
-                      padding: "4px 8px",
-                      flexShrink: 0,
-                    }}
-                  >
-                    + add
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* TAB: Boundaries */}
-          {activeTab === "boundaries" && (
-            <>
-              <div>
-                <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
-                  # anti-prompt rules
-                </span>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-                  {form.boundaries.map((rule, i) => (
-                    <div key={i} className="flex items-center" style={{ gap: 8 }}>
-                      <input
-                        value={rule}
-                        onChange={(e) => {
-                          const next = [...form.boundaries];
-                          next[i] = e.target.value;
-                          update("boundaries", next);
-                        }}
-                        placeholder="do not..."
-                        style={inputStyle}
-                        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                        onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-                      />
+                </Field>
+                <Field label="color">
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {COLOR_SWATCHES.map((c) => (
                       <button
+                        key={c}
                         type="button"
-                        onClick={() => {
-                          const next = form.boundaries.filter((_, j) => j !== i);
-                          update("boundaries", next);
-                        }}
+                        onClick={() => update("color", c)}
                         style={{
-                          background: "none",
-                          border: "none",
+                          width: 24,
+                          height: 24,
+                          borderRadius: 5,
+                          background: c,
                           cursor: "pointer",
-                          padding: 4,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
+                          padding: 0,
+                          border: form.color === c ? "2px solid var(--fg)" : "2px solid transparent",
                         }}
-                      >
-                        <IconX size={14} color="var(--q-error)" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => update("boundaries", [...form.boundaries, ""])}
-                  style={{
-                    marginTop: 12,
-                    width: "100%",
-                    height: 36,
-                    backgroundColor: "transparent",
-                    border: "1px dashed var(--q-error)",
-                    color: "var(--q-error)",
-                    fontSize: 11,
-                    fontFamily: "'JetBrains Mono', monospace",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                  }}
-                >
-                  <IconPlus size={12} color="var(--q-error)" />
-                  add rule
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* TAB: Skills */}
-          {activeTab === "skills" && (
-            <>
-              <div className="flex items-center justify-between">
-                <span style={{ color: "var(--q-fg)", fontSize: 12, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
-                  available skills
-                </span>
-                <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                  {enabledSkillsCount} of {totalSkillsCount} enabled
-                </span>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                {availableSkills.length === 0 && (
-                  <div style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: "8px 0" }}>
-                    // no skills available
+                      />
+                    ))}
                   </div>
+                </Field>
+              </div>
+            </div>
+            <Field label={`role · ${form.role.length}/500`}>
+              <ModalTextarea
+                value={form.role}
+                onChange={(e) => update("role", e.target.value)}
+                maxLength={500}
+                placeholder="describe the agent's role…"
+                style={{ height: 72 }}
+              />
+            </Field>
+            <Field label={`goal · ${form.goal.length}/500`}>
+              <ModalTextarea
+                value={form.goal}
+                onChange={(e) => update("goal", e.target.value)}
+                maxLength={500}
+                placeholder="what should this agent accomplish?"
+                style={{ height: 72 }}
+              />
+            </Field>
+            <Field label="model">
+              <ModalSelect
+                value={form.model || "cli default"}
+                onChange={(v) => update("model", v)}
+                options={MODEL_OPTIONS.map((m) => ({ value: m, label: m }))}
+                width={300}
+              />
+            </Field>
+          </>
+        )}
+
+        {activeTab === "access" && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span className="mono" style={{ fontSize: 12, color: "var(--fg)" }}>autonomous mode</span>
+                <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                  allow agent to run without manual approval for each action
+                </span>
+              </div>
+              <Toggle checked={form.autonomousMode} onChange={(v) => update("autonomousMode", v)} />
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: 14 }}>
+              <span style={sectionLabel}># mcp servers</span>
+              <div style={{ marginTop: 8 }}>
+                {mcpServers.length === 0 && (
+                  <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-4)", padding: "8px 0" }}>// no mcp servers available</div>
                 )}
-                {availableSkills.map((skill) => (
+                {mcpServers.map((server) => (
                   <div
-                    key={skill.name}
-                    className="flex items-center justify-between"
-                    style={{
-                      height: 44,
-                      borderBottom: "1px solid var(--q-bg-hover)",
-                    }}
+                    key={server}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 38, borderBottom: "1px solid var(--border-2)" }}
                   >
-                    <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0, overflow: "hidden" }}>
-                      <span style={{ color: "var(--q-fg)", fontSize: 11, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
-                        {skill.name}
-                      </span>
-                      <span style={{ color: "var(--q-fg-secondary)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {skill.filePath}
-                      </span>
-                    </div>
-                    <ToggleSwitch
-                      checked={!!form.skills[skill.name]}
-                      onChange={(v) => {
-                        update("skills", { ...form.skills, [skill.name]: v });
-                      }}
+                    <span className="mono" style={{ fontSize: 12, color: "var(--fg)" }}>{server}</span>
+                    <Toggle
+                      checked={!!form.mcpServers[server]}
+                      onChange={(v) => update("mcpServers", { ...form.mcpServers, [server]: v })}
                     />
                   </div>
                 ))}
               </div>
-            </>
-          )}
-        </div>
+            </div>
 
-        {/* footer - 64px */}
-        <div
-          className="flex items-center px-8 shrink-0"
-          style={{
-            height: 64,
-            borderTop: "1px solid var(--q-border)",
-            justifyContent: "space-between",
-          }}
-        >
-          {/* left side: delete button (edit mode only) */}
+            <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: 14 }}>
+              <span style={sectionLabel}># environment variables</span>
+              <div className="scroll" style={{ border: "1px solid var(--border-2)", borderRadius: 8, marginTop: 8, maxHeight: 160, overflowY: "auto" }}>
+                {Object.keys(form.envVariables).length === 0 && (
+                  <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-4)", padding: "8px 12px" }}>// no variables</div>
+                )}
+                {Object.entries(form.envVariables).map(([key, val]) => (
+                  <div
+                    key={key}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, height: 32, padding: "0 12px", borderBottom: "1px solid var(--border-2)" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
+                      <span className="mono" style={{ fontSize: 11, color: "var(--accent)", flex: "none" }}>{key}</span>
+                      <span style={{ color: "var(--fg-3)", fontSize: 11 }}>=</span>
+                      <span className="mono" style={{ fontSize: 11, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {envValueVisible[key] ? val : "••••••••"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 2, flex: "none" }}>
+                      <IconButton
+                        name={envValueVisible[key] ? "eye" : "lock"}
+                        size={12}
+                        label="Reveal"
+                        onClick={() => setEnvValueVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
+                      />
+                      <IconButton
+                        name="x"
+                        size={12}
+                        label="Remove"
+                        onClick={() => {
+                          const next = { ...form.envVariables };
+                          delete next[key];
+                          update("envVariables", next);
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                <ModalInput
+                  value={newEnvKey}
+                  onChange={(e) => setNewEnvKey(e.target.value)}
+                  placeholder="KEY"
+                  style={{ width: 130, height: 30, fontSize: 11 }}
+                />
+                <span style={{ color: "var(--fg-3)", fontSize: 11 }}>=</span>
+                <ModalInput
+                  value={newEnvValue}
+                  onChange={(e) => setNewEnvValue(e.target.value)}
+                  placeholder="VALUE"
+                  style={{ flex: 1, height: 30, fontSize: 11 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newEnvKey.trim()) {
+                      update("envVariables", { ...form.envVariables, [newEnvKey.trim()]: newEnvValue });
+                      setNewEnvKey("");
+                      setNewEnvValue("");
+                    }
+                  }}
+                  style={{ flex: "none", fontFamily: "var(--mono)", fontSize: 11, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: "4px 8px" }}
+                >
+                  + add
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "boundaries" && (
           <div>
-            {isEdit && onDelete && (
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={saving}
-                style={{
-                  height: 36,
-                  padding: "0 16px",
-                  backgroundColor: "transparent",
-                  border: "1px solid var(--q-error)",
-                  color: "var(--q-error)",
-                  fontSize: 11,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  cursor: saving ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  opacity: saving ? 0.4 : 1,
-                }}
-              >
-                <IconTrash size={12} color="var(--q-error)" />
-                delete
-              </button>
-            )}
-          </div>
-
-          {/* right side: cancel + save */}
-          <div className="flex items-center" style={{ gap: 12 }}>
+            <span style={sectionLabel}># anti-prompt rules</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+              {form.boundaries.length === 0 && (
+                <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-4)" }}>// no rules</div>
+              )}
+              {form.boundaries.map((rule, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <ModalInput
+                    value={rule}
+                    onChange={(e) => {
+                      const next = [...form.boundaries];
+                      next[i] = e.target.value;
+                      update("boundaries", next);
+                    }}
+                    placeholder="do not…"
+                    style={{ flex: 1 }}
+                  />
+                  <IconButton
+                    name="x"
+                    size={14}
+                    label="Remove"
+                    onClick={() => update("boundaries", form.boundaries.filter((_, j) => j !== i))}
+                  />
+                </div>
+              ))}
+            </div>
             <button
               type="button"
-              onClick={onCancel}
+              onClick={() => update("boundaries", [...form.boundaries, ""])}
               style={{
+                marginTop: 12,
+                width: "100%",
                 height: 36,
-                padding: "0 16px",
-                color: "var(--q-fg-secondary)",
-                background: "none",
-                border: "none",
+                background: "transparent",
+                border: "1px dashed var(--danger)",
+                borderRadius: 8,
+                color: "var(--danger)",
+                fontFamily: "var(--mono)",
+                fontSize: 11,
                 cursor: "pointer",
-                fontSize: 11,
-                fontFamily: "'JetBrains Mono', monospace",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-            >
-              cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!form.name.trim() || saving}
-              style={{
-                height: 36,
-                padding: "0 20px",
-                backgroundColor: "var(--q-accent)",
-                color: "var(--q-bg)",
-                fontWeight: 500,
-                border: "none",
-                cursor: !form.name.trim() || saving ? "not-allowed" : "pointer",
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 11,
-                opacity: !form.name.trim() || saving ? 0.4 : 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
               }}
             >
-              {isEdit ? "$ save" : "$ create"}
+              <Icon name="plus" size={12} /> add rule
             </button>
           </div>
+        )}
+
+        {activeTab === "skills" && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)" }}>available skills</span>
+              <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                {enabledSkillsCount} of {totalSkillsCount} enabled
+              </span>
+            </div>
+            <div>
+              {availableSkills.length === 0 && (
+                <div className="mono" style={{ fontSize: 10.5, color: "var(--fg-4)", padding: "8px 0" }}>// no skills available</div>
+              )}
+              {availableSkills.map((skill) => (
+                <div
+                  key={skill.name}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 44, borderBottom: "1px solid var(--border-2)" }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0, overflow: "hidden" }}>
+                    <span className="mono" style={{ fontSize: 11.5, fontWeight: 600, color: "var(--fg)" }}>{skill.name}</span>
+                    <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {skill.filePath}
+                    </span>
+                  </div>
+                  <Toggle
+                    checked={!!form.skills[skill.name]}
+                    onChange={(v) => update("skills", { ...form.skills, [skill.name]: v })}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* footer */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 26px 22px" }}>
+        <div>
+          {isEdit && onDelete && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={saving}
+              style={{
+                height: 38,
+                padding: "0 14px",
+                borderRadius: 9,
+                background: "transparent",
+                border: "1px solid var(--danger)",
+                color: "var(--danger)",
+                fontFamily: "var(--mono)",
+                fontSize: 12,
+                cursor: saving ? "not-allowed" : "pointer",
+                opacity: saving ? 0.4 : 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Icon name="trash" size={12} /> delete
+            </button>
+          )}
         </div>
-      </form>
-    </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit disabled={!canSave} onClick={handleSubmit}>
+            {isEdit ? "$ save" : "$ create"}
+          </ModalSubmit>
+        </div>
+      </div>
+    </ModalShell>
   );
 }

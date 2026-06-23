@@ -4,16 +4,16 @@ import type { Session } from "../types";
 export type DisplayStatus = Session["status"] | "starting" | "stopping" | "resuming" | "waiting" | "archived";
 
 const statusColors: Record<DisplayStatus, string> = {
-  running: "var(--q-accent)",    // green — only running is green
-  waiting: "var(--q-cyan)",    // cyan — done, waiting for input
-  idle: "var(--q-fg-secondary)",       // gray — never started
-  paused: "var(--q-fg-secondary)",     // gray — same as idle
-  done: "var(--q-cyan)",       // cyan
-  error: "var(--q-error)",      // red
-  starting: "var(--q-purple)",   // purple — transitional
-  resuming: "var(--q-purple)",   // purple — transitional
-  stopping: "var(--q-warning)",   // amber — transitional
-  archived: "var(--q-fg-secondary)",   // gray — archived
+  running: "var(--accent)",     // accent — only running is accent
+  waiting: "var(--info)",       // info — done, waiting for input
+  idle: "var(--fg-4)",          // muted — never started
+  paused: "var(--warn)",        // warn — paused
+  done: "var(--accent)",        // accent
+  error: "var(--danger)",       // danger
+  starting: "var(--purple)",    // purple — transitional
+  resuming: "var(--purple)",    // purple — transitional
+  stopping: "var(--warn)",      // warn — transitional
+  archived: "var(--fg-4)",      // muted — archived
 };
 
 const isAnimated = (s: DisplayStatus) =>
@@ -43,7 +43,7 @@ export function StatusBadge({ status, className = "" }: Props) {
       className={`shrink-0 ${className}`}
       style={{
         color: statusColors[status],
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "var(--mono)",
         fontSize: "9px",
       }}
     >

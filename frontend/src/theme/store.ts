@@ -4,6 +4,8 @@ import { BUILTIN_THEMES } from "./defaults";
 
 const STORAGE_KEY = "quant:theme-id";
 const CUSTOM_THEMES_KEY = "quant:custom-themes";
+const ACCENT_KEY = "quant:accent";
+const DENSITY_KEY = "quant:density";
 
 export function getStoredThemeId(): string {
   return localStorage.getItem(STORAGE_KEY) || "quant-dark";
@@ -11,6 +13,27 @@ export function getStoredThemeId(): string {
 
 export function setStoredThemeId(id: string): void {
   localStorage.setItem(STORAGE_KEY, id);
+}
+
+export type Accent = "emerald" | "iris" | "blue";
+export type Density = "cozy" | "compact";
+
+export function getStoredAccent(): Accent {
+  const v = localStorage.getItem(ACCENT_KEY);
+  return v === "iris" || v === "blue" || v === "emerald" ? v : "emerald";
+}
+
+export function setStoredAccent(accent: Accent): void {
+  localStorage.setItem(ACCENT_KEY, accent);
+}
+
+export function getStoredDensity(): Density {
+  const v = localStorage.getItem(DENSITY_KEY);
+  return v === "compact" || v === "cozy" ? v : "cozy";
+}
+
+export function setStoredDensity(density: Density): void {
+  localStorage.setItem(DENSITY_KEY, density);
 }
 
 export function getCustomThemes(): ResolvedTheme[] {

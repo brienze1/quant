@@ -1,7 +1,21 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import type { Repo, Task, CreateSessionRequest, SessionType, Config } from "../types";
 import * as api from "../api";
 import { ClaudeSessionPicker, CLAUDE_UUID_RE } from "./ChangeSessionIdModal";
+import {
+  ModalShell,
+  ModalTitle,
+  Field,
+  ModalInput,
+  ModalSelect,
+  Toggle,
+  SectionRow,
+  RowLabel,
+  AdvLabel,
+  AdvDivider,
+  ModalCancel,
+  ModalSubmit,
+} from "./ModalShell";
 
 const MODEL_OPTIONS = ["cli default", "claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001"];
 
@@ -65,7 +79,6 @@ export function NewSessionModal({
 
   const tasks = tasksByRepo[repoId] ?? [];
   const selectedRepo = repos.find((r) => r.id === repoId);
-  const selectedTask = tasks.find((t) => t.id === taskId);
 
   // A pasted valid UUID takes precedence over the list selection.
   const pastedClaude = pastedClaudeId.trim();
@@ -126,560 +139,296 @@ export function NewSessionModal({
     onSubmit(buildRequest());
   }
 
-  const inputStyle: React.CSSProperties = {
-    backgroundColor: "var(--q-bg)",
-    border: "1px solid var(--q-border)",
-    color: "var(--q-fg)",
-    fontFamily: "'JetBrains Mono', monospace",
-  };
+  const tabs: { key: SessionType; label: string }[] = [{ key: "claude", label: "claude session" }];
 
-  const tabs: { key: SessionType; label: string }[] = [
-    { key: "claude", label: "claude session" },
-  ];
+  const canSubmit =
+    !!name.trim() && !!repoId && !!taskId && !checking && !(sessionType === "claude" && convMode === "resume" && !adopting);
 
   if (!configLoaded) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-        <span style={{ color: "var(--q-fg-secondary)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>loading...</span>
-      </div>
+      <ModalShell width={540} onClose={onCancel}>
+        <div style={{ padding: "26px", display: "flex", justifyContent: "center" }}>
+          <span className="mono" style={{ color: "var(--fg-3)", fontSize: 12 }}>loading…</span>
+        </div>
+      </ModalShell>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-md max-h-[90vh] flex flex-col"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        {/* title */}
-        <div className="px-8 pt-8 shrink-0">
-          <h2 className="text-sm font-bold lowercase" style={{ color: "var(--q-fg)" }}>
-            <span style={{ color: "var(--q-accent)" }}>{">"}</span> new_session
-          </h2>
-        </div>
+    <ModalShell width={540} onClose={onCancel}>
+      {/* title */}
+      <div style={{ padding: "20px 26px 0" }}>
+        <ModalTitle>new_session</ModalTitle>
+      </div>
 
-        {/* tabs */}
-        <div
-          className="flex px-8 mt-4 shrink-0"
-          style={{ borderBottom: "1px solid var(--q-border)" }}
-        >
-          {tabs.map((tab) => (
+      {/* tabs — claude session */}
+      <div style={{ display: "flex", gap: 4, padding: "14px 22px 0", borderBottom: "1px solid var(--border-2)" }}>
+        {tabs.map((tab) => {
+          const on = sessionType === tab.key;
+          return (
             <button
               key={tab.key}
               type="button"
               onClick={() => setSessionType(tab.key)}
-              className="px-4 py-2 text-[11px] lowercase transition-colors"
               style={{
-                color: sessionType === tab.key ? "var(--q-accent)" : "var(--q-fg-secondary)",
-                fontWeight: sessionType === tab.key ? 500 : "normal",
-                borderBottom: sessionType === tab.key ? "2px solid var(--q-accent)" : "2px solid transparent",
-                fontFamily: "'JetBrains Mono', monospace",
+                padding: "8px 14px",
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                fontFamily: "var(--mono)",
+                fontSize: 12,
+                color: on ? "var(--accent)" : "var(--fg-3)",
+                fontWeight: on ? 600 : 400,
+                borderBottom: `2px solid ${on ? "var(--accent)" : "transparent"}`,
                 marginBottom: -1,
               }}
             >
               {tab.label}
             </button>
-          ))}
-        </div>
+          );
+        })}
+      </div>
 
-        {/* form body — scrollable */}
-        <div className="px-8 pt-4 pb-8 flex flex-col gap-4 overflow-y-auto">
-          {/* repo dropdown */}
-          <div>
-            <span className="text-[10px] lowercase block mb-1" style={{ color: "var(--q-fg-secondary)" }}>repo</span>
-            <CustomSelect
-              value={repoId}
-              onChange={(v) => { setRepoId(v); setTaskId(""); setSelectedClaudeId(""); }}
-              options={repos.map((r) => ({ value: r.id, label: `${r.name} (${r.path})` }))}
-              placeholder="select a repo"
-              displayValue={selectedRepo ? `${selectedRepo.name} (${selectedRepo.path})` : ""}
-            />
-          </div>
+      {/* scrollable body — wrapped in a form so submit/Enter works */}
+      <form
+        onSubmit={handleSubmit}
+        className="scroll"
+        style={{ flex: 1, overflowY: "auto", padding: "18px 26px 20px", display: "flex", flexDirection: "column", gap: 16 }}
+      >
+        <Field label="repo">
+          <ModalSelect
+            value={repoId}
+            onChange={(v) => { setRepoId(v); setTaskId(""); setSelectedClaudeId(""); }}
+            options={repos.map((r) => ({ value: r.id, label: `${r.name} (${r.path})` }))}
+            placeholder="select a repo"
+          />
+        </Field>
 
-          {/* task dropdown */}
-          <div>
-            <span className="text-[10px] lowercase block mb-1" style={{ color: "var(--q-fg-secondary)" }}>task</span>
-            <CustomSelect
-              value={taskId}
-              onChange={setTaskId}
-              options={tasks.map((t) => ({ value: t.id, label: `# ${t.tag}  ${t.name}` }))}
-              placeholder="select a task"
-              displayValue={selectedTask ? `# ${selectedTask.tag}  ${selectedTask.name}` : ""}
-            />
-          </div>
+        <Field label="task">
+          <ModalSelect
+            value={taskId}
+            onChange={setTaskId}
+            options={tasks.map((t) => ({ value: t.id, label: `# ${t.tag}  ${t.name}` }))}
+            placeholder="select a task"
+          />
+        </Field>
 
-          {/* name */}
-          <label className="block">
-            <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>name</span>
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => { setName(e.target.value); setBranchExistsWarning(false); }}
-              placeholder={sessionType === "claude" ? "implement fix" : "deploy setup"}
-              className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
-              style={inputStyle}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-            />
-          </label>
+        <Field label="name">
+          <ModalInput
+            autoFocus
+            value={name}
+            onChange={(e) => { setName(e.target.value); setBranchExistsWarning(false); }}
+            placeholder={sessionType === "claude" ? "implement fix" : "deploy setup"}
+          />
+        </Field>
 
-          {/* description */}
-          <label className="block">
-            <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>description</span>
-            <input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="what is this session for?"
-              className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
-              style={inputStyle}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-            />
-          </label>
+        <Field label="description">
+          <ModalInput
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="what is this session for?"
+          />
+        </Field>
 
-          {/* conversation — new vs adopt an existing claude session */}
-          {sessionType === "claude" && (
-            <div>
-              <span className="text-[10px] lowercase block mb-1" style={{ color: "var(--q-fg-secondary)" }}>conversation</span>
-              <div className="flex flex-col gap-2">
-                {([
-                  { key: "new", label: "new conversation" },
-                  { key: "resume", label: "resume an existing session" },
-                ] as const).map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setConvMode(opt.key)}
-                    className="flex items-center gap-2 text-left"
-                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
-                  >
-                    <span style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
-                      {convMode === opt.key ? "(x)" : "( )"}
-                    </span>
-                    <span
-                      style={{
-                        color: convMode === opt.key ? "var(--q-accent)" : "var(--q-fg)",
-                        fontSize: 11,
-                        fontFamily: "'JetBrains Mono', monospace",
-                      }}
-                    >
-                      {opt.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {convMode === "resume" && (
-                <div className="mt-2">
-                  <ClaudeSessionPicker
-                    directory={selectedRepo?.path ?? ""}
-                    selectedId={selectedClaudeId}
-                    onSelect={setSelectedClaudeId}
-                    pastedId={pastedClaudeId}
-                    onPaste={setPastedClaudeId}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* advanced options toggle */}
-          <button
-            type="button"
-            onClick={() => setAdvancedOpen(!advancedOpen)}
-            className="flex items-center gap-2"
-            style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
-          >
-            <span style={{ color: "var(--q-accent)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-              {advancedOpen ? "v" : ">"}
-            </span>
-            <span style={{ color: "var(--q-accent)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-              advanced options
-            </span>
-          </button>
-
-          {/* advanced options content */}
-          {advancedOpen && (
-            <>
-              <div style={{ height: 1, backgroundColor: "var(--q-border)" }} />
-
-              {/* session section */}
-              <div className="flex flex-col gap-3">
-                <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>session</span>
-                <AdvancedToggle
-                  label="use worktree"
-                  description={adopting ? "unavailable when adopting — resumes in the original directory" : "create isolated git worktree"}
-                  checked={adopting ? false : useWorktree}
-                  onChange={setUseWorktree}
-                  disabled={adopting}
-                />
-                {sessionType === "claude" && (
-                  <AdvancedToggle label="skip permissions" description="pass --dangerously-skip-permissions" checked={skipPermissions} onChange={setSkipPermissions} />
-                )}
-              </div>
-
-              <div style={{ height: 1, backgroundColor: "var(--q-bg-hover)" }} />
-
-              {/* git section */}
-              <div className="flex flex-col gap-3">
-                <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>git</span>
-                <AdvancedToggle label="auto pull" description="pull before starting session" checked={autoPull} onChange={setAutoPull} />
-                <AdvancedInput label="pull branch" description="branch to pull from remote" value={pullBranch} onChange={setPullBranch} />
-              </div>
-
-              <div style={{ height: 1, backgroundColor: "var(--q-bg-hover)" }} />
-
-              {/* branch section */}
-              <div className="flex flex-col gap-3">
-                <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>branch</span>
-                <AdvancedInput label="branch pattern" description="template using {session} placeholder" value={branchNamePattern} onChange={(v) => { setBranchNamePattern(v); setBranchExistsWarning(false); }} />
-              </div>
-
-              {/* claude cli section — only for claude sessions */}
-              {sessionType === "claude" && (
-                <>
-                  <div style={{ height: 1, backgroundColor: "var(--q-bg-hover)" }} />
-                  <div className="flex flex-col gap-3">
-                    <span style={{ color: "var(--q-accent)", fontSize: 10, fontWeight: 700 }}>claude cli</span>
-                    <AdvancedSelect label="model" description="override default model" value={model} options={MODEL_OPTIONS} onChange={setModel} />
-                    <AdvancedInput label="extra cli args" description="additional flags for this session" value={extraCliArgs} onChange={setExtraCliArgs} placeholder="--verbose" />
-                  </div>
-                </>
-              )}
-            </>
-          )}
-
-          {/* branch exists warning */}
-          {branchExistsWarning && (
-            <div
-              className="flex flex-col gap-3 p-3"
-              style={{
-                backgroundColor: "var(--q-warning-bg)",
-                border: "1px solid var(--q-warning-border)",
-              }}
-            >
-              <span style={{ color: "var(--q-warning)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
-                branch "{resolveBranchName()}" already exists
-              </span>
-              <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                you can change the session name to create a new branch, or use the existing branch as is.
-              </span>
-              <div className="flex items-center gap-3">
+        {/* conversation — new vs adopt an existing claude session */}
+        {sessionType === "claude" && (
+          <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 13 }}>
+            <AdvLabel>conversation</AdvLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {([
+                { key: "new", label: "new conversation" },
+                { key: "resume", label: "resume an existing session" },
+              ] as const).map((opt) => (
                 <button
+                  key={opt.key}
                   type="button"
-                  onClick={() => setBranchExistsWarning(false)}
-                  className="px-3 py-1.5 text-[10px] lowercase transition-colors"
-                  style={{ color: "var(--q-fg-secondary)", border: "1px solid var(--q-border)" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-                >
-                  change name
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setBranchExistsWarning(false); onSubmit(buildRequest()); }}
-                  className="px-3 py-1.5 text-[10px] lowercase transition-colors"
+                  onClick={() => setConvMode(opt.key)}
                   style={{
-                    backgroundColor: "var(--q-warning)",
-                    color: "var(--q-bg)",
-                    fontWeight: 500,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    textAlign: "left",
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
                   }}
                 >
-                  use existing branch
+                  <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>
+                    {convMode === opt.key ? "(x)" : "( )"}
+                  </span>
+                  <span
+                    className="mono"
+                    style={{ color: convMode === opt.key ? "var(--accent)" : "var(--fg)", fontSize: 11 }}
+                  >
+                    {opt.label}
+                  </span>
                 </button>
-              </div>
+              ))}
             </div>
-          )}
-
-          {/* actions */}
-          <div className="flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-4 py-2 text-xs lowercase transition-colors"
-              style={{ color: "var(--q-fg-secondary)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-            >
-              cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!name.trim() || !repoId || !taskId || checking || (sessionType === "claude" && convMode === "resume" && !adopting)}
-              className="px-4 py-2 text-xs lowercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: "var(--q-accent)",
-                color: "var(--q-bg)",
-                fontWeight: 500,
-              }}
-            >
-              {checking ? "checking..." : "create"}
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-// --- Advanced option row components ---
-
-function AdvancedToggle({ label, description, checked, onChange, disabled }: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between" style={{ opacity: disabled ? 0.4 : 1 }}>
-      <div className="flex flex-col" style={{ gap: 2 }}>
-        <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
-        <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
-      </div>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className="flex items-center justify-center"
-        style={{
-          width: 14,
-          height: 14,
-          backgroundColor: "var(--q-bg)",
-          border: `1px solid ${checked ? "var(--q-accent)" : "var(--q-border)"}`,
-          cursor: disabled ? "default" : "pointer",
-        }}
-      >
-        {checked && <span style={{ color: "var(--q-accent)", fontSize: 10, lineHeight: 1 }}>x</span>}
-      </button>
-    </div>
-  );
-}
-
-function AdvancedInput({ label, description, value, onChange, placeholder }: {
-  label: string;
-  description: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  const [local, setLocal] = useState(value);
-  useEffect(() => setLocal(value), [value]);
-
-  return (
-    <div className="flex items-center justify-between">
-      <div className="flex flex-col" style={{ gap: 2 }}>
-        <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
-        <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
-      </div>
-      <input
-        value={local}
-        onChange={(e) => setLocal(e.target.value)}
-        onBlur={() => { if (local !== value) onChange(local); }}
-        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onChange(local); } }}
-        placeholder={placeholder}
-        className="px-3 focus:outline-none"
-        style={{
-          width: 140,
-          height: 32,
-          backgroundColor: "var(--q-bg-input)",
-          border: "1px solid var(--q-border)",
-          color: "var(--q-fg)",
-          fontSize: 11,
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-        onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-      />
-    </div>
-  );
-}
-
-function AdvancedSelect({ label, description, value, options, onChange }: {
-  label: string;
-  description: string;
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [open]);
-
-  return (
-    <div className="flex items-center justify-between">
-      <div className="flex flex-col" style={{ gap: 2 }}>
-        <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>{label}</span>
-        <span style={{ color: "var(--q-fg-muted)", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>{description}</span>
-      </div>
-      <div ref={wrapRef} style={{ position: "relative", width: 160 }}>
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          style={{
-            width: 160,
-            height: 32,
-            backgroundColor: "var(--q-bg-input)",
-            border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
-            color: "var(--q-fg)",
-            fontSize: 11,
-            fontFamily: "'JetBrains Mono', monospace",
-            padding: "0 12px",
-            textAlign: "left",
-            cursor: "pointer",
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='none' stroke='%236B7280' stroke-width='1.5'/%3E%3C/svg%3E")`,
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 12px center",
-          }}
-        >
-          {value}
-        </button>
-        {open && (
-          <div
-            style={{
-              position: "absolute",
-              top: 36,
-              left: 0,
-              zIndex: 50,
-              backgroundColor: "var(--q-bg)",
-              border: "1px solid var(--q-border)",
-              width: "100%",
-            }}
-          >
-            {options.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => { onChange(opt); setOpen(false); }}
-                className="w-full flex items-center text-left transition-colors"
-                style={{
-                  height: 28,
-                  padding: "0 12px",
-                  gap: 8,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 11,
-                  color: opt === value ? "var(--q-accent)" : "var(--q-fg-dimmed)",
-                  backgroundColor: opt === value ? "var(--q-bg-hover)" : "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-                onMouseEnter={(e) => {
-                  if (opt !== value) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  if (opt !== value) e.currentTarget.style.backgroundColor = "transparent";
-                }}
-              >
-                <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>~</span>
-                <span>{opt}</span>
-              </button>
-            ))}
+            {convMode === "resume" && (
+              <ClaudeSessionPicker
+                directory={selectedRepo?.path ?? ""}
+                selectedId={selectedClaudeId}
+                onSelect={setSelectedClaudeId}
+                pastedId={pastedClaudeId}
+                onPaste={setPastedClaudeId}
+              />
+            )}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
 
-// Custom dropdown matching the Pencil design
-function CustomSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  displayValue,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  placeholder: string;
-  displayValue: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-2 text-xs text-left"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: `1px solid ${open ? "var(--q-accent)" : "var(--q-border)"}`,
-          color: value ? "var(--q-fg)" : "var(--q-fg-muted)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        <span className="overflow-hidden whitespace-nowrap" style={{ textOverflow: "ellipsis" }}>
-          {displayValue || placeholder}
-        </span>
-        <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>v</span>
-      </button>
-      {open && (
-        <div
-          className="absolute z-10 w-full mt-1 max-h-40 overflow-y-auto"
-          style={{
-            backgroundColor: "var(--q-bg)",
-            border: "1px solid var(--q-border)",
-          }}
+        {/* advanced options toggle */}
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen(!advancedOpen)}
+          style={{ display: "flex", alignItems: "center", gap: 7, background: "none", border: "none", padding: 0, cursor: "pointer" }}
         >
-          {options.length === 0 && (
-            <div
-              className="px-3 py-2 text-xs"
-              style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
-            >
-              // none available
+          <span className="mono" style={{ color: "var(--accent)", fontSize: 10 }}>{advancedOpen ? "v" : ">"}</span>
+          <span className="mono" style={{ color: "var(--accent)", fontSize: 10 }}>advanced options</span>
+        </button>
+
+        {advancedOpen && (
+          <>
+            <AdvDivider />
+            <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+              <AdvLabel>session</AdvLabel>
+              <SectionRow>
+                <RowLabel
+                  title="use worktree"
+                  sub={adopting ? "unavailable when adopting — resumes in the original directory" : "create isolated git worktree"}
+                />
+                <Toggle checked={adopting ? false : useWorktree} onChange={setUseWorktree} disabled={adopting} />
+              </SectionRow>
+              {sessionType === "claude" && (
+                <SectionRow>
+                  <RowLabel title="skip permissions" sub="pass --dangerously-skip-permissions" />
+                  <Toggle checked={skipPermissions} onChange={setSkipPermissions} />
+                </SectionRow>
+              )}
             </div>
-          )}
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className="w-full text-left px-3 py-2 text-xs transition-colors"
-              style={{
-                color: opt.value === value ? "var(--q-accent)" : "var(--q-fg)",
-                backgroundColor: opt.value === value ? "var(--q-bg-hover)" : "transparent",
-                fontFamily: "'JetBrains Mono', monospace",
-              }}
-              onMouseEnter={(e) => {
-                if (opt.value !== value) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
-              onMouseLeave={(e) => {
-                if (opt.value !== value) e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+
+            <AdvDivider />
+            <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+              <AdvLabel>git</AdvLabel>
+              <SectionRow>
+                <RowLabel title="auto pull" sub="pull before starting session" />
+                <Toggle checked={autoPull} onChange={setAutoPull} />
+              </SectionRow>
+              <SectionRow>
+                <RowLabel title="pull branch" sub="branch to pull from remote" />
+                <ModalInput value={pullBranch} onChange={(e) => setPullBranch(e.target.value)} style={{ width: 150, height: 32 }} />
+              </SectionRow>
+            </div>
+
+            <AdvDivider />
+            <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+              <AdvLabel>branch</AdvLabel>
+              <SectionRow>
+                <RowLabel title="branch pattern" sub="template using {session} placeholder" />
+                <ModalInput
+                  value={branchNamePattern}
+                  onChange={(e) => { setBranchNamePattern(e.target.value); setBranchExistsWarning(false); }}
+                  style={{ width: 180, height: 32 }}
+                />
+              </SectionRow>
+            </div>
+
+            {sessionType === "claude" && (
+              <>
+                <AdvDivider />
+                <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+                  <AdvLabel>claude cli</AdvLabel>
+                  <SectionRow>
+                    <RowLabel title="model" sub="override default model" />
+                    <div style={{ width: 200 }}>
+                      <ModalSelect
+                        value={model}
+                        onChange={setModel}
+                        options={MODEL_OPTIONS.map((m) => ({ value: m, label: m }))}
+                      />
+                    </div>
+                  </SectionRow>
+                  <SectionRow>
+                    <RowLabel title="extra cli args" sub="additional flags for this session" />
+                    <ModalInput
+                      value={extraCliArgs}
+                      onChange={(e) => setExtraCliArgs(e.target.value)}
+                      placeholder="--verbose"
+                      style={{ width: 180, height: 32 }}
+                    />
+                  </SectionRow>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* branch exists warning */}
+        {branchExistsWarning && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 11,
+              padding: 13,
+              borderRadius: 9,
+              background: "color-mix(in srgb, var(--warn) 12%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--warn) 45%, transparent)",
+            }}
+          >
+            <span className="mono" style={{ color: "var(--warn)", fontSize: 11.5 }}>
+              branch "{resolveBranchName()}" already exists
+            </span>
+            <span className="mono" style={{ color: "var(--fg-3)", fontSize: 10.5, lineHeight: 1.5 }}>
+              you can change the session name to create a new branch, or use the existing branch as is.
+            </span>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setBranchExistsWarning(false)}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: 7,
+                  border: "1px solid var(--border)",
+                  background: "transparent",
+                  color: "var(--fg-3)",
+                  fontFamily: "var(--mono)",
+                  fontSize: 10.5,
+                  cursor: "pointer",
+                }}
+              >
+                change name
+              </button>
+              <button
+                type="button"
+                onClick={() => { setBranchExistsWarning(false); onSubmit(buildRequest()); }}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: 7,
+                  border: "none",
+                  background: "var(--warn)",
+                  color: "var(--bg)",
+                  fontFamily: "var(--mono)",
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                use existing branch
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* actions */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit type="submit" disabled={!canSubmit}>
+            {checking ? "checking…" : "create"}
+          </ModalSubmit>
         </div>
-      )}
-    </div>
+      </form>
+    </ModalShell>
   );
 }

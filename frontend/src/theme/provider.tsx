@@ -1,6 +1,18 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from "react";
 import type { ResolvedTheme, VSCodeTheme, ThemeColors } from "./types";
-import { resolveTheme, getStoredThemeId, setStoredThemeId, importVSCodeTheme, deleteCustomTheme, getAllThemes } from "./store";
+import {
+  resolveTheme,
+  getStoredThemeId,
+  setStoredThemeId,
+  importVSCodeTheme,
+  deleteCustomTheme,
+  getAllThemes,
+  getStoredAccent,
+  setStoredAccent,
+  getStoredDensity,
+  setStoredDensity,
+} from "./store";
+import type { Accent, Density } from "./store";
 
 interface ThemeContextValue {
   theme: ResolvedTheme;
@@ -8,6 +20,12 @@ interface ThemeContextValue {
   setTheme: (id: string) => void;
   importTheme: (json: VSCodeTheme) => ResolvedTheme;
   removeTheme: (id: string) => void;
+  accent: Accent;
+  setAccent: (accent: Accent) => void;
+  density: Density;
+  setDensity: (density: Density) => void;
+  /** Flip dark/light by switching to a builtin theme of the opposite type. */
+  toggleThemeType: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -83,12 +101,24 @@ function applyThemeToDOM(theme: ResolvedTheme) {
   }
 
   root.setAttribute("data-theme-type", theme.type);
+  // New design-system token layer: dark/light selector for --bg/--panel/... tokens.
+  root.setAttribute("data-theme", theme.type);
+}
+
+function applyAccentToDOM(accent: Accent) {
+  document.documentElement.setAttribute("data-accent", accent);
+}
+
+function applyDensityToDOM(density: Density) {
+  document.documentElement.setAttribute("data-density", density);
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeId, setThemeId] = useState(getStoredThemeId);
   const [themes, setThemes] = useState(getAllThemes);
   const [version, setVersion] = useState(0);
+  const [accent, setAccentState] = useState<Accent>(getStoredAccent);
+  const [density, setDensityState] = useState<Density>(getStoredDensity);
   const theme = resolveTheme(themeId);
 
   useEffect(() => {
@@ -96,6 +126,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     applyThemeToDOM(resolveTheme(themeId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [themeId, version]);
+
+  useEffect(() => {
+    applyAccentToDOM(accent);
+  }, [accent]);
+
+  useEffect(() => {
+    applyDensityToDOM(density);
+  }, [density]);
 
   const setThemeCb = useCallback((id: string) => {
     setStoredThemeId(id);
@@ -120,8 +158,41 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [themeId]);
 
+  const setAccentCb = useCallback((a: Accent) => {
+    setStoredAccent(a);
+    setAccentState(a);
+  }, []);
+
+  const setDensityCb = useCallback((d: Density) => {
+    setStoredDensity(d);
+    setDensityState(d);
+  }, []);
+
+  const toggleThemeType = useCallback(() => {
+    const current = resolveTheme(themeId);
+    const target = current.type === "dark" ? "light" : "dark";
+    const next = getAllThemes().find((t) => t.type === target);
+    if (next) {
+      setStoredThemeId(next.id);
+      setThemeId(next.id);
+    }
+  }, [themeId]);
+
   return (
-    <ThemeContext.Provider value={{ theme, themes, setTheme: setThemeCb, importTheme: importThemeCb, removeTheme: removeThemeCb }}>
+    <ThemeContext.Provider
+      value={{
+        theme,
+        themes,
+        setTheme: setThemeCb,
+        importTheme: importThemeCb,
+        removeTheme: removeThemeCb,
+        accent,
+        setAccent: setAccentCb,
+        density,
+        setDensity: setDensityCb,
+        toggleThemeType,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );

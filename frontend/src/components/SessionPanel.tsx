@@ -1,40 +1,15 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import "@xterm/xterm/css/xterm.css";
 import type { Session, Task, Config } from "../types";
 import { StatusDot } from "./StatusDot";
 import { TerminalPane } from "./TerminalPane";
-import { MindmapPane } from "./MindmapPane";
+import { IconButton } from "./IconButton";
+import { Button } from "./Button";
+import { Pill } from "./Pill";
+import { Icon } from "./Icon";
 import * as api from "../api";
 import { pttService, type PttState } from "../voice/pttService";
 import { getActiveKeybindings, formatKeyCombo } from "../keybindings";
-
-type SplitLayout = "horizontal" | "vertical";
-
-// Per-session mindmap dock geometry (split layout + divider %), persisted per
-// session in localStorage — mirroring how boards persist under
-// "quant.mindmapBoard.<sessionId>". SessionPanel is a single instance reused
-// across tab switches, so without keying these by session id a resize in one
-// session would silently resize every other session's pane too.
-const MM_LAYOUT_KEY = "quant.mindmapLayout.";
-const MM_DIVIDER_KEY = "quant.mindmapDivider.";
-
-function loadMindmapLayout(sessionId: string): SplitLayout {
-  return localStorage.getItem(MM_LAYOUT_KEY + sessionId) === "horizontal"
-    ? "horizontal"
-    : "vertical";
-}
-
-function loadMindmapDivider(sessionId: string): number {
-  const v = Number(localStorage.getItem(MM_DIVIDER_KEY + sessionId));
-  return Number.isFinite(v) && v >= 20 && v <= 80 ? v : 55;
-}
-
-interface SplitState {
-  open: boolean;
-  terminalSession: Session | null;
-  layout: SplitLayout;
-  dividerPercent: number;
-}
 
 interface Props {
   session: Session;
@@ -56,6 +31,9 @@ interface Props {
   voicePaneOpen: boolean;
   onVoicePaneOpenChange: (open: boolean) => void;
   onCreateEmbeddedTerminal: (parentSession: Session) => Promise<Session>;
+  // Pane-toggle pills (Files / Terminal / Mindmap / Voice) rendered in this
+  // header's right group, owned and built by App (it holds the pane state).
+  paneToggles?: ReactNode;
 }
 
 export function SessionPanel({
@@ -74,30 +52,12 @@ export function SessionPanel({
   voicePaneOpen,
   onVoicePaneOpenChange,
   onCreateEmbeddedTerminal,
+  paneToggles,
 }: Props) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [termConfig, setTermConfig] = useState<Config | null>(null);
-  const [splitState, setSplitState] = useState<SplitState>({
-    open: false,
-    terminalSession: null,
-    layout: "horizontal",
-    dividerPercent: 55,
-  });
   const [menuOpen, setMenuOpen] = useState(false);
-  // The mindmap split is independent of the terminal split: it has its own
-  // layout (default vertical so the mindmap docks on the right) and divider.
-  // Both are PER-SESSION: hydrated from localStorage whenever the session
-  // changes, persisted back per session id.
-  const [mindmapLayout, setMindmapLayoutState] = useState<SplitLayout>(() => loadMindmapLayout(session.id));
-  const [mindmapDividerPercent, setMindmapDividerPercent] = useState(() => loadMindmapDivider(session.id));
-  // Mirrors the divider state so the mouseup handler can persist the final
-  // value without re-registering listeners on every mousemove.
-  const mindmapDividerRef = useRef(mindmapDividerPercent);
   const menuRef = useRef<HTMLDivElement>(null);
-  const splitContainerRef = useRef<HTMLDivElement>(null!)
-  const mindmapContainerRef = useRef<HTMLDivElement>(null!)
-  const isDragging = useRef(false);
-  const isDraggingMindmap = useRef(false);
 
   const isArchived = displayStatus === "archived";
   const isPaused = displayStatus === "paused";
@@ -146,33 +106,6 @@ export function SessionPanel({
     }).catch(() => {});
   }, []);
 
-  // When session changes, restore open state and terminal session from persistent props
-  useEffect(() => {
-    setSplitState(prev => ({
-      ...prev,
-      open: terminalPaneOpen && !!(embeddedTerminalSession || prev.terminalSession),
-      terminalSession: embeddedTerminalSession || null,
-    }));
-    // Hydrate THIS session's mindmap dock geometry (the open flag itself is
-    // per-session App state passed down as a prop).
-    const layout = loadMindmapLayout(session.id);
-    const divider = loadMindmapDivider(session.id);
-    setMindmapLayoutState(layout);
-    setMindmapDividerPercent(divider);
-    mindmapDividerRef.current = divider;
-    // A divider drag must never survive a session switch: the divider element
-    // can unmount mid-drag (pane closed on the next session), which would
-    // leave the dragging flag stuck and let plain mouse movement silently
-    // resize the pane.
-    if (isDraggingMindmap.current || isDragging.current) {
-      isDraggingMindmap.current = false;
-      isDragging.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id]);
-
   // Close menu on click outside
   useEffect(() => {
     if (!menuOpen) return;
@@ -185,98 +118,23 @@ export function SessionPanel({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [menuOpen]);
 
-  // Split divider drag handling
-  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isDragging.current = true;
-    document.body.style.cursor = splitState.layout === "horizontal" ? "row-resize" : "col-resize";
-    document.body.style.userSelect = "none";
-  }, [splitState.layout]);
-
-  useEffect(() => {
-    function handleMouseMove(e: MouseEvent) {
-      if (!isDragging.current || !splitContainerRef.current) return;
-      const rect = splitContainerRef.current.getBoundingClientRect();
-      let percent: number;
-      if (splitState.layout === "horizontal") {
-        percent = ((e.clientY - rect.top) / rect.height) * 100;
-      } else {
-        percent = ((e.clientX - rect.left) / rect.width) * 100;
-      }
-      setSplitState(prev => ({ ...prev, dividerPercent: Math.min(80, Math.max(20, percent)) }));
-    }
-    function handleMouseUp() {
-      if (!isDragging.current) return;
-      isDragging.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [splitState.layout]);
-
-  // Mindmap split divider drag handling (independent of the terminal split).
-  const handleMindmapDividerMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isDraggingMindmap.current = true;
-    document.body.style.cursor = mindmapLayout === "horizontal" ? "row-resize" : "col-resize";
-    document.body.style.userSelect = "none";
-  }, [mindmapLayout]);
-
-  useEffect(() => {
-    function handleMouseMove(e: MouseEvent) {
-      if (!isDraggingMindmap.current || !mindmapContainerRef.current) return;
-      const rect = mindmapContainerRef.current.getBoundingClientRect();
-      let percent: number;
-      if (mindmapLayout === "horizontal") {
-        percent = ((e.clientY - rect.top) / rect.height) * 100;
-      } else {
-        percent = ((e.clientX - rect.left) / rect.width) * 100;
-      }
-      const clamped = Math.min(80, Math.max(20, percent));
-      mindmapDividerRef.current = clamped;
-      setMindmapDividerPercent(clamped);
-    }
-    function handleMouseUp() {
-      if (!isDraggingMindmap.current) return;
-      isDraggingMindmap.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      // Persist the final divider position for THIS session only.
-      localStorage.setItem(
-        MM_DIVIDER_KEY + session.id,
-        String(Math.round(mindmapDividerRef.current))
-      );
-    }
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [mindmapLayout, session.id]);
-
-  // Switch the mindmap dock layout and persist it for this session.
-  const setMindmapLayout = useCallback((l: SplitLayout) => {
-    setMindmapLayoutState(l);
-    localStorage.setItem(MM_LAYOUT_KEY + session.id, l);
-  }, [session.id]);
-
+  // The terminal pane is considered "open" for the active session per the
+  // App-owned per-session flag (terminalPaneOpen prop). The embedded terminal,
+  // mindmap, files and voice panes are now rendered in the App-owned right-hand
+  // drag-tileable dock (SessionDock) rather than inline splits here.
+  //
+  // Opening the terminal pane: lazily create the embedded terminal session (if
+  // one doesn't already exist) so the dock's "terminal" leaf has a session to
+  // show, then flip the App-level open flag. Closing just flips the flag.
+  const terminalOpen = terminalPaneOpen;
   async function handleOpenTerminal() {
-    if (splitState.open) return;
-    const existing = splitState.terminalSession || embeddedTerminalSession;
-    if (existing) {
-      setSplitState(prev => ({ ...prev, open: true, terminalSession: existing }));
+    if (terminalOpen) return;
+    if (embeddedTerminalSession) {
       onTerminalPaneOpenChange?.(true);
       return;
     }
     try {
-      const termSession = await onCreateEmbeddedTerminal(session);
-      setSplitState(prev => ({ ...prev, open: true, terminalSession: termSession }));
+      await onCreateEmbeddedTerminal(session);
       onTerminalPaneOpenChange?.(true);
     } catch {
       // Failed to create embedded terminal
@@ -284,185 +142,66 @@ export function SessionPanel({
   }
 
   function handleCloseTerminal() {
-    setSplitState(prev => ({ ...prev, open: false }));
     onTerminalPaneOpenChange?.(false);
   }
 
-  function handleToggleLayout() {
-    setSplitState(prev => ({
-      ...prev,
-      layout: prev.layout === "horizontal" ? "vertical" : "horizontal",
-    }));
-  }
-
-  // The terminal split's secondary pane (the embedded terminal) is open only
-  // when a terminal session exists and the user has toggled it open.
-  const terminalSecondaryOpen = splitState.open && !!splitState.terminalSession;
-  // The OUTER split's secondary pane is the mindmap "dock" — independent of the
-  // terminal split, so both the embedded terminal and the dock can show at once.
-  //
-  // NOTE: the VOICE pane is NO LONGER rendered here. Voice is pinned to the
-  // session it was opened on and must survive active-tab switches, so it is
-  // mounted at App scope (keyed by voiceSessionId) and rendered as a persistent
-  // right-docked panel — not inside this per-active-tab SessionPanel, which
-  // unmounts on tab switch. Files moved out too (right files panel + center
-  // file tabs, both App-owned). SessionPanel only owns the mindmap dock now.
-  const dockOpen = mindmapPaneOpen;
-  const dockSplitState: SplitState = {
-    open: dockOpen,
-    terminalSession: null,
-    layout: mindmapLayout,
-    dividerPercent: mindmapDividerPercent,
-  };
-  const terminalSplitState: SplitState = { ...splitState, open: terminalSecondaryOpen };
-
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: "var(--q-bg)" }}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: "var(--panel)" }}>
       {/* Action bar */}
       <div
-        className="flex items-center justify-between px-5 shrink-0"
+        className="flex items-center justify-between shrink-0"
         style={{
-          backgroundColor: "var(--q-bg)",
-          borderBottom: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-          height: 32,
+          backgroundColor: "var(--panel)",
+          borderBottom: "1px solid var(--border-2)",
+          height: 38,
+          padding: "0 10px 0 14px",
+          gap: 8,
         }}
       >
         {/* Left: status + name + badges */}
         <div className="flex items-center gap-2 overflow-hidden">
-          <StatusDot status={displayStatus} />
+          <StatusDot status={displayStatus} glow />
           <span
-            className="text-xs font-bold overflow-hidden whitespace-nowrap"
-            style={{ color: "var(--q-fg)", textOverflow: "ellipsis" }}
+            className="overflow-hidden whitespace-nowrap"
+            style={{ color: "var(--fg)", textOverflow: "ellipsis", fontSize: 12.5, fontWeight: 600, letterSpacing: "-0.01em" }}
           >
             {session.name}
           </span>
           {task && (
-            <span
-              className="shrink-0 text-[9px] px-1.5 py-0.5"
-              style={{
-                color: "var(--q-accent)",
-                border: "1px solid var(--q-border)",
-                backgroundColor: "var(--q-bg-hover)",
-              }}
-            >
-              # {task.tag}
-            </span>
+            <Pill tone="accent" style={{ display: "inline-flex", alignItems: "center" }}>
+              <Icon name="hash" size={9} style={{ display: "inline", verticalAlign: "-1px", marginRight: 2 }} />
+              {task.tag}
+            </Pill>
           )}
           {session.worktreePath && (
-            <span
-              className="shrink-0 text-[9px] px-1.5 py-0.5"
-              style={{
-                color: "var(--q-accent)",
-                border: "1px solid var(--q-border)",
-                backgroundColor: "var(--q-bg-hover)",
-              }}
-            >
-              wt {session.branchName}
-            </span>
+            <Pill tone="info" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+              <Icon name="branch" size={9} style={{ display: "inline", verticalAlign: "-1px" }} />
+              {session.branchName}
+            </Pill>
           )}
         </div>
 
-        {/* Right: terminal btn + layout toggle + hamburger */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Right: pane toggles + mic + hamburger */}
+        <div className="flex items-center gap-1.5 shrink-0">
+
+          {/* Pane-toggle pills (Files / Terminal / Mindmap / Voice), built by
+              App and passed in. Sit left of the mic/menu in this header. */}
+          {paneToggles && (
+            <div className="flex items-center" style={{ gap: 9, marginRight: 6 }}>
+              {paneToggles}
+            </div>
+          )}
 
           {/* Unarchive button */}
           {isArchived && onUnarchive && (
-            <ActionBtn label="$ unarchive" onClick={() => onUnarchive(session.id)} color="var(--q-accent)" />
+            <Button variant="subtle" size="sm" icon="unarchive" onClick={() => onUnarchive(session.id)}>
+              unarchive
+            </Button>
           )}
 
-          {/* Terminal button */}
-          {!isArchived && (
-            <button
-              onClick={splitState.open ? handleCloseTerminal : handleOpenTerminal}
-              className="flex items-center gap-1 px-2 py-1 text-[11px]"
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                color: splitState.open ? "var(--q-bg)" : "var(--q-cyan)",
-                backgroundColor: splitState.open ? "var(--q-cyan)" : "var(--q-bg-hover)",
-                border: `1px solid ${splitState.open ? "var(--q-cyan)" : "var(--q-border)"}`,
-              }}
-              onMouseEnter={(e) => {
-                if (!splitState.open) e.currentTarget.style.backgroundColor = "var(--q-border)";
-              }}
-              onMouseLeave={(e) => {
-                if (!splitState.open) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
-            >
-              <span style={{ fontWeight: 700 }}>$</span>
-              <span>terminal</span>
-            </button>
-          )}
-
-          {/* Mindmap button */}
-          {!isArchived && (
-            <button
-              onClick={() => onMindmapPaneOpenChange(!mindmapPaneOpen)}
-              className="flex items-center gap-1 px-2 py-1 text-[11px]"
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                color: mindmapPaneOpen ? "var(--q-bg)" : "var(--q-accent)",
-                backgroundColor: mindmapPaneOpen ? "var(--q-accent)" : "var(--q-bg-hover)",
-                border: `1px solid ${mindmapPaneOpen ? "var(--q-accent)" : "var(--q-border)"}`,
-              }}
-              onMouseEnter={(e) => {
-                if (!mindmapPaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
-              }}
-              onMouseLeave={(e) => {
-                if (!mindmapPaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
-            >
-              <span>mindmap</span>
-            </button>
-          )}
-
-          {/* Voice button (mirrors the mindmap toggle; uses the themed
-              --q-magenta accent so it tracks theme changes like its siblings).
-              Gated on TWO conditions, both of which must hold:
-                1. config.voice.enabled — voice feature turned on in Settings.
-                2. The session has a LIVE agent process. "running" (mid-turn),
-                   "waiting" and "done" (agent idle at the prompt, ready for
-                   input) all have a live PTY the kickoff can write to. Idle /
-                   paused / stopped / starting have no live process, so we
-                   disable the toggle (and never fire the kickoff) there to
-                   avoid a confusing "no process running" failure. */}
-          {!isArchived && (() => {
-            const voiceEnabled = termConfig?.voice?.enabled ?? false;
-            const agentAlive =
-              displayStatus === "running" ||
-              displayStatus === "waiting" ||
-              displayStatus === "done";
-            const canToggle = voiceEnabled && agentAlive;
-            const tooltip = !voiceEnabled
-              ? "Enable voice in Settings"
-              : !agentAlive
-                ? "Start the session's agent first"
-                : "toggle voice pane";
-            return (
-              <button
-                onClick={() => { if (canToggle) onVoicePaneOpenChange(!voicePaneOpen); }}
-                disabled={!canToggle}
-                title={tooltip}
-                className="flex items-center gap-1 px-2 py-1 text-[11px]"
-                style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  color: voicePaneOpen ? "var(--q-bg)" : "var(--q-magenta)",
-                  backgroundColor: voicePaneOpen ? "var(--q-magenta)" : "var(--q-bg-hover)",
-                  border: `1px solid ${voicePaneOpen ? "var(--q-magenta)" : "var(--q-border)"}`,
-                  opacity: canToggle ? 1 : 0.4,
-                  cursor: canToggle ? "pointer" : "not-allowed",
-                }}
-                onMouseEnter={(e) => {
-                  if (canToggle && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
-                }}
-                onMouseLeave={(e) => {
-                  if (canToggle && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-                }}
-              >
-                <span>voice</span>
-              </button>
-            );
-          })()}
+          {/* Terminal / Mindmap / Voice toggles moved to the App-level ActionBar
+              (below the tab bar). The pane open/close props are still passed in
+              and owned by App; this header no longer renders the toggles. */}
 
           {/* Push-to-talk mic button (peer of the voice button). Quick click
               toggles a capture on/off; press-and-hold captures while held and
@@ -489,35 +228,39 @@ export function SessionPanel({
             const transcribing = pttState === "transcribing";
             const errored = pttState === "error";
             const fg = recording || errored
-              ? "var(--q-error)"
+              ? "var(--danger)"
               : transcribing
-                ? "var(--q-fg-muted)"
+                ? "var(--fg-3)"
                 : canPtt
-                  ? "var(--q-magenta)"
-                  : "var(--q-fg-muted)";
-            const border = recording || errored ? "var(--q-error)" : "var(--q-border)";
+                  ? "var(--purple)"
+                  : "var(--fg-3)";
+            const border = recording || errored ? "var(--danger)" : "var(--border)";
             return (
               <button
+                type="button"
                 onMouseDown={(e) => { if (e.button === 0 && canPtt) handlePttMouseDown(); }}
                 onMouseUp={(e) => { if (e.button === 0 && canPtt) handlePttMouseUp(); }}
                 disabled={!canPtt}
                 title={tooltip}
                 aria-label={tooltip}
-                className="flex items-center gap-1 px-2 py-1 text-[11px]"
+                className="flex items-center justify-center gap-1"
                 style={{
-                  fontFamily: "'JetBrains Mono', monospace",
+                  width: recording ? "auto" : 26,
+                  height: 26,
+                  padding: recording ? "0 7px" : 0,
+                  borderRadius: 7,
                   color: fg,
-                  backgroundColor: "var(--q-bg-hover)",
+                  backgroundColor: "transparent",
                   border: `1px solid ${border}`,
-                  opacity: canPtt ? (transcribing ? 0.7 : 1) : 0.4,
-                  cursor: canPtt ? "pointer" : "not-allowed",
+                  opacity: canPtt ? (transcribing ? 0.7 : 1) : 0.45,
+                  cursor: canPtt ? "pointer" : "default",
                 }}
                 onMouseEnter={(e) => {
-                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-border)";
+                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--hover)";
                 }}
                 onMouseLeave={(e) => {
                   if (canPtt) handlePttMouseLeave();
-                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "transparent";
                 }}
               >
                 <MicIcon filled={recording} />
@@ -526,59 +269,16 @@ export function SessionPanel({
             );
           })()}
 
-          {/* Terminal split layout toggle (only when the terminal split is open) */}
-          {splitState.open && (
-            <div className="flex items-center gap-0.5">
-              <LayoutIcon
-                type="horizontal"
-                active={splitState.layout === "horizontal"}
-                onClick={() => setSplitState(prev => ({ ...prev, layout: "horizontal" }))}
-              />
-              <LayoutIcon
-                type="vertical"
-                active={splitState.layout === "vertical"}
-                onClick={() => setSplitState(prev => ({ ...prev, layout: "vertical" }))}
-              />
-            </div>
-          )}
-
-          {/* Dock layout toggle (controls where the mindmap dock sits
-              relative to the session — shown only when the dock is open). */}
-          {dockOpen && (
-            <div className="flex items-center gap-0.5">
-              <LayoutIcon
-                type="horizontal"
-                active={mindmapLayout === "horizontal"}
-                onClick={() => setMindmapLayout("horizontal")}
-              />
-              <LayoutIcon
-                type="vertical"
-                active={mindmapLayout === "vertical"}
-                onClick={() => setMindmapLayout("vertical")}
-              />
-            </div>
-          )}
-
           {/* Hamburger menu */}
           {!isArchived && (
             <div className="relative" ref={menuRef}>
-              <button
+              <IconButton
+                name="dots"
+                size={15}
+                label="Menu"
+                active={menuOpen}
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="flex items-center justify-center"
-                style={{
-                  width: 20,
-                  height: 20,
-                  color: menuOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
-                }}
-                onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
-                onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="4" y1="6" x2="20" y2="6" />
-                  <line x1="4" y1="12" x2="20" y2="12" />
-                  <line x1="4" y1="18" x2="20" y2="18" />
-                </svg>
-              </button>
+              />
 
               {menuOpen && (
                 <HamburgerMenu
@@ -591,76 +291,21 @@ export function SessionPanel({
         </div>
       </div>
 
-      {/* Outer split: the whole terminal block on the primary side, the
-          mindmap dock on the secondary side. Both splits are independent, so
-          the embedded terminal and the dock can show at the same time without
-          overlapping. */}
-      <SplitContainer
-        splitContainerRef={mindmapContainerRef}
-        splitState={dockSplitState}
-        onDividerMouseDown={handleMindmapDividerMouseDown}
-        primaryPane={
-          /* Inner split: session output (primary) + optional embedded terminal */
-          <SplitContainer
-            splitContainerRef={splitContainerRef}
-            splitState={terminalSplitState}
-            onDividerMouseDown={handleDividerMouseDown}
-            primaryPane={
-              <>
-                {terminalSecondaryOpen && (
-                  <PaneHeader
-                    label={session.sessionType === "claude" ? "claude" : "terminal"}
-                    dotColor={session.sessionType === "claude" ? "var(--q-accent)" : "var(--q-cyan)"}
-                  />
-                )}
-                <TerminalPane
-                  session={session}
-                  isArchived={isArchived}
-                  onStart={onStart}
-                  onResume={onResume}
-                  termConfig={termConfig}
-                  autoScroll={autoScroll}
-                  onAutoScrollChange={setAutoScroll}
-                />
-              </>
-            }
-            secondaryPane={
-              splitState.open && splitState.terminalSession ? (
-                <>
-                  <PaneHeader
-                    label="terminal"
-                    dotColor="var(--q-cyan)"
-                    onClose={handleCloseTerminal}
-                  />
-                  <TerminalPane
-                    session={splitState.terminalSession}
-                    isArchived={false}
-                    onStart={onStart}
-                    onResume={onResume}
-                    termConfig={termConfig}
-                    autoScroll={true}
-                    onAutoScrollChange={() => {}}
-                  />
-                </>
-              ) : null
-            }
-          />
-        }
-        secondaryPane={
-          dockOpen ? (
-            <>
-              <PaneHeader
-                label="mindmap"
-                dotColor="var(--q-accent)"
-                onClose={() => onMindmapPaneOpenChange(false)}
-              />
-              <div className="flex-1 min-h-0">
-                <MindmapPane sessionId={session.id} />
-              </div>
-            </>
-          ) : null
-        }
-      />
+      {/* The session's own terminal/output is the fixed main area. The embedded
+          terminal, mindmap, files and voice panes now live in the App-owned
+          right-hand drag-tileable dock (SessionDock) instead of inline splits,
+          so they can be re-tiled/resized without disturbing this main pane. */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <TerminalPane
+          session={session}
+          isArchived={isArchived}
+          onStart={onStart}
+          onResume={onResume}
+          termConfig={termConfig}
+          autoScroll={autoScroll}
+          onAutoScrollChange={setAutoScroll}
+        />
+      </div>
     </div>
   );
 }
@@ -723,227 +368,13 @@ function PttLevelCue() {
             width: 2,
             height: 10,
             borderRadius: 1,
-            backgroundColor: i < lit ? "var(--q-error)" : "var(--q-border)",
+            backgroundColor: i < lit ? "var(--danger)" : "var(--border)",
             opacity: i < lit ? 1 : 0.5,
             transition: "background-color .05s linear, opacity .05s linear",
           }}
         />
       ))}
     </span>
-  );
-}
-
-/**
- * SplitContainer uses absolute positioning so that pane resizes are instant
- * and xterm.js does not do a slow reflow animation. The parent is `position: relative`
- * and each pane is `position: absolute` with explicit top/left/width/height in pixels,
- * calculated from the container's own dimensions via a ResizeObserver.
- */
-function SplitContainer({
-  splitContainerRef,
-  splitState,
-  onDividerMouseDown,
-  primaryPane,
-  secondaryPane,
-}: {
-  splitContainerRef: React.RefObject<HTMLDivElement>;
-  splitState: SplitState;
-  onDividerMouseDown: (e: React.MouseEvent) => void;
-  primaryPane: React.ReactNode;
-  secondaryPane: React.ReactNode;
-}) {
-  const [size, setSize] = useState({ w: 0, h: 0 });
-
-  useEffect(() => {
-    const el = splitContainerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect;
-      setSize({ w: width, h: height });
-    });
-    ro.observe(el);
-    // Set initial size
-    setSize({ w: el.clientWidth, h: el.clientHeight });
-    return () => ro.disconnect();
-  }, [splitContainerRef]);
-
-  const DIVIDER = 6;
-  const isH = splitState.layout === "horizontal";
-  const isOpen = splitState.open && secondaryPane != null;
-
-  // Calculate pixel sizes
-  let primaryStyle: React.CSSProperties;
-  let dividerStyle: React.CSSProperties | null = null;
-  let secondaryStyle: React.CSSProperties | null = null;
-
-  if (!isOpen) {
-    primaryStyle = { position: "absolute", top: 0, left: 0, width: size.w, height: size.h };
-  } else {
-    const total = isH ? size.h : size.w;
-    const primaryPx = Math.round((total - DIVIDER) * splitState.dividerPercent / 100);
-    const secondaryPx = total - DIVIDER - primaryPx;
-
-    if (isH) {
-      primaryStyle = { position: "absolute", top: 0, left: 0, width: size.w, height: primaryPx };
-      dividerStyle = { position: "absolute", top: primaryPx, left: 0, width: size.w, height: DIVIDER };
-      secondaryStyle = { position: "absolute", top: primaryPx + DIVIDER, left: 0, width: size.w, height: secondaryPx };
-    } else {
-      primaryStyle = { position: "absolute", top: 0, left: 0, width: primaryPx, height: size.h };
-      dividerStyle = { position: "absolute", top: 0, left: primaryPx, width: DIVIDER, height: size.h };
-      secondaryStyle = { position: "absolute", top: 0, left: primaryPx + DIVIDER, width: secondaryPx, height: size.h };
-    }
-  }
-
-  return (
-    <div
-      ref={splitContainerRef}
-      className="flex-1 min-h-0"
-      style={{ position: "relative", overflow: "hidden" }}
-    >
-      {/* Primary pane */}
-      <div style={{ ...primaryStyle, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {primaryPane}
-      </div>
-
-      {/* Divider */}
-      {isOpen && dividerStyle && (
-        <div
-          onMouseDown={onDividerMouseDown}
-          style={{
-            ...dividerStyle,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: isH ? "row-resize" : "col-resize",
-            borderTop: isH ? "1px solid var(--q-border)" : undefined,
-            borderBottom: isH ? "1px solid var(--q-border)" : undefined,
-            borderLeft: !isH ? "1px solid var(--q-border)" : undefined,
-            borderRight: !isH ? "1px solid var(--q-border)" : undefined,
-            zIndex: 1,
-          }}
-          onMouseEnter={(e) => {
-            const grip = e.currentTarget.querySelector("[data-grip]") as HTMLElement;
-            if (grip) grip.style.backgroundColor = "var(--q-accent)";
-          }}
-          onMouseLeave={(e) => {
-            const grip = e.currentTarget.querySelector("[data-grip]") as HTMLElement;
-            if (grip) grip.style.backgroundColor = "var(--q-fg-muted)";
-          }}
-        >
-          <div
-            data-grip
-            style={{
-              width: isH ? 32 : 2,
-              height: isH ? 2 : 32,
-              backgroundColor: "var(--q-fg-muted)",
-              borderRadius: 1,
-            }}
-          />
-        </div>
-      )}
-
-      {/* Secondary pane */}
-      {isOpen && secondaryStyle && (
-        <div style={{ ...secondaryStyle, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {secondaryPane}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PaneHeader({
-  label,
-  dotColor,
-  onClose,
-}: {
-  label: string;
-  dotColor: string;
-  onClose?: () => void;
-}) {
-  return (
-    <div
-      className="flex items-center justify-between px-4 shrink-0"
-      style={{
-        height: 24,
-        backgroundColor: "var(--q-bg-input)",
-        borderBottom: "1px solid var(--q-border)",
-        fontFamily: "'JetBrains Mono', monospace",
-      }}
-    >
-      <div className="flex items-center gap-1.5">
-        <div
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            backgroundColor: dotColor,
-          }}
-        />
-        <span style={{ fontSize: 10, color: "var(--q-fg-secondary)" }}>{label}</span>
-      </div>
-      {onClose && (
-        <button
-          onClick={onClose}
-          className="text-[9px] transition-colors"
-          style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
-        >
-          [x]
-        </button>
-      )}
-    </div>
-  );
-}
-
-function LayoutIcon({
-  type,
-  active,
-  onClick,
-}: {
-  type: "horizontal" | "vertical";
-  active: boolean;
-  onClick: () => void;
-}) {
-  const borderColor = active ? "var(--q-accent)" : "var(--q-border)";
-  const fillColor = active ? "var(--q-accent)" : "var(--q-fg-secondary)";
-  const isHorizontal = type === "horizontal";
-
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        width: 20,
-        height: 16,
-        backgroundColor: "var(--q-bg-hover)",
-        border: `1px solid ${borderColor}`,
-        padding: 2,
-        display: "flex",
-        flexDirection: isHorizontal ? "column" : "row",
-        gap: 1,
-        cursor: "pointer",
-      }}
-      title={`${type} split`}
-    >
-      <div
-        style={{
-          backgroundColor: fillColor,
-          ...(isHorizontal
-            ? { width: "100%", height: 5 }
-            : { height: "100%", width: 6 }),
-        }}
-      />
-      <div
-        style={{
-          backgroundColor: fillColor,
-          opacity: 0.4,
-          ...(isHorizontal
-            ? { width: "100%", height: 5 }
-            : { height: "100%", width: 6 }),
-        }}
-      />
-    </button>
   );
 }
 
@@ -962,21 +393,19 @@ function HamburgerMenu({
         right: 0,
         marginTop: 4,
         width: 160,
-        backgroundColor: "var(--q-bg-menu)",
-        border: "1px solid var(--q-border)",
+        backgroundColor: "var(--panel-3)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--r2)",
         padding: "4px 0",
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
+        fontSize: 11.5,
         zIndex: 50,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
       }}
     >
       {isRunning && onRestart && (
         <MenuItemRow onClick={onRestart}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--q-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-          <span style={{ color: "var(--q-fg)" }}>restart</span>
+          <Icon name="refresh" size={13} color="var(--warn)" />
+          <span style={{ color: "var(--fg)" }}>restart</span>
         </MenuItemRow>
       )}
     </div>
@@ -998,12 +427,11 @@ function MenuItemRow({
         height: 32,
         background: "none",
         border: "none",
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
+        fontSize: 11.5,
         cursor: "pointer",
         textAlign: "left",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
+      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--hover)")}
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
     >
       {children}
@@ -1011,27 +439,3 @@ function MenuItemRow({
   );
 }
 
-function ActionBtn({
-  label,
-  onClick,
-  color,
-}: {
-  label: string;
-  onClick: () => void;
-  color: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="px-2 py-1 text-[10px] lowercase transition-colors"
-      style={{
-        color,
-        fontFamily: "'JetBrains Mono', monospace",
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
-      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-    >
-      {label}
-    </button>
-  );
-}

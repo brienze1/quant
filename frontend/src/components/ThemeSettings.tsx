@@ -1,10 +1,43 @@
 import React, { useRef } from "react";
 import type { ResolvedTheme, VSCodeTheme } from "../theme/types";
 import { useTheme } from "../theme";
+import type { Accent, Density } from "../theme/store";
+import { Icon } from "./Icon";
+import { Segmented } from "./Segmented";
+
+// Preset cards drive the design-system data-attributes (data-theme / data-accent)
+// via toggleThemeType + setAccent. type = dark|light, accent = emerald|iris|blue.
+const THEME_PRESETS: { id: string; name: string; type: "dark" | "light"; accent: Accent }[] = [
+  { id: "quant-dark", name: "quant dark", type: "dark", accent: "emerald" },
+  { id: "quant-light", name: "quant light", type: "light", accent: "emerald" },
+  { id: "iris-dark", name: "iris", type: "dark", accent: "iris" },
+  { id: "blue-dark", name: "ocean", type: "dark", accent: "blue" },
+];
+
+const ACCENT_HEXES: Record<Accent, string> = {
+  emerald: "#2ed3a0",
+  iris: "#7b7bff",
+  blue: "#3a8bff",
+};
 
 export function ThemeSettings() {
-  const { theme, themes, setTheme, importTheme, removeTheme } = useTheme();
+  const {
+    theme,
+    themes,
+    setTheme,
+    importTheme,
+    removeTheme,
+    accent,
+    setAccent,
+    density,
+    setDensity,
+    toggleThemeType,
+  } = useTheme();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // The theme `type` (dark/light) is sourced from the active resolved theme so
+  // preset selection highlights correctly even after a VS Code import.
+  const themeType = theme.type;
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -25,28 +58,35 @@ export function ThemeSettings() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  // Selecting a preset drives the new token layer: flip dark/light to the target
+  // type (if it differs) and set the accent. toggleThemeType also switches the
+  // active builtin theme, which keeps terminal/editor palettes consistent.
+  function selectPreset(p: { type: "dark" | "light"; accent: Accent }) {
+    if (themeType !== p.type) toggleThemeType();
+    setAccent(p.accent);
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* Section: Current Theme */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+      {/* Header */}
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <span style={{ color: "var(--q-accent)", fontWeight: 700 }}>~</span>
-          <span style={{ color: "var(--q-fg)", fontWeight: 700, fontSize: 13 }}>theme</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: "var(--accent)", fontWeight: 700 }}>~</span>
+          <span style={{ color: "var(--fg)", fontWeight: 700, fontSize: 13 }}>theme</span>
         </div>
-        <p style={{ color: "var(--q-fg-muted)", fontSize: 11, marginBottom: 16 }}>
-          Select a theme or import a VS Code theme (.json)
+        <p style={{ color: "var(--fg-4)", fontSize: 11.5, marginTop: 6 }}>
+          select a theme or import a VS Code theme (.json)
         </p>
       </div>
 
-      {/* Theme Grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-        {themes.map((t) => (
-          <ThemeCard
-            key={t.id}
-            theme={t}
-            isActive={t.id === theme.id}
-            onSelect={() => setTheme(t.id)}
-            onDelete={t.isBuiltin ? undefined : () => removeTheme(t.id)}
+      {/* Preset grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+        {THEME_PRESETS.map((p) => (
+          <PresetCard
+            key={p.id}
+            preset={p}
+            active={themeType === p.type && accent === p.accent}
+            onSelect={() => selectPreset(p)}
           />
         ))}
 
@@ -59,32 +99,27 @@ export function ThemeSettings() {
             alignItems: "center",
             justifyContent: "center",
             gap: 8,
-            padding: 16,
-            border: "1px dashed var(--q-border)",
-            borderRadius: 8,
-            backgroundColor: "transparent",
-            color: "var(--q-fg-muted)",
-            cursor: "pointer",
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 12,
             minHeight: 120,
-            transition: "all 0.15s ease",
+            border: "1px dashed var(--border)",
+            borderRadius: 10,
+            background: "transparent",
+            color: "var(--fg-4)",
+            cursor: "pointer",
+            fontFamily: "var(--mono)",
+            fontSize: 12,
+            transition: "all .15s ease",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "var(--q-accent)";
-            e.currentTarget.style.color = "var(--q-accent)";
+            e.currentTarget.style.borderColor = "var(--accent)";
+            e.currentTarget.style.color = "var(--accent)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "var(--q-border)";
-            e.currentTarget.style.color = "var(--q-fg-muted)";
+            e.currentTarget.style.borderColor = "var(--border)";
+            e.currentTarget.style.color = "var(--fg-4)";
           }}
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
-          <span>import .json</span>
+          <Icon name="upload" size={22} />
+          import .json
         </button>
       </div>
 
@@ -96,26 +131,119 @@ export function ThemeSettings() {
         onChange={handleImport}
       />
 
+      {/* Density */}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>density</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>// row + padding scale</span>
+        </div>
+        <Segmented
+          options={[
+            { value: "cozy", label: "cozy" },
+            { value: "compact", label: "compact" },
+          ]}
+          value={density}
+          onChange={(v) => setDensity(v as Density)}
+        />
+      </div>
+
+      {/* Imported VS Code themes (terminal / editor palettes) */}
+      {themes.some((t) => !t.isBuiltin) && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>imported palettes</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>// VS Code terminal + editor colors</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+            {themes
+              .filter((t) => !t.isBuiltin)
+              .map((t) => (
+                <VSCodeCard
+                  key={t.id}
+                  theme={t}
+                  isActive={t.id === theme.id}
+                  onSelect={() => setTheme(t.id)}
+                  onDelete={() => removeTheme(t.id)}
+                />
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Info */}
-      <div style={{
-        padding: 12,
-        borderRadius: 6,
-        backgroundColor: "var(--q-bg-surface)",
-        border: "1px solid var(--q-border)",
-      }}>
-        <p style={{ color: "var(--q-fg-secondary)", fontSize: 11, margin: 0, lineHeight: 1.6 }}>
-          You can import any VS Code color theme (.json file). The theme format uses the standard VS Code{" "}
-          <span style={{ color: "var(--q-accent)" }}>colors</span> object with keys like{" "}
-          <span style={{ color: "var(--q-fg)" }}>editor.background</span>,{" "}
-          <span style={{ color: "var(--q-fg)" }}>sideBar.background</span>, etc.
-          Download themes from the VS Code marketplace or export them from your editor.
+      <div style={{ padding: 12, borderRadius: 9, background: "var(--panel)", border: "1px solid var(--border)" }}>
+        <p style={{ color: "var(--fg-3)", fontSize: 11.5, margin: 0, lineHeight: 1.6 }}>
+          you can import any VS Code color theme (.json file). the format uses the standard{" "}
+          <span style={{ color: "var(--accent)" }}>colors</span> object with keys like{" "}
+          <span style={{ color: "var(--fg)" }}>editor.background</span>,{" "}
+          <span style={{ color: "var(--fg)" }}>sideBar.background</span>, etc. download themes from the VS Code
+          marketplace or export them from your editor.
         </p>
       </div>
     </div>
   );
 }
 
-function ThemeCard({
+// PresetCard previews a dark/light × accent preset using inline hex (the preview
+// is intentionally theme-independent so all four cards read distinctly).
+function PresetCard({
+  preset,
+  active,
+  onSelect,
+}: {
+  preset: { name: string; type: "dark" | "light"; accent: Accent };
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const dark = preset.type === "dark";
+  const bg = dark ? "#15181a" : "#f4f5f3";
+  const surf = dark ? "#1b1f21" : "#e9ebe7";
+  const fgM = dark ? "#5a625e" : "#b8bcb6";
+  const lineC = dark ? "#2a2f2c" : "#d8dad4";
+  const acc = ACCENT_HEXES[preset.accent];
+  return (
+    <div
+      onClick={onSelect}
+      style={{
+        border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+        borderRadius: 10,
+        overflow: "hidden",
+        cursor: "pointer",
+        transition: "border-color .15s ease",
+      }}
+    >
+      <div style={{ display: "flex", height: 78, background: bg }}>
+        <div style={{ width: 38, background: surf, borderRight: `1px solid ${lineC}`, padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ width: 12, height: 3, borderRadius: 1, background: acc }} />
+          {[20, 16, 24, 14].map((w, i) => (
+            <div key={i} style={{ width: w, height: 3, borderRadius: 1, background: fgM }} />
+          ))}
+        </div>
+        <div style={{ flex: 1, padding: 7, display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ display: "flex", gap: 2, marginBottom: 2 }}>
+            <div style={{ width: 20, height: 4, borderRadius: 1, background: acc }} />
+            <div style={{ width: 16, height: 4, borderRadius: 1, background: fgM }} />
+          </div>
+          {["70%", "50%", "85%", "40%"].map((w, i) => (
+            <div key={i} style={{ width: w, height: 3, borderRadius: 1, background: i === 1 ? acc : fgM }} />
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: surf, borderTop: `1px solid ${lineC}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {active && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)" }} />}
+          <span className="mono" style={{ fontSize: 11, fontWeight: active ? 700 : 400, color: dark ? "#e7ebe9" : "#1a1d1b" }}>
+            {preset.name}
+          </span>
+          <span className="mono" style={{ fontSize: 9, color: fgM }}>{preset.type}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// VSCodeCard previews an imported VS Code theme using its own resolved colors.
+function VSCodeCard({
   theme,
   isActive,
   onSelect,
@@ -124,113 +252,57 @@ function ThemeCard({
   theme: ResolvedTheme;
   isActive: boolean;
   onSelect: () => void;
-  onDelete?: () => void;
+  onDelete: () => void;
 }) {
   const c = theme.colors;
-
   return (
     <div
       onClick={onSelect}
       style={{
         position: "relative",
-        border: `1px solid ${isActive ? "var(--q-accent)" : "var(--q-border)"}`,
-        borderRadius: 8,
+        border: `1px solid ${isActive ? "var(--accent)" : "var(--border)"}`,
+        borderRadius: 10,
         overflow: "hidden",
         cursor: "pointer",
-        transition: "border-color 0.15s ease",
-      }}
-      onMouseEnter={(e) => {
-        if (!isActive) e.currentTarget.style.borderColor = "var(--q-fg-secondary)";
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive) e.currentTarget.style.borderColor = "var(--q-border)";
+        transition: "border-color .15s ease",
       }}
     >
-      {/* Mini preview */}
-      <div style={{
-        display: "flex",
-        height: 80,
-        backgroundColor: c.bg,
-      }}>
-        {/* Mini sidebar */}
-        <div style={{ width: 40, backgroundColor: c.bgSurface, borderRight: `1px solid ${c.border}`, padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ width: 12, height: 3, borderRadius: 1, backgroundColor: c.accent }} />
-          <div style={{ width: 20, height: 3, borderRadius: 1, backgroundColor: c.fgMuted }} />
-          <div style={{ width: 16, height: 3, borderRadius: 1, backgroundColor: c.fgMuted }} />
-          <div style={{ width: 24, height: 3, borderRadius: 1, backgroundColor: c.bgHover }} />
-          <div style={{ width: 14, height: 3, borderRadius: 1, backgroundColor: c.fgMuted }} />
+      <div style={{ display: "flex", height: 78, background: c.bg }}>
+        <div style={{ width: 38, background: c.bgSurface, borderRight: `1px solid ${c.border}`, padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ width: 12, height: 3, borderRadius: 1, background: c.accent }} />
+          {[20, 16, 24, 14].map((w, i) => (
+            <div key={i} style={{ width: w, height: 3, borderRadius: 1, background: c.fgMuted }} />
+          ))}
         </div>
-        {/* Mini editor */}
-        <div style={{ flex: 1, padding: 6, display: "flex", flexDirection: "column", gap: 3 }}>
-          {/* Tab bar */}
+        <div style={{ flex: 1, padding: 7, display: "flex", flexDirection: "column", gap: 3 }}>
           <div style={{ display: "flex", gap: 2, marginBottom: 2 }}>
-            <div style={{ width: 20, height: 4, borderRadius: 1, backgroundColor: c.accent }} />
-            <div style={{ width: 16, height: 4, borderRadius: 1, backgroundColor: c.fgMuted }} />
+            <div style={{ width: 20, height: 4, borderRadius: 1, background: c.accent }} />
+            <div style={{ width: 16, height: 4, borderRadius: 1, background: c.fgMuted }} />
           </div>
-          {/* Code lines */}
-          <div style={{ width: "70%", height: 3, borderRadius: 1, backgroundColor: c.fgTertiary }} />
-          <div style={{ width: "50%", height: 3, borderRadius: 1, backgroundColor: c.accent }} />
-          <div style={{ width: "85%", height: 3, borderRadius: 1, backgroundColor: c.fgMuted }} />
-          <div style={{ width: "40%", height: 3, borderRadius: 1, backgroundColor: c.warning }} />
-          <div style={{ width: "60%", height: 3, borderRadius: 1, backgroundColor: c.fgTertiary }} />
+          {["70%", "50%", "85%", "40%"].map((w, i) => (
+            <div key={i} style={{ width: w, height: 3, borderRadius: 1, background: i === 1 ? c.accent : c.fgMuted }} />
+          ))}
         </div>
       </div>
-
-      {/* Label bar */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "8px 10px",
-        backgroundColor: c.bgSurface,
-        borderTop: `1px solid ${c.border}`,
-      }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: c.bgSurface, borderTop: `1px solid ${c.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {isActive && (
-            <div style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              backgroundColor: "var(--q-accent)",
-            }} />
-          )}
-          <span style={{
-            fontSize: 11,
-            fontWeight: isActive ? 700 : 400,
-            color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
-            fontFamily: "'JetBrains Mono', monospace",
-          }}>
+          {isActive && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)" }} />}
+          <span className="mono" style={{ fontSize: 11, fontWeight: isActive ? 700 : 400, color: isActive ? "var(--fg)" : "var(--fg-2)" }}>
             {theme.name}
           </span>
-          <span style={{
-            fontSize: 9,
-            color: "var(--q-fg-muted)",
-            fontFamily: "'JetBrains Mono', monospace",
-          }}>
-            {theme.type}
-          </span>
+          <span className="mono" style={{ fontSize: 9, color: "var(--fg-4)" }}>{theme.type}</span>
         </div>
-        {onDelete && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--q-fg-muted)",
-              cursor: "pointer",
-              fontSize: 11,
-              fontFamily: "'JetBrains Mono', monospace",
-              padding: "2px 4px",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-error)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
-          >
-            x
-          </button>
-        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          style={{ background: "none", border: "none", color: "var(--fg-4)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", padding: "2px 4px" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--danger)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-4)")}
+        >
+          x
+        </button>
       </div>
     </div>
   );
