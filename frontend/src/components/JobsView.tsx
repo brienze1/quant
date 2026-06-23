@@ -3546,13 +3546,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    padding: "6px 14px",
+                    padding: "7px 12px",
                     cursor: "pointer",
                     color: hoveredGroupId === group.id ? "var(--fg)" : "var(--fg-3)",
                     fontSize: 11,
                     transition: "color 0.15s, background-color 0.15s",
-                    backgroundColor: sidebarDropTarget === group.id ? "#1a2a1a" : "transparent",
-                    borderRadius: 4,
+                    backgroundColor: sidebarDropTarget === group.id ? "#1a2a1a" : hoveredGroupId === group.id ? "var(--hover)" : "transparent",
+                    borderRadius: 8,
                   }}
                   onMouseEnter={() => setHoveredGroupId(group.id)}
                   onMouseLeave={() => setHoveredGroupId(null)}
@@ -3655,19 +3655,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
 
           {/* Ungrouped section — always visible */}
           <div>
-            <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 14px" }} />
+            <div style={{ height: 1, backgroundColor: "var(--border-2)", margin: "8px 8px" }} />
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-                padding: "6px 14px",
+                padding: "7px 12px",
                 cursor: "pointer",
                 color: "var(--fg-2)",
                 fontSize: 11,
                 transition: "background-color 0.15s",
                 backgroundColor: sidebarDropTarget === "__ungrouped__" ? "#1a2a1a" : "transparent",
-                borderRadius: 4,
+                borderRadius: 8,
               }}
               onClick={() => {
                 setExpandedGroups((prev) => {

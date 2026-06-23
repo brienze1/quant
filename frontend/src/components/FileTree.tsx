@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Tree } from "react-arborist";
 import type { NodeRendererProps, TreeApi } from "react-arborist";
 import type { FileEntry } from "../types";
@@ -36,6 +36,12 @@ interface Props {
   onError: (msg: string) => void;
 }
 
+// Imperative handle so the FilesPanel header can trigger the same create-file
+// flow as the right-click context menu, scoped to the tree root.
+export interface FileTreeHandle {
+  createFileAtRoot: () => void;
+}
+
 function entryToNode(e: FileEntry): TreeNode {
   return { id: e.path, name: e.name, isDir: e.isDir, children: e.isDir ? [] : null };
 }
@@ -71,7 +77,7 @@ function withChildren(nodes: TreeNode[], dirPath: string, children: TreeNode[]):
   });
 }
 
-export function FileTree({
+export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({
   sessionId,
   openPath,
   dirtyPaths,
@@ -83,7 +89,7 @@ export function FileTree({
   onPathRenamed,
   onMatchCount,
   onError,
-}: Props) {
+}: Props, ref) {
   const [data, setData] = useState<TreeNode[]>([]);
   const loadedRef = useRef<Set<string>>(new Set());
   const treeRef = useRef<TreeApi<TreeNode> | null>(null);
@@ -97,6 +103,13 @@ export function FileTree({
   // Pending "new file"/"new folder" name prompt (WKWebView has no window.prompt).
   const [naming, setNaming] = useState<{ kind: "file" | "dir"; parent: string } | null>(null);
   const [deleting, setDeleting] = useState<TreeNode | null>(null);
+
+  // Same create-file flow the root-scope context menu uses (parent === "").
+  useImperativeHandle(
+    ref,
+    () => ({ createFileAtRoot: () => setNaming({ kind: "file", parent: "" }) }),
+    []
+  );
 
   // react-arborist requires explicit pixel width/height.
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -432,7 +445,7 @@ export function FileTree({
       )}
     </div>
   );
-}
+});
 
 // In-app name prompt cloned from MindmapPane's BoardNameModal (no
 // window.prompt in WKWebView).

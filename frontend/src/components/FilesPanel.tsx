@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "./FilesPane.css";
 import type { DiffFile, Session } from "../types";
 import { FileTree } from "./FileTree";
+import type { FileTreeHandle } from "./FileTree";
 import { PaneHeader } from "./PaneHeader";
 import { IconButton } from "./IconButton";
 import { Icon } from "./Icon";
@@ -56,6 +57,7 @@ export function FilesPanel({
   const [query, setQuery] = useState<string | null>(null);
   const [matchCount, setMatchCount] = useState(-1);
   const searchRef = useRef<HTMLInputElement>(null);
+  const treeRef = useRef<FileTreeHandle>(null);
   const openSearch = () => setQuery((q) => (q === null ? "" : null));
   useEffect(() => {
     if (query !== null) searchRef.current?.focus();
@@ -222,6 +224,13 @@ export function FilesPanel({
               ))}
             </select>
             <IconButton
+              name="filePlus"
+              size={14}
+              label="new file"
+              disabled={!session}
+              onClick={() => treeRef.current?.createFileAtRoot()}
+            />
+            <IconButton
               name="search"
               size={14}
               label="search files"
@@ -321,26 +330,28 @@ export function FilesPanel({
         <div className="files-panel-body" style={{ display: "flex", flexDirection: "column" }}>
           {/* Working tree: changed files (git status), hidden while filtering
               or when there are zero changes. */}
-          {filterTerm === "" && gitFiles.length > 0 && (
+          {filterTerm === "" && (
             <div style={{ flex: "none", paddingTop: 8 }}>
-              <SecLabel
-                note={`${gitFiles.length} changed`}
-              >
-                Working tree
-              </SecLabel>
-              <div style={{ paddingBottom: 6 }}>
-                {gitFiles.map((f) => (
-                  <WorkingTreeRow
-                    key={f.path}
-                    file={f}
-                    selected={activeFilePath === f.path}
-                    onOpen={handleOpenFile}
+              {/* Working tree: changed files, only when there are git changes. */}
+              {gitFiles.length > 0 && (
+                <>
+                  <SecLabel note={`${gitFiles.length} changed`}>Working tree</SecLabel>
+                  <div style={{ paddingBottom: 6 }}>
+                    {gitFiles.map((f) => (
+                      <WorkingTreeRow
+                        key={f.path}
+                        file={f}
+                        selected={activeFilePath === f.path}
+                        onOpen={handleOpenFile}
+                      />
+                    ))}
+                  </div>
+                  <div
+                    style={{ height: 1, background: "var(--border-2)", margin: "8px 14px 4px" }}
                   />
-                ))}
-              </div>
-              <div
-                style={{ height: 1, background: "var(--border-2)", margin: "8px 14px 4px" }}
-              />
+                </>
+              )}
+              {/* Explorer label always present above the tree (design parity). */}
               <SecLabel>Explorer</SecLabel>
             </div>
           )}
@@ -349,6 +360,7 @@ export function FilesPanel({
           <div style={{ flex: 1, minHeight: 0, display: noMatches ? "none" : "block" }}>
             <FileTree
               key={session.id}
+              ref={treeRef}
               sessionId={session.id}
               openPath={activeFilePath}
               dirtyPaths={dirtyPaths}
