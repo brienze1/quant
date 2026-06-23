@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import type { Session, ExternalSession } from "../types";
 import * as api from "../api";
-
-const font = "'JetBrains Mono', monospace";
+import { ModalShell, Field, ModalInput, ModalCancel, ModalSubmit } from "./ModalShell";
 
 export const CLAUDE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -17,6 +16,54 @@ export function relativeTime(iso: string): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
+}
+
+function PickerRow({
+  s,
+  selected,
+  disabled,
+  notLast,
+  onClick,
+}: {
+  s: ExternalSession;
+  selected: boolean;
+  disabled?: boolean;
+  notLast: boolean;
+  onClick: () => void;
+}) {
+  const [h, setH] = useState(false);
+  const bg = selected ? "var(--accent-soft)" : h && !disabled ? "var(--hover)" : "transparent";
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 12px",
+        textAlign: "left",
+        fontFamily: "var(--mono)",
+        fontSize: 11,
+        color: selected ? "var(--accent)" : "var(--fg)",
+        background: bg,
+        border: "none",
+        borderBottom: notLast ? "1px solid var(--border-2)" : "none",
+        cursor: disabled ? "default" : "pointer",
+      }}
+    >
+      <span style={{ color: "var(--accent)", flex: "none" }}>{selected ? "(x)" : "( )"}</span>
+      <span style={{ flex: "none" }}>{s.id.slice(0, 8)}</span>
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--fg-3)" }}>
+        {s.firstMessage || "(no messages)"}
+      </span>
+      <span style={{ color: "var(--fg-4)", fontSize: 9.5, flex: "none" }}>{relativeTime(s.modTime)}</span>
+    </button>
+  );
 }
 
 // List of adoptable claude conversations for a directory plus a paste-an-id
@@ -57,89 +104,54 @@ export function ClaudeSessionPicker({
   const pastedValid = CLAUDE_UUID_RE.test(pasted);
 
   return (
-    <div className="flex flex-col gap-2" style={{ opacity: disabled ? 0.4 : 1 }}>
-      <div style={{ border: "1px solid var(--q-border)", maxHeight: 180, overflowY: "auto" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 13, opacity: disabled ? 0.4 : 1 }}>
+      <div
+        className="scroll"
+        style={{ border: "1px solid var(--border-2)", borderRadius: 9, maxHeight: 180, overflowY: "auto" }}
+      >
         {list === null && !loadError && (
-          <div className="px-3 py-2 text-[10px]" style={{ color: "var(--q-fg-muted)", fontFamily: font }}>
-            loading...
+          <div className="mono" style={{ padding: "8px 12px", fontSize: 10, color: "var(--fg-4)" }}>
+            loading…
           </div>
         )}
         {loadError && (
-          <div className="px-3 py-2 text-[10px]" style={{ color: "var(--q-error)", fontFamily: font }}>
+          <div className="mono" style={{ padding: "8px 12px", fontSize: 10, color: "var(--danger)" }}>
             {loadError}
           </div>
         )}
         {list !== null && !loadError && list.length === 0 && (
-          <div className="px-3 py-2 text-[10px]" style={{ color: "var(--q-fg-muted)", fontFamily: font }}>
+          <div className="mono" style={{ padding: "8px 12px", fontSize: 10, color: "var(--fg-4)" }}>
             no untracked claude sessions found for this repo's directory
           </div>
         )}
         {list?.map((s, i) => {
           const selected = !pastedValid && selectedId === s.id;
           return (
-            <button
+            <PickerRow
               key={s.id}
-              type="button"
+              s={s}
+              selected={selected}
               disabled={disabled}
+              notLast={i < (list?.length ?? 0) - 1}
               onClick={() => onSelect(selected ? "" : s.id)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left transition-colors"
-              style={{
-                fontFamily: font,
-                fontSize: 11,
-                color: selected ? "var(--q-accent)" : "var(--q-fg)",
-                backgroundColor: selected ? "var(--q-bg-hover)" : "transparent",
-                border: "none",
-                borderBottom: i < (list?.length ?? 0) - 1 ? "1px solid var(--q-border)" : "none",
-                cursor: disabled ? "default" : "pointer",
-              }}
-              onMouseEnter={(e) => {
-                if (!selected && !disabled) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
-              onMouseLeave={(e) => {
-                if (!selected) e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <span style={{ color: "var(--q-accent)", flexShrink: 0 }}>{selected ? "(x)" : "( )"}</span>
-              <span style={{ flexShrink: 0 }}>{s.id.slice(0, 8)}</span>
-              <span
-                className="flex-1 overflow-hidden whitespace-nowrap"
-                style={{ textOverflow: "ellipsis", color: "var(--q-fg-secondary)" }}
-              >
-                {s.firstMessage || "(no messages)"}
-              </span>
-              <span style={{ color: "var(--q-fg-muted)", fontSize: 9, flexShrink: 0 }}>
-                {relativeTime(s.modTime)}
-              </span>
-            </button>
+            />
           );
         })}
       </div>
 
-      <label className="block">
-        <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)", fontFamily: font }}>
-          or paste a session id
-        </span>
-        <input
+      <Field label="or paste a session id">
+        <ModalInput
           value={pastedId}
           onChange={(e) => onPaste(e.target.value)}
           disabled={disabled}
           placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-          className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
-          style={{
-            backgroundColor: "var(--q-bg)",
-            border: "1px solid var(--q-border)",
-            color: "var(--q-fg)",
-            fontFamily: font,
-          }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
         />
         {pasted !== "" && !pastedValid && (
-          <span className="block mt-1 text-[9px]" style={{ color: "var(--q-warning)", fontFamily: font }}>
+          <span className="mono" style={{ display: "block", marginTop: 5, fontSize: 9.5, color: "var(--warn)" }}>
             not a valid session id (expects a uuid)
           </span>
         )}
-      </label>
+      </Field>
     </div>
   );
 }
@@ -178,23 +190,19 @@ export function ChangeSessionIdModal({ session, onDone, onCancel }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
+    <ModalShell width={460} onClose={onCancel}>
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-md p-6 max-h-[90vh] flex flex-col gap-4 overflow-y-auto"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: font,
-        }}
+        className="scroll"
+        style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}
       >
-        <label className="block text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>
+        <span className="mono" style={{ fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--fg-3)" }}>
           // change claude session id
-        </label>
+        </span>
 
-        <div className="text-[10px]" style={{ color: "var(--q-fg-muted)" }}>
+        <div className="mono" style={{ fontSize: 10, color: "var(--fg-4)" }}>
           current:{" "}
-          <span style={{ color: session.claudeConvId ? "var(--q-accent)" : "var(--q-fg-muted)" }}>
+          <span style={{ color: session.claudeConvId ? "var(--accent)" : "var(--fg-4)" }}>
             {session.claudeConvId || "none"}
           </span>
         </div>
@@ -211,51 +219,47 @@ export function ChangeSessionIdModal({ session, onDone, onCancel }: Props) {
         <button
           type="button"
           onClick={() => setDetach(!detach)}
-          className="flex items-center gap-2 text-left"
-          style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            textAlign: "left",
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+          }}
         >
-          <span style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: font }}>
-            {detach ? "(x)" : "( )"}
-          </span>
-          <span style={{ color: detach ? "var(--q-accent)" : "var(--q-fg)", fontSize: 11, fontFamily: font }}>
+          <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>{detach ? "(x)" : "( )"}</span>
+          <span className="mono" style={{ color: detach ? "var(--accent)" : "var(--fg)", fontSize: 11 }}>
             detach — start a fresh conversation next run
           </span>
         </button>
 
         {error && (
           <div
-            className="px-3 py-2 text-[10px]"
+            className="mono"
             style={{
-              color: "var(--q-error)",
-              backgroundColor: "var(--q-error-bg)",
-              border: "1px solid var(--q-border)",
+              padding: "9px 12px",
+              fontSize: 10,
+              lineHeight: 1.5,
+              borderRadius: 9,
+              background: "color-mix(in srgb, var(--danger) 12%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--danger) 45%, transparent)",
+              color: "var(--danger)",
             }}
           >
             {error}
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!canSubmit || submitting}
-            className="px-4 py-2 text-xs lowercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ backgroundColor: "var(--q-accent)", color: "var(--q-bg)", fontWeight: 500 }}
-          >
-            {submitting ? "saving..." : detach ? "detach" : "attach"}
-          </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit type="submit" disabled={!canSubmit || submitting}>
+            {submitting ? "saving…" : detach ? "detach" : "attach"}
+          </ModalSubmit>
         </div>
       </form>
-    </div>
+    </ModalShell>
   );
 }

@@ -6,6 +6,8 @@ import { CodeEditor } from "./CodeEditor";
 import { MarkdownView } from "./MarkdownView";
 import { ImageView } from "./ImageView";
 import { HtmlView } from "./HtmlView";
+import { Segmented } from "./Segmented";
+import { Button } from "./Button";
 
 // One open file tab. Panels stay mounted for every open file tab (App hides
 // inactive ones) so drafts and cursor survive tab switches. There is NO dirty
@@ -155,33 +157,26 @@ export function FileTabPanel({ sessionId, relPath, active, onDirtyChange }: Prop
         </span>
         <div className="files-tool-spacer" />
         {kindHasPreview(kind) && (
-          <div className="files-md-toggle">
-            <button
-              type="button"
-              className={viewMode === "preview" ? "active" : ""}
-              onClick={() => setViewMode("preview")}
-            >
-              preview
-            </button>
-            <button
-              type="button"
-              className={viewMode === "source" ? "active" : ""}
-              onClick={() => setViewMode("source")}
-            >
-              source
-            </button>
-          </div>
+          <Segmented
+            options={[
+              { value: "preview", label: "preview" },
+              { value: "source", label: "source" },
+            ]}
+            value={viewMode}
+            onChange={(v) => setViewMode(v as "preview" | "source")}
+          />
         )}
         {editable && (
-          <button
-            type="button"
-            className="files-tool-btn"
+          <Button
+            variant="primary"
+            size="sm"
+            icon="check"
             disabled={!dirty}
             title="save (mod-s)"
             onClick={handleSave}
           >
             save
-          </button>
+          </Button>
         )}
       </div>
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "./FilesPane.css";
 import type { Session } from "../types";
 import { FileTree } from "./FileTree";
+import { PaneHeader } from "./PaneHeader";
+import { IconButton } from "./IconButton";
 
 const PANEL_WIDTH_KEY = "quant.filesPanel.width";
 const PANEL_MIN = 200;
@@ -123,45 +125,42 @@ export function FilesPanel({
     <div ref={panelRef} className="files-panel" style={{ width }}>
       <div className="files-panel-resize" onMouseDown={handleResizeMouseDown} />
 
-      <div className="files-panel-header">
-        <span className="files-panel-label">// files</span>
-        {session && (
-          <span className="files-panel-session" title={session.name}>
-            {session.name}
-          </span>
-        )}
-        <div className="files-tool-spacer" />
-        <button
-          type="button"
-          className="files-tool-btn"
-          title="refresh tree"
-          disabled={!session}
-          onClick={() => setRefreshNonce((n) => n + 1)}
-        >
-          ↻
-        </button>
-        <select
-          className="files-recent-select"
-          value=""
-          title="recent files"
-          disabled={!session}
-          onChange={(e) => {
-            if (e.target.value) handleOpenFile(e.target.value);
-          }}
-        >
-          <option value="" disabled style={{ backgroundColor: "var(--q-bg)" }}>
-            recent
-          </option>
-          {recent.map((p) => (
-            <option key={p} value={p} style={{ backgroundColor: "var(--q-bg)" }}>
-              {p}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="files-tool-btn" title="close files panel" onClick={onClose}>
-          »
-        </button>
-      </div>
+      <PaneHeader
+        dot
+        dotColor="var(--info)"
+        eyebrow="files"
+        sub={session ? session.name : undefined}
+        actions={
+          <>
+            <select
+              className="files-recent-select"
+              value=""
+              title="recent files"
+              disabled={!session}
+              onChange={(e) => {
+                if (e.target.value) handleOpenFile(e.target.value);
+              }}
+            >
+              <option value="" disabled style={{ backgroundColor: "var(--panel-3)" }}>
+                recent
+              </option>
+              {recent.map((p) => (
+                <option key={p} value={p} style={{ backgroundColor: "var(--panel-3)" }}>
+                  {p}
+                </option>
+              ))}
+            </select>
+            <IconButton
+              name="refresh"
+              size={14}
+              label="refresh tree"
+              disabled={!session}
+              onClick={() => setRefreshNonce((n) => n + 1)}
+            />
+            <IconButton name="panelRight" size={14} label="close files panel" onClick={onClose} />
+          </>
+        }
+      />
 
       {session ? (
         <div className="files-panel-body">

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatKeyCombo } from "../keybindings";
+import { Kbd } from "./Kbd";
+import { Pill } from "./Pill";
 
 export interface PaletteCommand {
   id: string;
@@ -14,7 +16,7 @@ interface Props {
   onClose: () => void;
 }
 
-const font = "'JetBrains Mono', monospace";
+const font = "var(--mono)";
 
 function fuzzyMatch(query: string, text: string): boolean {
   const q = query.toLowerCase();
@@ -103,10 +105,10 @@ export function CommandPalette({ commands, onClose }: Props) {
           position: "relative",
           width: 520,
           maxHeight: "60vh",
-          backgroundColor: "var(--q-bg-elevated)",
-          border: "1px solid var(--q-border)",
-          borderRadius: 8,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          backgroundColor: "var(--panel-2)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r3)",
+          boxShadow: "var(--shadow-pop)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -114,7 +116,7 @@ export function CommandPalette({ commands, onClose }: Props) {
         }}
       >
         {/* search input */}
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--q-border)" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
           <input
             ref={inputRef}
             type="text"
@@ -127,7 +129,7 @@ export function CommandPalette({ commands, onClose }: Props) {
               backgroundColor: "transparent",
               border: "none",
               outline: "none",
-              color: "var(--q-fg)",
+              color: "var(--fg)",
               fontFamily: font,
               fontSize: 14,
             }}
@@ -144,7 +146,7 @@ export function CommandPalette({ commands, onClose }: Props) {
           }}
         >
           {filtered.length === 0 && (
-            <div style={{ padding: "12px 16px", color: "var(--q-fg-muted)", fontSize: 12 }}>
+            <div style={{ padding: "12px 16px", color: "var(--fg-3)", fontSize: 12 }}>
               no matching commands
             </div>
           )}
@@ -164,31 +166,18 @@ export function CommandPalette({ commands, onClose }: Props) {
                   alignItems: "center",
                   justifyContent: "space-between",
                   cursor: "pointer",
-                  backgroundColor: isSelected ? "var(--q-bg-hover)" : "transparent",
-                  color: isSelected ? "var(--q-fg)" : "var(--q-fg-secondary)",
+                  backgroundColor: isSelected ? "var(--hover)" : "transparent",
+                  color: isSelected ? "var(--fg)" : "var(--fg-2)",
                   fontSize: 13,
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ color: "var(--q-fg-muted)", fontSize: 10, minWidth: 60 }}>
-                    {cmd.category}
+                  <span style={{ minWidth: 60, display: "inline-flex" }}>
+                    <Pill>{cmd.category}</Pill>
                   </span>
                   <span>{cmd.label}</span>
                 </div>
-                {cmd.shortcut && (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--q-fg-muted)",
-                      backgroundColor: "var(--q-bg-input)",
-                      padding: "2px 6px",
-                      borderRadius: 3,
-                      border: "1px solid var(--q-border-light)",
-                    }}
-                  >
-                    {formatKeyCombo(cmd.shortcut)}
-                  </span>
-                )}
+                {cmd.shortcut && <Kbd>{formatKeyCombo(cmd.shortcut)}</Kbd>}
               </div>
             );
           })}
@@ -198,30 +187,21 @@ export function CommandPalette({ commands, onClose }: Props) {
         <div
           style={{
             padding: "8px 16px",
-            borderTop: "1px solid var(--q-border)",
+            borderTop: "1px solid var(--border)",
             display: "flex",
             gap: 16,
             fontSize: 10,
-            color: "var(--q-fg-muted)",
+            color: "var(--fg-3)",
           }}
         >
-          <span>
-            <kbd style={{ backgroundColor: "var(--q-bg-input)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--q-border-light)" }}>
-              ↑↓
-            </kbd>{" "}
-            navigate
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <Kbd>↑↓</Kbd> navigate
           </span>
-          <span>
-            <kbd style={{ backgroundColor: "var(--q-bg-input)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--q-border-light)" }}>
-              ↵
-            </kbd>{" "}
-            execute
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <Kbd>↵</Kbd> execute
           </span>
-          <span>
-            <kbd style={{ backgroundColor: "var(--q-bg-input)", padding: "1px 4px", borderRadius: 2, border: "1px solid var(--q-border-light)" }}>
-              esc
-            </kbd>{" "}
-            dismiss
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <Kbd>esc</Kbd> dismiss
           </span>
         </div>
       </div>

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import type { ChangelogEntry } from "../types";
+import { Pill } from "./Pill";
+import { Button } from "./Button";
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  features: { label: "new features", icon: "+", color: "var(--q-success)" },
-  fixes: { label: "bug fixes", icon: "~", color: "var(--q-warning)" },
-  improvements: { label: "improvements", icon: ">", color: "var(--q-accent)" },
-  internal: { label: "internal", icon: "#", color: "var(--q-fg-muted)" },
+  features: { label: "new features", icon: "+", color: "var(--ok)" },
+  fixes: { label: "bug fixes", icon: "~", color: "var(--warn)" },
+  improvements: { label: "improvements", icon: ">", color: "var(--accent)" },
+  internal: { label: "internal", icon: "#", color: "var(--fg-3)" },
 };
 
 interface Props {
@@ -30,29 +32,24 @@ export function ChangelogModal({ entries, currentVersion, onClose }: Props) {
       <div
         className="w-full max-w-lg flex flex-col"
         style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
+          backgroundColor: "var(--panel-2)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r3)",
+          boxShadow: "var(--shadow-pop)",
+          fontFamily: "var(--mono)",
           maxHeight: "80vh",
+          overflow: "hidden",
         }}
       >
         {/* header */}
         <div
           className="flex items-center justify-between px-6 py-4 shrink-0"
-          style={{ borderBottom: "1px solid var(--q-border)" }}
+          style={{ borderBottom: "1px solid var(--border)" }}
         >
-          <h2 className="text-sm font-bold lowercase" style={{ color: "var(--q-fg)" }}>
-            <span style={{ color: "var(--q-accent)" }}>{">"}</span> changelog
+          <h2 className="text-sm font-bold lowercase" style={{ color: "var(--fg)" }}>
+            <span style={{ color: "var(--accent)" }}>{">"}</span> changelog
           </h2>
-          <span
-            className="text-[10px] px-2 py-0.5"
-            style={{
-              color: "var(--q-accent)",
-              border: "1px solid var(--q-accent)",
-            }}
-          >
-            {currentVersion}
-          </span>
+          <Pill tone="accent">{currentVersion}</Pill>
         </div>
 
         {/* scrollable entries */}
@@ -66,39 +63,29 @@ export function ChangelogModal({ entries, currentVersion, onClose }: Props) {
                 <button
                   onClick={() => setExpandedVersion(isExpanded ? null : entry.version)}
                   className="w-full flex items-center gap-2 py-2 text-left text-xs transition-colors"
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--hover)")}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                 >
                   <span
                     className="text-[10px] w-3 shrink-0"
-                    style={{ color: "var(--q-fg-muted)" }}
+                    style={{ color: "var(--fg-3)" }}
                   >
                     {isExpanded ? "v" : ">"}
                   </span>
                   <span
                     className="font-bold"
-                    style={{ color: isCurrent ? "var(--q-accent)" : "var(--q-fg)" }}
+                    style={{ color: isCurrent ? "var(--accent)" : "var(--fg)" }}
                   >
                     {entry.version}
                   </span>
                   <span className="flex-1" />
                   <span
                     className="text-[10px]"
-                    style={{ color: "var(--q-fg-muted)" }}
+                    style={{ color: "var(--fg-3)" }}
                   >
                     {entry.date}
                   </span>
-                  {isCurrent && (
-                    <span
-                      className="text-[8px] px-1"
-                      style={{
-                        color: "var(--q-accent)",
-                        border: "1px solid var(--q-accent)",
-                      }}
-                    >
-                      current
-                    </span>
-                  )}
+                  {isCurrent && <Pill tone="accent">current</Pill>}
                 </button>
 
                 {isExpanded && (
@@ -107,7 +94,7 @@ export function ChangelogModal({ entries, currentVersion, onClose }: Props) {
                       const meta = CATEGORY_LABELS[category] ?? {
                         label: category,
                         icon: "-",
-                        color: "var(--q-fg-secondary)",
+                        color: "var(--fg-2)",
                       };
 
                       return (
@@ -123,7 +110,7 @@ export function ChangelogModal({ entries, currentVersion, onClose }: Props) {
                             <div
                               key={idx}
                               className="text-[11px] pl-4 py-0.5 lowercase"
-                              style={{ color: "var(--q-fg-secondary)" }}
+                              style={{ color: "var(--fg-2)" }}
                             >
                               {item}
                             </div>
@@ -136,7 +123,7 @@ export function ChangelogModal({ entries, currentVersion, onClose }: Props) {
 
                 <div
                   className="mx-0"
-                  style={{ borderBottom: "1px solid var(--q-border)" }}
+                  style={{ borderBottom: "1px solid var(--border)" }}
                 />
               </div>
             );
@@ -146,17 +133,11 @@ export function ChangelogModal({ entries, currentVersion, onClose }: Props) {
         {/* footer */}
         <div
           className="flex items-center justify-end px-6 py-3 shrink-0"
-          style={{ borderTop: "1px solid var(--q-border)" }}
+          style={{ borderTop: "1px solid var(--border)" }}
         >
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
+          <Button variant="subtle" onClick={onClose}>
             close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

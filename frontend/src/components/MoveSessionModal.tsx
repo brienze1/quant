@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { Task } from "../types";
+import { ModalShell, ModalTitle, ModalCancel } from "./ModalShell";
 
 interface Props {
   sessionId: string;
@@ -6,6 +8,43 @@ interface Props {
   tasks: Task[];
   onSelect: (sessionId: string, targetTaskId: string) => void;
   onCancel: () => void;
+}
+
+function TaskRow({
+  task,
+  onClick,
+}: {
+  task: Task;
+  onClick: () => void;
+}) {
+  const [h, setH] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+        padding: "8px 12px",
+        borderRadius: 7,
+        border: "none",
+        cursor: "pointer",
+        textAlign: "left",
+        fontFamily: "var(--mono)",
+        fontSize: 12,
+        color: "var(--fg)",
+        background: h ? "var(--hover)" : "transparent",
+      }}
+    >
+      <span style={{ color: "var(--accent)", flex: "none" }}>#</span>
+      <span>
+        {task.tag} {task.name}
+      </span>
+    </button>
+  );
 }
 
 export function MoveSessionModal({
@@ -18,72 +57,21 @@ export function MoveSessionModal({
   const availableTasks = tasks.filter((t) => t.id !== currentTaskId);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "var(--q-modal-backdrop)" }}
-    >
-      <div
-        className="w-full max-w-sm p-6"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        <h2
-          className="text-sm font-bold lowercase mb-5"
-          style={{ color: "var(--q-fg)" }}
-        >
-          <span style={{ color: "var(--q-accent)" }}>{">"}</span> move_to_task
-        </h2>
-
-        <p
-          className="text-[10px] mb-4"
-          style={{ color: "var(--q-fg-secondary)" }}
-        >
+    <ModalShell width={400} onClose={onCancel} align="center">
+      <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 14 }}>
+        <ModalTitle>move_to_task</ModalTitle>
+        <span className="mono" style={{ fontSize: 10, color: "var(--fg-4)" }}>
           // select a target task
-        </p>
-
-        <div
-          className="overflow-y-auto mb-5"
-          style={{ maxHeight: 200 }}
-        >
+        </span>
+        <div className="scroll" style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
           {availableTasks.map((task) => (
-            <button
-              key={task.id}
-              onClick={() => onSelect(sessionId, task.id)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors"
-              style={{
-                color: "var(--q-fg)",
-                fontFamily: "'JetBrains Mono', monospace",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.backgroundColor = "transparent")
-              }
-            >
-              <span style={{ color: "var(--q-accent)" }}>#</span>
-              <span>
-                {task.tag} {task.name}
-              </span>
-            </button>
+            <TaskRow key={task.id} task={task} onClick={() => onSelect(sessionId, task.id)} />
           ))}
         </div>
-
-        <div className="flex items-center justify-end">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+          <ModalCancel onClick={onCancel} />
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

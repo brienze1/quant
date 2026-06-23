@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client'
 import './style.css'
 import App from './App'
 import { ThemeProvider } from './theme'
+import { MenuHost } from './components/MenuHost'
 
 // Inject scrollbar styles via JS to ensure they work in WKWebView
 ;(function() {
@@ -24,7 +25,9 @@ const root = createRoot(container!)
 root.render(
     <React.StrictMode>
         <ThemeProvider>
-            <App/>
+            <MenuHost>
+                <App/>
+            </MenuHost>
         </ThemeProvider>
     </React.StrictMode>
 )

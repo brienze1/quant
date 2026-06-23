@@ -395,12 +395,13 @@ export function TerminalPane({
         ref={termContainerRef}
         style={{ position: "absolute", inset: 0, padding: "4px 0 0 4px" }}
       />
-      {/* custom scrollbar track */}
-      <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "var(--q-bg)", pointerEvents: "none" }} />
-      {/* custom scrollbar thumb */}
+      {/* custom scrollbar track — transparent overlay, matches the Apple-style
+          thin scrollbar treatment in style.css (track is transparent everywhere) */}
+      <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "transparent", pointerEvents: "none" }} />
+      {/* custom scrollbar thumb — pill radius to match migrated overlay scrollbars */}
       <div
         ref={thumbRef}
-        style={{ position: "absolute", right: 0, top: 0, width: 4, height: 24, backgroundColor: "var(--q-scrollbar-thumb)", borderRadius: 2, pointerEvents: "none", display: "none" }}
+        style={{ position: "absolute", right: 0, top: 0, width: 4, height: 24, backgroundColor: "var(--q-scrollbar-thumb)", borderRadius: 999, pointerEvents: "none", display: "none" }}
       />
     </div>
   );

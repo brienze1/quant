@@ -1,17 +1,38 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import type { Repo, Task, Session, Action, Shortcut } from "../types";
 import { StatusDot } from "./StatusDot";
-import { StatusBadge } from "./StatusBadge";
+import type { DisplayStatus } from "./StatusBadge";
 import { ActionLog } from "./ActionLog";
 import { ContextMenu } from "./ContextMenu";
 import type { MenuItem } from "./ContextMenu";
 import { RecentReposDropdown } from "./RecentReposDropdown";
+import { Icon } from "./Icon";
+import type { IconName } from "./Icon";
+import { IconButton } from "./IconButton";
+import { Segmented } from "./Segmented";
+import { Pill } from "./Pill";
+import { useMenu } from "./MenuHost";
+import type { HostMenuItem } from "./MenuHost";
 import * as api from "../api";
 
 const SIDEBAR_MIN_WIDTH = 200;
 const SIDEBAR_MAX_WIDTH = 480;
-const SIDEBAR_DEFAULT_WIDTH = 288;
+const SIDEBAR_DEFAULT_WIDTH = 290;
 const SIDEBAR_COLLAPSED_WIDTH = 48;
+
+const STATUS_LABEL: Record<string, string> = {
+  running: "running",
+  waiting: "waiting",
+  paused: "paused",
+  idle: "idle",
+  blocked: "blocked",
+  starting: "starting",
+  stopping: "stopping",
+  resuming: "resuming",
+  done: "done",
+  error: "error",
+  archived: "archived",
+};
 
 interface SidebarProps {
   repos: Repo[];
@@ -92,18 +113,162 @@ function SidebarScrollArea({ children }: { children: React.ReactNode }) {
       <nav
         ref={navRef}
         onScroll={updateThumb}
-        className="py-1"
-        style={{ height: "100%", overflowY: "scroll", width: "calc(100% + 20px)", paddingRight: "20px" }}
+        style={{ height: "100%", overflowY: "scroll", width: "calc(100% + 20px)", paddingRight: "20px", paddingBottom: 14 }}
       >
         {children}
       </nav>
-      {/* custom scrollbar: black track + white thumb */}
+      {/* custom scrollbar thumb */}
       {thumb.show && (
         <>
-          <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "var(--q-bg)", pointerEvents: "none" }} />
-          <div style={{ position: "absolute", right: 0, top: thumb.top, width: 4, height: thumb.height, backgroundColor: "var(--q-scrollbar-thumb)", borderRadius: 2, pointerEvents: "none" }} />
+          <div style={{ position: "absolute", right: 0, top: 0, width: 4, height: "100%", backgroundColor: "var(--bg)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", right: 0, top: thumb.top, width: 4, height: thumb.height, backgroundColor: "var(--fg-4)", borderRadius: 2, pointerEvents: "none" }} />
         </>
       )}
+    </div>
+  );
+}
+
+/* ---------- inline rename field ---------- */
+function RenameInput({
+  initial,
+  mono = true,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  mono?: boolean;
+  onCommit: (to: string) => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [v, setV] = useState(initial);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  }, []);
+  return (
+    <input
+      ref={ref}
+      value={v}
+      spellCheck={false}
+      onChange={(e) => setV(e.target.value)}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const t = v.trim();
+          if (t) onCommit(t);
+          else onCancel();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+      onBlur={() => {
+        const t = v.trim();
+        if (t && t !== initial) onCommit(t);
+        else onCancel();
+      }}
+      className={mono ? "mono" : ""}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        height: 20,
+        padding: "0 6px",
+        borderRadius: 5,
+        outline: "none",
+        background: "var(--panel-3)",
+        border: "1px solid var(--accent)",
+        color: "var(--fg)",
+        fontFamily: mono ? "var(--mono)" : "var(--sans)",
+        fontSize: 12,
+      }}
+    />
+  );
+}
+
+/* ---------- generic tree row ---------- */
+function TreeRow({
+  depth = 0,
+  children,
+  active,
+  py,
+  draggable,
+  onClick,
+  onDoubleClick,
+  onContextMenu,
+  onDragStart,
+  style,
+}: {
+  depth?: number;
+  children: React.ReactNode;
+  active?: boolean;
+  py?: string;
+  draggable?: boolean;
+  onClick?: (e: React.MouseEvent) => void;
+  onDoubleClick?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+  onDragStart?: (e: React.DragEvent) => void;
+  style?: React.CSSProperties;
+}) {
+  const [h, setH] = useState(false);
+  return (
+    <div
+      draggable={draggable}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
+      onDragStart={onDragStart}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        padding: `${py || "var(--row-py)"} 10px ${py || "var(--row-py)"} ${10 + depth * 15}px`,
+        margin: "0 8px",
+        borderRadius: 8,
+        cursor: "pointer",
+        minWidth: 0,
+        background: active ? "var(--accent-soft)" : h ? "var(--hover)" : "transparent",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Twisty({ open = true }: { open?: boolean }) {
+  return <Icon name={open ? "chevronDown" : "chevronRight"} size={12} color="var(--fg-4)" style={{ flex: "none" }} />;
+}
+
+/* ---------- ghost add row ---------- */
+function AddRow({ children, onClick }: { children: React.ReactNode; onClick: (e: React.MouseEvent) => void }) {
+  const [h, setH] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "3px 6px",
+        borderRadius: 6,
+        fontSize: 11,
+        color: h ? "var(--fg-2)" : "var(--fg-4)",
+        cursor: "pointer",
+        background: h ? "var(--hover)" : "transparent",
+      }}
+    >
+      <Icon name="plus" size={11} /> {children}
     </div>
   );
 }
@@ -156,6 +321,7 @@ export function Sidebar({
   appVersion,
   onShowChangelog,
 }: SidebarProps) {
+  const openMenu = useMenu();
 
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -167,6 +333,9 @@ export function Sidebar({
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [recentReposAnchor, setRecentReposAnchor] = useState<DOMRect | null>(null);
+  // id of the row currently being inline-renamed (only repo/task/session that
+  // don't already own a modal-based rename handler use this).
+  const [editing, setEditing] = useState<string | null>(null);
   const isResizing = useRef(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -174,10 +343,19 @@ export function Sidebar({
     setRecentReposAnchor(e.currentTarget.getBoundingClientRect());
   }, []);
 
-  const handleReopenRecent = useCallback((repo: Repo) => {
-    setRecentReposAnchor(null);
-    onReopenRepo(repo);
-  }, [onReopenRepo]);
+  // IconButton has no event arg; anchor the dropdown to the sidebar header.
+  const handleOpenRepoFromIcon = useCallback(() => {
+    const el = sidebarRef.current;
+    if (el) setRecentReposAnchor(el.getBoundingClientRect());
+  }, []);
+
+  const handleReopenRecent = useCallback(
+    (repo: Repo) => {
+      setRecentReposAnchor(null);
+      onReopenRepo(repo);
+    },
+    [onReopenRepo],
+  );
 
   const handleOpenNewPathFromDropdown = useCallback(() => {
     setRecentReposAnchor(null);
@@ -211,283 +389,107 @@ export function Sidebar({
     };
   }, []);
 
+  /* ---------- context menus (Icon-based, design spec) ---------- */
   function openRepoContextMenu(e: React.MouseEvent, repo: Repo) {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        { type: "label", text: "// repo" },
-        {
-          type: "item",
-          icon: "#",
-          iconColor: "var(--q-accent)",
-          label: "+ task",
-          onClick: () => onCreateTask(repo.id),
-        },
-        {
-          type: "item",
-          icon: ">",
-          iconColor: "var(--q-accent)",
-          label: "+ session",
-          onClick: () => onCreateSession(repo.id),
-        },
-        { type: "separator" },
-        {
-          type: "item",
-          icon: "$",
-          iconColor: "var(--q-fg-secondary)",
-          label: "open in terminal",
-          onClick: () => api.openInTerminal(repo.path),
-        },
-        {
-          type: "item",
-          icon: "$",
-          iconColor: "var(--q-fg-secondary)",
-          label: "open in finder",
-          onClick: () => api.openInFinder(repo.path),
-        },
-        { type: "separator" },
-        {
-          type: "item",
-          icon: "$",
-          iconColor: "var(--q-fg-secondary)",
-          label: "rename",
-          onClick: () => console.log("TODO: rename repo", repo.id),
-        },
-        {
-          type: "item",
-          icon: "x",
-          iconColor: "var(--q-error)",
-          label: "remove",
-          labelColor: "var(--q-error)",
-          onClick: () => onRemoveRepo(repo.id),
-        },
-      ],
-    });
+    const items: HostMenuItem[] = [
+      { header: "// repo" },
+      { label: "+ task", icon: "hash", tone: "accent", onClick: () => onCreateTask(repo.id) },
+      { label: "+ session", icon: "terminal", tone: "accent", onClick: () => onCreateSession(repo.id) },
+      { sep: true },
+      { label: "open in terminal", icon: "terminal", onClick: () => api.openInTerminal(repo.path) },
+      { label: "open in finder", icon: "folderOpen", onClick: () => api.openInFinder(repo.path) },
+      { sep: true },
+      { label: "rename", icon: "edit", onClick: () => setEditing("r:" + repo.id) },
+      { label: "remove", icon: "trash", tone: "danger", onClick: () => onRemoveRepo(repo.id) },
+    ];
+    openMenu(e, items);
   }
 
   function openTaskContextMenu(e: React.MouseEvent, task: Task) {
-    e.preventDefault();
-    e.stopPropagation();
-
     const isArchived = !!task.archivedAt;
-
-    const items: MenuItem[] = [
-      { type: "label", text: "// task" },
-    ];
-
+    const items: HostMenuItem[] = [{ header: "// task" }];
     if (!isArchived) {
-      items.push({
-        type: "item",
-        icon: ">",
-        iconColor: "var(--q-accent)",
-        label: "+ session",
-        onClick: () => onCreateSession(task.repoId, task.id),
-      });
-      items.push({ type: "separator" });
-      items.push({
-        type: "item",
-        icon: "$",
-        iconColor: "var(--q-fg-secondary)",
-        label: "rename",
-        onClick: () => onRenameTask?.(task.id, task.tag, task.name),
-      });
-      items.push({ type: "separator" });
-      items.push({
-        type: "item",
-        icon: "~",
-        iconColor: "var(--q-warning)",
-        label: "archive",
-        labelColor: "var(--q-warning)",
-        onClick: () => onArchiveTask(task.id),
-      });
-      items.push({
-        type: "item",
-        icon: "x",
-        iconColor: "var(--q-error)",
-        label: "delete",
-        labelColor: "var(--q-error)",
-        onClick: () => onDeleteTask(task.id),
-      });
+      items.push({ label: "+ session", icon: "terminal", tone: "accent", onClick: () => onCreateSession(task.repoId, task.id) });
+      items.push({ sep: true });
+      items.push({ label: "rename", icon: "edit", onClick: () => onRenameTask?.(task.id, task.tag, task.name) });
+      items.push({ sep: true });
+      items.push({ label: "archive", icon: "archive", tone: "warn", onClick: () => onArchiveTask(task.id) });
+      items.push({ label: "delete", icon: "trash", tone: "danger", onClick: () => onDeleteTask(task.id) });
     } else {
-      items.push({
-        type: "item",
-        icon: "~",
-        iconColor: "var(--q-accent)",
-        label: "unarchive",
-        labelColor: "var(--q-accent)",
-        onClick: () => onUnarchiveTask(task.id),
-      });
-      items.push({ type: "separator" });
-      items.push({
-        type: "item",
-        icon: "x",
-        iconColor: "var(--q-error)",
-        label: "delete",
-        labelColor: "var(--q-error)",
-        onClick: () => onDeleteTask(task.id),
-      });
+      items.push({ label: "unarchive", icon: "unarchive", tone: "accent", onClick: () => onUnarchiveTask(task.id) });
+      items.push({ sep: true });
+      items.push({ label: "delete", icon: "trash", tone: "danger", onClick: () => onDeleteTask(task.id) });
     }
-
-    setContextMenu({ x: e.clientX, y: e.clientY, items });
+    openMenu(e, items);
   }
 
   function openSessionContextMenu(e: React.MouseEvent, session: Session) {
-    e.preventDefault();
-    e.stopPropagation();
-
     const displaySt = getDisplayStatus(session.id, session.status);
     const isArchived = !!session.archivedAt;
-
-    const items: MenuItem[] = [
-      { type: "label", text: `// session [${displaySt}]` },
-    ];
+    const items: HostMenuItem[] = [{ header: `// session [${STATUS_LABEL[displaySt] || displaySt}]` }];
 
     if (!isArchived) {
       // Stop (terminate) the running session — the menu equivalent of the
       // Meta+Shift+W shortcut, which a browser intercepts and never delivers.
       if (displaySt === "running" && onStopSession) {
-        items.push({
-          type: "item",
-          icon: "■",
-          iconColor: "var(--q-error)",
-          label: "stop session",
-          labelColor: "var(--q-error)",
-          onClick: () => onStopSession(session.id),
-        });
-        items.push({ type: "separator" });
+        items.push({ label: "stop session", icon: "stop", tone: "danger", onClick: () => onStopSession(session.id) });
+        items.push({ sep: true });
       }
       items.push({
-        type: "item",
-        icon: "$",
-        iconColor: "var(--q-fg-secondary)",
         label: "open in system terminal",
+        icon: "terminal",
         onClick: () => {
           const path = session.worktreePath || session.directory;
           if (path) api.openInTerminal(path);
         },
       });
       items.push({
-        type: "item",
-        icon: "$",
-        iconColor: "var(--q-fg-secondary)",
         label: "open in finder",
+        icon: "folderOpen",
         onClick: () => {
           const path = session.worktreePath || session.directory;
           if (path) api.openInFinder(path);
         },
       });
-      items.push({ type: "separator" });
-      items.push({
-        type: "item",
-        icon: "$",
-        iconColor: "var(--q-fg-secondary)",
-        label: "rename",
-        onClick: () => onRenameSession?.(session.id, session.name),
-      });
+      items.push({ sep: true });
+      items.push({ label: "rename", icon: "edit", onClick: () => onRenameSession?.(session.id, session.name) });
 
       // Re-point a stopped claude session at a different claude conversation.
       if (session.sessionType === "claude" && displaySt !== "running" && onChangeClaudeSession) {
-        items.push({
-          type: "item",
-          icon: "$",
-          iconColor: "var(--q-fg-secondary)",
-          label: "change claude session id",
-          onClick: () => onChangeClaudeSession(session.id),
-        });
+        items.push({ label: "change claude session id", icon: "refresh", onClick: () => onChangeClaudeSession(session.id) });
       }
 
       // Only show "move to task" if there are >= 2 tasks in the repo
       const repoTasks = tasksByRepo[session.repoId] ?? [];
       if (repoTasks.length >= 2 && onMoveSession) {
-        items.push({
-          type: "item",
-          icon: "$",
-          iconColor: "var(--q-fg-secondary)",
-          label: "move to task",
-          onClick: () => onMoveSession(session.id, session.repoId),
-        });
+        items.push({ label: "move to task", icon: "merge", onClick: () => onMoveSession(session.id, session.repoId) });
       }
 
-      items.push({ type: "separator" });
-      items.push({ type: "label", text: "// git" });
-      items.push({
-        type: "item",
-        icon: "$",
-        iconColor: "var(--q-fg-secondary)",
-        label: "git commit",
-        onClick: () => onGitCommit(session.id, session.name),
-      });
-      items.push({
-        type: "item",
-        icon: "$",
-        iconColor: "var(--q-fg-secondary)",
-        label: "git pull",
-        onClick: () => onGitPull(session.id),
-      });
-      items.push({
-        type: "item",
-        icon: "$",
-        iconColor: "var(--q-fg-secondary)",
-        label: "git push",
-        onClick: () => onGitPush(session.id),
-      });
+      items.push({ sep: true });
+      items.push({ header: "// git" });
+      items.push({ label: "git commit", icon: "branch", onClick: () => onGitCommit(session.id, session.name) });
+      items.push({ label: "git pull", icon: "arrowDown", onClick: () => onGitPull(session.id) });
+      items.push({ label: "git push", icon: "arrowUp", onClick: () => onGitPush(session.id) });
 
       if (shortcuts.length > 0) {
-        items.push({ type: "separator" });
-        items.push({ type: "label", text: "// shortcuts" });
+        items.push({ sep: true });
+        items.push({ header: "// shortcuts" });
         for (const sc of shortcuts) {
-          items.push({
-            type: "item",
-            icon: ">",
-            iconColor: "var(--q-accent)",
-            label: sc.name,
-            onClick: () => api.runShortcut(session.id, sc.command).catch(console.error),
-          });
+          items.push({ label: sc.name, icon: "terminal", tone: "accent", onClick: () => api.runShortcut(session.id, sc.command).catch(console.error) });
         }
       }
 
-      items.push({ type: "separator" });
-      items.push({ type: "label", text: "// danger" });
-      items.push({
-        type: "item",
-        icon: "~",
-        iconColor: "var(--q-warning)",
-        label: "archive",
-        labelColor: "var(--q-warning)",
-        onClick: () => onArchiveSession(session.id),
-      });
-      items.push({
-        type: "item",
-        icon: "x",
-        iconColor: "var(--q-error)",
-        label: "delete",
-        labelColor: "var(--q-error)",
-        onClick: () => onDeleteSession(session.id),
-      });
+      items.push({ sep: true });
+      items.push({ header: "// danger" });
+      items.push({ label: "archive", icon: "archive", tone: "warn", onClick: () => onArchiveSession(session.id) });
+      items.push({ label: "delete", icon: "trash", tone: "danger", onClick: () => onDeleteSession(session.id) });
     } else {
-      items.push({
-        type: "item",
-        icon: "~",
-        iconColor: "var(--q-accent)",
-        label: "unarchive",
-        labelColor: "var(--q-accent)",
-        onClick: () => onUnarchiveSession(session.id),
-      });
-      items.push({ type: "separator" });
-      items.push({
-        type: "item",
-        icon: "x",
-        iconColor: "var(--q-error)",
-        label: "delete",
-        labelColor: "var(--q-error)",
-        onClick: () => onDeleteSession(session.id),
-      });
+      items.push({ label: "unarchive", icon: "unarchive", tone: "accent", onClick: () => onUnarchiveSession(session.id) });
+      items.push({ sep: true });
+      items.push({ label: "delete", icon: "trash", tone: "danger", onClick: () => onDeleteSession(session.id) });
     }
 
-    setContextMenu({ x: e.clientX, y: e.clientY, items });
+    openMenu(e, items);
   }
 
   // Filter sessions based on archive state; terminal sessions are never shown in the sidebar
@@ -500,7 +502,6 @@ export function Sidebar({
   function filterTasks(tasks: Task[]): Task[] {
     return tasks.filter((t) => {
       if (!showArchived) return !t.archivedAt;
-      // In archived view: show if task is archived, or if it has any archived sessions
       if (t.archivedAt) return true;
       const taskSessions = sessionsByTask[t.id] ?? [];
       return taskSessions.some((s) => !!s.archivedAt);
@@ -512,37 +513,16 @@ export function Sidebar({
     return (
       <div className="flex h-full">
         <aside
-          className="flex flex-col h-full shrink-0"
-          style={{
-            width: SIDEBAR_COLLAPSED_WIDTH,
-            backgroundColor: "var(--q-bg)",
-            borderRight: "1px solid var(--q-border)",
-          }}
+          className="panel flex flex-col h-full shrink-0"
+          style={{ width: SIDEBAR_COLLAPSED_WIDTH }}
         >
           {/* header: logo + expand toggle */}
           <div
-            className="flex flex-col items-center justify-center gap-1 py-2"
-            style={{ borderBottom: "1px solid var(--q-border)", height: 64 }}
+            className="flex flex-col items-center justify-center gap-1"
+            style={{ borderBottom: "1px solid var(--border-2)", height: 64 }}
           >
-            <span
-              style={{ color: "var(--q-accent)", fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700 }}
-            >
-              {">"}
-            </span>
-            <button
-              onClick={() => setCollapsed(false)}
-              className="flex items-center justify-center transition-colors"
-              style={{ color: "var(--q-fg-secondary)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-              title="expand sidebar"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M9 3v18" />
-                <path d="m14 9 3 3-3 3" />
-              </svg>
-            </button>
+            <span style={{ color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 18, fontWeight: 700 }}>{">"}</span>
+            <IconButton name="panelRight" label="expand sidebar" onClick={() => setCollapsed(false)} />
           </div>
 
           {/* repo icons */}
@@ -550,69 +530,44 @@ export function Sidebar({
             {repos.map((repo) => (
               <button
                 key={repo.id}
-                onClick={() => { setCollapsed(false); }}
+                onClick={() => setCollapsed(false)}
                 onContextMenu={(e) => openRepoContextMenu(e, repo)}
-                className="flex items-center justify-center shrink-0 transition-colors"
-                style={{
-                  width: 32, height: 32, borderRadius: 4,
-                  color: "var(--q-fg-secondary)",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 14, fontWeight: 700,
+                className="flex items-center justify-center shrink-0"
+                style={{ width: 32, height: 32, borderRadius: 8, color: "var(--fg-3)", background: "transparent", border: "none", cursor: "pointer" }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "var(--hover)";
+                  e.currentTarget.style.color = "var(--accent)";
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"; e.currentTarget.style.color = "var(--q-accent)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                  e.currentTarget.style.color = "var(--fg-3)";
+                }}
                 title={repo.name}
               >
-                /
+                <Icon name="folder" size={16} />
               </button>
             ))}
-            <div style={{ width: 24, height: 1, backgroundColor: "var(--q-border)", marginTop: 4, marginBottom: 4 }} />
-            <button
-              data-testid="add-repo-button-collapsed"
-              onClick={handleOpenRepoButtonClick}
-              className="flex items-center justify-center shrink-0 transition-colors"
-              style={{
-                width: 32, height: 32, borderRadius: 4,
-                color: "var(--q-fg-muted)",
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 14,
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-accent)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-muted)"; }}
-              title="add repo"
-            >
-              +
-            </button>
+            <div style={{ width: 24, height: 1, backgroundColor: "var(--border-2)", marginTop: 4, marginBottom: 4 }} />
+            <IconButton name="plus" label="add repo" onClick={handleOpenRepoFromIcon} />
           </div>
 
           {/* bottom bar */}
-          <div
-            className="flex flex-col items-center justify-center gap-1.5 py-2"
-            style={{ borderTop: "1px solid var(--q-border)" }}
-          >
-            <button
+          <div className="flex flex-col items-center justify-center gap-1.5 py-2" style={{ borderTop: "1px solid var(--border-2)" }}>
+            <IconButton
+              name="plus"
+              label="new session"
+              tone="var(--accent)"
+              active
               onClick={() => {
                 if (repos.length > 0) onCreateSession(repos[0].id);
               }}
-              className="flex items-center justify-center transition-colors"
-              style={{ color: "var(--q-accent)", fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700 }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent-hover)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
-              title="new session"
-            >
-              +
-            </button>
+            />
             {appVersion && (
               <button
                 onClick={onShowChangelog}
-                className="transition-colors"
-                style={{
-                  color: "var(--q-fg-muted)",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 8,
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
+                style={{ color: "var(--fg-4)", fontFamily: "var(--mono)", fontSize: 8, background: "transparent", border: "none", cursor: "pointer" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-4)")}
                 title="changelog"
               >
                 {appVersion}
@@ -621,14 +576,8 @@ export function Sidebar({
           </div>
         </aside>
 
-        {/* context menu overlay */}
         {contextMenu && (
-          <ContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            items={contextMenu.items}
-            onClose={() => setContextMenu(null)}
-          />
+          <ContextMenu x={contextMenu.x} y={contextMenu.y} items={contextMenu.items} onClose={() => setContextMenu(null)} />
         )}
 
         {recentReposAnchor && (
@@ -649,89 +598,50 @@ export function Sidebar({
     <div className="flex h-full">
       <aside
         ref={sidebarRef}
-        className="flex flex-col h-full shrink-0"
+        className="panel flex flex-col h-full shrink-0"
         style={{
           width: sidebarWidth,
           minWidth: SIDEBAR_MIN_WIDTH,
           maxWidth: SIDEBAR_MAX_WIDTH,
-          backgroundColor: "var(--q-bg)",
-          borderRight: "1px solid var(--q-border)",
         }}
       >
         {/* header */}
         <div
-          className="flex items-center justify-between px-4 py-3"
-          style={{ borderBottom: "1px solid var(--q-border)" }}
+          style={{
+            flex: "none",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "0 8px 0 10px",
+            height: 46,
+            borderBottom: "1px solid var(--border-2)",
+          }}
         >
-          <h1
-            className="text-sm font-bold lowercase"
-            style={{ fontFamily: "'JetBrains Mono', monospace" }}
+          <span
+            className="mono"
+            style={{ flex: 1, fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}
           >
-            <span style={{ color: "var(--q-accent)" }}>{">"}</span>{" "}
-            <span style={{ color: "var(--q-fg)" }}>quant</span>
-          </h1>
-          <div className="flex items-center gap-3">
-            <button
-              data-testid="add-repo-button"
-              onClick={handleOpenRepoButtonClick}
-              className="text-xs lowercase transition-colors"
-              style={{ color: "var(--q-fg-secondary)", fontFamily: "'JetBrains Mono', monospace" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-            >
-              + repo
-            </button>
-            <button
-              onClick={() => setCollapsed(true)}
-              className="flex items-center justify-center transition-colors"
-              style={{ color: "var(--q-fg-secondary)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-              title="collapse sidebar"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M9 3v18" />
-                <path d="m16 15-3-3 3-3" />
-              </svg>
-            </button>
-          </div>
+            <span style={{ color: "var(--accent)" }}>{">"}</span> <span style={{ color: "var(--fg)" }}>quant</span>
+          </span>
+          <IconButton name="plus" label="New repo" onClick={handleOpenRepoFromIcon} />
+          <IconButton name="panelRight" label="collapse sidebar" onClick={() => setCollapsed(true)} />
         </div>
 
-        {/* archive toggle */}
-        <div
-          className="flex"
-          style={{ borderBottom: "1px solid var(--q-border)" }}
-        >
-          <button
-            onClick={() => setShowArchived(false)}
-            className="flex-1 flex items-center justify-center py-2 text-[10px] lowercase transition-colors"
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontWeight: showArchived ? "normal" : 500,
-              color: showArchived ? "var(--q-fg-secondary)" : "var(--q-accent)",
-              borderBottom: showArchived ? "2px solid transparent" : "2px solid var(--q-accent)",
-            }}
-          >
-            active
-          </button>
-          <button
-            onClick={() => setShowArchived(true)}
-            className="flex-1 flex items-center justify-center py-2 text-[10px] lowercase transition-colors"
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontWeight: showArchived ? 500 : "normal",
-              color: showArchived ? "var(--q-accent)" : "var(--q-fg-secondary)",
-              borderBottom: showArchived ? "2px solid var(--q-accent)" : "2px solid transparent",
-            }}
-          >
-            archived
-          </button>
+        {/* active / archived */}
+        <div style={{ flex: "none", padding: "12px 12px 10px" }}>
+          <Segmented<"active" | "archived">
+            value={showArchived ? "archived" : "active"}
+            onChange={(v) => setShowArchived(v === "archived")}
+            options={[
+              { value: "active", label: "Active" },
+              { value: "archived", label: "Archived" },
+            ]}
+          />
         </div>
 
         {/* tree nav with custom scrollbar */}
         <SidebarScrollArea>
-          {repos.map((repo, idx) => (
+          {repos.map((repo) => (
             <RepoNode
               key={repo.id}
               repo={repo}
@@ -758,46 +668,52 @@ export function Sidebar({
               onMoveBoard={onMoveBoard}
               onRenameBoard={onRenameBoard}
               onError={onError}
-              showSeparator={idx < repos.length - 1}
               filterSessions={filterSessions}
               showArchived={showArchived}
+              editing={editing}
+              setEditing={setEditing}
+              onRemoveRepo={onRemoveRepo}
             />
           ))}
+          {!showArchived && (
+            <div style={{ padding: "2px 8px", margin: "4px 8px 0" }}>
+              <AddRow onClick={handleOpenRepoFromIcon}>repo</AddRow>
+            </div>
+          )}
         </SidebarScrollArea>
 
         {/* bottom bar */}
-        <div className="flex flex-col gap-0" style={{ borderTop: "1px solid var(--q-border)" }}>
+        <div className="flex flex-col gap-0" style={{ borderTop: "1px solid var(--border-2)" }}>
           <div className="flex items-center gap-2 p-3 pb-1.5">
             <button
               onClick={() => {
-                if (repos.length > 0) {
-                  onCreateSession(repos[0].id);
-                }
+                if (repos.length > 0) onCreateSession(repos[0].id);
               }}
-              className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm lowercase transition-colors"
+              className="flex-1 flex items-center justify-center gap-2"
               style={{
-                backgroundColor: "var(--q-accent)",
-                color: "var(--q-bg)",
-                fontFamily: "'JetBrains Mono', monospace",
-                fontWeight: 500,
+                padding: "8px 12px",
+                borderRadius: 9,
+                background: "var(--accent)",
+                color: "var(--on-accent)",
+                fontFamily: "var(--sans)",
+                fontSize: 12.5,
+                fontWeight: 600,
+                border: "none",
+                cursor: "pointer",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-accent-hover)")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--q-accent)")}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-2)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "var(--accent)")}
             >
-              $ new_session
+              <Icon name="plus" size={14} /> new session
             </button>
           </div>
           {appVersion && (
             <div className="flex items-center justify-center pb-2">
               <button
                 onClick={onShowChangelog}
-                className="text-[9px] lowercase transition-colors px-1.5 py-0.5"
-                style={{
-                  color: "var(--q-fg-muted)",
-                  fontFamily: "'JetBrains Mono', monospace",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
+                style={{ color: "var(--fg-4)", fontFamily: "var(--mono)", fontSize: 9, background: "transparent", border: "none", cursor: "pointer", padding: "2px 6px" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-4)")}
                 title="view changelog"
               >
                 {appVersion}
@@ -806,14 +722,8 @@ export function Sidebar({
           )}
         </div>
 
-        {/* context menu overlay */}
         {contextMenu && (
-          <ContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            items={contextMenu.items}
-            onClose={() => setContextMenu(null)}
-          />
+          <ContextMenu x={contextMenu.x} y={contextMenu.y} items={contextMenu.items} onClose={() => setContextMenu(null)} />
         )}
 
         {recentReposAnchor && (
@@ -831,29 +741,19 @@ export function Sidebar({
       <div
         onMouseDown={handleMouseDown}
         className="flex items-center justify-center shrink-0"
-        style={{
-          width: 6,
-          cursor: "col-resize",
-          backgroundColor: "transparent",
-        }}
+        style={{ width: 6, cursor: "col-resize", backgroundColor: "transparent" }}
         onMouseEnter={(e) => {
           const grip = e.currentTarget.querySelector<HTMLElement>("[data-grip]");
-          if (grip) grip.style.backgroundColor = "var(--q-fg-secondary)";
+          if (grip) grip.style.backgroundColor = "var(--fg-3)";
         }}
         onMouseLeave={(e) => {
           const grip = e.currentTarget.querySelector<HTMLElement>("[data-grip]");
-          if (grip) grip.style.backgroundColor = "var(--q-fg-muted)";
+          if (grip) grip.style.backgroundColor = "var(--fg-4)";
         }}
       >
         <div
           data-grip
-          style={{
-            width: 2,
-            height: 32,
-            borderRadius: 1,
-            backgroundColor: "var(--q-fg-muted)",
-            transition: "background-color 150ms",
-          }}
+          style={{ width: 2, height: 32, borderRadius: 1, backgroundColor: "var(--fg-4)", transition: "background-color 150ms" }}
         />
       </div>
     </div>
@@ -885,9 +785,11 @@ function RepoNode({
   onMoveBoard,
   onRenameBoard,
   onError,
-  showSeparator,
   filterSessions,
   showArchived,
+  editing,
+  setEditing,
+  onRemoveRepo,
 }: {
   repo: Repo;
   tasks: Task[];
@@ -913,49 +815,47 @@ function RepoNode({
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
   onError?: (msg: string) => void;
-  showSeparator: boolean;
   filterSessions: (sessions: Session[]) => Session[];
   showArchived: boolean;
+  editing: string | null;
+  setEditing: (id: string | null) => void;
+  onRemoveRepo: (repoId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const id = "r:" + repo.id;
 
   return (
-    <div>
+    <div style={{ marginBottom: 4 }}>
       {/* repo header */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        onContextMenu={(e) => onRepoContextMenu(e, repo)}
-        className="w-full flex items-center gap-1.5 px-3 py-2 text-left text-xs transition-colors"
-        style={{ fontFamily: "'JetBrains Mono', monospace" }}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-      >
-        <span className="text-[10px] w-3 shrink-0" style={{ color: "var(--q-fg-muted)" }}>
-          {expanded ? "v" : ">"}
-        </span>
-        <span className="shrink-0 font-bold" style={{ color: "var(--q-fg-secondary)" }}>
-          /
-        </span>
+      <TreeRow onClick={() => setExpanded(!expanded)} onContextMenu={(e) => onRepoContextMenu(e, repo)}>
+        <Twisty open={expanded} />
+        <Icon name="folder" size={14} color="var(--fg-3)" />
+        {editing === id ? (
+          <RenameInput
+            initial={repo.name}
+            mono={false}
+            onCommit={() => {
+              // No repo-rename handler is wired in props; close the editor.
+              setEditing(null);
+            }}
+            onCancel={() => setEditing(null)}
+          />
+        ) : (
+          <span style={{ fontWeight: 600, fontSize: 12.5, color: "var(--fg)", letterSpacing: "-0.01em", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+            {repo.name}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
         <span
-          className="font-bold overflow-hidden whitespace-nowrap flex-1"
-          style={{ color: "var(--q-fg)" }}
-        >
-          {repo.name}
-        </span>
-        <span
-          className="text-[9px] overflow-hidden whitespace-nowrap shrink-0 max-w-[100px]"
-          style={{
-            color: "var(--q-fg-muted)",
-            textOverflow: "ellipsis",
-          }}
+          className="mono"
+          style={{ fontSize: 9.5, color: "var(--fg-4)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: 96 }}
         >
           {repo.path}
         </span>
-      </button>
+      </TreeRow>
 
       {expanded && (
         <div>
-          {/* tasks */}
           {tasks.map((task) => (
             <TaskNode
               key={task.id}
@@ -985,27 +885,12 @@ function RepoNode({
             />
           ))}
 
-          {/* add task */}
           {!showArchived && (
-            <button
-              onClick={() => onCreateTask(repo.id)}
-              className="w-full flex items-center gap-1.5 py-1 text-[10px] transition-colors"
-              style={{
-                paddingLeft: "36px",
-                color: "var(--q-fg-muted)",
-                fontFamily: "'JetBrains Mono', monospace",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
-            >
-              + task
-            </button>
+            <div style={{ paddingLeft: 35, margin: "1px 8px 2px" }}>
+              <AddRow onClick={() => onCreateTask(repo.id)}>task</AddRow>
+            </div>
           )}
         </div>
-      )}
-
-      {showSeparator && (
-        <div className="mx-3 my-1" style={{ borderBottom: "1px solid var(--q-border)" }} />
       )}
     </div>
   );
@@ -1064,8 +949,6 @@ function TaskNode({
   const [isDragOver, setIsDragOver] = useState(false);
 
   function handleDragOver(e: React.DragEvent) {
-    // Only react to session drags (they carry "sessionId"); ignore board drags
-    // (which carry "boardName") so the two drop targets never interfere.
     if (!e.dataTransfer.types.includes("sessionid")) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -1073,7 +956,6 @@ function TaskNode({
   }
 
   function handleDragLeave(e: React.DragEvent) {
-    // Ignore leave events fired when moving between child elements.
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setIsDragOver(false);
   }
@@ -1098,77 +980,59 @@ function TaskNode({
   const isArchived = !!task.archivedAt;
 
   return (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <button
+    <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+      <TreeRow
+        depth={1}
+        py="4px"
         onClick={() => setExpanded(!expanded)}
         onContextMenu={(e) => onTaskContextMenu(e, task)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-xs transition-colors"
         style={{
-          paddingLeft: "28px",
-          fontFamily: "'JetBrains Mono', monospace",
-          backgroundColor: isDragOver ? "var(--q-bg-hover)" : undefined,
-          borderLeft: isDragOver ? "2px solid var(--q-accent)" : "2px solid transparent",
+          background: isDragOver ? "var(--hover)" : undefined,
+          borderLeft: isDragOver ? "2px solid var(--accent)" : "2px solid transparent",
           opacity: isArchived ? 0.6 : 1,
         }}
-        onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"; }}
-        onMouseLeave={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = "transparent"; }}
       >
-        <span className="text-[10px] w-3 shrink-0" style={{ color: "var(--q-fg-muted)" }}>
-          {expanded ? "v" : ">"}
-        </span>
-        <span className="shrink-0 font-bold" style={{ color: "var(--q-accent)" }}>
-          #
-        </span>
+        <Twisty open={expanded} />
+        <Icon name="hash" size={12} color="var(--accent)" />
         <span
-          className="overflow-hidden whitespace-nowrap flex-1"
-          style={{ color: "var(--q-fg)" }}
+          className="mono"
+          style={{ flex: 1, fontSize: 11.5, color: "var(--fg-2)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}
         >
-          {task.tag} {task.name}
+          {task.tag}
+          {task.name ? <span style={{ color: "var(--fg-4)" }}> {task.name}</span> : null}
         </span>
-      </button>
+      </TreeRow>
 
       {expanded && (
         <div>
-          {[...sessions].sort((a, b) => a.name.localeCompare(b.name)).map((session) => (
-            <SessionNode
-              key={session.id}
-              session={session}
-              actions={actionsBySession[session.id] ?? []}
-              displayStatus={getDisplayStatus(session.id, session.status)}
-              isTabOpen={openTabIds.includes(session.id)}
-              activeSessionId={activeSessionId}
-              expandedSessionId={expandedSessionId}
-              onSelectSession={onSelectSession}
-              onExpandSession={onExpandSession}
-              onOpenTab={onOpenTab}
-              onSessionContextMenu={onSessionContextMenu}
-              onDoubleClickSession={onDoubleClickSession}
-              boards={boardsBySession?.[session.id] ?? []}
-              activeBoard={activeBoardBySession?.[session.id]}
-              onSelectBoard={onSelectBoard}
-              onMoveBoard={onMoveBoard}
-              onRenameBoard={onRenameBoard}
-              depth={2}
-            />
-          ))}
+          {[...sessions]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((session) => (
+              <SessionNode
+                key={session.id}
+                session={session}
+                actions={actionsBySession[session.id] ?? []}
+                displayStatus={getDisplayStatus(session.id, session.status)}
+                isTabOpen={openTabIds.includes(session.id)}
+                activeSessionId={activeSessionId}
+                expandedSessionId={expandedSessionId}
+                onSelectSession={onSelectSession}
+                onExpandSession={onExpandSession}
+                onOpenTab={onOpenTab}
+                onSessionContextMenu={onSessionContextMenu}
+                onDoubleClickSession={onDoubleClickSession}
+                boards={boardsBySession?.[session.id] ?? []}
+                activeBoard={activeBoardBySession?.[session.id]}
+                onSelectBoard={onSelectBoard}
+                onMoveBoard={onMoveBoard}
+                onRenameBoard={onRenameBoard}
+                depth={2}
+              />
+            ))}
           {!showArchived && (
-            <button
-              onClick={() => onCreateSession(task.repoId, task.id)}
-              className="w-full flex items-center gap-1.5 py-1 text-[10px] transition-colors"
-              style={{
-                paddingLeft: "60px",
-                color: "var(--q-fg-muted)",
-                fontFamily: "'JetBrains Mono', monospace",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
-            >
-              + session
-            </button>
+            <div style={{ paddingLeft: 50, margin: "0 8px 2px" }}>
+              <AddRow onClick={() => onCreateSession(task.repoId, task.id)}>session</AddRow>
+            </div>
           )}
         </div>
       )}
@@ -1215,15 +1079,11 @@ function SessionNode({
 }) {
   const isActive = activeSessionId === session.id;
   const isExpanded = expandedSessionId === session.id;
-  const paddingLeft = 16 + depth * 16;
   const hasWorktree = !!session.worktreePath;
   const isArchived = !!session.archivedAt;
   const [isBoardDragOver, setIsBoardDragOver] = useState(false);
 
-  // Board drop target: only reacts to board drags (which carry "boardName");
-  // session drags (which carry "sessionId") are ignored so the two never clash.
   function handleBoardDragOver(e: React.DragEvent) {
-    // Boards can't be dropped onto archived/terminal sessions.
     if (isArchived || session.sessionType === "terminal") return;
     if (!e.dataTransfer.types.includes("boardname")) return;
     e.preventDefault();
@@ -1233,13 +1093,11 @@ function SessionNode({
   }
 
   function handleBoardDragLeave(e: React.DragEvent) {
-    // Ignore leave events fired when moving between child elements.
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setIsBoardDragOver(false);
   }
 
   function handleBoardDrop(e: React.DragEvent) {
-    // Boards can't be dropped onto archived/terminal sessions.
     if (isArchived || session.sessionType === "terminal") return;
     if (!e.dataTransfer.types.includes("boardname")) return;
     e.preventDefault();
@@ -1297,90 +1155,78 @@ function SessionNode({
     e.dataTransfer.effectAllowed = "move";
   }
 
+  const hot = isActive;
+  const statusPill = sessionStatusPill(displayStatus);
+
   return (
-    <div
-      onDragOver={handleBoardDragOver}
-      onDragLeave={handleBoardDragLeave}
-      onDrop={handleBoardDrop}
-    >
-      <button
+    <div onDragOver={handleBoardDragOver} onDragLeave={handleBoardDragLeave} onDrop={handleBoardDrop}>
+      <TreeRow
+        depth={depth}
+        active={hot || isBoardDragOver}
         draggable={!isArchived}
         onDragStart={handleDragStart}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => onSessionContextMenu(e, session)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-xs transition-colors"
         style={{
-          paddingLeft: `${paddingLeft}px`,
-          backgroundColor: isBoardDragOver ? "var(--q-bg-hover)" : isActive ? "var(--q-bg-hover)" : "transparent",
-          borderLeft: isBoardDragOver ? "2px solid var(--q-accent)" : "2px solid transparent",
-          fontFamily: "'JetBrains Mono', monospace",
           opacity: isArchived ? 0.6 : 1,
-        }}
-        onMouseEnter={(e) => {
-          if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-        }}
-        onMouseLeave={(e) => {
-          if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
+          borderLeft: isBoardDragOver ? "2px solid var(--accent)" : "2px solid transparent",
         }}
       >
-        <StatusDot status={displayStatus} />
+        <StatusDot status={displayStatus} size={8} glow={hot} />
         <span
-          className="overflow-hidden whitespace-nowrap flex-1"
           style={{
-            color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
+            flex: 1,
+            fontSize: 12.5,
+            fontWeight: hot ? 600 : 500,
+            letterSpacing: "-0.01em",
+            color: hot ? "var(--fg)" : "var(--fg-2)",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
             textOverflow: "ellipsis",
           }}
         >
           {session.name}
         </span>
-        {hasWorktree && (
-          <span
-            className="shrink-0 text-[8px] px-1"
-            style={{
-              color: "var(--q-accent)",
-              border: "1px solid var(--q-accent)",
-            }}
-          >
-            wt
-          </span>
-        )}
+        {hasWorktree && <Pill tone="muted">wt</Pill>}
         {session.sessionType === "terminal" ? (
-          <span
-            className="shrink-0 text-[8px] px-1"
-            style={{
-              color: "var(--q-purple-light)",
-              border: "1px solid var(--q-purple-light)",
-            }}
-          >
+          <Pill tone="accent" soft style={{ color: "var(--purple)" }}>
             sh
-          </span>
-        ) : (
-          <StatusBadge status={displayStatus} />
-        )}
-      </button>
+          </Pill>
+        ) : statusPill ? (
+          <Pill tone={statusPill.tone}>{statusPill.label}</Pill>
+        ) : null}
+      </TreeRow>
 
-      {isExpanded && actions.length > 0 && (
-        <ActionLog actions={actions} maxVisible={8} />
-      )}
+      {isExpanded && actions.length > 0 && <ActionLog actions={actions} maxVisible={8} />}
 
       {isExpanded && boards.length > 0 && (
         <div>
-          {[...boards].sort((a, b) => a.localeCompare(b)).map((board) => (
-            <BoardNode
-              key={board}
-              board={board}
-              sessionId={session.id}
-              activeBoard={activeBoard}
-              depth={depth + 1}
-              onSelectBoard={onSelectBoard}
-              onRenameBoard={onRenameBoard}
-            />
-          ))}
+          {[...boards]
+            .sort((a, b) => a.localeCompare(b))
+            .map((board) => (
+              <BoardNode
+                key={board}
+                board={board}
+                sessionId={session.id}
+                activeBoard={activeBoard}
+                depth={depth + 1}
+                onSelectBoard={onSelectBoard}
+                onRenameBoard={onRenameBoard}
+              />
+            ))}
         </div>
       )}
     </div>
   );
+}
+
+function sessionStatusPill(status: DisplayStatus): { tone: "muted" | "accent" | "info" | "warn" | "danger"; label: string } | null {
+  if (status === "idle" || status === "archived") return null;
+  if (status === "waiting") return { tone: "info", label: STATUS_LABEL.waiting };
+  if (status === "paused" || status === "stopping") return { tone: "warn", label: STATUS_LABEL[status] };
+  if (status === "error") return { tone: "danger", label: STATUS_LABEL.error };
+  return { tone: "accent", label: STATUS_LABEL[status] || status };
 }
 
 function BoardNode({
@@ -1398,17 +1244,12 @@ function BoardNode({
   onSelectBoard?: (sessionId: string, board: string) => void;
   onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
 }) {
-  const paddingLeft = 16 + depth * 16;
-  // Prefer the reactive active-board prop; fall back to localStorage on first
-  // render (before any selection has updated the prop for this session).
   const effectiveActiveBoard =
     activeBoard ?? localStorage.getItem("quant.mindmapBoard." + sessionId) ?? "default";
   const isActive = effectiveActiveBoard === board;
 
-  // Right-click context menu + inline rename (no native prompt() in WKWebView).
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(board);
 
   function handleDragStart(e: React.DragEvent) {
     e.dataTransfer.setData("boardName", board);
@@ -1418,12 +1259,10 @@ function BoardNode({
 
   function startRename() {
     setMenu(null);
-    setDraft(board);
     setRenaming(true);
   }
 
-  function commitRename() {
-    const next = draft.trim();
+  function commitRename(next: string) {
     setRenaming(false);
     if (!next || next === board) return;
     if (onRenameBoard) onRenameBoard(sessionId, board, next);
@@ -1431,43 +1270,19 @@ function BoardNode({
 
   if (renaming) {
     return (
-      <div
-        className="w-full flex items-center gap-1.5 px-3 py-1"
-        style={{ paddingLeft: `${paddingLeft}px`, fontFamily: "'JetBrains Mono', monospace" }}
-      >
-        <span className="shrink-0" style={{ color: "var(--q-accent)" }}>
-          &
-        </span>
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commitRename}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              commitRename();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              setRenaming(false);
-            }
-          }}
-          className="flex-1 min-w-0 px-1 py-0.5 text-[11px]"
-          style={{
-            backgroundColor: "var(--q-bg-hover)",
-            border: "1px solid var(--q-accent)",
-            color: "var(--q-fg)",
-            fontFamily: "'JetBrains Mono', monospace",
-            outline: "none",
-          }}
-        />
-      </div>
+      <TreeRow depth={depth} py="3px">
+        <Icon name="waypoints" size={12} color="var(--accent)" />
+        <RenameInput initial={board} onCommit={commitRename} onCancel={() => setRenaming(false)} />
+      </TreeRow>
     );
   }
 
   return (
     <>
-      <button
+      <TreeRow
+        depth={depth}
+        py="3px"
+        active={isActive}
         draggable
         onDragStart={handleDragStart}
         onClick={() => onSelectBoard && onSelectBoard(sessionId, board)}
@@ -1476,32 +1291,21 @@ function BoardNode({
           e.stopPropagation();
           setMenu({ x: e.clientX, y: e.clientY });
         }}
-        className="w-full flex items-center gap-1.5 px-3 py-1 text-left text-[11px] transition-colors"
-        style={{
-          paddingLeft: `${paddingLeft}px`,
-          backgroundColor: isActive ? "var(--q-bg-hover)" : "transparent",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-        onMouseEnter={(e) => {
-          if (!isActive) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-        }}
-        onMouseLeave={(e) => {
-          if (!isActive) e.currentTarget.style.backgroundColor = "transparent";
-        }}
       >
-        <span className="shrink-0" style={{ color: "var(--q-accent)" }}>
-          &
-        </span>
+        <Icon name="waypoints" size={12} color={isActive ? "var(--accent)" : "var(--fg-4)"} />
         <span
-          className="overflow-hidden whitespace-nowrap flex-1"
           style={{
-            color: isActive ? "var(--q-fg)" : "var(--q-fg-secondary)",
+            flex: 1,
+            fontSize: 11.5,
+            color: isActive ? "var(--fg)" : "var(--fg-3)",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
             textOverflow: "ellipsis",
           }}
         >
           {board}
         </span>
-      </button>
+      </TreeRow>
 
       {menu && (
         <ContextMenu
@@ -1509,13 +1313,7 @@ function BoardNode({
           y={menu.y}
           items={[
             { type: "label", text: board },
-            {
-              type: "item",
-              icon: "✎",
-              iconColor: "var(--q-accent)",
-              label: "rename",
-              onClick: startRename,
-            },
+            { type: "item", icon: "✎", iconColor: "var(--accent)", label: "rename", onClick: startRename },
           ]}
           onClose={() => setMenu(null)}
         />

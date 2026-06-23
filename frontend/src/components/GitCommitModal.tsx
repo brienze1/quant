@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ModalShell, ModalInput, Toggle, ModalCancel, ModalSubmit } from "./ModalShell";
 
 interface Props {
   sessionName: string;
@@ -6,8 +7,6 @@ interface Props {
   onSubmit: (message: string, pushAfter: boolean) => Promise<void>;
   onCancel: () => void;
 }
-
-const font = "'JetBrains Mono', monospace";
 
 export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onCancel }: Props) {
   const prefix = commitMessagePrefix.replace(/\{session\}/g, sessionName);
@@ -38,113 +37,91 @@ export function GitCommitModal({ sessionName, commitMessagePrefix, onSubmit, onC
   }
 
   const fullMessage = prefix + message;
+  const canCommit = !!fullMessage.trim() && !loading;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-      <form
-        onSubmit={handleSubmit}
-        className="w-full p-6"
-        style={{
-          maxWidth: 480,
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: font,
-        }}
-      >
-        <label className="block text-[10px] mb-4 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
+    <ModalShell width={480} onClose={onCancel} align="center">
+      <form onSubmit={handleSubmit} style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
+        <span className="mono" style={{ fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--fg-3)" }}>
           // git commit
-        </label>
+        </span>
 
-        <div className="mb-4">
+        <div>
           {prefix && (
             <div
-              className="px-3 py-1 text-xs mb-1"
-              style={{ color: "var(--q-fg-secondary)", backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-border)", borderBottom: "none" }}
+              className="mono"
+              style={{
+                padding: "7px 12px",
+                fontSize: 12,
+                color: "var(--fg-3)",
+                background: "var(--panel-3)",
+                border: "1px solid var(--border-2)",
+                borderBottom: "none",
+                borderRadius: "9px 9px 0 0",
+              }}
             >
               {prefix}
             </div>
           )}
-          <input
+          <ModalInput
             ref={inputRef}
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="commit message"
-            className="w-full px-3 py-2 text-xs"
-            style={{
-              backgroundColor: "var(--q-bg-hover)",
-              border: "1px solid var(--q-border)",
-              color: "var(--q-fg)",
-              fontFamily: font,
-              outline: "none",
-            }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+            style={prefix ? { borderRadius: "0 0 9px 9px" } : undefined}
           />
         </div>
 
         {fullMessage.trim() && (
-          <div className="mb-4 px-3 py-2 text-[10px]" style={{ backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-border)", color: "var(--q-accent)" }}>
+          <div
+            className="mono"
+            style={{
+              padding: "9px 12px",
+              fontSize: 10.5,
+              lineHeight: 1.5,
+              borderRadius: 9,
+              background: "var(--accent-soft)",
+              border: "1px solid var(--accent-line)",
+              color: "var(--accent)",
+            }}
+          >
             {fullMessage}
           </div>
         )}
 
         <div
-          className="flex items-center gap-2 mb-5 cursor-pointer"
-          style={{ color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
           onClick={() => setPushAfter((v) => !v)}
         >
-          <div
-            style={{
-              width: 14,
-              height: 14,
-              backgroundColor: "var(--q-bg)",
-              border: `1px solid ${pushAfter ? "var(--q-accent)" : "var(--q-border)"}`,
-              borderRadius: 2,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            {pushAfter && (
-              <span style={{ color: "var(--q-accent)", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>x</span>
-            )}
-          </div>
-          push after commit
+          <span className="mono" style={{ fontSize: 11.5, color: "var(--fg)" }}>push after commit</span>
+          <Toggle checked={pushAfter} onChange={setPushAfter} />
         </div>
 
         {error && (
-          <div className="mb-4 px-3 py-2 text-[10px]" style={{ backgroundColor: "var(--q-bg-hover)", border: "1px solid var(--q-error)", color: "var(--q-error)", fontFamily: font }}>
+          <div
+            className="mono"
+            style={{
+              padding: "9px 12px",
+              fontSize: 10.5,
+              lineHeight: 1.5,
+              borderRadius: 9,
+              background: "color-mix(in srgb, var(--danger) 12%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--danger) 45%, transparent)",
+              color: "var(--danger)",
+            }}
+          >
             {error}
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!fullMessage.trim() || loading}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{
-              backgroundColor: fullMessage.trim() && !loading ? "var(--q-accent)" : "var(--q-bg-hover)",
-              color: fullMessage.trim() && !loading ? "var(--q-bg)" : "var(--q-fg-muted)",
-              fontWeight: 500,
-            }}
-          >
-            {loading ? "..." : `commit${pushAfter ? " & push" : ""}`}
-          </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit type="submit" disabled={!canCommit}>
+            {loading ? "…" : `commit${pushAfter ? " & push" : ""}`}
+          </ModalSubmit>
         </div>
       </form>
-    </div>
+    </ModalShell>
   );
 }

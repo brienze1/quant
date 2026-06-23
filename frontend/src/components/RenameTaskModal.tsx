@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ModalShell, Field, ModalInput, ModalCancel, ModalSubmit } from "./ModalShell";
 
 interface Props {
   currentTag: string;
@@ -29,73 +30,23 @@ export function RenameTaskModal({ currentTag, currentName, onSubmit, onCancel }:
     }
   }
 
-  const inputStyle = {
-    backgroundColor: "var(--q-bg-hover)",
-    border: "1px solid var(--q-border)",
-    color: "var(--q-fg)",
-    fontFamily: "'JetBrains Mono', monospace",
-    outline: "none",
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm p-6"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        <label className="block text-[10px] mb-3 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
+    <ModalShell width={400} onClose={onCancel} align="center">
+      <form onSubmit={handleSubmit} style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
+        <span className="mono" style={{ fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--fg-3)" }}>
           // rename task
-        </label>
-        <label className="block text-[10px] mb-1 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
-          name
-        </label>
-        <input
-          ref={tagRef}
-          type="text"
-          value={tag}
-          onChange={(e) => setTag(e.target.value)}
-          className="w-full px-3 py-2 text-xs mb-4"
-          style={inputStyle}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-        />
-        <label className="block text-[10px] mb-1 lowercase" style={{ color: "var(--q-fg-secondary)" }}>
-          description
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full px-3 py-2 text-xs mb-5"
-          style={inputStyle}
-          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-        />
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
-          <button
-            type="submit"
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ backgroundColor: "var(--q-accent)", color: "var(--q-bg)", fontWeight: 500 }}
-          >
-            rename
-          </button>
+        </span>
+        <Field label="tag">
+          <ModalInput ref={tagRef} type="text" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="PLT-123" />
+        </Field>
+        <Field label="name">
+          <ModalInput type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="fix auth flow" />
+        </Field>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit type="submit" disabled={!tag.trim()}>rename</ModalSubmit>
         </div>
       </form>
-    </div>
+    </ModalShell>
   );
 }

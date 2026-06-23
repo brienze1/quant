@@ -1,3 +1,5 @@
+import { ModalShell, ModalCancel, ModalSubmit } from "./ModalShell";
+
 interface Props {
   message: string;
   confirmLabel?: string;
@@ -7,37 +9,21 @@ interface Props {
 
 export function ConfirmModal({ message, confirmLabel = "confirm", onConfirm, onCancel }: Props) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-      <div
-        className="w-full max-w-sm p-6"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        <p className="text-xs mb-5" style={{ color: "var(--q-fg)", whiteSpace: "pre-wrap" }}>
+    <ModalShell width={400} onClose={onCancel} align="center">
+      <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 18 }}>
+        <p
+          className="mono"
+          style={{ margin: 0, fontSize: 12.5, color: "var(--fg)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}
+        >
           {message}
         </p>
-        <div className="flex items-center justify-end gap-3">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ backgroundColor: "var(--q-error)", color: "var(--q-bg)", fontWeight: 500 }}
-          >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit tone="danger" onClick={onConfirm}>
             {confirmLabel}
-          </button>
+          </ModalSubmit>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

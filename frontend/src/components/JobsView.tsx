@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Job, JobRun, UpdateJobRequest, Agent, JobGroup } from "../types";
 import * as api from "../api";
+import { Button } from "./Button";
+import { IconButton } from "./IconButton";
+import { Icon } from "./Icon";
 
 type JobTab = "settings" | "history";
 type RunTab = "session" | "result";
@@ -50,14 +53,14 @@ function formatDuration(ms: number): string {
 
 function statusColor(status: string): string {
   switch (status) {
-    case "success": return "var(--q-accent)";
-    case "running": return "var(--q-warning)";
-    case "pending": return "var(--q-warning)";
-    case "failed": return "var(--q-error)";
-    case "cancelled": return "var(--q-fg-secondary)";
-    case "timed_out": return "var(--q-error)";
-    case "waiting": return "var(--q-warning)";
-    default: return "var(--q-fg-secondary)";
+    case "success": return "var(--accent)";
+    case "running": return "var(--warn)";
+    case "pending": return "var(--warn)";
+    case "failed": return "var(--danger)";
+    case "cancelled": return "var(--fg-2)";
+    case "timed_out": return "var(--danger)";
+    case "waiting": return "var(--warn)";
+    default: return "var(--fg-2)";
   }
 }
 
@@ -1495,17 +1498,17 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
 
   function renderKeyValue(key: string, value: string | number | boolean | string[] | undefined | null) {
     let displayValue: string;
-    let color = "var(--q-fg)";
+    let color = "var(--fg)";
 
     if (value === undefined || value === null || value === "") {
       displayValue = "---";
-      color = "var(--q-fg-secondary)";
+      color = "var(--fg-2)";
     } else if (typeof value === "boolean") {
       displayValue = value ? "true" : "false";
-      color = value ? "var(--q-accent)" : "var(--q-error)";
+      color = value ? "var(--accent)" : "var(--danger)";
     } else if (Array.isArray(value)) {
       displayValue = value.length > 0 ? value.join(", ") : "---";
-      if (value.length === 0) color = "var(--q-fg-secondary)";
+      if (value.length === 0) color = "var(--fg-2)";
     } else {
       displayValue = String(value);
     }
@@ -1515,7 +1518,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         key={key}
         style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, fontFamily: font }}
       >
-        <span style={{ color: "var(--q-fg-secondary)" }}>{key}:</span>
+        <span style={{ color: "var(--fg-2)" }}>{key}:</span>
         <span style={{ color, textAlign: "right", wordBreak: "break-all" }}>{displayValue}</span>
       </div>
     );
@@ -1524,10 +1527,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   function renderSection(title: string, rows: React.ReactNode) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <span style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: font }}>
+        <span style={{ color: "var(--fg-3)", fontSize: 10, fontFamily: font }}>
           # {title}
         </span>
-        <div style={{ height: 1, backgroundColor: "var(--q-border)" }} />
+        <div style={{ height: 1, backgroundColor: "var(--border)" }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {rows}
         </div>
@@ -1601,7 +1604,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         {/* Runs sub-sidebar */}
         <div
           className="flex flex-col h-full shrink-0 overflow-y-auto"
-          style={{ width: 220, borderRight: "1px solid var(--q-border)" }}
+          style={{ width: 220, borderRight: "1px solid var(--border)" }}
         >
           {(() => {
             const sidebarGroup = selectedJobId ? jobGroups.find((g) => g.jobIds.includes(selectedJobId)) : undefined;
@@ -1612,7 +1615,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               : runs;
             return filteredRuns.length === 0 ? (
             <div className="flex items-center justify-center p-4">
-              <span style={{ color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font }}>{sidebarExecId ? "no runs in this execution" : "no runs yet"}</span>
+              <span style={{ color: "var(--fg-2)", fontSize: 11, fontFamily: font }}>{sidebarExecId ? "no runs in this execution" : "no runs yet"}</span>
             </div>
           ) : (
             filteredRuns.map((run) => {
@@ -1623,10 +1626,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   key={run.id}
                   className="flex items-center w-full transition-colors"
                   style={{
-                    backgroundColor: active ? "var(--q-bg-hover)" : "transparent",
+                    backgroundColor: active ? "var(--hover)" : "transparent",
                     fontFamily: font,
                   }}
-                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)"; }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "var(--hover)"; }}
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
                   <button
@@ -1645,10 +1648,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       }}
                     />
                     <div className="flex flex-col overflow-hidden" style={{ gap: 2 }}>
-                      <span style={{ color: "var(--q-fg)", fontSize: 11, fontFamily: font }}>
+                      <span style={{ color: "var(--fg)", fontSize: 11, fontFamily: font }}>
                         {run.id.slice(0, 8)}
                       </span>
-                      <span style={{ color: "var(--q-fg-secondary)", fontSize: 9, fontFamily: font }}>
+                      <span style={{ color: "var(--fg-2)", fontSize: 9, fontFamily: font }}>
                         {relativeTime(run.startedAt)}
                       </span>
                     </div>
@@ -1673,14 +1676,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         background: "none",
                         border: "none",
                         cursor: "pointer",
-                        color: "var(--q-warning)",
+                        color: "var(--warn)",
                         fontSize: 10,
                         fontFamily: font,
                         padding: "4px 8px",
                         flexShrink: 0,
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-warning)")}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--warn)")}
                       title="resume this job with context"
                     >
                       &#9654;
@@ -1705,14 +1708,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         background: "none",
                         border: "none",
                         cursor: "pointer",
-                        color: "var(--q-fg-secondary)",
+                        color: "var(--fg-2)",
                         fontSize: 10,
                         fontFamily: font,
                         padding: "4px 8px",
                         flexShrink: 0,
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-2)")}
                       title="rerun this job"
                     >
                       &#8635;
@@ -1729,12 +1732,12 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         <div className="flex-1 flex flex-col overflow-hidden">
           {!selectedRun ? (
             <div className="flex items-center justify-center flex-1">
-              <span style={{ color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font }}>select a run</span>
+              <span style={{ color: "var(--fg-2)", fontSize: 11, fontFamily: font }}>select a run</span>
             </div>
           ) : (
             <>
               {/* Run sub-tabs */}
-              <div className="flex" style={{ borderBottom: "1px solid var(--q-border)" }}>
+              <div className="flex" style={{ borderBottom: "1px solid var(--border)" }}>
                 {(["session", "result"] as RunTab[]).map((t) => (
                   <button
                     key={t}
@@ -1743,8 +1746,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     style={{
                       fontFamily: font,
                       fontWeight: selectedRunTab === t ? 500 : "normal",
-                      color: selectedRunTab === t ? "var(--q-accent)" : "var(--q-fg-secondary)",
-                      borderBottom: selectedRunTab === t ? "2px solid var(--q-accent)" : "2px solid transparent",
+                      color: selectedRunTab === t ? "var(--accent)" : "var(--fg-2)",
+                      borderBottom: selectedRunTab === t ? "2px solid var(--accent)" : "2px solid transparent",
                     }}
                   >
                     {t}
@@ -1767,17 +1770,17 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         top: 0,
                         float: "right",
                         background: "none",
-                        border: "1px solid var(--q-border)",
+                        border: "1px solid var(--border)",
                         borderRadius: 4,
                         padding: "4px 8px",
                         cursor: "pointer",
-                        color: copied ? "var(--q-accent)" : "var(--q-fg-secondary)",
+                        color: copied ? "var(--accent)" : "var(--fg-2)",
                         fontSize: 10,
                         fontFamily: font,
                         zIndex: 1,
                       }}
-                      onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--q-fg)"; }}
-                      onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                      onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--fg)"; }}
+                      onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--fg-2)"; }}
                       title="copy output"
                     >
                       {copied ? "✓ copied" : "⧉ copy"}
@@ -1791,20 +1794,20 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                             width: 8,
                             height: 8,
                             borderRadius: "50%",
-                            backgroundColor: "var(--q-accent)",
+                            backgroundColor: "var(--accent)",
                             animation: "job-pulse 1.5s ease-in-out infinite",
                             display: "inline-block",
                           }}
                         />
-                        <span style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: font }}>
+                        <span style={{ color: "var(--accent)", fontSize: 11, fontFamily: font }}>
                           {runOutput ? "running... output updating every 3s" : "running..."}
                         </span>
                       </div>
                       {selectedJob && (
                         <div
                           style={{
-                            backgroundColor: "var(--q-bg-subtle)",
-                            border: "1px solid var(--q-bg-surface)",
+                            backgroundColor: "var(--panel)",
+                            border: "1px solid var(--panel-2)",
                             borderRadius: 4,
                             padding: "10px 12px",
                             display: "flex",
@@ -1813,51 +1816,51 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                           }}
                         >
                           <div style={{ display: "flex", gap: 8, fontSize: 10, fontFamily: font }}>
-                            <span style={{ color: "var(--q-fg-secondary)" }}>type</span>
-                            <span style={{ color: "var(--q-fg-tertiary)" }}>{selectedJob.type}</span>
+                            <span style={{ color: "var(--fg-2)" }}>type</span>
+                            <span style={{ color: "var(--fg-3)" }}>{selectedJob.type}</span>
                             {selectedJob.model && <>
-                              <span style={{ color: "var(--q-fg-secondary)", marginLeft: 8 }}>model</span>
-                              <span style={{ color: "var(--q-fg-tertiary)" }}>{selectedJob.model}</span>
+                              <span style={{ color: "var(--fg-2)", marginLeft: 8 }}>model</span>
+                              <span style={{ color: "var(--fg-3)" }}>{selectedJob.model}</span>
                             </>}
                             {selectedJob.agentId && <>
-                              <span style={{ color: "var(--q-fg-secondary)", marginLeft: 8 }}>agent</span>
-                              <span style={{ color: "var(--q-accent)" }}>{agentName(selectedJob.agentId) || selectedJob.agentId.slice(0, 8)}</span>
+                              <span style={{ color: "var(--fg-2)", marginLeft: 8 }}>agent</span>
+                              <span style={{ color: "var(--accent)" }}>{agentName(selectedJob.agentId) || selectedJob.agentId.slice(0, 8)}</span>
                             </>}
                           </div>
                           {selectedRun.triggeredBy && parentRunInfo && (
                             <div style={{ display: "flex", gap: 8, fontSize: 10, fontFamily: font }}>
-                              <span style={{ color: "var(--q-fg-secondary)" }}>triggered_by</span>
-                              <span style={{ color: "var(--q-fg-tertiary)" }}>{parentRunInfo.jobName}</span>
+                              <span style={{ color: "var(--fg-2)" }}>triggered_by</span>
+                              <span style={{ color: "var(--fg-3)" }}>{parentRunInfo.jobName}</span>
                             </div>
                           )}
                           {selectedJob.type === "claude" && selectedJob.prompt && (
                             <div style={{ fontSize: 10, fontFamily: font, marginTop: 2 }}>
-                              <span style={{ color: "var(--q-fg-secondary)" }}>prompt </span>
-                              <span style={{ color: "var(--q-fg-tertiary)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                              <span style={{ color: "var(--fg-2)" }}>prompt </span>
+                              <span style={{ color: "var(--fg-3)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                                 {selectedJob.prompt.length > 300 ? selectedJob.prompt.slice(0, 300) + "..." : selectedJob.prompt}
                               </span>
                             </div>
                           )}
                           {selectedJob.type === "bash" && selectedJob.scriptContent && (
                             <div style={{ fontSize: 10, fontFamily: font, marginTop: 2 }}>
-                              <span style={{ color: "var(--q-fg-secondary)" }}>script </span>
-                              <span style={{ color: "var(--q-fg-tertiary)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                              <span style={{ color: "var(--fg-2)" }}>script </span>
+                              <span style={{ color: "var(--fg-3)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                                 {selectedJob.scriptContent.length > 300 ? selectedJob.scriptContent.slice(0, 300) + "..." : selectedJob.scriptContent}
                               </span>
                             </div>
                           )}
                           {parentRunInfo?.metadata && (
                             <div style={{ fontSize: 10, fontFamily: font, marginTop: 2 }}>
-                              <span style={{ color: "var(--q-fg-secondary)" }}>received_metadata </span>
-                              <span style={{ color: "var(--q-accent)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                              <span style={{ color: "var(--fg-2)" }}>received_metadata </span>
+                              <span style={{ color: "var(--accent)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                                 {parentRunInfo.metadata.length > 500 ? parentRunInfo.metadata.slice(0, 500) + "..." : parentRunInfo.metadata}
                               </span>
                             </div>
                           )}
                           {parentRunInfo && !parentRunInfo.metadata && parentRunInfo.result && (
                             <div style={{ fontSize: 10, fontFamily: font, marginTop: 2 }}>
-                              <span style={{ color: "var(--q-fg-secondary)" }}>received_output </span>
-                              <span style={{ color: "var(--q-fg-tertiary)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                              <span style={{ color: "var(--fg-2)" }}>received_output </span>
+                              <span style={{ color: "var(--fg-3)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                                 {parentRunInfo.result.length > 500 ? parentRunInfo.result.slice(parentRunInfo.result.length - 500) + "..." : parentRunInfo.result}
                               </span>
                             </div>
@@ -1868,7 +1871,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   )}
                   <pre
                     style={{
-                      color: "var(--q-fg)",
+                      color: "var(--fg)",
                       fontSize: 11,
                       fontFamily: font,
                       whiteSpace: "pre-wrap",
@@ -1923,16 +1926,16 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                               animation: pr.status === "running" ? "job-pulse 1.5s ease-in-out infinite" : "none",
                             }} />
                             <span style={{
-                              color: isCurrent ? "var(--q-accent)" : "var(--q-fg)",
+                              color: isCurrent ? "var(--accent)" : "var(--fg)",
                               fontWeight: isCurrent ? 600 : "normal",
                             }}>
                               {jobName}
                             </span>
-                            <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>
+                            <span style={{ color: "var(--fg-2)", fontSize: 10 }}>
                               {pr.status}
                             </span>
                             {pr.finishedAt && (
-                              <span style={{ color: "var(--q-fg-muted)", fontSize: 9, marginLeft: "auto" }}>
+                              <span style={{ color: "var(--fg-3)", fontSize: 9, marginLeft: "auto" }}>
                                 {formatDuration(pr.durationMs)}
                               </span>
                             )}
@@ -1953,13 +1956,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   </>)}
 
                   {parentRunInfo?.metadata && renderSection("received_metadata",
-                    <pre style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                    <pre style={{ color: "var(--accent)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
                       {parentRunInfo.metadata}
                     </pre>
                   )}
 
                   {parentRunInfo && !parentRunInfo.metadata && parentRunInfo.result && renderSection("received_output",
-                    <pre style={{ color: "var(--q-fg-tertiary)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                    <pre style={{ color: "var(--fg-3)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
                       {parentRunInfo.result.length > 1000 ? "..." + parentRunInfo.result.slice(parentRunInfo.result.length - 1000) : parentRunInfo.result}
                     </pre>
                   )}
@@ -1970,28 +1973,28 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     const metaIdx = result.indexOf(metaSep);
                     const metadata = metaIdx >= 0 ? result.slice(metaIdx + metaSep.length) : "";
                     return metadata ? renderSection("output_metadata",
-                      <pre style={{ color: "var(--q-accent)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                      <pre style={{ color: "var(--accent)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
                         {metadata}
                       </pre>
                     ) : null;
                   })()}
 
                   {selectedRun.injectedContext && renderSection("injected_context",
-                    <pre style={{ color: "var(--q-warning)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                    <pre style={{ color: "var(--warn)", fontSize: 11, fontFamily: font, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
                       {selectedRun.injectedContext}
                     </pre>
                   )}
 
                   {selectedRun.sessionId && renderSection("triggered_sessions",
                     <div style={{ fontSize: 11, fontFamily: font }}>
-                      <span style={{ color: "var(--q-accent)", cursor: "pointer" }}>
+                      <span style={{ color: "var(--accent)", cursor: "pointer" }}>
                         {selectedRun.sessionId}
                       </span>
                     </div>
                   )}
 
                   {selectedRun.errorMessage && renderSection("error",
-                    <span style={{ color: "var(--q-error)", fontSize: 11, fontFamily: font }}>
+                    <span style={{ color: "var(--danger)", fontSize: 11, fontFamily: font }}>
                       {selectedRun.errorMessage}
                     </span>
                   )}
@@ -2044,7 +2047,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         const targetPos = nodePositions[targetId];
         if (!targetPos) return;
 
-        const edgeColor = edgeType === "success" ? "var(--q-accent)" : "var(--q-error)";
+        const edgeColor = edgeType === "success" ? "var(--accent)" : "var(--danger)";
         const k = keyIdx++;
         const isSelected = selectedEdge?.sourceId === job.id && selectedEdge?.targetId === targetId && selectedEdge?.type === edgeType;
         const isFlashing = flashingEdges.has(`${job.id}->${targetId}`);
@@ -2120,9 +2123,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         if (hoveredGroupId && !isSelected && !isFlashing) {
           const srcInGroup = jobGroupMap.get(job.id) === hoveredGroupId;
           const tgtInGroup = jobGroupMap.get(targetId) === hoveredGroupId;
-          if (!srcInGroup && !tgtInGroup) { edgeOpacity = 0.06; defaultStroke = "var(--q-fg-muted)"; }
+          if (!srcInGroup && !tgtInGroup) { edgeOpacity = 0.06; defaultStroke = "var(--fg-3)"; }
         } else if (hoverConnectedNodes && !isSelected && !isFlashing) {
-          if (!isHoverRelevant) { edgeOpacity = 0.06; defaultStroke = "var(--q-fg-muted)"; }
+          if (!isHoverRelevant) { edgeOpacity = 0.06; defaultStroke = "var(--fg-3)"; }
         } else if (!isSelected && !isFlashing) {
           // Execution view: dim edges to unreached nodes (scoped per group)
           const edgeGroupKey = jobGroupMap.get(job.id) ?? "ungrouped";
@@ -2132,14 +2135,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const selExec = edgeGroupExecs.find((e) => e.correlationId === edgeExecId);
             const srcHasRun = selExec?.runs.some((r) => r.jobId === job.id);
             const tgtHasRun = selExec?.runs.some((r) => r.jobId === targetId);
-            if (!srcHasRun || !tgtHasRun) { edgeOpacity = 0.15; defaultStroke = "var(--q-fg-muted)"; }
+            if (!srcHasRun || !tgtHasRun) { edgeOpacity = 0.15; defaultStroke = "var(--fg-3)"; }
           }
         } else if (routeState && !isSelected && !isFlashing) {
           const isInFlow = routeState.flowNodes.has(job.id) || routeState.flowNodes.has(targetId);
           if (isInRoute) {
             // highlighted edge — keep full opacity
           } else if (isInFlow) {
-            edgeOpacity = 0.12; defaultStroke = "var(--q-fg-muted)";
+            edgeOpacity = 0.12; defaultStroke = "var(--fg-3)";
           }
         }
 
@@ -2163,18 +2166,18 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               d={isSelected && waveAmplitude.current > 0.1
                 ? wavyPath(sx, sy, tx, ty, cx1, cy1, cx2, cy2, wavePhase, waveAmplitude.current, waveFreq.current)
                 : pathD}
-              stroke={isFlashing ? edgeColor : isSelected ? (edgeDeleteHover ? "var(--q-error)" : "var(--q-fg)") : defaultStroke}
+              stroke={isFlashing ? edgeColor : isSelected ? (edgeDeleteHover ? "var(--danger)" : "var(--fg)") : defaultStroke}
               strokeWidth={2}
               strokeDasharray="6 5"
               fill="none"
               markerEnd={isSelected ? (edgeDeleteHover ? "url(#arrow-delete)" : "url(#arrow-selected)") : edgeOpacity < 0.5 ? "url(#arrow-dim)" : `url(#arrow-${edgeType})`}
               style={{ ...(isFlashing ? { animation: "edge-march 0.4s linear infinite" } : {}), opacity: isSelected || isFlashing ? 1 : edgeOpacity, transition: "opacity 0.2s" }}
             />
-            <circle cx={midX} cy={midY - 14} r={4} fill={isSelected && edgeDeleteHover ? "var(--q-error)" : edgeColor} style={{ opacity: isSelected || isFlashing ? 1 : edgeOpacity, transition: "opacity 0.2s" }} />
+            <circle cx={midX} cy={midY - 14} r={4} fill={isSelected && edgeDeleteHover ? "var(--danger)" : edgeColor} style={{ opacity: isSelected || isFlashing ? 1 : edgeOpacity, transition: "opacity 0.2s" }} />
             <text
               x={midX + 8}
               y={midY - 11}
-              fill={isSelected && edgeDeleteHover ? "var(--q-error)" : defaultStroke}
+              fill={isSelected && edgeDeleteHover ? "var(--danger)" : defaultStroke}
               fontSize={8}
               fontFamily={font}
               style={{ opacity: isSelected || isFlashing ? 1 : edgeOpacity, transition: "opacity 0.2s" }}
@@ -2236,7 +2239,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               >
                 {/* Larger hit area for hover */}
                 <rect x={midX - 30} y={midY + 10} width={60} height={20} fill="transparent" />
-                <text x={midX} y={midY + 24} fill="var(--q-error)" fontSize={11} fontFamily={font} textAnchor="middle">✕ delete</text>
+                <text x={midX} y={midY + 24} fill="var(--danger)" fontSize={11} fontFamily={font} textAnchor="middle">✕ delete</text>
               </g>
             )}
           </g>
@@ -2344,11 +2347,12 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           zIndex: 10,
           width: 180,
           height: 120,
-          backgroundColor: "var(--q-bg-elevated)",
-          border: "1px solid var(--q-border)",
-          borderRadius: 4,
+          backgroundColor: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
           overflow: "hidden",
           cursor: "pointer",
+          boxShadow: "var(--shadow-panel)",
         }}
       >
         {jobs.map((job) => {
@@ -2363,7 +2367,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 top: (pos.y - minY) * scale,
                 width: Math.max(NODE_W * scale, 4),
                 height: Math.max(NODE_H * scale, 3),
-                backgroundColor: job.scheduleEnabled ? "var(--q-accent)" : "var(--q-fg-secondary)",
+                backgroundColor: job.scheduleEnabled ? "var(--accent)" : "var(--fg-2)",
                 borderRadius: 1,
                 opacity: 0.8,
               }}
@@ -2377,7 +2381,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             top: vpY,
             width: vpRW,
             height: vpRH,
-            border: "1px solid var(--q-fg-secondary)",
+            border: "1px solid var(--fg-2)",
             borderRadius: 1,
             backgroundColor: "rgba(107,114,128,0.08)",
             cursor: "grab",
@@ -2409,8 +2413,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           style={{
             width: 720,
             height: 520,
-            backgroundColor: "var(--q-bg)",
-            border: "1px solid var(--q-border)",
+            backgroundColor: "var(--bg)",
+            border: "1px solid var(--border)",
             borderRadius: 4,
             boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
             display: "flex",
@@ -2422,7 +2426,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           {/* Modal header */}
           <div
             className="flex items-center justify-between px-5 shrink-0"
-            style={{ height: 48, borderBottom: "1px solid var(--q-border)" }}
+            style={{ height: 48, borderBottom: "1px solid var(--border)" }}
           >
             <div className="flex items-center gap-2">
               <span
@@ -2430,10 +2434,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   width: 6,
                   height: 6,
                   borderRadius: "50%",
-                  backgroundColor: canvasModalJob.scheduleEnabled ? "var(--q-accent)" : "var(--q-fg-secondary)",
+                  backgroundColor: canvasModalJob.scheduleEnabled ? "var(--accent)" : "var(--fg-2)",
                 }}
               />
-              <span style={{ color: "var(--q-fg)", fontSize: 13, fontWeight: 500, fontFamily: font }}>
+              <span style={{ color: "var(--fg)", fontSize: 13, fontWeight: 500, fontFamily: font }}>
                 {canvasModalJob.name}
               </span>
             </div>
@@ -2442,7 +2446,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 <button
                   onClick={handleStopRun}
                   className="flex items-center gap-1 px-3 py-1 text-[11px] lowercase transition-colors"
-                  style={{ color: "var(--q-error)", fontFamily: font, background: "none", border: "none", cursor: "pointer" }}
+                  style={{ color: "var(--danger)", fontFamily: font, background: "none", border: "none", cursor: "pointer" }}
                 >
                   &#9632; stop
                 </button>
@@ -2450,7 +2454,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 <button
                   onClick={handleRunNow}
                   className="flex items-center gap-1 px-3 py-1 text-[11px] lowercase transition-colors"
-                  style={{ color: "var(--q-accent)", fontFamily: font, background: "none", border: "none", cursor: "pointer" }}
+                  style={{ color: "var(--accent)", fontFamily: font, background: "none", border: "none", cursor: "pointer" }}
                 >
                   &#9654; run now
                 </button>
@@ -2458,9 +2462,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               <button
                 onClick={() => { setCanvasModalJobId(null); onEditJob(canvasModalJob); }}
                 className="flex items-center gap-1 px-3 py-1 text-[11px] lowercase transition-colors"
-                style={{ color: "var(--q-fg-secondary)", fontFamily: font, background: "none", border: "none", cursor: "pointer" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
+                style={{ color: "var(--fg-2)", fontFamily: font, background: "none", border: "none", cursor: "pointer" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-2)")}
               >
                 &#10000; edit
               </button>
@@ -2468,7 +2472,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           </div>
 
           {/* Modal tab bar */}
-          <div className="flex" style={{ borderBottom: "1px solid var(--q-border)" }}>
+          <div className="flex" style={{ borderBottom: "1px solid var(--border)" }}>
             {(["settings", "history"] as JobTab[]).map((t) => (
               <button
                 key={t}
@@ -2477,13 +2481,13 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 style={{
                   fontFamily: font,
                   fontWeight: canvasModalTab === t ? 500 : "normal",
-                  color: canvasModalTab === t ? "var(--q-accent)" : "var(--q-fg-secondary)",
-                  borderBottom: canvasModalTab === t ? "2px solid var(--q-accent)" : "2px solid transparent",
+                  color: canvasModalTab === t ? "var(--accent)" : "var(--fg-2)",
+                  borderBottom: canvasModalTab === t ? "2px solid var(--accent)" : "2px solid transparent",
                   background: "none",
                   border: "none",
                   borderBottomWidth: 2,
                   borderBottomStyle: "solid",
-                  borderBottomColor: canvasModalTab === t ? "var(--q-accent)" : "transparent",
+                  borderBottomColor: canvasModalTab === t ? "var(--accent)" : "transparent",
                   cursor: "pointer",
                 }}
               >
@@ -2510,7 +2514,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           flex: 1,
           position: "relative",
           overflow: "hidden",
-          backgroundColor: "var(--q-bg)",
+          backgroundColor: "var(--bg)",
           userSelect: "none",
           WebkitUserSelect: "none",
           cursor: connectingMode ? "crosshair" : spaceDown ? "grab" : panning ? "grabbing" : "default",
@@ -2577,11 +2581,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           }}
         >
           <defs>
-            <marker id="arrow-success" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-accent)"/></marker>
-            <marker id="arrow-failure" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-error)"/></marker>
-            <marker id="arrow-selected" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-fg)"/></marker>
-            <marker id="arrow-delete" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-error)"/></marker>
-            <marker id="arrow-dim" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--q-fg-muted)"/></marker>
+            <marker id="arrow-success" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--accent)"/></marker>
+            <marker id="arrow-failure" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--danger)"/></marker>
+            <marker id="arrow-selected" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--fg)"/></marker>
+            <marker id="arrow-delete" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--danger)"/></marker>
+            <marker id="arrow-dim" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="var(--fg-3)"/></marker>
           </defs>
           <g transform={`translate(${canvasOffset.x}, ${canvasOffset.y}) scale(${zoom})`} style={{ pointerEvents: "auto" }}>
             {renderSvgConnections()}
@@ -2627,7 +2631,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               const pCpLen = Math.min(Math.max(pDist * 0.35, 40), 120);
               const sNx = sx - (srcPos.x + NODE_W / 2), sNy = sy - (srcPos.y + NODE_H / 2);
               const sNLen = Math.sqrt(sNx * sNx + sNy * sNy) || 1;
-              const color = connectingMode.type === "success" ? "var(--q-accent)" : "var(--q-error)";
+              const color = connectingMode.type === "success" ? "var(--accent)" : "var(--danger)";
               const arrowId = connectingMode.type === "success" ? "arrow-success" : "arrow-failure";
               return (
                 <path
@@ -2675,10 +2679,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const maxY = Math.max(...positions.map((p) => p.y + NODE_H)) + 24 + warningExtraH;
             const isDropdownOpen = openDropdownGroup === group.id;
             return (
-              <div key={`group-box-${group.id}`} style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px solid var(--q-border)", borderRadius: 8, backgroundColor: "#0f0f0f80", pointerEvents: "none" }}>
+              <div key={`group-box-${group.id}`} style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px dashed var(--border)", borderRadius: 14, backgroundColor: "color-mix(in srgb, var(--fg) 2.5%, transparent)", pointerEvents: "none" }}>
                 {/* Group name label — drag handle for moving the whole group */}
                 <span
-                  style={{ position: "absolute", top: -12, left: 12, backgroundColor: "var(--q-bg-input)", padding: "0 6px", color: "var(--q-fg-muted)", fontSize: 9, fontFamily: font, whiteSpace: "nowrap", pointerEvents: "auto", cursor: draggingGroup?.groupId === group.id ? "grabbing" : "grab", userSelect: "none" }}
+                  style={{ position: "absolute", top: -12, left: 12, backgroundColor: "var(--panel-3)", padding: "0 6px", color: "var(--fg-3)", fontSize: 9, fontFamily: font, whiteSpace: "nowrap", pointerEvents: "auto", cursor: draggingGroup?.groupId === group.id ? "grabbing" : "grab", userSelect: "none" }}
                   onMouseDown={(e) => {
                     if (e.button !== 0) return;
                     e.stopPropagation();
@@ -2699,9 +2703,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     alignItems: "center",
                     gap: 8,
                     padding: "4px 12px",
-                    borderBottom: "1px solid var(--q-border)",
+                    borderBottom: "1px solid var(--border)",
                     borderRadius: "8px 8px 0 0",
-                    backgroundColor: "var(--q-bg-elevated)",
+                    backgroundColor: "var(--panel-2)",
                     pointerEvents: "auto",
                     fontFamily: font,
                   }}>
@@ -2712,12 +2716,12 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         gap: 4,
                         padding: "1px 8px",
                         borderRadius: 10,
-                        backgroundColor: "color-mix(in srgb, var(--q-accent) 15%, transparent)",
+                        backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)",
                         fontSize: 9,
                         fontWeight: 600,
-                        color: "var(--q-accent)",
+                        color: "var(--accent)",
                       }}>
-                        <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--q-accent)" }} />
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--accent)" }} />
                         {activeCount} active
                       </span>
                     )}
@@ -2731,19 +2735,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                           gap: 6,
                           padding: "2px 8px",
                           borderRadius: 6,
-                          backgroundColor: "var(--q-bg-input)",
-                          border: "1px solid var(--q-border)",
+                          backgroundColor: "var(--panel-3)",
+                          border: "1px solid var(--border)",
                           cursor: "pointer",
                           fontFamily: font,
                           fontSize: 10,
-                          color: "var(--q-fg)",
+                          color: "var(--fg)",
                         }}
                       >
                         {selectedExec && (
                           <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(selectedExec.status as any) }} />
                         )}
                         <span>{selectedExec ? `${selectedExec.correlationId.slice(0, 8)} · ${relativeTime(selectedExec.startedAt)}` : "select"}</span>
-                        <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>▾</span>
+                        <span style={{ color: "var(--fg-3)", fontSize: 9 }}>▾</span>
                       </button>
                       {isDropdownOpen && (() => {
                         const visibleCount = visibleExecCount[group.id] ?? EXEC_PAGE_SIZE;
@@ -2761,15 +2765,15 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                             maxHeight: 320,
                             display: "flex",
                             flexDirection: "column",
-                            backgroundColor: "var(--q-bg-elevated)",
-                            border: "1px solid var(--q-border)",
+                            backgroundColor: "var(--panel-2)",
+                            border: "1px solid var(--border)",
                             borderRadius: 6,
                             padding: "4px 0",
                             zIndex: 30,
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                            boxShadow: "var(--shadow-pop)",
                           }}
                         >
-                          <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--q-fg-muted)", fontWeight: 500 }}>select execution</div>
+                          <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--fg-3)", fontWeight: 500 }}>select execution</div>
                           <div
                             style={{ overflowY: "auto", flex: 1 }}
                             onWheel={(e) => e.stopPropagation()}
@@ -2784,11 +2788,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                             onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, [group.id]: true }; setSelectedExecByGroup((prev) => ({ ...prev, [group.id]: "" })); setOpenDropdownGroup(null); }}
                             style={{
                               display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
-                              backgroundColor: groupSelExecId === "" ? "var(--q-bg-input)" : "transparent",
-                              fontSize: 10, color: "var(--q-fg-secondary)",
+                              backgroundColor: groupSelExecId === "" ? "var(--panel-3)" : "transparent",
+                              fontSize: 10, color: "var(--fg-2)",
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = groupSelExecId === "" ? "var(--q-bg-input)" : "transparent"; }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = groupSelExecId === "" ? "var(--panel-3)" : "transparent"; }}
                           >
                             all
                           </div>
@@ -2798,19 +2802,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                               onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, [group.id]: false }; setSelectedExecByGroup((prev) => ({ ...prev, [group.id]: exec.correlationId })); setOpenDropdownGroup(null); }}
                               style={{
                                 display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
-                                backgroundColor: exec.correlationId === groupSelExecId ? "var(--q-bg-input)" : "transparent",
+                                backgroundColor: exec.correlationId === groupSelExecId ? "var(--panel-3)" : "transparent",
                                 fontSize: 10,
                               }}
-                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === groupSelExecId ? "var(--q-bg-input)" : "transparent"; }}
+                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === groupSelExecId ? "var(--panel-3)" : "transparent"; }}
                             >
                               <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(exec.status as any), flexShrink: 0 }} />
-                              <span style={{ color: "var(--q-fg)", fontWeight: 500 }}>{exec.correlationId.slice(0, 8)} · {relativeTime(exec.startedAt)}</span>
+                              <span style={{ color: "var(--fg)", fontWeight: 500 }}>{exec.correlationId.slice(0, 8)} · {relativeTime(exec.startedAt)}</span>
                               <span style={{ marginLeft: "auto", color: statusColor(exec.status as any), fontSize: 9 }}>{exec.status}</span>
                             </div>
                           ))}
                           {hasMore && (
-                            <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--q-fg-muted)", textAlign: "center" }}>scroll for more…</div>
+                            <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--fg-3)", textAlign: "center" }}>scroll for more…</div>
                           )}
                           </div>
                         </div>
@@ -2847,19 +2851,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const headerH = 28;
             const isDropdownOpen = openDropdownGroup === "ungrouped";
             return (
-              <div style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px solid var(--q-border)", borderRadius: 8, backgroundColor: "#0f0f0f80", pointerEvents: "none" }}>
+              <div style={{ position: "absolute", left: minX, top: minY - headerH, width: maxX - minX, height: maxY - minY + headerH, border: "1px dashed var(--border)", borderRadius: 14, backgroundColor: "color-mix(in srgb, var(--fg) 2.5%, transparent)", pointerEvents: "none" }}>
                 <div style={{
                   display: "flex", alignItems: "center", gap: 8, padding: "4px 12px",
-                  borderBottom: "1px solid var(--q-border)", borderRadius: "8px 8px 0 0",
-                  backgroundColor: "var(--q-bg-elevated)", pointerEvents: "auto", fontFamily: font,
+                  borderBottom: "1px solid var(--border)", borderRadius: "8px 8px 0 0",
+                  backgroundColor: "var(--panel-2)", pointerEvents: "auto", fontFamily: font,
                 }}>
                   {activeCount > 0 && (
                     <span style={{
                       display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 8px", borderRadius: 10,
-                      backgroundColor: "color-mix(in srgb, var(--q-accent) 15%, transparent)",
-                      fontSize: 9, fontWeight: 600, color: "var(--q-accent)",
+                      backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)",
+                      fontSize: 9, fontWeight: 600, color: "var(--accent)",
                     }}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--q-accent)" }} />
+                      <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "var(--accent)" }} />
                       {activeCount} active
                     </span>
                   )}
@@ -2869,15 +2873,15 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       onClick={(e) => { e.stopPropagation(); setOpenDropdownGroup(isDropdownOpen ? null : "ungrouped"); }}
                       style={{
                         display: "flex", alignItems: "center", gap: 6, padding: "2px 8px", borderRadius: 6,
-                        backgroundColor: "var(--q-bg-input)", border: "1px solid var(--q-border)",
-                        cursor: "pointer", fontFamily: font, fontSize: 10, color: "var(--q-fg)",
+                        backgroundColor: "var(--panel-3)", border: "1px solid var(--border)",
+                        cursor: "pointer", fontFamily: font, fontSize: 10, color: "var(--fg)",
                       }}
                     >
                       {selectedExec && (
                         <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(selectedExec.status as any) }} />
                       )}
                       <span>{selectedExec ? `${selectedExec.correlationId.slice(0, 8)} · ${relativeTime(selectedExec.startedAt)}` : "select"}</span>
-                      <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>▾</span>
+                      <span style={{ color: "var(--fg-3)", fontSize: 9 }}>▾</span>
                     </button>
                     {isDropdownOpen && (() => {
                       const visibleCount = visibleExecCount["ungrouped"] ?? EXEC_PAGE_SIZE;
@@ -2889,11 +2893,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         style={{
                           position: "absolute", top: "100%", right: 0, marginTop: 4, minWidth: 220,
                           maxHeight: 320, display: "flex", flexDirection: "column",
-                          backgroundColor: "var(--q-bg-elevated)", border: "1px solid var(--q-border)",
-                          borderRadius: 6, padding: "4px 0", zIndex: 30, boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                          backgroundColor: "var(--panel-2)", border: "1px solid var(--border)",
+                          borderRadius: 6, padding: "4px 0", zIndex: 30, boxShadow: "var(--shadow-pop)",
                         }}
                       >
-                        <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--q-fg-muted)", fontWeight: 500 }}>select execution</div>
+                        <div style={{ padding: "4px 10px", fontSize: 9, color: "var(--fg-3)", fontWeight: 500 }}>select execution</div>
                         <div
                           style={{ overflowY: "auto", flex: 1 }}
                           onWheel={(e) => e.stopPropagation()}
@@ -2908,11 +2912,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                           onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, ungrouped: true }; setSelectedExecByGroup((prev) => ({ ...prev, ungrouped: "" })); setOpenDropdownGroup(null); }}
                           style={{
                             display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
-                            backgroundColor: ungroupedSelExecId === "" ? "var(--q-bg-input)" : "transparent",
-                            fontSize: 10, color: "var(--q-fg-secondary)",
+                            backgroundColor: ungroupedSelExecId === "" ? "var(--panel-3)" : "transparent",
+                            fontSize: 10, color: "var(--fg-2)",
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ungroupedSelExecId === "" ? "var(--q-bg-input)" : "transparent"; }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ungroupedSelExecId === "" ? "var(--panel-3)" : "transparent"; }}
                         >
                           all
                         </div>
@@ -2922,19 +2926,19 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                             onClick={() => { userExplicitlySelectedAllByGroup.current = { ...userExplicitlySelectedAllByGroup.current, ungrouped: false }; setSelectedExecByGroup((prev) => ({ ...prev, ungrouped: exec.correlationId })); setOpenDropdownGroup(null); }}
                             style={{
                               display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", cursor: "pointer",
-                              backgroundColor: exec.correlationId === ungroupedSelExecId ? "var(--q-bg-input)" : "transparent",
+                              backgroundColor: exec.correlationId === ungroupedSelExecId ? "var(--panel-3)" : "transparent",
                               fontSize: 10,
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-input)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === ungroupedSelExecId ? "var(--q-bg-input)" : "transparent"; }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = exec.correlationId === ungroupedSelExecId ? "var(--panel-3)" : "transparent"; }}
                           >
                             <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: statusColor(exec.status as any), flexShrink: 0 }} />
-                            <span style={{ color: "var(--q-fg)", fontWeight: 500 }}>{exec.correlationId.slice(0, 8)} · {relativeTime(exec.startedAt)}</span>
+                            <span style={{ color: "var(--fg)", fontWeight: 500 }}>{exec.correlationId.slice(0, 8)} · {relativeTime(exec.startedAt)}</span>
                             <span style={{ marginLeft: "auto", color: statusColor(exec.status as any), fontSize: 9 }}>{exec.status}</span>
                           </div>
                         ))}
                         {hasMore && (
-                          <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--q-fg-muted)", textAlign: "center" }}>scroll for more…</div>
+                          <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--fg-3)", textAlign: "center" }}>scroll for more…</div>
                         )}
                         </div>
                       </div>
@@ -2954,7 +2958,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const h = Math.abs(selectionBox.currentY - selectionBox.startY);
             if (w < 2 && h < 2) return null;
             return (
-              <div style={{ position: "absolute", left: x, top: y, width: w, height: h, border: "1px solid var(--q-selection-bg)", backgroundColor: "var(--q-accent-bg-faint)", pointerEvents: "none", borderRadius: 2 }} />
+              <div style={{ position: "absolute", left: x, top: y, width: w, height: h, border: "1px solid var(--q-selection-bg)", backgroundColor: "var(--accent-soft)", pointerEvents: "none", borderRadius: 2 }} />
             );
           })()}
 
@@ -2985,14 +2989,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             const isRunningGlobal = runningJobIds.has(job.id);
             const isDraggingThis = dragging?.id === job.id && isDraggingNode;
             const isInHoveredGroup = hoveredGroupId ? (jobGroupMap.get(job.id) === hoveredGroupId) : false;
-            let borderColor = "var(--q-border)";
-            if (isDraggingThis && dragDeleteHover) borderColor = "var(--q-error)";
-            else if (isDraggingThis) borderColor = "var(--q-fg)";
-            else if (isMultiSelected) borderColor = "var(--q-accent)";
-            else if (isRunningGlobal) borderColor = "var(--q-warning)";
-            else if (isSelected) borderColor = "var(--q-accent)";
-            else if (isConnectSource) borderColor = connectingMode?.type === "success" ? "var(--q-accent)" : "var(--q-error)";
-            else if (connectingMode && isHovered) borderColor = connectingMode.type === "success" ? "var(--q-accent)" : "var(--q-error)";
+            let borderColor = "var(--border)";
+            if (isDraggingThis && dragDeleteHover) borderColor = "var(--danger)";
+            else if (isDraggingThis) borderColor = "var(--fg)";
+            else if (isMultiSelected) borderColor = "var(--accent)";
+            else if (isRunningGlobal) borderColor = "var(--warn)";
+            else if (isSelected) borderColor = "var(--accent)";
+            else if (isConnectSource) borderColor = connectingMode?.type === "success" ? "var(--accent)" : "var(--danger)";
+            else if (connectingMode && isHovered) borderColor = connectingMode.type === "success" ? "var(--accent)" : "var(--danger)";
 
             // Pipeline execution overlay — from precomputed data
             const ned = nodeExecData.get(job.id);
@@ -3007,7 +3011,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               if (execRun.status === "waiting") borderThickness = 2;
             } else if (nodeGroupExecId && !execRun && !isDraggingThis && !isSelected && !isMultiSelected && !connectingMode) {
               const isInAnyExec = ned?.isInAnyExec ?? false;
-              if (isInAnyExec) borderColor = "var(--q-fg-muted)";
+              if (isInAnyExec) borderColor = "var(--fg-3)";
             }
 
             // Hover/route/group node highlighting
@@ -3041,15 +3045,16 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   left: pos.x,
                   top: pos.y,
                   width: NODE_W,
-                  backgroundColor: "var(--q-bg-elevated)",
+                  backgroundColor: "var(--panel-2)",
                   border: `${borderThickness}px solid ${borderColor}`,
-                  borderRadius: 4,
+                  borderRadius: 10,
                   padding: "10px 14px",
                   cursor: connectingMode ? "pointer" : dragging?.id === job.id ? "grabbing" : "grab",
                   userSelect: "none",
                   WebkitUserSelect: "none",
                   pointerEvents: "auto",
-                  transition: dragging?.id === job.id ? "none" : "border-color 0.15s",
+                  boxShadow: isHovered && !isDraggingThis ? "var(--shadow-pop)" : "0 1px 2px rgba(0,0,0,.16)",
+                  transition: dragging?.id === job.id ? "none" : "border-color 0.15s, box-shadow 0.15s",
                   animation: isDraggingThis
                     ? (dragDeleteHover ? "node-shake-scared 0.2s ease-in-out infinite" : "node-shake 0.3s ease-in-out infinite")
                     : "none",
@@ -3092,14 +3097,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       width: 6,
                       height: 6,
                       borderRadius: "50%",
-                      backgroundColor: job.scheduleEnabled ? "var(--q-accent)" : "var(--q-fg-secondary)",
+                      backgroundColor: job.scheduleEnabled ? "var(--accent)" : "var(--fg-2)",
                       flexShrink: 0,
                     }}
                   />
                   <span
                     style={{
                       flex: 1,
-                      color: "var(--q-fg)",
+                      color: "var(--fg)",
                       fontSize: 11,
                       fontWeight: "bold",
                       fontFamily: font,
@@ -3116,7 +3121,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         width: 8,
                         height: 8,
                         borderRadius: "50%",
-                        backgroundColor: "var(--q-warning)",
+                        backgroundColor: "var(--warn)",
                         animation: "job-pulse 1.5s ease-in-out infinite",
                         display: "inline-block",
                         flexShrink: 0,
@@ -3142,7 +3147,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       style={{
                         background: "none",
                         border: "none",
-                        color: "var(--q-warning)",
+                        color: "var(--warn)",
                         fontSize: 10,
                         cursor: "pointer",
                         padding: "0 2px",
@@ -3163,7 +3168,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       style={{
                         background: "none",
                         border: "none",
-                        color: "var(--q-accent)",
+                        color: "var(--accent)",
                         fontSize: 10,
                         cursor: "pointer",
                         padding: "0 2px",
@@ -3177,7 +3182,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   )}
                 </div>
                 {/* Second line */}
-                <div style={{ marginTop: 4, color: "var(--q-fg-muted)", fontSize: 9, fontFamily: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ marginTop: 4, color: "var(--fg-3)", fontSize: 9, fontFamily: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {execRun ? (
                     <span style={{ color: statusColor(execRun.status as any) }}>
                       {execRun.status} &middot; {execRun.durationMs > 0 ? formatDuration(execRun.durationMs) : relativeTime(execRun.startedAt)}
@@ -3186,7 +3191,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     <span style={{ color: statusColor("running") }}>running</span>
                   ) : (
                     <>
-                      {job.type}{agentName(job.agentId) ? <span style={{ color: "var(--q-accent)" }}> &middot; {agentName(job.agentId)}</span> : null} &middot; {scheduleInfo}
+                      {job.type}{agentName(job.agentId) ? <span style={{ color: "var(--accent)" }}> &middot; {agentName(job.agentId)}</span> : null} &middot; {scheduleInfo}
                     </>
                   )}
                 </div>
@@ -3201,14 +3206,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     maxWidth: NODE_W + 60,
                     padding: "6px 10px",
                     borderRadius: 6,
-                    backgroundColor: "color-mix(in srgb, var(--q-accent) 10%, var(--q-bg))",
-                    border: "1px solid color-mix(in srgb, var(--q-accent) 30%, transparent)",
+                    backgroundColor: "color-mix(in srgb, var(--accent) 10%, var(--bg))",
+                    border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
                     pointerEvents: "auto",
                     zIndex: 3,
                     fontFamily: font,
                   }}
                 >
-                  <div style={{ fontSize: 10, fontWeight: 600, color: "var(--q-accent)", marginBottom: 2 }}>⚠ {execRun.errorMessage || "waiting for input"}</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: "var(--accent)", marginBottom: 2 }}>⚠ {execRun.errorMessage || "waiting for input"}</div>
                 </div>
               )}
             </React.Fragment>);
@@ -3222,18 +3227,20 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             top: 16,
             left: 16,
             zIndex: 10,
-            backgroundColor: "var(--q-bg-menu)",
-            border: "1px solid var(--q-border)",
+            backgroundColor: "var(--panel)",
+            border: "1px solid var(--border)",
             borderRadius: 9999,
             padding: "6px 16px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-            fontFamily: font,
+            boxShadow: "var(--shadow-panel)",
             fontSize: 12,
             pointerEvents: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
           }}
         >
-          <span style={{ color: "var(--q-accent)" }}>&gt;_ </span>
-          <span style={{ color: "var(--q-fg)" }}>quant</span>
+          <Icon name="terminal" size={13} color="var(--accent)" />
+          <span style={{ color: "var(--fg)", fontWeight: 600, fontSize: 12.5 }}>quant</span>
         </div>
 
         {/* Floating action island */}
@@ -3244,11 +3251,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 10,
-            backgroundColor: "var(--q-bg-menu)",
-            border: "1px solid var(--q-border)",
+            backgroundColor: "var(--panel)",
+            border: "1px solid var(--border)",
             borderRadius: 9999,
             padding: "4px 8px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+            boxShadow: "var(--shadow-panel)",
             display: "flex",
             alignItems: "center",
             gap: 0,
@@ -3257,42 +3264,21 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           }}
         >
           {/* + new job */}
-          <button
-            onClick={onCreateJob}
-            style={{ background: "none", border: "none", color: "var(--q-accent)", cursor: "pointer", padding: "4px 10px", fontFamily: font, fontSize: 10, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-accent-hover)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-accent)")}
-          >
-            + new job
-          </button>
+          <Button variant="subtle" size="sm" icon="plus" onClick={onCreateJob} style={{ color: "var(--accent)" }}>
+            new job
+          </Button>
           {/* triggers dropdown */}
           <div style={{ position: "relative" }}>
-            <button
+            <Button
+              variant="subtle"
+              size="sm"
+              icon="zap"
+              active={!!connectingMode}
               onClick={() => { setTriggerDropdownOpen((v) => !v); }}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "4px 10px",
-                fontFamily: font,
-                fontSize: 10,
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                whiteSpace: "nowrap",
-                color: connectingMode ? "var(--q-fg)" : "var(--q-fg-secondary)",
-              }}
-              onMouseEnter={(e) => { if (!connectingMode) e.currentTarget.style.color = "var(--q-fg)"; }}
-              onMouseLeave={(e) => { if (!connectingMode) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="16 3 21 3 21 8" /><line x1="4" y1="20" x2="21" y2="3" />
-              </svg>
               {connectingMode ? `trigger: ${connectingMode.type}` : "triggers"}
-              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
+              <Icon name="chevronDown" size={12} />
+            </Button>
             {triggerDropdownOpen && (
               <div
                 onClick={(e) => e.stopPropagation()}
@@ -3301,15 +3287,15 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   top: "100%",
                   left: 0,
                   marginTop: 6,
-                  backgroundColor: "var(--q-bg-surface)",
-                  border: "1px solid var(--q-border)",
+                  backgroundColor: "var(--panel-2)",
+                  border: "1px solid var(--border)",
                   borderRadius: 6,
                   padding: "4px 0",
                   minWidth: 140,
                   zIndex: 9999,
                   fontFamily: font,
                   fontSize: 11,
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+                  boxShadow: "var(--shadow-pop)",
                 }}
               >
                 <button
@@ -3320,18 +3306,18 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   style={{
                     display: "flex", alignItems: "center", gap: 6,
                     width: "100%", padding: "6px 12px",
-                    background: connectingMode?.type === "success" ? "var(--q-border)" : "none",
+                    background: connectingMode?.type === "success" ? "var(--border)" : "none",
                     border: "none", cursor: "pointer",
-                    color: "var(--q-accent)", textAlign: "left", fontSize: 11,
+                    color: "var(--accent)", textAlign: "left", fontSize: 11,
                     fontFamily: font,
                   }}
-                  onMouseEnter={(e) => { if (connectingMode?.type !== "success") e.currentTarget.style.backgroundColor = "var(--q-bg-inset)"; }}
+                  onMouseEnter={(e) => { if (connectingMode?.type !== "success") e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
                   onMouseLeave={(e) => { if (connectingMode?.type !== "success") e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--q-accent)", flexShrink: 0 }} />
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--accent)", flexShrink: 0 }} />
                   on success
                   {connectingMode?.type === "success" && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--q-accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
@@ -3344,25 +3330,25 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   style={{
                     display: "flex", alignItems: "center", gap: 6,
                     width: "100%", padding: "6px 12px",
-                    background: connectingMode?.type === "failure" ? "var(--q-border)" : "none",
+                    background: connectingMode?.type === "failure" ? "var(--border)" : "none",
                     border: "none", cursor: "pointer",
-                    color: "var(--q-error)", textAlign: "left", fontSize: 11,
+                    color: "var(--danger)", textAlign: "left", fontSize: 11,
                     fontFamily: font,
                   }}
-                  onMouseEnter={(e) => { if (connectingMode?.type !== "failure") e.currentTarget.style.backgroundColor = "var(--q-bg-inset)"; }}
+                  onMouseEnter={(e) => { if (connectingMode?.type !== "failure") e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
                   onMouseLeave={(e) => { if (connectingMode?.type !== "failure") e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--q-error)", flexShrink: 0 }} />
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "var(--danger)", flexShrink: 0 }} />
                   on failure
                   {connectingMode?.type === "failure" && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--q-error)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
                 </button>
                 {connectingMode && (
                   <>
-                    <div style={{ borderTop: "1px solid var(--q-border)", margin: "4px 0" }} />
+                    <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
                     <button
                       onClick={() => {
                         setConnectingMode(null);
@@ -3372,11 +3358,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         display: "flex", alignItems: "center", gap: 6,
                         width: "100%", padding: "6px 12px",
                         background: "none", border: "none", cursor: "pointer",
-                        color: "var(--q-fg-secondary)", textAlign: "left", fontSize: 11,
+                        color: "var(--fg-2)", textAlign: "left", fontSize: 11,
                         fontFamily: font,
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--q-bg-inset)"; e.currentTarget.style.color = "var(--q-fg)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--panel-3)"; e.currentTarget.style.color = "var(--fg)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--fg-2)"; }}
                     >
                       cancel
                     </button>
@@ -3386,47 +3372,25 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
             )}
           </div>
           {/* separator */}
-          <div style={{ width: 1, height: 16, backgroundColor: "var(--q-border)", margin: "0 4px" }} />
+          <div style={{ width: 1, height: 16, backgroundColor: "var(--border)", margin: "0 4px" }} />
           {/* auto-layout */}
-          <button
-            onClick={handleAutoLayout}
-            style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", cursor: "pointer", padding: "4px 10px", fontFamily: font, fontSize: 10, whiteSpace: "nowrap" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            &#8635; auto-layout
-          </button>
+          <Button variant="subtle" size="sm" icon="layout" onClick={handleAutoLayout}>
+            auto-layout
+          </Button>
           {/* fit view */}
-          <button
-            onClick={handleFitView}
-            style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", cursor: "pointer", padding: "4px 10px", fontFamily: font, fontSize: 10, whiteSpace: "nowrap" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            &#8862; fit view
-          </button>
+          <Button variant="subtle" size="sm" icon="maximize" onClick={handleFitView}>
+            fit view
+          </Button>
           {/* separator */}
-          <div style={{ width: 1, height: 16, backgroundColor: "var(--q-border)", margin: "0 4px" }} />
+          <div style={{ width: 1, height: 16, backgroundColor: "var(--border)", margin: "0 4px" }} />
           {/* zoom controls */}
-          <button
-            onClick={() => setZoom((z) => Math.max(z - 0.1, 0.25))}
-            style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", cursor: "pointer", padding: "4px 6px", fontFamily: font, fontSize: 12, lineHeight: 1 }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            -
-          </button>
-          <span style={{ color: "var(--q-fg-secondary)", fontSize: 10, padding: "0 4px", minWidth: 32, textAlign: "center", fontFamily: font }}>
+          <Button variant="subtle" size="sm" title="zoom out" onClick={() => setZoom((z) => Math.max(z - 0.1, 0.25))} style={{ minWidth: 26, padding: "5px 8px" }}>
+            &#8722;
+          </Button>
+          <span className="mono" style={{ color: "var(--fg-3)", fontSize: 11, padding: "0 4px", minWidth: 32, textAlign: "center" }}>
             {Math.round(zoom * 100)}%
           </span>
-          <button
-            onClick={() => setZoom((z) => Math.min(z + 0.1, 2))}
-            style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", cursor: "pointer", padding: "4px 6px", fontFamily: font, fontSize: 12, lineHeight: 1 }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            +
-          </button>
+          <IconButton name="plus" label="zoom in" onClick={() => setZoom((z) => Math.min(z + 0.1, 2))} />
         </div>
 
         {/* Minimap */}
@@ -3442,17 +3406,17 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               left: "50%",
               transform: "translateX(-50%)",
               padding: "10px 32px",
-              backgroundColor: dragDeleteHover ? "#2a1a1a" : "var(--q-bg-hover)",
-              border: `2px solid ${dragDeleteHover ? "var(--q-error)" : "var(--q-error)"}`,
+              backgroundColor: dragDeleteHover ? "#2a1a1a" : "var(--hover)",
+              border: `2px solid ${dragDeleteHover ? "var(--danger)" : "var(--danger)"}`,
               borderRadius: 9999,
-              color: "var(--q-error)",
+              color: "var(--danger)",
               fontSize: 11,
               fontFamily: font,
               fontWeight: 500,
               zIndex: 150,
               transition: "background-color 0.15s, border-color 0.15s",
               pointerEvents: "none",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+              boxShadow: "var(--shadow-pop)",
             }}
           >
             {dragDeleteHover ? "✕ Release to delete" : "✕ Drag here to delete"}
@@ -3470,8 +3434,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               position: "fixed",
               left: contextMenu.x,
               top: contextMenu.y,
-              backgroundColor: "var(--q-bg-surface)",
-              border: "1px solid var(--q-border)",
+              backgroundColor: "var(--panel-2)",
+              border: "1px solid var(--border)",
               borderRadius: 6,
               padding: 4,
               zIndex: 2000,
@@ -3496,14 +3460,14 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   textAlign: "left",
                   background: "none",
                   border: "none",
-                  color: "var(--q-fg)",
+                  color: "var(--fg)",
                   fontSize: 11,
                   fontFamily: font,
                   padding: "6px 12px",
                   cursor: "pointer",
                   borderRadius: 4,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-border)")}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--border)")}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
               >
                 {item.label}
@@ -3532,10 +3496,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   placeholder="group name..."
                   style={{
                     width: "100%",
-                    backgroundColor: "var(--q-bg-elevated)",
-                    border: "1px solid var(--q-border)",
+                    backgroundColor: "var(--panel-2)",
+                    border: "1px solid var(--border)",
                     borderRadius: 4,
-                    color: "var(--q-fg)",
+                    color: "var(--fg)",
                     fontSize: 11,
                     fontFamily: font,
                     padding: "4px 8px",
@@ -3559,7 +3523,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       <div
         style={{
           width: groupsSidebarWidth,
-          backgroundColor: "var(--q-bg)",
+          backgroundColor: "var(--bg)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -3567,8 +3531,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
           fontFamily: font,
         }}
       >
-        <div style={{ padding: "12px 14px 8px", color: "var(--q-fg-muted)", fontSize: 10, fontWeight: 500, letterSpacing: 0.5 }}>
-          GROUPS
+        <div className="mono" style={{ padding: "14px 16px 10px", color: "var(--fg-3)", fontSize: 9.5, fontWeight: 600, letterSpacing: "0.13em", textTransform: "uppercase" }}>
+          Groups
         </div>
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
           {jobGroups.map((group) => {
@@ -3583,7 +3547,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     gap: 6,
                     padding: "6px 14px",
                     cursor: "pointer",
-                    color: hoveredGroupId === group.id ? "var(--q-fg)" : "var(--q-fg-tertiary)",
+                    color: hoveredGroupId === group.id ? "var(--fg)" : "var(--fg-3)",
                     fontSize: 11,
                     transition: "color 0.15s, background-color 0.15s",
                     backgroundColor: sidebarDropTarget === group.id ? "#1a2a1a" : "transparent",
@@ -3629,12 +3593,12 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         return next;
                       });
                     }}
-                    style={{ fontSize: 8, display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", width: 10, textAlign: "center" }}
+                    style={{ display: "inline-flex", alignItems: "center", color: "var(--fg-4)" }}
                   >
-                    &#9654;
+                    <Icon name={isExpanded ? "chevronDown" : "chevronRight"} size={12} />
                   </span>
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</span>
-                  <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>{groupJobs.length}</span>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--fg)" }}>{group.name}</span>
+                  <span className="mono" style={{ color: "var(--fg-3)", fontSize: 10 }}>{groupJobs.length}</span>
                   <span
                     onClick={async (e) => {
                       e.stopPropagation();
@@ -3646,20 +3610,18 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       }
                     }}
                     style={{
-                      color: "var(--q-fg-muted)",
+                      color: "var(--fg-3)",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
                       opacity: hoveredGroupId === group.id ? 1 : 0,
                       transition: "opacity 0.15s",
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--q-error)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--q-fg-muted)"; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-3)"; }}
                     title="Delete group"
                   >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
+                    <Icon name="trash" size={12} />
                   </span>
                 </div>
                 {isExpanded && groupJobs.map((job) => (
@@ -3671,7 +3633,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                     style={{
                       padding: "4px 14px 4px 30px",
                       cursor: "grab",
-                      color: hoveredNodeId === job.id ? "var(--q-fg)" : runningJobIds.has(job.id) ? "var(--q-fg)" : "var(--q-fg-secondary)",
+                      color: hoveredNodeId === job.id ? "var(--fg)" : runningJobIds.has(job.id) ? "var(--fg)" : "var(--fg-2)",
                       fontSize: 10,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -3692,7 +3654,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
 
           {/* Ungrouped section — always visible */}
           <div>
-            <div style={{ height: 1, backgroundColor: "var(--q-border)", margin: "4px 14px" }} />
+            <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 14px" }} />
             <div
               style={{
                 display: "flex",
@@ -3700,7 +3662,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 gap: 6,
                 padding: "6px 14px",
                 cursor: "pointer",
-                color: "var(--q-fg-secondary)",
+                color: "var(--fg-2)",
                 fontSize: 11,
                 transition: "background-color 0.15s",
                 backgroundColor: sidebarDropTarget === "__ungrouped__" ? "#1a2a1a" : "transparent",
@@ -3735,13 +3697,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 onRefreshJobGroups();
               }}
             >
-              <span
-                style={{ fontSize: 8, display: "inline-block", transform: expandedGroups.has("__ungrouped__") ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", width: 10, textAlign: "center" }}
-              >
-                &#9654;
+              <span style={{ display: "inline-flex", alignItems: "center", color: "var(--fg-4)" }}>
+                <Icon name={expandedGroups.has("__ungrouped__") ? "chevronDown" : "chevronRight"} size={12} />
               </span>
               <span style={{ flex: 1 }}>ungrouped</span>
-              <span style={{ color: "var(--q-fg-muted)", fontSize: 9 }}>{ungroupedJobs.length}</span>
+              <span className="mono" style={{ color: "var(--fg-3)", fontSize: 10 }}>{ungroupedJobs.length}</span>
             </div>
             {expandedGroups.has("__ungrouped__") && ungroupedJobs.map((job) => (
               <div
@@ -3752,7 +3712,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 style={{
                   padding: "4px 14px 4px 30px",
                   cursor: "grab",
-                  color: hoveredNodeId === job.id ? "var(--q-fg)" : runningJobIds.has(job.id) ? "var(--q-fg)" : "var(--q-fg-secondary)",
+                  color: hoveredNodeId === job.id ? "var(--fg)" : runningJobIds.has(job.id) ? "var(--fg)" : "var(--fg-2)",
                   fontSize: 10,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -3775,11 +3735,11 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         style={{
           width: 4,
           cursor: "col-resize",
-          backgroundColor: resizingSidebar ? "var(--q-accent)" : "transparent",
-          borderRight: "1px solid var(--q-border)",
+          backgroundColor: resizingSidebar ? "var(--accent)" : "transparent",
+          borderRight: "1px solid var(--border)",
           transition: "background-color 0.15s",
         }}
-        onMouseEnter={(e) => { if (!resizingSidebar) e.currentTarget.style.backgroundColor = "var(--q-border-light)"; }}
+        onMouseEnter={(e) => { if (!resizingSidebar) e.currentTarget.style.backgroundColor = "var(--border-2)"; }}
         onMouseLeave={(e) => { if (!resizingSidebar) e.currentTarget.style.backgroundColor = "transparent"; }}
       />
       </div>
@@ -3787,7 +3747,7 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
   }
 
   return (
-    <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", fontFamily: font }}>
+    <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--bg)", fontFamily: font }}>
       <style>{pulseKeyframes}</style>
       {renderGroupsSidebar()}
       {renderCanvasView()}
@@ -3800,39 +3760,39 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
         const advanceTargetName = jobs.find(j => j.id === advanceTargetJobId)?.name || advanceTargetJobId.slice(0, 8);
 
         const modalStyle: React.CSSProperties = {
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
+          backgroundColor: "var(--bg)",
+          border: "1px solid var(--border)",
           borderRadius: 12, padding: 24, width: 520,
           boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
           animation: "modal-scale-in 0.15s ease-out",
           fontFamily: font,
           display: "flex", flexDirection: "column", gap: 16,
         };
-        const labelStyle: React.CSSProperties = { color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: font };
-        const hintStyle: React.CSSProperties = { color: "var(--q-fg-secondary)", fontSize: 11, fontFamily: font, lineHeight: 1.5 };
+        const labelStyle: React.CSSProperties = { color: "var(--fg-2)", fontSize: 10, fontFamily: font };
+        const hintStyle: React.CSSProperties = { color: "var(--fg-2)", fontSize: 11, fontFamily: font, lineHeight: 1.5 };
         const textareaStyle: React.CSSProperties = {
           width: "100%", height: 100, resize: "vertical",
-          backgroundColor: "var(--q-bg-secondary, #111)", color: "var(--q-fg)",
-          border: "1px solid var(--q-border)", borderRadius: 8,
+          backgroundColor: "var(--panel, #111)", color: "var(--fg)",
+          border: "1px solid var(--border)", borderRadius: 8,
           padding: "10px 12px", fontSize: 11, fontFamily: font,
           boxSizing: "border-box" as const, lineHeight: 1.5,
         };
         const cancelBtnStyle: React.CSSProperties = {
-          background: "none", border: "1px solid var(--q-border)",
-          color: "var(--q-fg-secondary)", borderRadius: 6,
+          background: "none", border: "1px solid var(--border)",
+          color: "var(--fg-2)", borderRadius: 6,
           padding: "8px 16px", fontSize: 11, fontFamily: font, cursor: "pointer",
         };
         const submitBtnStyle: React.CSSProperties = {
-          background: "var(--q-accent)", border: "none",
-          color: "var(--q-bg)", borderRadius: 6,
+          background: "var(--accent)", border: "none",
+          color: "var(--bg)", borderRadius: 6,
           padding: "8px 16px", fontSize: 11, fontFamily: font,
           fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
         };
         const actionCardStyle: React.CSSProperties = {
           display: "flex", alignItems: "center", gap: 12,
           width: "100%", padding: "12px 14px",
-          backgroundColor: "var(--q-bg-secondary, #111)",
-          border: "1px solid var(--q-border)", borderRadius: 8,
+          backgroundColor: "var(--panel, #111)",
+          border: "1px solid var(--border)", borderRadius: 8,
           cursor: "pointer", textAlign: "left" as const,
         };
 
@@ -3884,8 +3844,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               {/* === SCREEN: MENU === */}
               {resumeScreen === "menu" && (<>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ color: "var(--q-fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>pipeline paused</span>
-                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
+                  <span style={{ color: "var(--fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>pipeline paused</span>
+                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--fg-2)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
                 </div>
 
                 <div style={hintStyle}>
@@ -3893,49 +3853,49 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                 </div>
 
                 {waitingRun?.errorMessage && (
-                  <div style={{ backgroundColor: "var(--q-bg-secondary, #111)", borderRadius: 8, padding: "12px 14px" }}>
+                  <div style={{ backgroundColor: "var(--panel, #111)", borderRadius: 8, padding: "12px 14px" }}>
                     <div style={labelStyle}>waiting reason</div>
-                    <div style={{ color: "var(--q-fg-tertiary, #999)", fontSize: 11, fontFamily: font, marginTop: 4, lineHeight: 1.5 }}>
+                    <div style={{ color: "var(--fg-3, #999)", fontSize: 11, fontFamily: font, marginTop: 4, lineHeight: 1.5 }}>
                       {waitingJob?.triagePrompt || waitingRun.errorMessage}
                     </div>
                   </div>
                 )}
 
-                <div style={{ width: "100%", height: 1, backgroundColor: "var(--q-border)" }} />
+                <div style={{ width: "100%", height: 1, backgroundColor: "var(--border)" }} />
                 <div style={labelStyle}>choose action</div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <button
                     onClick={() => { setResumeScreen("rerun"); setResumeContext(""); }}
                     style={actionCardStyle}
-                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--q-fg-secondary)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--fg-2)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
                   >
                     <span style={{ fontSize: 16 }}>&#8635;</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ color: "var(--q-fg)", fontSize: 12, fontWeight: 600, fontFamily: font }}>re-run this step</div>
-                      <div style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: font, marginTop: 2 }}>retry with additional context injected into the prompt</div>
+                      <div style={{ color: "var(--fg)", fontSize: 12, fontWeight: 600, fontFamily: font }}>re-run this step</div>
+                      <div style={{ color: "var(--fg-2)", fontSize: 10, fontFamily: font, marginTop: 2 }}>retry with additional context injected into the prompt</div>
                     </div>
-                    <span style={{ color: "var(--q-fg-secondary)", fontSize: 12, fontFamily: font }}>&gt;</span>
+                    <span style={{ color: "var(--fg-2)", fontSize: 12, fontFamily: font }}>&gt;</span>
                   </button>
 
                   <button
                     onClick={() => { setResumeScreen("advance"); setResumeContext(""); setAdvanceTargetJobId(""); }}
                     style={actionCardStyle}
-                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--q-fg-secondary)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--fg-2)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
                   >
-                    <span style={{ color: "var(--q-accent)", fontSize: 16 }}>&#10003;</span>
+                    <span style={{ color: "var(--accent)", fontSize: 16 }}>&#10003;</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ color: "var(--q-fg)", fontSize: 12, fontWeight: 600, fontFamily: font }}>continue</div>
-                      <div style={{ color: "var(--q-fg-secondary)", fontSize: 10, fontFamily: font, marginTop: 2 }}>approve output and advance the pipeline, optionally to a specific step</div>
+                      <div style={{ color: "var(--fg)", fontSize: 12, fontWeight: 600, fontFamily: font }}>continue</div>
+                      <div style={{ color: "var(--fg-2)", fontSize: 10, fontFamily: font, marginTop: 2 }}>approve output and advance the pipeline, optionally to a specific step</div>
                     </div>
-                    <span style={{ color: "var(--q-fg-secondary)", fontSize: 12, fontFamily: font }}>&gt;</span>
+                    <span style={{ color: "var(--fg-2)", fontSize: 12, fontFamily: font }}>&gt;</span>
                   </button>
                 </div>
 
                 {pipelineRuns.length > 1 && (<>
-                  <div style={{ width: "100%", height: 1, backgroundColor: "var(--q-border)" }} />
+                  <div style={{ width: "100%", height: 1, backgroundColor: "var(--border)" }} />
                   <div style={labelStyle}>pipeline state</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {(() => {
@@ -3953,9 +3913,9 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                       return (
                         <div key={pr.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontFamily: font, padding: "4px 0" }}>
                           <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: statusColor(pr.status), flexShrink: 0 }} />
-                          <span style={{ color: isWaiting ? "var(--q-warning)" : "var(--q-fg)", fontWeight: isWaiting ? 600 : "normal" }}>{jName}</span>
-                          <span style={{ color: "var(--q-fg-secondary)", fontSize: 10 }}>{pr.status}</span>
-                          {pr.finishedAt && <span style={{ color: "var(--q-fg-muted)", fontSize: 9, marginLeft: "auto" }}>{formatDuration(pr.durationMs)}</span>}
+                          <span style={{ color: isWaiting ? "var(--warn)" : "var(--fg)", fontWeight: isWaiting ? 600 : "normal" }}>{jName}</span>
+                          <span style={{ color: "var(--fg-2)", fontSize: 10 }}>{pr.status}</span>
+                          {pr.finishedAt && <span style={{ color: "var(--fg-3)", fontSize: 9, marginLeft: "auto" }}>{formatDuration(pr.durationMs)}</span>}
                         </div>
                       );
                     })}
@@ -3967,10 +3927,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               {resumeScreen === "rerun" && (<>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button onClick={() => setResumeScreen("menu")} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>&lt;</button>
-                    <span style={{ color: "var(--q-fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>re-run this step</span>
+                    <button onClick={() => setResumeScreen("menu")} style={{ background: "none", border: "none", color: "var(--fg-2)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>&lt;</button>
+                    <span style={{ color: "var(--fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>re-run this step</span>
                   </div>
-                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
+                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--fg-2)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
                 </div>
 
                 <div style={hintStyle}>
@@ -3984,8 +3944,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   value={resumeContext}
                   onChange={(e) => setResumeContext(e.target.value)}
                   style={textareaStyle}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
                 />
 
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -4000,10 +3960,10 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
               {resumeScreen === "advance" && (<>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button onClick={() => setResumeScreen("menu")} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>&lt;</button>
-                    <span style={{ color: "var(--q-fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>continue</span>
+                    <button onClick={() => setResumeScreen("menu")} style={{ background: "none", border: "none", color: "var(--fg-2)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>&lt;</button>
+                    <span style={{ color: "var(--fg)", fontSize: 16, fontWeight: 600, fontFamily: font }}>continue</span>
                   </div>
-                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--q-fg-secondary)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
+                  <button onClick={closeDialog} style={{ background: "none", border: "none", color: "var(--fg-2)", fontSize: 14, fontFamily: font, cursor: "pointer" }}>x</button>
                 </div>
 
                 <div style={hintStyle}>
@@ -4033,28 +3993,28 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                         style={{
                           display: "flex", alignItems: "center", gap: 8,
                           width: "100%", padding: "8px 12px", borderRadius: 6,
-                          backgroundColor: isSelected ? "var(--q-accent)" : "var(--q-bg-secondary, #111)",
-                          border: isSelected ? "none" : isWaiting ? "1px solid var(--q-warning)" : "1px solid var(--q-border)",
+                          backgroundColor: isSelected ? "var(--accent)" : "var(--panel, #111)",
+                          border: isSelected ? "none" : isWaiting ? "1px solid var(--warn)" : "1px solid var(--border)",
                           cursor: "pointer", textAlign: "left" as const,
                         }}
                       >
                         <span style={{
                           width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                          backgroundColor: isSelected ? "var(--q-bg)" : statusColor(pr.status),
+                          backgroundColor: isSelected ? "var(--bg)" : statusColor(pr.status),
                         }} />
                         <span style={{
-                          color: isSelected ? "var(--q-bg)" : isWaiting ? "var(--q-warning)" : "var(--q-fg)",
+                          color: isSelected ? "var(--bg)" : isWaiting ? "var(--warn)" : "var(--fg)",
                           fontSize: 11, fontFamily: font, fontWeight: isSelected ? 600 : "normal",
                         }}>
                           {jName}
                         </span>
                         {!isSelected && (
-                          <span style={{ color: isWaiting ? "var(--q-warning)" : "var(--q-fg-secondary)", fontSize: 10, fontFamily: font }}>
+                          <span style={{ color: isWaiting ? "var(--warn)" : "var(--fg-2)", fontSize: 10, fontFamily: font }}>
                             {pr.status}
                           </span>
                         )}
                         {isSelected && (
-                          <span style={{ marginLeft: "auto", color: "var(--q-bg)", fontSize: 12 }}>&#10003;</span>
+                          <span style={{ marginLeft: "auto", color: "var(--bg)", fontSize: 12 }}>&#10003;</span>
                         )}
                       </button>
                     );
@@ -4079,23 +4039,23 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                           style={{
                             display: "flex", alignItems: "center", gap: 8,
                             width: "100%", padding: "8px 12px", borderRadius: 6,
-                            backgroundColor: isSelected ? "var(--q-accent)" : "var(--q-bg-secondary, #111)",
-                            border: isSelected ? "none" : "1px solid var(--q-border)",
+                            backgroundColor: isSelected ? "var(--accent)" : "var(--panel, #111)",
+                            border: isSelected ? "none" : "1px solid var(--border)",
                             cursor: "pointer", textAlign: "left" as const,
                           }}
                         >
                           <span style={{
                             width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                            backgroundColor: isSelected ? "var(--q-bg)" : "var(--q-fg-muted)",
+                            backgroundColor: isSelected ? "var(--bg)" : "var(--fg-3)",
                           }} />
                           <span style={{
-                            color: isSelected ? "var(--q-bg)" : "var(--q-fg-muted)",
+                            color: isSelected ? "var(--bg)" : "var(--fg-3)",
                             fontSize: 11, fontFamily: font, fontWeight: isSelected ? 600 : "normal",
                           }}>
                             {j.name}
                           </span>
-                          {!isSelected && <span style={{ color: "var(--q-fg-muted)", fontSize: 10, fontFamily: font }}>not started</span>}
-                          {isSelected && <span style={{ marginLeft: "auto", color: "var(--q-bg)", fontSize: 12 }}>&#10003;</span>}
+                          {!isSelected && <span style={{ color: "var(--fg-3)", fontSize: 10, fontFamily: font }}>not started</span>}
+                          {isSelected && <span style={{ marginLeft: "auto", color: "var(--bg)", fontSize: 12 }}>&#10003;</span>}
                         </button>
                       );
                     })}
@@ -4107,8 +4067,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
                   value={resumeContext}
                   onChange={(e) => setResumeContext(e.target.value)}
                   style={{ ...textareaStyle, height: 80 }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
                 />
 
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

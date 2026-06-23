@@ -221,7 +221,7 @@ export default function VoiceOrb({
       try {
         bg.set(tokens0.bg);
       } catch {
-        bg.set("#0A0A0A");
+        bg.set("#0b0c0e");
       }
       scene.background = bg;
     }
@@ -500,12 +500,12 @@ export default function VoiceOrb({
         width: size ?? "100%",
         height: size ?? "100%",
         // Backing for the orb. DARK themes: the opaque scene background (painted
-        // to --q-bg) covers this div, so use the plain app bg here too — no
+        // to --bg) covers this div, so use the plain app bg here too — no
         // purple tint. LIGHT themes: the renderer is transparent over this div,
         // so keep a dark "well" gradient (neon needs a dark stage to read).
         background: isLight
           ? "radial-gradient(circle at 50% 47%, #140e22 0%, #15121f 22%, #0c0a14 55%, #07060c 100%)"
-          : "var(--q-bg)",
+          : "var(--bg)",
         borderRadius: "inherit",
         overflow: "hidden",
         ...style,

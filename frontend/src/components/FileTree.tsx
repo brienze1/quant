@@ -6,6 +6,7 @@ import { listDir, createFile, createDir, renamePath, deletePath } from "../api";
 import { ContextMenu } from "./ContextMenu";
 import type { MenuItem } from "./ContextMenu";
 import { ConfirmModal } from "./ConfirmModal";
+import { Icon } from "./Icon";
 
 // Tree node keyed by rel path. Dirs start with children: [] and are filled in
 // on first expand (load-on-expand); files carry children: null so arborist
@@ -212,14 +213,14 @@ export function FileTree({
               {
                 type: "item",
                 icon: "+",
-                iconColor: "var(--q-blue)",
+                iconColor: "var(--info)",
                 label: "new file",
                 onClick: () => setNaming({ kind: "file", parent: menu.node?.id ?? "" }),
               },
               {
                 type: "item",
                 icon: "+",
-                iconColor: "var(--q-blue)",
+                iconColor: "var(--info)",
                 label: "new folder",
                 onClick: () => setNaming({ kind: "dir", parent: menu.node?.id ?? "" }),
               },
@@ -230,7 +231,7 @@ export function FileTree({
               {
                 type: "item",
                 icon: "✎",
-                iconColor: "var(--q-accent)",
+                iconColor: "var(--accent)",
                 label: "rename",
                 onClick: () => treeRef.current?.get(menu.node!.id)?.edit(),
               },
@@ -238,9 +239,9 @@ export function FileTree({
               {
                 type: "item",
                 icon: "×",
-                iconColor: "var(--q-error)",
+                iconColor: "var(--danger)",
                 label: "delete",
-                labelColor: "var(--q-error)",
+                labelColor: "var(--danger)",
                 onClick: () => setDeleting(menu.node),
               },
             ] as MenuItem[])
@@ -268,7 +269,22 @@ export function FileTree({
         }}
       >
         <span className="files-row-caret">
-          {node.isInternal ? (node.isOpen ? "▾" : "▸") : ""}
+          {node.isInternal ? (
+            <Icon name={node.isOpen ? "chevronDown" : "chevronRight"} size={12} color="var(--fg-4)" />
+          ) : null}
+        </span>
+        <span className="files-row-icon">
+          <Icon
+            name={node.data.isDir ? (node.isOpen ? "folderOpen" : "folder") : "file"}
+            size={13}
+            color={
+              node.data.isDir
+                ? "var(--fg-3)"
+                : rowDirty
+                  ? "var(--warn)"
+                  : "var(--fg-3)"
+            }
+          />
         </span>
         {node.isEditing ? (
           <input
@@ -288,7 +304,7 @@ export function FileTree({
             {node.data.name}
           </span>
         )}
-        {rowDirty && <span className="files-dirty-dot" title="unsaved changes" />}
+        {rowDirty && <span className="files-row-dirty mono" title="unsaved changes">M</span>}
       </div>
     );
   }
@@ -317,7 +333,7 @@ export function FileTree({
         data={data}
         width={size.w}
         height={size.h}
-        rowHeight={24}
+        rowHeight={26}
         indent={14}
         openByDefault={false}
         disableDrag
@@ -384,12 +400,13 @@ function NameModal({
         }}
         className="w-full max-w-xs p-6 flex flex-col gap-4"
         style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
+          backgroundColor: "var(--panel)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--r3)",
+          fontFamily: "var(--mono)",
         }}
       >
-        <label className="block text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>
+        <label className="block text-[10px] lowercase" style={{ color: "var(--fg-2)" }}>
           // {title}
         </label>
         <input
@@ -399,10 +416,11 @@ function NameModal({
           placeholder={placeholder}
           className="px-2 py-1.5 text-xs"
           style={{
-            backgroundColor: "var(--q-bg-hover)",
-            border: "1px solid var(--q-border)",
-            color: "var(--q-fg)",
-            fontFamily: "'JetBrains Mono', monospace",
+            backgroundColor: "var(--panel-3)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r1)",
+            color: "var(--fg)",
+            fontFamily: "var(--mono)",
             outline: "none",
           }}
         />
@@ -411,14 +429,14 @@ function NameModal({
             type="button"
             onClick={onCancel}
             className="px-3 py-1 text-[11px]"
-            style={{ color: "var(--q-fg-secondary)", border: "1px solid var(--q-border)", backgroundColor: "transparent" }}
+            style={{ color: "var(--fg-2)", border: "1px solid var(--border)", borderRadius: "var(--r1)", backgroundColor: "transparent" }}
           >
             cancel
           </button>
           <button
             type="submit"
             className="px-3 py-1 text-[11px]"
-            style={{ color: "var(--q-bg)", backgroundColor: "var(--q-accent)", border: "1px solid var(--q-accent)" }}
+            style={{ color: "var(--on-accent)", backgroundColor: "var(--accent)", border: "1px solid var(--accent)", borderRadius: "var(--r1)" }}
           >
             create
           </button>

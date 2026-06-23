@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CreateRepoRequest } from "../types";
 import * as api from "../api";
+import { ModalShell, ModalTitle, Field, ModalInput, ModalCancel, ModalSubmit } from "./ModalShell";
 
 interface Props {
   onSubmit: (req: CreateRepoRequest) => void;
@@ -45,101 +46,52 @@ export function OpenRepoModal({ onSubmit, onCancel }: Props) {
     });
   }
 
-  const inputStyle = {
-    backgroundColor: "var(--q-bg)",
-    border: "1px solid var(--q-border)",
-    color: "var(--q-fg)",
-  };
+  const canCreate = !!path.trim();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--q-modal-backdrop)" }}>
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-md p-6"
-        style={{
-          backgroundColor: "var(--q-bg)",
-          border: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        <h2 className="text-sm font-bold lowercase mb-4" style={{ color: "var(--q-fg)" }}>
-          <span style={{ color: "var(--q-accent)" }}>{">"}</span> open_repo
-        </h2>
-
-        <label className="block mb-3">
-          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>path</span>
-          <div className="flex gap-2 mt-1">
-            <input
+    <ModalShell width={460} onClose={onCancel}>
+      <form onSubmit={handleSubmit} style={{ padding: "22px 26px 18px", display: "flex", flexDirection: "column", gap: 16 }}>
+        <ModalTitle>open_repo</ModalTitle>
+        <Field label="path">
+          <div style={{ display: "flex", gap: 8 }}>
+            <ModalInput
               autoFocus
               value={path}
               onChange={(e) => handlePathChange(e.target.value)}
               placeholder="~/projects/my-app"
-              className="flex-1 px-3 py-2 text-xs focus:outline-none"
-              style={inputStyle}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
+              style={{ flex: 1 }}
             />
             <button
               type="button"
               onClick={handleBrowse}
-              className="px-3 py-2 text-xs lowercase transition-colors shrink-0"
+              title="Browse…"
               style={{
-                border: "1px solid var(--q-border)",
-                color: "var(--q-fg-secondary)",
-                backgroundColor: "var(--q-bg)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--q-accent)";
-                e.currentTarget.style.color = "var(--q-accent)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--q-border)";
-                e.currentTarget.style.color = "var(--q-fg-secondary)";
+                flex: "none",
+                padding: "0 14px",
+                height: 38,
+                borderRadius: 9,
+                cursor: "pointer",
+                background: "var(--panel-3)",
+                border: "1px solid var(--border-2)",
+                color: "var(--fg-3)",
+                fontFamily: "var(--mono)",
+                fontSize: 12,
               }}
             >
               browse
             </button>
           </div>
-        </label>
-
-        <label className="block mb-5">
-          <span className="text-[10px] lowercase" style={{ color: "var(--q-fg-secondary)" }}>name</span>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="auto-filled from path"
-            className="mt-1 block w-full px-3 py-2 text-xs focus:outline-none"
-            style={inputStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--q-accent)")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--q-border)")}
-          />
-        </label>
-
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-xs lowercase transition-colors"
-            style={{ color: "var(--q-fg-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-secondary)")}
-          >
-            cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!path.trim()}
-            className="px-4 py-2 text-xs lowercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              backgroundColor: "var(--q-accent)",
-              color: "var(--q-bg)",
-              fontWeight: 500,
-            }}
-          >
+        </Field>
+        <Field label="name">
+          <ModalInput value={name} onChange={(e) => setName(e.target.value)} placeholder="auto-filled from path" />
+        </Field>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, marginTop: 4 }}>
+          <ModalCancel onClick={onCancel} />
+          <ModalSubmit type="submit" disabled={!canCreate}>
             open
-          </button>
+          </ModalSubmit>
         </div>
       </form>
-    </div>
+    </ModalShell>
   );
 }

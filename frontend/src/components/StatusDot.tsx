@@ -1,35 +1,64 @@
 import type { DisplayStatus } from "./StatusBadge";
 
-const statusColors: Record<DisplayStatus, string> = {
-  running: "var(--q-accent)",    // green
-  waiting: "var(--q-cyan)",    // cyan
-  idle: "var(--q-fg-secondary)",       // gray
-  paused: "var(--q-fg-secondary)",     // gray
-  done: "var(--q-cyan)",       // cyan
-  error: "var(--q-error)",      // red
-  starting: "var(--q-purple)",   // purple
-  resuming: "var(--q-purple)",   // purple
-  stopping: "var(--q-warning)",   // amber
-  archived: "var(--q-fg-secondary)",   // gray
+/**
+ * Status -> token color. Mapped onto the new design tokens while preserving
+ * the existing DisplayStatus value set used across the app.
+ */
+const DOT_COLOR: Record<DisplayStatus, string> = {
+  running: "var(--accent)",
+  waiting: "var(--info)",
+  idle: "var(--fg-4)",
+  paused: "var(--warn)",
+  done: "var(--accent)",
+  error: "var(--danger)",
+  starting: "var(--purple)",
+  resuming: "var(--purple)",
+  stopping: "var(--warn)",
+  archived: "var(--fg-4)",
 };
 
-const isAnimated = (s: DisplayStatus) =>
-  s === "starting" || s === "stopping" || s === "resuming" || s === "running";
+const ANIMATED: Record<DisplayStatus, boolean> = {
+  running: true,
+  waiting: true,
+  starting: true,
+  resuming: true,
+  stopping: true,
+  idle: false,
+  paused: false,
+  done: false,
+  error: false,
+  archived: false,
+};
 
 interface Props {
   status: DisplayStatus;
+  /** dot diameter in px (default 8) */
+  size?: number;
+  /** add a soft glow around the dot */
+  glow?: boolean;
   className?: string;
 }
 
-export function StatusDot({ status, className = "" }: Props) {
+export function StatusDot({ status, size = 8, glow, className = "" }: Props) {
+  const c = DOT_COLOR[status] || "var(--fg-4)";
+  const isIdle = status === "idle" || status === "archived";
   return (
     <span
-      className={`inline-block h-2 w-2 shrink-0 ${className}`}
-      style={{
-        backgroundColor: statusColors[status],
-        animation: isAnimated(status) ? "pulse-dot 0.8s ease-in-out infinite" : undefined,
-      }}
+      className={`shrink-0 ${className}`}
       title={status}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        flex: "none",
+        display: "inline-block",
+        background: isIdle ? "transparent" : c,
+        border: isIdle ? "1.5px solid var(--fg-4)" : "none",
+        boxShadow: glow && !isIdle ? `0 0 7px ${c}` : "none",
+        animation: ANIMATED[status] ? "pulseDot 1.7s ease-in-out infinite" : "none",
+      }}
     />
   );
 }
+
+export { DOT_COLOR };

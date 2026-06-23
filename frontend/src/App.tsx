@@ -21,6 +21,8 @@ import * as api from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPanel } from "./components/SessionPanel";
 import { VoicePane } from "./components/VoicePane";
+import { PaneHeader } from "./components/PaneHeader";
+import { IconButton } from "./components/IconButton";
 import { EmptyState } from "./components/EmptyState";
 import { FileTabPanel } from "./components/FileTabPanel";
 import { FilesPanel } from "./components/FilesPanel";
@@ -1261,6 +1263,21 @@ function App() {
 
   function handleCloseAllTabs() {
     confirmThenClose([...openTabIdsRef.current]);
+  }
+
+  // Trailing `+` in the tab strip: open the new-session flow. Seed the repo/task
+  // from the active session when there is one; otherwise default to the first
+  // repo, and fall back to the open-repo flow when no repo exists yet.
+  function handleNewSessionFromTabBar() {
+    if (activeSession) {
+      setModal({ type: "newSession", repoId: activeSession.repoId, taskId: activeSession.taskId || undefined });
+      return;
+    }
+    if (repos.length > 0) {
+      setModal({ type: "newSession", repoId: repos[0].id });
+      return;
+    }
+    setModal({ type: "openRepo" });
   }
 
   function handleCloseTabsToLeft(id: string) {
@@ -2561,7 +2578,7 @@ function App() {
       {renderQuantiOverlay()}
 
       {view === "jobs" && (
-        <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
+        <div className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
           <JobsView
             jobs={filteredJobs}
             agents={filteredAgents}
@@ -2577,7 +2594,7 @@ function App() {
       )}
 
       {view === "agents" && (
-        <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
+        <div className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
           <AgentsView
             agents={filteredAgents}
             onCreateAgent={() => setModal({ type: "createAgent" })}
@@ -2592,7 +2609,7 @@ function App() {
         </div>
       )}
 
-    <div className="flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)" }}>
+    <div key={view} className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--q-bg)" }}>
       <Sidebar
         repos={repos}
         tasksByRepo={tasksByRepo}
@@ -2678,6 +2695,7 @@ function App() {
             onCloseAllTabs={handleCloseAllTabs}
             onCloseTabsToLeft={handleCloseTabsToLeft}
             onCloseTabsToRight={handleCloseTabsToRight}
+            onNewSession={handleNewSessionFromTabBar}
           />
         )}
 
@@ -3005,67 +3023,47 @@ function VoiceDock({
       className="flex flex-col min-h-0 shrink-0"
       style={{
         width: 340,
-        borderLeft: "1px solid var(--q-border)",
-        backgroundColor: "var(--q-bg)",
+        borderLeft: "1px solid var(--border-2)",
+        backgroundColor: "var(--bg)",
+        fontFamily: "var(--sans)",
       }}
     >
-      <div
-        className="flex items-center justify-between px-4 shrink-0"
-        style={{
-          height: 24,
-          backgroundColor: "var(--q-bg-input)",
-          borderBottom: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        <div className="flex items-center gap-1.5 overflow-hidden">
-          <div
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              backgroundColor: "var(--q-term-green)",
-              flexShrink: 0,
-            }}
-          />
+      <PaneHeader
+        dot
+        dotColor="var(--purple)"
+        eyebrow="voice"
+        sub={
           <span
-            className="overflow-hidden whitespace-nowrap"
-            style={{ fontSize: 10, color: "var(--q-fg-secondary)", textOverflow: "ellipsis" }}
+            className="overflow-hidden whitespace-nowrap inline-flex items-center gap-1.5"
+            style={{ textOverflow: "ellipsis", maxWidth: 180 }}
             title={`voice attached to session "${sessionName}"`}
           >
-            voice · {sessionName}
+            {sessionName}
+            {/* Make it visually clear voice is pinned to a session that is NOT the
+                currently-active tab (so the user isn't confused by a pane whose
+                transcript/agent belongs to a different session than they're viewing). */}
+            {!isActiveTab && (
+              <span
+                className="shrink-0 mono"
+                style={{
+                  fontSize: 8.5,
+                  color: "var(--warn)",
+                  border: "1px solid color-mix(in srgb, var(--warn) 45%, var(--border))",
+                  borderRadius: 3,
+                  padding: "0 3px",
+                  lineHeight: "13px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+                title="voice is pinned to this session, which is not the active tab"
+              >
+                background
+              </span>
+            )}
           </span>
-          {/* Make it visually clear voice is pinned to a session that is NOT the
-              currently-active tab (so the user isn't confused by a pane whose
-              transcript/agent belongs to a different session than they're viewing). */}
-          {!isActiveTab && (
-            <span
-              className="shrink-0"
-              style={{
-                fontSize: 8.5,
-                color: "var(--q-warning)",
-                border: "1px solid var(--q-warning)",
-                borderRadius: 3,
-                padding: "0 3px",
-                lineHeight: "13px",
-              }}
-              title="voice is pinned to this session, which is not the active tab"
-            >
-              background
-            </span>
-          )}
-        </div>
-        <button
-          onClick={onClose}
-          className="text-[9px] transition-colors shrink-0"
-          style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
-          title="close voice"
-        >
-          [x]
-        </button>
-      </div>
+        }
+        actions={<IconButton name="x" size={13} label="Close voice" onClick={onClose} />}
+      />
       <div className="flex-1 min-h-0">
         <VoicePane sessionId={sessionId} />
       </div>

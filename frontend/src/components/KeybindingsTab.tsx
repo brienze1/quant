@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   DEFAULT_KEYBINDINGS,
   getActiveKeybindings,
@@ -9,8 +9,7 @@ import {
   findConflicts,
   type KeyBinding,
 } from "../keybindings";
-
-const font = "'JetBrains Mono', monospace";
+import { Button } from "./Button";
 
 export function KeybindingsTab() {
   const [bindings, setBindings] = useState<KeyBinding[]>(getActiveKeybindings);
@@ -85,36 +84,16 @@ export function KeybindingsTab() {
   const hasOverrides = Object.keys(getStoredKeybindings()).length > 0;
 
   return (
-    <div style={{ fontFamily: font }}>
+    <div>
       {/* Header with reset all */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <p style={{ color: "var(--q-fg-secondary)", fontSize: 12, margin: 0 }}>
-          click on a shortcut to record a new key combination. press Escape to cancel.
-        </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+        <span style={{ color: "var(--fg-3)", fontSize: 12.5 }}>
+          click a shortcut to record a new key combination. press esc to cancel.
+        </span>
         {hasOverrides && (
-          <button
-            onClick={resetAll}
-            style={{
-              padding: "4px 12px",
-              backgroundColor: "transparent",
-              border: "1px solid var(--q-border)",
-              borderRadius: 4,
-              color: "var(--q-fg-secondary)",
-              fontSize: 11,
-              fontFamily: font,
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = "var(--q-error)";
-              e.currentTarget.style.color = "var(--q-error)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "var(--q-border)";
-              e.currentTarget.style.color = "var(--q-fg-secondary)";
-            }}
-          >
+          <Button variant="ghost" size="sm" onClick={resetAll}>
             reset all to defaults
-          </button>
+          </Button>
         )}
       </div>
 
@@ -123,10 +102,10 @@ export function KeybindingsTab() {
         if (items.length === 0) return null;
 
         return (
-          <div key={cat} style={{ marginBottom: 28 }}>
-            <h3 style={{ color: "var(--q-fg)", fontSize: 13, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+          <div key={cat} style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--fg)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {label}
-            </h3>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {items.map((kb) => {
                 const isRecording = recording === kb.id;
@@ -144,44 +123,40 @@ export function KeybindingsTab() {
                       alignItems: "center",
                       justifyContent: "space-between",
                       padding: "6px 12px",
-                      borderRadius: 4,
-                      backgroundColor: isRecording ? "var(--q-bg-hover)" : "transparent",
+                      borderRadius: 8,
+                      background: isRecording ? "var(--hover)" : "transparent",
                     }}
                     onMouseEnter={(e) => {
-                      if (!isRecording) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                      if (!isRecording) e.currentTarget.style.background = "var(--hover)";
                     }}
                     onMouseLeave={(e) => {
-                      if (!isRecording) e.currentTarget.style.backgroundColor = "transparent";
+                      if (!isRecording) e.currentTarget.style.background = "transparent";
                     }}
                   >
-                    <span style={{ color: "var(--q-fg-secondary)", fontSize: 12, flex: 1 }}>
-                      {kb.label}
-                    </span>
+                    <span style={{ color: "var(--fg-2)", fontSize: 12.5, flex: 1 }}>{kb.label}</span>
 
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       {hasConflict && (
-                        <span style={{ color: "var(--q-warning)", fontSize: 10 }}>
-                          conflict
-                        </span>
+                        <span style={{ color: "var(--warn)", fontSize: 10 }}>conflict</span>
                       )}
 
                       {/* shortcut display / recording button */}
                       <button
                         onClick={() => setRecording(isRecording ? null : kb.id)}
+                        className="mono"
                         style={{
-                          padding: "3px 10px",
-                          backgroundColor: isRecording ? "var(--q-accent-bg-faint)" : "var(--q-bg-input)",
-                          border: `1px solid ${isRecording ? "var(--q-accent)" : hasConflict ? "var(--q-warning)" : "var(--q-border-light)"}`,
-                          borderRadius: 4,
-                          color: isRecording ? "var(--q-accent)" : "var(--q-fg)",
-                          fontSize: 12,
-                          fontFamily: font,
-                          cursor: "pointer",
-                          minWidth: 100,
+                          minWidth: 110,
                           textAlign: "center",
+                          padding: "4px 12px",
+                          borderRadius: 7,
+                          cursor: "pointer",
+                          fontSize: 12,
+                          background: isRecording ? "var(--accent-soft)" : "var(--panel-3)",
+                          border: `1px solid ${isRecording ? "var(--accent)" : hasConflict ? "var(--warn)" : "var(--border-2)"}`,
+                          color: isRecording ? "var(--accent)" : "var(--fg)",
                         }}
                       >
-                        {isRecording ? "press keys..." : formatKeyCombo(kb.keys)}
+                        {isRecording ? "press keys…" : formatKeyCombo(kb.keys)}
                       </button>
 
                       {/* reset single */}
@@ -190,16 +165,16 @@ export function KeybindingsTab() {
                           onClick={() => resetOne(kb.id)}
                           title={`reset to ${formatKeyCombo(defaultKb.keys)}`}
                           style={{
-                            padding: "2px 6px",
-                            backgroundColor: "transparent",
-                            border: "none",
-                            color: "var(--q-fg-muted)",
                             fontSize: 10,
-                            fontFamily: font,
+                            color: "var(--fg-4)",
+                            fontFamily: "var(--mono)",
+                            background: "none",
+                            border: "none",
                             cursor: "pointer",
+                            padding: "2px 6px",
                           }}
-                          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-4)")}
                         >
                           reset
                         </button>

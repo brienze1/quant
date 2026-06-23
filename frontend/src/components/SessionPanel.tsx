@@ -4,6 +4,11 @@ import type { Session, Task, Config } from "../types";
 import { StatusDot } from "./StatusDot";
 import { TerminalPane } from "./TerminalPane";
 import { MindmapPane } from "./MindmapPane";
+import { PaneHeader as UiPaneHeader } from "./PaneHeader";
+import { IconButton } from "./IconButton";
+import { Button } from "./Button";
+import { Pill } from "./Pill";
+import { Icon } from "./Icon";
 import * as api from "../api";
 import { pttService, type PttState } from "../voice/pttService";
 import { getActiveKeybindings, formatKeyCombo } from "../keybindings";
@@ -317,107 +322,79 @@ export function SessionPanel({
   const terminalSplitState: SplitState = { ...splitState, open: terminalSecondaryOpen };
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: "var(--q-bg)" }}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: "var(--panel)" }}>
       {/* Action bar */}
       <div
-        className="flex items-center justify-between px-5 shrink-0"
+        className="flex items-center justify-between shrink-0"
         style={{
-          backgroundColor: "var(--q-bg)",
-          borderBottom: "1px solid var(--q-border)",
-          fontFamily: "'JetBrains Mono', monospace",
-          height: 32,
+          backgroundColor: "var(--panel)",
+          borderBottom: "1px solid var(--border-2)",
+          height: 38,
+          padding: "0 10px 0 14px",
+          gap: 8,
         }}
       >
         {/* Left: status + name + badges */}
         <div className="flex items-center gap-2 overflow-hidden">
-          <StatusDot status={displayStatus} />
+          <StatusDot status={displayStatus} glow />
           <span
-            className="text-xs font-bold overflow-hidden whitespace-nowrap"
-            style={{ color: "var(--q-fg)", textOverflow: "ellipsis" }}
+            className="overflow-hidden whitespace-nowrap"
+            style={{ color: "var(--fg)", textOverflow: "ellipsis", fontSize: 12.5, fontWeight: 600, letterSpacing: "-0.01em" }}
           >
             {session.name}
           </span>
           {task && (
-            <span
-              className="shrink-0 text-[9px] px-1.5 py-0.5"
-              style={{
-                color: "var(--q-accent)",
-                border: "1px solid var(--q-border)",
-                backgroundColor: "var(--q-bg-hover)",
-              }}
-            >
-              # {task.tag}
-            </span>
+            <Pill tone="accent" style={{ display: "inline-flex", alignItems: "center" }}>
+              <Icon name="hash" size={9} style={{ display: "inline", verticalAlign: "-1px", marginRight: 2 }} />
+              {task.tag}
+            </Pill>
           )}
           {session.worktreePath && (
-            <span
-              className="shrink-0 text-[9px] px-1.5 py-0.5"
-              style={{
-                color: "var(--q-accent)",
-                border: "1px solid var(--q-border)",
-                backgroundColor: "var(--q-bg-hover)",
-              }}
-            >
-              wt {session.branchName}
-            </span>
+            <Pill tone="info" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+              <Icon name="branch" size={9} style={{ display: "inline", verticalAlign: "-1px" }} />
+              {session.branchName}
+            </Pill>
           )}
         </div>
 
         {/* Right: terminal btn + layout toggle + hamburger */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
 
           {/* Unarchive button */}
           {isArchived && onUnarchive && (
-            <ActionBtn label="$ unarchive" onClick={() => onUnarchive(session.id)} color="var(--q-accent)" />
+            <Button variant="subtle" size="sm" icon="unarchive" onClick={() => onUnarchive(session.id)}>
+              unarchive
+            </Button>
           )}
 
           {/* Terminal button */}
           {!isArchived && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="terminal"
+              active={splitState.open}
               onClick={splitState.open ? handleCloseTerminal : handleOpenTerminal}
-              className="flex items-center gap-1 px-2 py-1 text-[11px]"
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                color: splitState.open ? "var(--q-bg)" : "var(--q-cyan)",
-                backgroundColor: splitState.open ? "var(--q-cyan)" : "var(--q-bg-hover)",
-                border: `1px solid ${splitState.open ? "var(--q-cyan)" : "var(--q-border)"}`,
-              }}
-              onMouseEnter={(e) => {
-                if (!splitState.open) e.currentTarget.style.backgroundColor = "var(--q-border)";
-              }}
-              onMouseLeave={(e) => {
-                if (!splitState.open) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
             >
-              <span style={{ fontWeight: 700 }}>$</span>
-              <span>terminal</span>
-            </button>
+              terminal
+            </Button>
           )}
 
           {/* Mindmap button */}
           {!isArchived && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="waypoints"
+              active={mindmapPaneOpen}
               onClick={() => onMindmapPaneOpenChange(!mindmapPaneOpen)}
-              className="flex items-center gap-1 px-2 py-1 text-[11px]"
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                color: mindmapPaneOpen ? "var(--q-bg)" : "var(--q-accent)",
-                backgroundColor: mindmapPaneOpen ? "var(--q-accent)" : "var(--q-bg-hover)",
-                border: `1px solid ${mindmapPaneOpen ? "var(--q-accent)" : "var(--q-border)"}`,
-              }}
-              onMouseEnter={(e) => {
-                if (!mindmapPaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
-              }}
-              onMouseLeave={(e) => {
-                if (!mindmapPaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-              }}
             >
-              <span>mindmap</span>
-            </button>
+              mindmap
+            </Button>
           )}
 
           {/* Voice button (mirrors the mindmap toggle; uses the themed
-              --q-magenta accent so it tracks theme changes like its siblings).
+              --purple accent so it tracks theme changes like its siblings).
               Gated on TWO conditions, both of which must hold:
                 1. config.voice.enabled — voice feature turned on in Settings.
                 2. The session has a LIVE agent process. "running" (mid-turn),
@@ -439,28 +416,25 @@ export function SessionPanel({
                 ? "Start the session's agent first"
                 : "toggle voice pane";
             return (
-              <button
-                onClick={() => { if (canToggle) onVoicePaneOpenChange(!voicePaneOpen); }}
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="waveform"
                 disabled={!canToggle}
                 title={tooltip}
-                className="flex items-center gap-1 px-2 py-1 text-[11px]"
-                style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  color: voicePaneOpen ? "var(--q-bg)" : "var(--q-magenta)",
-                  backgroundColor: voicePaneOpen ? "var(--q-magenta)" : "var(--q-bg-hover)",
-                  border: `1px solid ${voicePaneOpen ? "var(--q-magenta)" : "var(--q-border)"}`,
-                  opacity: canToggle ? 1 : 0.4,
-                  cursor: canToggle ? "pointer" : "not-allowed",
-                }}
-                onMouseEnter={(e) => {
-                  if (canToggle && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-border)";
-                }}
-                onMouseLeave={(e) => {
-                  if (canToggle && !voicePaneOpen) e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
-                }}
+                onClick={() => { if (canToggle) onVoicePaneOpenChange(!voicePaneOpen); }}
+                style={
+                  voicePaneOpen
+                    ? {
+                        background: "color-mix(in srgb, var(--purple) 13%, transparent)",
+                        color: "var(--purple)",
+                        borderColor: "color-mix(in srgb, var(--purple) 45%, var(--border))",
+                      }
+                    : { color: "var(--purple)" }
+                }
               >
-                <span>voice</span>
-              </button>
+                voice
+              </Button>
             );
           })()}
 
@@ -489,35 +463,39 @@ export function SessionPanel({
             const transcribing = pttState === "transcribing";
             const errored = pttState === "error";
             const fg = recording || errored
-              ? "var(--q-error)"
+              ? "var(--danger)"
               : transcribing
-                ? "var(--q-fg-muted)"
+                ? "var(--fg-3)"
                 : canPtt
-                  ? "var(--q-magenta)"
-                  : "var(--q-fg-muted)";
-            const border = recording || errored ? "var(--q-error)" : "var(--q-border)";
+                  ? "var(--purple)"
+                  : "var(--fg-3)";
+            const border = recording || errored ? "var(--danger)" : "var(--border)";
             return (
               <button
+                type="button"
                 onMouseDown={(e) => { if (e.button === 0 && canPtt) handlePttMouseDown(); }}
                 onMouseUp={(e) => { if (e.button === 0 && canPtt) handlePttMouseUp(); }}
                 disabled={!canPtt}
                 title={tooltip}
                 aria-label={tooltip}
-                className="flex items-center gap-1 px-2 py-1 text-[11px]"
+                className="flex items-center justify-center gap-1"
                 style={{
-                  fontFamily: "'JetBrains Mono', monospace",
+                  width: recording ? "auto" : 26,
+                  height: 26,
+                  padding: recording ? "0 7px" : 0,
+                  borderRadius: 7,
                   color: fg,
-                  backgroundColor: "var(--q-bg-hover)",
+                  backgroundColor: "transparent",
                   border: `1px solid ${border}`,
-                  opacity: canPtt ? (transcribing ? 0.7 : 1) : 0.4,
-                  cursor: canPtt ? "pointer" : "not-allowed",
+                  opacity: canPtt ? (transcribing ? 0.7 : 1) : 0.45,
+                  cursor: canPtt ? "pointer" : "default",
                 }}
                 onMouseEnter={(e) => {
-                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-border)";
+                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--hover)";
                 }}
                 onMouseLeave={(e) => {
                   if (canPtt) handlePttMouseLeave();
-                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "var(--q-bg-hover)";
+                  if (canPtt && pttState === "idle") e.currentTarget.style.backgroundColor = "transparent";
                 }}
               >
                 <MicIcon filled={recording} />
@@ -562,23 +540,13 @@ export function SessionPanel({
           {/* Hamburger menu */}
           {!isArchived && (
             <div className="relative" ref={menuRef}>
-              <button
+              <IconButton
+                name="dots"
+                size={15}
+                label="Menu"
+                active={menuOpen}
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="flex items-center justify-center"
-                style={{
-                  width: 20,
-                  height: 20,
-                  color: menuOpen ? "var(--q-fg)" : "var(--q-fg-secondary)",
-                }}
-                onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.color = "var(--q-fg)"; }}
-                onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.color = "var(--q-fg-secondary)"; }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="4" y1="6" x2="20" y2="6" />
-                  <line x1="4" y1="12" x2="20" y2="12" />
-                  <line x1="4" y1="18" x2="20" y2="18" />
-                </svg>
-              </button>
+              />
 
               {menuOpen && (
                 <HamburgerMenu
@@ -608,9 +576,11 @@ export function SessionPanel({
             primaryPane={
               <>
                 {terminalSecondaryOpen && (
-                  <PaneHeader
-                    label={session.sessionType === "claude" ? "claude" : "terminal"}
-                    dotColor={session.sessionType === "claude" ? "var(--q-accent)" : "var(--q-cyan)"}
+                  <UiPaneHeader
+                    dot
+                    eyebrow={session.sessionType === "claude" ? "claude" : "terminal"}
+                    dotColor={session.sessionType === "claude" ? "var(--accent)" : "var(--info)"}
+                    sub={session.name}
                   />
                 )}
                 <TerminalPane
@@ -627,10 +597,12 @@ export function SessionPanel({
             secondaryPane={
               splitState.open && splitState.terminalSession ? (
                 <>
-                  <PaneHeader
-                    label="terminal"
-                    dotColor="var(--q-cyan)"
-                    onClose={handleCloseTerminal}
+                  <UiPaneHeader
+                    dot
+                    eyebrow="terminal"
+                    dotColor="var(--info)"
+                    sub={splitState.terminalSession.name}
+                    actions={<IconButton name="x" size={13} label="Close" onClick={handleCloseTerminal} />}
                   />
                   <TerminalPane
                     session={splitState.terminalSession}
@@ -649,10 +621,11 @@ export function SessionPanel({
         secondaryPane={
           dockOpen ? (
             <>
-              <PaneHeader
-                label="mindmap"
-                dotColor="var(--q-accent)"
-                onClose={() => onMindmapPaneOpenChange(false)}
+              <UiPaneHeader
+                dot
+                eyebrow="mindmap"
+                dotColor="var(--info)"
+                actions={<IconButton name="x" size={13} label="Close" onClick={() => onMindmapPaneOpenChange(false)} />}
               />
               <div className="flex-1 min-h-0">
                 <MindmapPane sessionId={session.id} />
@@ -723,7 +696,7 @@ function PttLevelCue() {
             width: 2,
             height: 10,
             borderRadius: 1,
-            backgroundColor: i < lit ? "var(--q-error)" : "var(--q-border)",
+            backgroundColor: i < lit ? "var(--danger)" : "var(--border)",
             opacity: i < lit ? 1 : 0.5,
             transition: "background-color .05s linear, opacity .05s linear",
           }}
@@ -815,19 +788,19 @@ function SplitContainer({
             alignItems: "center",
             justifyContent: "center",
             cursor: isH ? "row-resize" : "col-resize",
-            borderTop: isH ? "1px solid var(--q-border)" : undefined,
-            borderBottom: isH ? "1px solid var(--q-border)" : undefined,
-            borderLeft: !isH ? "1px solid var(--q-border)" : undefined,
-            borderRight: !isH ? "1px solid var(--q-border)" : undefined,
+            borderTop: isH ? "1px solid var(--border-2)" : undefined,
+            borderBottom: isH ? "1px solid var(--border-2)" : undefined,
+            borderLeft: !isH ? "1px solid var(--border-2)" : undefined,
+            borderRight: !isH ? "1px solid var(--border-2)" : undefined,
             zIndex: 1,
           }}
           onMouseEnter={(e) => {
             const grip = e.currentTarget.querySelector("[data-grip]") as HTMLElement;
-            if (grip) grip.style.backgroundColor = "var(--q-accent)";
+            if (grip) grip.style.backgroundColor = "var(--accent)";
           }}
           onMouseLeave={(e) => {
             const grip = e.currentTarget.querySelector("[data-grip]") as HTMLElement;
-            if (grip) grip.style.backgroundColor = "var(--q-fg-muted)";
+            if (grip) grip.style.backgroundColor = "var(--fg-3)";
           }}
         >
           <div
@@ -835,7 +808,7 @@ function SplitContainer({
             style={{
               width: isH ? 32 : 2,
               height: isH ? 2 : 32,
-              backgroundColor: "var(--q-fg-muted)",
+              backgroundColor: "var(--fg-3)",
               borderRadius: 1,
             }}
           />
@@ -852,51 +825,6 @@ function SplitContainer({
   );
 }
 
-function PaneHeader({
-  label,
-  dotColor,
-  onClose,
-}: {
-  label: string;
-  dotColor: string;
-  onClose?: () => void;
-}) {
-  return (
-    <div
-      className="flex items-center justify-between px-4 shrink-0"
-      style={{
-        height: 24,
-        backgroundColor: "var(--q-bg-input)",
-        borderBottom: "1px solid var(--q-border)",
-        fontFamily: "'JetBrains Mono', monospace",
-      }}
-    >
-      <div className="flex items-center gap-1.5">
-        <div
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            backgroundColor: dotColor,
-          }}
-        />
-        <span style={{ fontSize: 10, color: "var(--q-fg-secondary)" }}>{label}</span>
-      </div>
-      {onClose && (
-        <button
-          onClick={onClose}
-          className="text-[9px] transition-colors"
-          style={{ color: "var(--q-fg-muted)", fontFamily: "'JetBrains Mono', monospace" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--q-fg)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--q-fg-muted)")}
-        >
-          [x]
-        </button>
-      )}
-    </div>
-  );
-}
-
 function LayoutIcon({
   type,
   active,
@@ -906,8 +834,8 @@ function LayoutIcon({
   active: boolean;
   onClick: () => void;
 }) {
-  const borderColor = active ? "var(--q-accent)" : "var(--q-border)";
-  const fillColor = active ? "var(--q-accent)" : "var(--q-fg-secondary)";
+  const borderColor = active ? "var(--accent)" : "var(--border)";
+  const fillColor = active ? "var(--accent)" : "var(--fg-3)";
   const isHorizontal = type === "horizontal";
 
   return (
@@ -916,8 +844,9 @@ function LayoutIcon({
       style={{
         width: 20,
         height: 16,
-        backgroundColor: "var(--q-bg-hover)",
+        backgroundColor: active ? "var(--accent-soft)" : "var(--hover)",
         border: `1px solid ${borderColor}`,
+        borderRadius: "var(--r1)",
         padding: 2,
         display: "flex",
         flexDirection: isHorizontal ? "column" : "row",
@@ -962,21 +891,19 @@ function HamburgerMenu({
         right: 0,
         marginTop: 4,
         width: 160,
-        backgroundColor: "var(--q-bg-menu)",
-        border: "1px solid var(--q-border)",
+        backgroundColor: "var(--panel-3)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--r2)",
         padding: "4px 0",
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
+        fontSize: 11.5,
         zIndex: 50,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
       }}
     >
       {isRunning && onRestart && (
         <MenuItemRow onClick={onRestart}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--q-warning)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-          <span style={{ color: "var(--q-fg)" }}>restart</span>
+          <Icon name="refresh" size={13} color="var(--warn)" />
+          <span style={{ color: "var(--fg)" }}>restart</span>
         </MenuItemRow>
       )}
     </div>
@@ -998,12 +925,11 @@ function MenuItemRow({
         height: 32,
         background: "none",
         border: "none",
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
+        fontSize: 11.5,
         cursor: "pointer",
         textAlign: "left",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
+      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--hover)")}
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
     >
       {children}
@@ -1011,27 +937,3 @@ function MenuItemRow({
   );
 }
 
-function ActionBtn({
-  label,
-  onClick,
-  color,
-}: {
-  label: string;
-  onClick: () => void;
-  color: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="px-2 py-1 text-[10px] lowercase transition-colors"
-      style={{
-        color,
-        fontFamily: "'JetBrains Mono', monospace",
-      }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--q-bg-hover)")}
-      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-    >
-      {label}
-    </button>
-  );
-}
