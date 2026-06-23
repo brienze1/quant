@@ -4,6 +4,7 @@ import type { Session } from "../types";
 import { FileTree } from "./FileTree";
 import { PaneHeader } from "./PaneHeader";
 import { IconButton } from "./IconButton";
+import { Icon } from "./Icon";
 
 const PANEL_WIDTH_KEY = "quant.filesPanel.width";
 const PANEL_MIN = 200;
@@ -36,6 +37,24 @@ export function FilesPanel({
   const recentKey = sessionId ? "quant.files.recent." + sessionId : null;
   const [recent, setRecent] = useState<string[]>([]);
   const [refreshNonce, setRefreshNonce] = useState(0);
+
+  // Inline filter over the already-loaded tree. `query === null` => search closed.
+  // `matchCount === -1` => filter inactive (no count chip / empty state).
+  const [query, setQuery] = useState<string | null>(null);
+  const [matchCount, setMatchCount] = useState(-1);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const openSearch = () => setQuery((q) => (q === null ? "" : null));
+  useEffect(() => {
+    if (query !== null) searchRef.current?.focus();
+  }, [query]);
+  // Drop the filter whenever the active session changes.
+  useEffect(() => {
+    setQuery(null);
+    setMatchCount(-1);
+  }, [sessionId]);
+
+  const filterTerm = (query ?? "").trim();
+  const noMatches = filterTerm !== "" && matchCount === 0;
 
   useEffect(() => {
     if (!recentKey) {
@@ -151,6 +170,15 @@ export function FilesPanel({
               ))}
             </select>
             <IconButton
+              name="search"
+              size={14}
+              label="search files"
+              active={query !== null}
+              tone="var(--accent)"
+              disabled={!session}
+              onClick={openSearch}
+            />
+            <IconButton
               name="refresh"
               size={14}
               label="refresh tree"
@@ -162,19 +190,105 @@ export function FilesPanel({
         }
       />
 
+      {session && query !== null && (
+        <div
+          style={{
+            flex: "none",
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            padding: "0 12px 8px",
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              height: 30,
+              padding: "0 10px",
+              borderRadius: 8,
+              background: "var(--panel-3)",
+              border: "1px solid var(--border-2)",
+            }}
+          >
+            <Icon name="search" size={13} color="var(--fg-4)" />
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setQuery(null);
+              }}
+              placeholder="filter files…"
+              spellCheck={false}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                color: "var(--fg)",
+                fontFamily: "var(--mono)",
+                fontSize: 12,
+              }}
+            />
+            {filterTerm !== "" && (
+              <span
+                className="mono"
+                style={{ flex: "none", fontSize: 10.5, color: "var(--fg-3)", whiteSpace: "nowrap" }}
+              >
+                {matchCount < 0
+                  ? ""
+                  : matchCount === 0
+                    ? "no matches"
+                    : `${matchCount} match${matchCount === 1 ? "" : "es"}`}
+              </span>
+            )}
+            <button
+              onClick={() => setQuery(null)}
+              title="close search"
+              style={{
+                flex: "none",
+                display: "flex",
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                padding: 2,
+                color: "var(--fg-4)",
+              }}
+            >
+              <Icon name="x" size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {session ? (
-        <div className="files-panel-body">
-          <FileTree
-            key={session.id}
-            sessionId={session.id}
-            openPath={activeFilePath}
-            dirtyPaths={dirtyPaths}
-            refreshNonce={refreshNonce}
-            onOpen={handleOpenFile}
-            onPathDeleted={handlePathDeleted}
-            onPathRenamed={handlePathRenamed}
-            onError={onError}
-          />
+        <div className="files-panel-body" style={{ display: "flex", flexDirection: "column" }}>
+          {/* Keep the tree mounted (display:none) when nothing matches so its
+              loaded subtree state survives clearing the filter. */}
+          <div style={{ flex: 1, minHeight: 0, display: noMatches ? "none" : "block" }}>
+            <FileTree
+              key={session.id}
+              sessionId={session.id}
+              openPath={activeFilePath}
+              dirtyPaths={dirtyPaths}
+              refreshNonce={refreshNonce}
+              filter={query ?? ""}
+              onOpen={handleOpenFile}
+              onPathDeleted={handlePathDeleted}
+              onPathRenamed={handlePathRenamed}
+              onMatchCount={setMatchCount}
+              onError={onError}
+            />
+          </div>
+          {noMatches && (
+            <div style={{ padding: "8px 16px", fontSize: 12, color: "var(--fg-4)" }}>
+              no files match “{filterTerm}”.
+            </div>
+          )}
         </div>
       ) : (
         <div className="files-empty">open a session to browse its files</div>

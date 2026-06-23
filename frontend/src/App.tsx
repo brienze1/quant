@@ -54,6 +54,10 @@ import { QuantAssistant } from "./components/QuantAssistant";
 import { ChangelogModal } from "./components/ChangelogModal";
 import { CommandPalette, type PaletteCommand } from "./components/CommandPalette";
 import { ThemeQuickPicker } from "./components/ThemeQuickPicker";
+import { Segmented } from "./components/Segmented";
+import { IconButton } from "./components/IconButton";
+import { Icon } from "./components/Icon";
+import { Kbd } from "./components/Kbd";
 import { getActiveKeybindings, findMatchingAction, formatKeyCombo } from "./keybindings";
 import { pttService } from "./voice/pttService";
 import type { ChangelogEntry } from "./types";
@@ -86,6 +90,58 @@ type ModalState =
   | { type: "changelog" };
 
 type View = "dashboard" | "settings" | "diff" | "jobs" | "agents";
+
+// Pill-style pane toggle used in the in-panel ActionBar (Files / Terminal /
+// Mindmap / Voice / Assistant). Mirrors the design handoff's PaneToggle.
+function PaneToggle({
+  icon,
+  label,
+  active,
+  disabled,
+  title,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  title?: string;
+  onClick: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const h = hover && !disabled;
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      title={title || label}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        height: 28,
+        padding: "0 10px",
+        borderRadius: 8,
+        border: `1px solid ${active ? "var(--accent-line)" : "transparent"}`,
+        cursor: disabled ? "default" : "pointer",
+        fontFamily: "var(--sans)",
+        fontSize: 12,
+        fontWeight: 500,
+        background: active ? "var(--accent-soft)" : h ? "var(--hover)" : "transparent",
+        color: active ? "var(--accent)" : "var(--fg-3)",
+        opacity: disabled ? 0.45 : 1,
+        whiteSpace: "nowrap",
+        flex: "none",
+      }}
+    >
+      <Icon name={icon} size={14} />
+      {label}
+    </button>
+  );
+}
 
 function App() {
   const [view, setView] = useState<View>("dashboard");
@@ -147,6 +203,7 @@ function App() {
     () => localStorage.getItem("quant:activeWorkspaceId") || "default"
   );
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const [quantiConvID, setQuantiConvID] = useState<string>("");
   const [quantiModel, setQuantiModel] = useState<string>("claude-sonnet-4-6");
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -1917,569 +1974,536 @@ function App() {
     </div>
   );
 
-  const renderIconStrip = () => {
-    const items: { view: string; label: string; onClick: () => void; icon: React.ReactNode }[] = [
-      {
-        view: "settings", label: "Settings", onClick: () => setView("settings"),
-        icon: (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        ),
-      },
-      {
-        view: "dashboard", label: "Sessions", onClick: () => setView("dashboard"),
-        icon: (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
-          </svg>
-        ),
-      },
-      {
-        view: "jobs", label: "Jobs", onClick: () => { fetchJobs(); setView("jobs"); },
-        icon: (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
-            <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-          </svg>
-        ),
-      },
-      {
-        view: "agents", label: "Agents", onClick: () => { fetchAgents(); setView("agents"); },
-        icon: (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />
-          </svg>
-        ),
-      },
-    ];
-
+  const renderWorkspaceSwitcher = () => {
+    const activeWorkspaceName = workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? "Default";
     return (
-      <div
-        style={{
-          width: 40,
-          backgroundColor: "var(--bg)",
-          borderLeft: "1px solid var(--border)",
-          display: "flex",
-          flexDirection: "column",
-          padding: "8px 0",
-          fontFamily: "var(--mono)",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          {items.map((item) => (
-            <div key={item.view} style={{ position: "relative" }}>
-              <button
-                onClick={item.onClick}
-                style={{
-                  width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-                  background: "none", border: "none", cursor: "pointer",
-                  color: currentView === item.view ? "var(--fg)" : "var(--fg-2)",
-                  borderRight: currentView === item.view ? "2px solid var(--accent)" : "2px solid transparent",
-                }}
-                onMouseEnter={(e) => {
-                  if (currentView !== item.view) e.currentTarget.style.color = "var(--fg)";
-                  const tooltip = e.currentTarget.parentElement?.querySelector("[data-tooltip]") as HTMLElement;
-                  if (tooltip) tooltip.style.opacity = "1";
-                }}
-                onMouseLeave={(e) => {
-                  if (currentView !== item.view) e.currentTarget.style.color = "var(--fg-2)";
-                  const tooltip = e.currentTarget.parentElement?.querySelector("[data-tooltip]") as HTMLElement;
-                  if (tooltip) tooltip.style.opacity = "0";
-                }}
-              >
-                {item.icon}
-              </button>
-              <span
-                data-tooltip
-                style={{
-                  position: "absolute",
-                  right: 44,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  backgroundColor: "var(--panel)",
-                  color: "var(--fg)",
-                  fontSize: 11,
-                  fontFamily: "var(--mono)",
-                  padding: "4px 8px",
-                  borderRadius: 4,
-                  border: "1px solid var(--border)",
-                  whiteSpace: "nowrap",
-                  pointerEvents: "none",
-                  opacity: 0,
-                  transition: "opacity 0.15s ease",
-                }}
-              >
-                {item.label}
-              </span>
+      <div style={{ position: "relative", flex: 1, minWidth: 0 }} data-workspace-switcher>
+        <button
+          onClick={() => setWorkspaceDropdownOpen((v) => !v)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            width: "100%",
+            padding: "4px 6px",
+            borderRadius: 8,
+            border: "none",
+            background: workspaceDropdownOpen ? "var(--hover)" : "transparent",
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <span style={{ color: "var(--accent)", fontWeight: 700, fontSize: 14 }}>{">"}</span>
+          <span
+            style={{
+              fontSize: 14.5,
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+              color: "var(--fg)",
+              overflow: "hidden",
+              whiteSpace: "nowrap",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {activeWorkspaceName}
+          </span>
+          <Icon name="chevronDown" size={13} color="var(--fg-3)" />
+        </button>
+        {workspaceDropdownOpen && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: "calc(100% + 6px)",
+              backgroundColor: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              padding: "4px 0",
+              minWidth: 220,
+              zIndex: 9999,
+              fontFamily: "var(--mono)",
+              fontSize: 12,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+            }}
+          >
+            <div style={{ padding: "4px 12px", color: "var(--fg-2)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+              Workspaces
             </div>
-          ))}
-        </div>
-        <div style={{ flex: 1 }} />
-        {/* Files panel toggle */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <button
-            onClick={() => {
-              setView("dashboard");
-              handleFilesPanelOpenChange(!filesPanelOpen);
-            }}
-            style={{
-              width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-              background: "none", border: "none", cursor: "pointer",
-              color: filesPanelOpen ? "var(--fg)" : "var(--fg-2)",
-              borderRight: filesPanelOpen ? "2px solid var(--accent)" : "2px solid transparent",
-            }}
-            onMouseEnter={(e) => { if (!filesPanelOpen) e.currentTarget.style.color = "var(--fg)"; }}
-            onMouseLeave={(e) => { if (!filesPanelOpen) e.currentTarget.style.color = "var(--fg-2)"; }}
-            title="Files"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-          </button>
-        </div>
-        {/* Assistant toggle */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <button
-            onClick={() => setAssistantOpen((v) => !v)}
-            style={{
-              width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-              background: "none", border: "none", cursor: "pointer",
-              color: assistantOpen ? "var(--fg)" : "var(--fg-2)",
-              borderRight: assistantOpen ? "2px solid var(--accent)" : "2px solid transparent",
-            }}
-            onMouseEnter={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--fg)"; }}
-            onMouseLeave={(e) => { if (!assistantOpen) e.currentTarget.style.color = "var(--fg-2)"; }}
-            title="Quant Assistant"
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-          </button>
-        </div>
-        {/* Workspace selector */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
-          <button
-            onClick={() => setWorkspaceDropdownOpen((v) => !v)}
-            style={{
-              width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-              background: "none", border: "none", cursor: "pointer",
-              color: workspaceDropdownOpen ? "var(--fg)" : "var(--fg-2)",
-              borderRight: workspaceDropdownOpen ? "2px solid var(--accent)" : "2px solid transparent",
-            }}
-            onMouseEnter={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--fg)"; }}
-            onMouseLeave={(e) => { if (!workspaceDropdownOpen) e.currentTarget.style.color = "var(--fg-2)"; }}
-            title={`Workspace: ${workspaces.find(w => w.id === activeWorkspaceId)?.name ?? "Default"}`}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-              <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
-            </svg>
-          </button>
-          {workspaceDropdownOpen && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "absolute",
-                right: 44,
-                bottom: 0,
-                backgroundColor: "var(--panel)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                padding: "4px 0",
-                minWidth: 180,
-                zIndex: 9999,
-                fontFamily: "var(--mono)",
-                fontSize: 12,
-                boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
-              }}
-            >
-              <div style={{ padding: "4px 12px", color: "var(--fg-2)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
-                Workspaces
-              </div>
-              {workspaces.map((ws) => {
-                const isActive = ws.id === activeWorkspaceId;
-                const isDeletable = !isActive && ws.id !== "default";
-                const isConfirmingDelete = deletingWorkspaceId === ws.id;
+            {workspaces.map((ws) => {
+              const isActive = ws.id === activeWorkspaceId;
+              const isDeletable = !isActive && ws.id !== "default";
+              const isConfirmingDelete = deletingWorkspaceId === ws.id;
 
-                if (isConfirmingDelete) {
-                  return (
-                    <div key={ws.id} style={{ padding: "6px 12px", fontSize: 11, fontFamily: "var(--mono)" }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ color: "var(--fg)", marginBottom: 6 }}>
-                        Delete "{ws.name}"?
-                        <br /><span style={{ color: "var(--fg-2)" }}>All items will be deleted.</span>
-                      </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                              await api.deleteWorkspace(ws.id);
-                              await fetchWorkspaces();
-                              setDeletingWorkspaceId(null);
-                            } catch (err) {
-                              console.error("failed to delete workspace:", err);
-                            }
-                          }}
-                          style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--danger)",
-                            backgroundColor: "var(--danger)", color: "var(--fg)", cursor: "pointer",
-                            fontSize: 11, fontFamily: "var(--mono)",
-                          }}
-                        >Delete</button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setDeletingWorkspaceId(null); }}
-                          style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
-                            backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
-                            fontSize: 11, fontFamily: "var(--mono)",
-                          }}
-                        >Cancel</button>
-                      </div>
+              if (isConfirmingDelete) {
+                return (
+                  <div key={ws.id} style={{ padding: "6px 12px", fontSize: 11, fontFamily: "var(--mono)" }} onClick={(e) => e.stopPropagation()}>
+                    <div style={{ color: "var(--fg)", marginBottom: 6 }}>
+                      Delete "{ws.name}"?
+                      <br /><span style={{ color: "var(--fg-2)" }}>All items will be deleted.</span>
                     </div>
-                  );
-                }
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            await api.deleteWorkspace(ws.id);
+                            await fetchWorkspaces();
+                            setDeletingWorkspaceId(null);
+                          } catch (err) {
+                            console.error("failed to delete workspace:", err);
+                          }
+                        }}
+                        style={{
+                          padding: "3px 10px", borderRadius: 4, border: "1px solid var(--danger)",
+                          backgroundColor: "var(--danger)", color: "var(--fg)", cursor: "pointer",
+                          fontSize: 11, fontFamily: "var(--mono)",
+                        }}
+                      >Delete</button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeletingWorkspaceId(null); }}
+                        style={{
+                          padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
+                          backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
+                          fontSize: 11, fontFamily: "var(--mono)",
+                        }}
+                      >Cancel</button>
+                    </div>
+                  </div>
+                );
+              }
 
-                if (editingWorkspaceId === ws.id) {
-                  const inputStyle = {
-                    width: "100%", padding: "4px 8px", marginTop: 4,
-                    backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
-                    color: "var(--fg)", fontSize: 11, outline: "none",
-                    fontFamily: "var(--mono)",
-                  } as const;
-                  return (
-                    <form
-                      key={ws.id}
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (!editWorkspaceForm.name.trim()) return;
-                        const v = await api.validateWorkspacePaths(editWorkspaceForm.claudeConfigPath.trim(), editWorkspaceForm.mcpConfigPath.trim());
-                        setPathErrors({ claude: v.claudeConfigError || "", mcp: v.mcpConfigError || "" });
-                        if (!v.claudeConfigValid || !v.mcpConfigValid) return;
-                        try {
-                          await api.updateWorkspace({
-                            id: ws.id,
-                            name: editWorkspaceForm.name.trim(),
-                            claudeConfigPath: editWorkspaceForm.claudeConfigPath.trim() || undefined,
-                            mcpConfigPath: editWorkspaceForm.mcpConfigPath.trim() || undefined,
-                          });
-                          await fetchWorkspaces();
-                          setEditingWorkspaceId(null);
-                          setPathErrors({ claude: "", mcp: "" });
-                        } catch (err) {
-                          console.error("failed to update workspace:", err);
-                        }
-                      }}
-                      style={{ padding: "6px 12px" }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div style={{ color: "var(--fg-2)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Edit workspace</div>
+              if (editingWorkspaceId === ws.id) {
+                const inputStyle = {
+                  width: "100%", padding: "4px 8px", marginTop: 4,
+                  backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
+                  color: "var(--fg)", fontSize: 11, outline: "none",
+                  fontFamily: "var(--mono)",
+                } as const;
+                return (
+                  <form
+                    key={ws.id}
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!editWorkspaceForm.name.trim()) return;
+                      const v = await api.validateWorkspacePaths(editWorkspaceForm.claudeConfigPath.trim(), editWorkspaceForm.mcpConfigPath.trim());
+                      setPathErrors({ claude: v.claudeConfigError || "", mcp: v.mcpConfigError || "" });
+                      if (!v.claudeConfigValid || !v.mcpConfigValid) return;
+                      try {
+                        await api.updateWorkspace({
+                          id: ws.id,
+                          name: editWorkspaceForm.name.trim(),
+                          claudeConfigPath: editWorkspaceForm.claudeConfigPath.trim() || undefined,
+                          mcpConfigPath: editWorkspaceForm.mcpConfigPath.trim() || undefined,
+                        });
+                        await fetchWorkspaces();
+                        setEditingWorkspaceId(null);
+                        setPathErrors({ claude: "", mcp: "" });
+                      } catch (err) {
+                        console.error("failed to update workspace:", err);
+                      }
+                    }}
+                    style={{ padding: "6px 12px" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div style={{ color: "var(--fg-2)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Edit workspace</div>
+                    <input
+                      autoFocus
+                      value={editWorkspaceForm.name}
+                      onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, name: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Escape") setEditingWorkspaceId(null); }}
+                      placeholder="Name"
+                      style={{ ...inputStyle, marginTop: 0 }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
+                    />
+                    <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                       <input
-                        autoFocus
-                        value={editWorkspaceForm.name}
-                        onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, name: e.target.value }))}
-                        onKeyDown={(e) => { if (e.key === "Escape") setEditingWorkspaceId(null); }}
-                        placeholder="Name"
-                        style={{ ...inputStyle, marginTop: 0 }}
+                        value={editWorkspaceForm.claudeConfigPath}
+                        onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, claudeConfigPath: e.target.value }))}
+                        placeholder=".claude root"
+                        title="Project root containing .claude/skills/"
+                        style={{ ...inputStyle, marginTop: 0, flex: 1 }}
                         onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
                         onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
                       />
-                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                        <input
-                          value={editWorkspaceForm.claudeConfigPath}
-                          onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, claudeConfigPath: e.target.value }))}
-                          placeholder=".claude root"
-                          title="Project root containing .claude/skills/"
-                          style={{ ...inputStyle, marginTop: 0, flex: 1 }}
-                          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
-                        />
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const path = await api.browseClaudeConfigDir();
-                            if (path) setEditWorkspaceForm((f) => ({ ...f, claudeConfigPath: path }));
-                          }}
-                          style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
-                          title="Browse project root for .claude"
-                        >...</button>
-                      </div>
-                      {pathErrors.claude && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.claude}</div>}
-                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                        <input
-                          value={editWorkspaceForm.mcpConfigPath}
-                          onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, mcpConfigPath: e.target.value }))}
-                          placeholder=".mcp.json root"
-                          title="Project root containing .mcp.json"
-                          style={{ ...inputStyle, marginTop: 0, flex: 1 }}
-                          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
-                        />
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const path = await api.browseMcpConfigFile();
-                            if (path) setEditWorkspaceForm((f) => ({ ...f, mcpConfigPath: path }));
-                          }}
-                          style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
-                          title="Browse project root for .mcp.json"
-                        >...</button>
-                      </div>
-                      {pathErrors.mcp && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.mcp}</div>}
-                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                        <button
-                          type="submit"
-                          style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--accent)",
-                            backgroundColor: "var(--accent)", color: "var(--bg)", cursor: "pointer",
-                            fontSize: 11, fontFamily: "var(--mono)",
-                          }}
-                        >Save</button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setEditingWorkspaceId(null); }}
-                          style={{
-                            padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
-                            backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
-                            fontSize: 11, fontFamily: "var(--mono)",
-                          }}
-                        >Cancel</button>
-                      </div>
-                    </form>
-                  );
-                }
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const path = await api.browseClaudeConfigDir();
+                          if (path) setEditWorkspaceForm((f) => ({ ...f, claudeConfigPath: path }));
+                        }}
+                        style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
+                        title="Browse project root for .claude"
+                      >...</button>
+                    </div>
+                    {pathErrors.claude && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.claude}</div>}
+                    <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                      <input
+                        value={editWorkspaceForm.mcpConfigPath}
+                        onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, mcpConfigPath: e.target.value }))}
+                        placeholder=".mcp.json root"
+                        title="Project root containing .mcp.json"
+                        style={{ ...inputStyle, marginTop: 0, flex: 1 }}
+                        onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const path = await api.browseMcpConfigFile();
+                          if (path) setEditWorkspaceForm((f) => ({ ...f, mcpConfigPath: path }));
+                        }}
+                        style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
+                        title="Browse project root for .mcp.json"
+                      >...</button>
+                    </div>
+                    {pathErrors.mcp && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.mcp}</div>}
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <button
+                        type="submit"
+                        style={{
+                          padding: "3px 10px", borderRadius: 4, border: "1px solid var(--accent)",
+                          backgroundColor: "var(--accent)", color: "var(--bg)", cursor: "pointer",
+                          fontSize: 11, fontFamily: "var(--mono)",
+                        }}
+                      >Save</button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setEditingWorkspaceId(null); }}
+                        style={{
+                          padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
+                          backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
+                          fontSize: 11, fontFamily: "var(--mono)",
+                        }}
+                      >Cancel</button>
+                    </div>
+                  </form>
+                );
+              }
 
-                return (
-                  <div
-                    key={ws.id}
-                    style={{
-                      display: "flex", alignItems: "center",
-                      background: isActive ? "var(--border)" : "none",
+              return (
+                <div
+                  key={ws.id}
+                  style={{
+                    display: "flex", alignItems: "center",
+                    background: isActive ? "var(--border)" : "none",
+                  }}
+                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
+                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "transparent"; }}
+                >
+                  <button
+                    onClick={() => {
+                      setActiveWorkspaceId(ws.id);
+                      setWorkspaceDropdownOpen(false);
                     }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
-                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = "transparent"; }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      flex: 1, padding: "6px 12px",
+                      background: "none", border: "none", cursor: "pointer",
+                      color: isActive ? "var(--accent)" : "var(--fg)",
+                      textAlign: "left", fontSize: 12,
+                      fontFamily: "var(--mono)",
+                    }}
                   >
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: isActive ? "var(--accent)" : "var(--border-2)", flexShrink: 0 }} />
+                    {ws.name}
+                    {isActive && (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingWorkspaceId(ws.id);
+                      setEditWorkspaceForm({
+                        name: ws.name,
+                        claudeConfigPath: ws.claudeConfigPath ?? "",
+                        mcpConfigPath: ws.mcpConfigPath ?? "",
+                      });
+                    }}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      width: 28, height: 28, flexShrink: 0,
+                      background: "none", border: "none", cursor: "pointer",
+                      color: "var(--fg-2)",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
+                    title={`Settings for ${ws.name}`}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                  </button>
+                  {isDeletable && (
                     <button
-                      onClick={() => {
-                        setActiveWorkspaceId(ws.id);
-                        setWorkspaceDropdownOpen(false);
-                      }}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 8,
-                        flex: 1, padding: "6px 12px",
-                        background: "none", border: "none", cursor: "pointer",
-                        color: isActive ? "var(--accent)" : "var(--fg)",
-                        textAlign: "left", fontSize: 12,
-                        fontFamily: "var(--mono)",
-                      }}
-                    >
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: isActive ? "var(--accent)" : "var(--border-2)", flexShrink: 0 }} />
-                      {ws.name}
-                      {isActive && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto" }}>
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingWorkspaceId(ws.id);
-                        setEditWorkspaceForm({
-                          name: ws.name,
-                          claudeConfigPath: ws.claudeConfigPath ?? "",
-                          mcpConfigPath: ws.mcpConfigPath ?? "",
-                        });
-                      }}
+                      onClick={(e) => { e.stopPropagation(); setDeletingWorkspaceId(ws.id); }}
                       style={{
                         display: "flex", alignItems: "center", justifyContent: "center",
                         width: 28, height: 28, flexShrink: 0,
                         background: "none", border: "none", cursor: "pointer",
-                        color: "var(--fg-2)",
+                        color: "var(--fg-2)", marginRight: 4,
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
-                      title={`Settings for ${ws.name}`}
+                      title={`Delete ${ws.name}`}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                        <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                       </svg>
                     </button>
-                    {isDeletable && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setDeletingWorkspaceId(ws.id); }}
-                        style={{
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          width: 28, height: 28, flexShrink: 0,
-                          background: "none", border: "none", cursor: "pointer",
-                          color: "var(--fg-2)", marginRight: 4,
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
-                        title={`Delete ${ws.name}`}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
-              {creatingWorkspace ? (
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (!newWorkspaceName.trim()) return;
-                    const v = await api.validateWorkspacePaths(newClaudeConfigPath.trim(), newMcpConfigPath.trim());
-                    setPathErrors({ claude: v.claudeConfigError || "", mcp: v.mcpConfigError || "" });
-                    if (!v.claudeConfigValid || !v.mcpConfigValid) return;
-                    try {
-                      const ws = await api.createWorkspace({
-                        name: newWorkspaceName.trim(),
-                        claudeConfigPath: newClaudeConfigPath.trim() || undefined,
-                        mcpConfigPath: newMcpConfigPath.trim() || undefined,
-                      });
-                      await fetchWorkspaces();
-                      setActiveWorkspaceId(ws.id);
-                      setCreatingWorkspace(false);
-                      setNewWorkspaceName("");
-                      setNewClaudeConfigPath("");
-                      setNewMcpConfigPath("");
-                      setPathErrors({ claude: "", mcp: "" });
-                      setWorkspaceDropdownOpen(false);
-                    } catch (err) {
-                      console.error("failed to create workspace:", err);
-                    }
+                  )}
+                </div>
+              );
+            })}
+            <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+            {creatingWorkspace ? (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!newWorkspaceName.trim()) return;
+                  const v = await api.validateWorkspacePaths(newClaudeConfigPath.trim(), newMcpConfigPath.trim());
+                  setPathErrors({ claude: v.claudeConfigError || "", mcp: v.mcpConfigError || "" });
+                  if (!v.claudeConfigValid || !v.mcpConfigValid) return;
+                  try {
+                    const ws = await api.createWorkspace({
+                      name: newWorkspaceName.trim(),
+                      claudeConfigPath: newClaudeConfigPath.trim() || undefined,
+                      mcpConfigPath: newMcpConfigPath.trim() || undefined,
+                    });
+                    await fetchWorkspaces();
+                    setActiveWorkspaceId(ws.id);
+                    setCreatingWorkspace(false);
+                    setNewWorkspaceName("");
+                    setNewClaudeConfigPath("");
+                    setNewMcpConfigPath("");
+                    setPathErrors({ claude: "", mcp: "" });
+                    setWorkspaceDropdownOpen(false);
+                  } catch (err) {
+                    console.error("failed to create workspace:", err);
+                  }
+                }}
+                style={{ padding: "4px 8px" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  autoFocus
+                  value={newWorkspaceName}
+                  onChange={(e) => setNewWorkspaceName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") { setCreatingWorkspace(false); setNewWorkspaceName(""); setNewClaudeConfigPath(""); setNewMcpConfigPath(""); }
                   }}
-                  style={{ padding: "4px 8px" }}
-                  onClick={(e) => e.stopPropagation()}
-                >
+                  placeholder="Workspace name..."
+                  style={{
+                    width: "100%", padding: "4px 8px",
+                    backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
+                    color: "var(--fg)", fontSize: 12, outline: "none",
+                    fontFamily: "var(--mono)",
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
+                />
+                <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                   <input
-                    autoFocus
-                    value={newWorkspaceName}
-                    onChange={(e) => setNewWorkspaceName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") { setCreatingWorkspace(false); setNewWorkspaceName(""); setNewClaudeConfigPath(""); setNewMcpConfigPath(""); }
-                    }}
-                    placeholder="Workspace name..."
+                    value={newClaudeConfigPath}
+                    onChange={(e) => setNewClaudeConfigPath(e.target.value)}
+                    placeholder=".claude root (optional)"
+                    title="Project root containing .claude/skills/ (e.g. /path/to/project)"
                     style={{
-                      width: "100%", padding: "4px 8px",
+                      flex: 1, padding: "4px 8px",
                       backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
-                      color: "var(--fg)", fontSize: 12, outline: "none",
+                      color: "var(--fg)", fontSize: 11, outline: "none",
                       fontFamily: "var(--mono)",
                     }}
                     onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
                     onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
                   />
-                  <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                    <input
-                      value={newClaudeConfigPath}
-                      onChange={(e) => setNewClaudeConfigPath(e.target.value)}
-                      placeholder=".claude root (optional)"
-                      title="Project root containing .claude/skills/ (e.g. /path/to/project)"
-                      style={{
-                        flex: 1, padding: "4px 8px",
-                        backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
-                        color: "var(--fg)", fontSize: 11, outline: "none",
-                        fontFamily: "var(--mono)",
-                      }}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const path = await api.browseClaudeConfigDir();
-                        if (path) setNewClaudeConfigPath(path);
-                      }}
-                      style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
-                      title="Browse project root for .claude"
-                    >...</button>
-                  </div>
-                  {pathErrors.claude && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.claude}</div>}
-                  <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                    <input
-                      value={newMcpConfigPath}
-                      onChange={(e) => setNewMcpConfigPath(e.target.value)}
-                      placeholder=".mcp.json root (optional)"
-                      title="Project root containing .mcp.json (e.g. /path/to/project)"
-                      style={{
-                        flex: 1, padding: "4px 8px",
-                        backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
-                        color: "var(--fg)", fontSize: 11, outline: "none",
-                        fontFamily: "var(--mono)",
-                      }}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const path = await api.browseMcpConfigFile();
-                        if (path) setNewMcpConfigPath(path);
-                      }}
-                      style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
-                      title="Browse project root for .mcp.json"
-                    >...</button>
-                  </div>
-                  {pathErrors.mcp && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.mcp}</div>}
-                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                    <button
-                      type="submit"
-                      style={{
-                        padding: "3px 10px", borderRadius: 4, border: "1px solid var(--accent)",
-                        backgroundColor: "var(--accent)", color: "var(--bg)", cursor: "pointer",
-                        fontSize: 11, fontFamily: "var(--mono)",
-                      }}
-                    >Save</button>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setCreatingWorkspace(false); setNewWorkspaceName(""); setNewClaudeConfigPath(""); setNewMcpConfigPath(""); }}
-                      style={{
-                        padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
-                        backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
-                        fontSize: 11, fontFamily: "var(--mono)",
-                      }}
-                    >Cancel</button>
-                  </div>
-                </form>
-              ) : (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCreatingWorkspace(true);
-                  }}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    width: "100%", padding: "6px 12px",
-                    background: "none", border: "none", cursor: "pointer",
-                    color: "var(--fg-2)", textAlign: "left", fontSize: 12,
-                    fontFamily: "var(--mono)",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; e.currentTarget.style.backgroundColor = "transparent"; }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  New workspace
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const path = await api.browseClaudeConfigDir();
+                      if (path) setNewClaudeConfigPath(path);
+                    }}
+                    style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
+                    title="Browse project root for .claude"
+                  >...</button>
+                </div>
+                {pathErrors.claude && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.claude}</div>}
+                <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                  <input
+                    value={newMcpConfigPath}
+                    onChange={(e) => setNewMcpConfigPath(e.target.value)}
+                    placeholder=".mcp.json root (optional)"
+                    title="Project root containing .mcp.json (e.g. /path/to/project)"
+                    style={{
+                      flex: 1, padding: "4px 8px",
+                      backgroundColor: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 4,
+                      color: "var(--fg)", fontSize: 11, outline: "none",
+                      fontFamily: "var(--mono)",
+                    }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const path = await api.browseMcpConfigFile();
+                      if (path) setNewMcpConfigPath(path);
+                    }}
+                    style={{ padding: "4px 8px", backgroundColor: "var(--panel-3)", border: "1px solid var(--border-2)", borderRadius: 4, color: "var(--fg-2)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", flexShrink: 0 }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; }}
+                    title="Browse project root for .mcp.json"
+                  >...</button>
+                </div>
+                {pathErrors.mcp && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.mcp}</div>}
+                <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                  <button
+                    type="submit"
+                    style={{
+                      padding: "3px 10px", borderRadius: 4, border: "1px solid var(--accent)",
+                      backgroundColor: "var(--accent)", color: "var(--bg)", cursor: "pointer",
+                      fontSize: 11, fontFamily: "var(--mono)",
+                    }}
+                  >Save</button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setCreatingWorkspace(false); setNewWorkspaceName(""); setNewClaudeConfigPath(""); setNewMcpConfigPath(""); }}
+                    style={{
+                      padding: "3px 10px", borderRadius: 4, border: "1px solid var(--border-2)",
+                      backgroundColor: "transparent", color: "var(--fg-2)", cursor: "pointer",
+                      fontSize: 11, fontFamily: "var(--mono)",
+                    }}
+                  >Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCreatingWorkspace(true);
+                }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  width: "100%", padding: "6px 12px",
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "var(--fg-2)", textAlign: "left", fontSize: 12,
+                  fontFamily: "var(--mono)",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--fg)"; e.currentTarget.style.backgroundColor = "var(--panel-3)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--fg-2)"; e.currentTarget.style.backgroundColor = "transparent"; }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                New workspace
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderTitleBar = () => {
+    const segValue: View = view === "jobs" || view === "agents" ? view : "dashboard";
+    return (
+      <div
+        style={{
+          flex: "none",
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          height: 44,
+          padding: "0 14px",
+          borderBottom: "1px solid var(--border-2)",
+          backgroundColor: "var(--bg)",
+          zIndex: 30,
+        }}
+      >
+        {/* Left: sidebar toggle + view switcher */}
+        <IconButton
+          name="panelRight"
+          label="Toggle sidebar"
+          active={!sidebarHidden}
+          onClick={() => setSidebarHidden((v) => !v)}
+        />
+        <Segmented
+          options={[
+            { value: "dashboard", label: "Sessions", icon: "terminal" },
+            { value: "jobs", label: "Jobs", icon: "list" },
+            { value: "agents", label: "Agents", icon: "users" },
+          ]}
+          value={segValue}
+          onChange={(v) => {
+            if (v === "jobs") { fetchJobs(); setView("jobs"); }
+            else if (v === "agents") { fetchAgents(); setView("agents"); }
+            else setView("dashboard");
+          }}
+        />
+
+        {/* Center: command palette pill (absolutely centered) */}
+        <button
+          type="button"
+          onClick={() => setCommandPaletteOpen(true)}
+          title="Search or run a command  ⌘K"
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            width: 360,
+            maxWidth: "32vw",
+            height: 30,
+            padding: "0 12px",
+            borderRadius: 9,
+            background: "var(--panel-2)",
+            border: "1px solid var(--border)",
+            cursor: "text",
+            textAlign: "left",
+          }}
+        >
+          <Icon name="search" size={14} color="var(--fg-3)" />
+          <span style={{ flex: 1, fontSize: 12, color: "var(--fg-3)" }}>Search or run a command</span>
+          <Kbd>⌘K</Kbd>
+        </button>
+
+        <span style={{ flex: 1 }} />
+
+
+        <IconButton
+          name="folder"
+          label="Files"
+          active={filesPanelOpen}
+          onClick={() => { setView("dashboard"); handleFilesPanelOpenChange(!filesPanelOpen); }}
+        />
+        <IconButton
+          name="message"
+          label="Quant Assistant"
+          active={assistantOpen}
+          onClick={() => setAssistantOpen((v) => !v)}
+        />
+        <IconButton
+          name="settings"
+          label="Settings  ⌘,"
+          active={view === "settings"}
+          onClick={() => setView("settings")}
+        />
       </div>
     );
   };
@@ -2563,7 +2587,12 @@ function App() {
     return (
       <>
         {renderQuantiOverlay()}
-        <Settings repos={repos} onBack={() => { fetchShortcuts(); setView("dashboard"); }} />
+        <div className="flex flex-col h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
+          {renderTitleBar()}
+          <div className="flex-1 min-h-0 relative">
+            <Settings repos={repos} onBack={() => { fetchShortcuts(); setView("dashboard"); }} />
+          </div>
+        </div>
         {commandPaletteOpen && <CommandPalette commands={paletteCommands} onClose={() => setCommandPaletteOpen(false)} />}
         {themePickerOpen && <ThemeQuickPicker onClose={() => setThemePickerOpen(false)} />}
       </>
@@ -2574,12 +2603,17 @@ function App() {
     return (
       <>
         {renderQuantiOverlay()}
-        <DiffView
-          sessionId={diffSession.id}
-          sessionName={diffSession.name}
-          commitMessagePrefix={commitMessagePrefix}
-          onBack={() => setView("dashboard")}
-        />
+        <div className="flex flex-col h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
+          {renderTitleBar()}
+          <div className="flex-1 min-h-0 relative">
+            <DiffView
+              sessionId={diffSession.id}
+              sessionName={diffSession.name}
+              commitMessagePrefix={commitMessagePrefix}
+              onBack={() => setView("dashboard")}
+            />
+          </div>
+        </div>
         {commandPaletteOpen && <CommandPalette commands={paletteCommands} onClose={() => setCommandPaletteOpen(false)} />}
         {themePickerOpen && <ThemeQuickPicker onClose={() => setThemePickerOpen(false)} />}
       </>
@@ -2592,8 +2626,12 @@ function App() {
     <>
       {renderQuantiOverlay()}
 
+    <div className="flex flex-col h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
+      {renderTitleBar()}
+      <div className="flex-1 min-h-0 relative">
+
       {view === "jobs" && (
-        <div className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
+        <div className="view-swap flex" style={{ backgroundColor: "var(--bg)", position: "absolute", inset: 0, zIndex: 20 }}>
           <JobsView
             jobs={filteredJobs}
             agents={filteredAgents}
@@ -2604,12 +2642,11 @@ function App() {
             onRefreshJobs={fetchJobs}
             onRefreshJobGroups={fetchJobGroups}
           />
-          {renderIconStrip()}
         </div>
       )}
 
       {view === "agents" && (
-        <div className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--bg)", position: "absolute", top: 0, left: 0, zIndex: 20 }}>
+        <div className="view-swap flex" style={{ backgroundColor: "var(--bg)", position: "absolute", inset: 0, zIndex: 20 }}>
           <AgentsView
             agents={filteredAgents}
             onCreateAgent={() => setModal({ type: "createAgent" })}
@@ -2620,11 +2657,11 @@ function App() {
             }}
             onRefreshAgents={fetchAgents}
           />
-          {renderIconStrip()}
         </div>
       )}
 
-    <div key={view} className="view-swap flex h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
+    <div key={view} className="view-swap flex h-full w-full" style={{ backgroundColor: "var(--bg)" }}>
+      {!sidebarHidden && (
       <Sidebar
         repos={repos}
         tasksByRepo={tasksByRepo}
@@ -2674,7 +2711,9 @@ function App() {
         onGitPush={openGitPushModal}
         appVersion={appVersion}
         onShowChangelog={() => setModal({ type: "changelog" })}
+        workspaceSwitcher={renderWorkspaceSwitcher()}
       />
+      )}
 
       <main className="flex-1 flex flex-col relative" style={{ backgroundColor: "var(--bg)" }}>
         {error && (
@@ -2713,6 +2752,88 @@ function App() {
             onNewSession={handleNewSessionFromTabBar}
           />
         )}
+
+        {/* Action bar: pane toggles (Files / Terminal / Mindmap / Voice /
+            Assistant) for the active session. Replaces the old vertical rail. */}
+        {(() => {
+          const hasSession = !!activeSession;
+          const voiceEnabled = dockTermConfig?.voice?.enabled ?? false;
+          const agentAlive = activeSession
+            ? (() => {
+                const s = getDisplayStatus(activeSession.id, activeSession.status);
+                return s === "running" || s === "waiting" || s === "done";
+              })()
+            : false;
+          const voiceCanToggle = hasSession && voiceEnabled && agentAlive;
+          const voiceOn = !!activeSession && voiceSessionId === activeSession.id;
+          const onToggleTerminal = async () => {
+            if (!activeSession) return;
+            if (activeTerminalPaneOpen) { handleTerminalPaneOpenChange(false); return; }
+            if (activeEmbeddedTerminalSession) { handleTerminalPaneOpenChange(true); return; }
+            try {
+              await handleCreateEmbeddedTerminal(activeSession);
+              handleTerminalPaneOpenChange(true);
+            } catch {
+              /* failed to create embedded terminal */
+            }
+          };
+          return (
+            <div
+              style={{
+                flex: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                height: 46,
+                padding: "0 10px 0 16px",
+                borderBottom: "1px solid var(--border-2)",
+                backgroundColor: "var(--panel)",
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 8 }} />
+              <PaneToggle
+                icon="folder"
+                label="Files"
+                active={filesPanelOpen}
+                onClick={() => handleFilesPanelOpenChange(!filesPanelOpen)}
+              />
+              <PaneToggle
+                icon="terminal"
+                label="Terminal"
+                active={activeTerminalPaneOpen}
+                disabled={!hasSession}
+                onClick={() => { void onToggleTerminal(); }}
+              />
+              <PaneToggle
+                icon="waypoints"
+                label="Mindmap"
+                active={activeMindmapPaneOpen}
+                disabled={!hasSession}
+                onClick={() => { if (activeSession) handleMindmapPaneOpenChange(!activeMindmapPaneOpen); }}
+              />
+              <PaneToggle
+                icon="waveform"
+                label="Voice"
+                active={voiceOn}
+                disabled={!voiceCanToggle}
+                title={
+                  !voiceEnabled
+                    ? "Enable voice in Settings"
+                    : !agentAlive
+                      ? "Start the session's agent first"
+                      : "Toggle voice pane"
+                }
+                onClick={() => { if (voiceCanToggle) handleVoicePaneOpenChange(!voiceOn); }}
+              />
+              <PaneToggle
+                icon="message"
+                label="Assistant"
+                active={assistantOpen}
+                onClick={() => setAssistantOpen((v) => !v)}
+              />
+            </div>
+          );
+        })()}
 
         {/* Session area + right-hand drag-tileable dock, side by side. The dock
             (SessionDock) is mounted HERE (App scope) — NOT inside SessionPanel —
@@ -2818,8 +2939,6 @@ function App() {
           />
         </div>
       </main>
-
-      {renderIconStrip()}
 
       {modal.type === "openRepo" && (
         <OpenRepoModal
@@ -3016,6 +3135,8 @@ function App() {
           ))}
         </div>
       )}
+    </div>
+      </div>
     </div>
     </>
   );

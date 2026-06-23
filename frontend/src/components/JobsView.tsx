@@ -3523,7 +3523,8 @@ export function JobsView({ jobs, agents, jobGroups, activeWorkspaceId, onCreateJ
       <div
         style={{
           width: groupsSidebarWidth,
-          backgroundColor: "var(--bg)",
+          backgroundColor: "var(--panel)",
+          borderRight: "1px solid var(--border-2)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",

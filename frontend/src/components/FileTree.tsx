@@ -23,9 +23,13 @@ interface Props {
   openPath: string | null;
   dirtyPaths: ReadonlySet<string>;
   refreshNonce: number;
+  /** Case-insensitive substring filter over filenames (client-side, already-loaded tree). */
+  filter?: string;
   onOpen: (path: string) => void;
   onPathDeleted: (path: string) => void;
   onPathRenamed: (oldPath: string, newPath: string) => void;
+  /** Reports how many rows are currently visible under the active filter. */
+  onMatchCount?: (count: number) => void;
   onError: (msg: string) => void;
 }
 
@@ -69,14 +73,20 @@ export function FileTree({
   openPath,
   dirtyPaths,
   refreshNonce,
+  filter,
   onOpen,
   onPathDeleted,
   onPathRenamed,
+  onMatchCount,
   onError,
 }: Props) {
   const [data, setData] = useState<TreeNode[]>([]);
   const loadedRef = useRef<Set<string>>(new Set());
   const treeRef = useRef<TreeApi<TreeNode> | null>(null);
+
+  // react-arborist treats a non-empty searchTerm as "filter mode": only matching
+  // rows (and their ancestors) stay visible. Trim so a whitespace-only query is no-op.
+  const filterTerm = (filter ?? "").trim();
 
   // Context menu target: a node, or null for the tree background (root scope).
   const [menu, setMenu] = useState<{ x: number; y: number; node: TreeNode | null } | null>(null);
@@ -119,6 +129,27 @@ export function FileTree({
     const dirs = refreshNonce === 0 ? [""] : Array.from(new Set(["", ...loadedRef.current]));
     dirs.forEach((d) => void loadDir(d));
   }, [loadDir, refreshNonce]);
+
+  // Report how many already-loaded nodes match the active filter, so the panel
+  // can show "N matches" / a no-match empty state. Counts every node whose name
+  // contains the term (matching arborist's searchMatch), across loaded subtrees.
+  useEffect(() => {
+    if (!onMatchCount) return;
+    if (!filterTerm) {
+      onMatchCount(-1); // -1 = filter inactive
+      return;
+    }
+    const needle = filterTerm.toLowerCase();
+    let count = 0;
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.name.toLowerCase().includes(needle)) count++;
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(data);
+    onMatchCount(count);
+  }, [filterTerm, data, onMatchCount]);
 
   // Live updates: re-list the affected parent dir on backend mutations.
   useEffect(() => {
@@ -339,6 +370,8 @@ export function FileTree({
         disableDrag
         disableDrop
         disableMultiSelection
+        searchTerm={filterTerm}
+        searchMatch={(node, term) => node.data.name.toLowerCase().includes(term.toLowerCase())}
         onToggle={(id: string) => {
           if (!loadedRef.current.has(id)) void loadDir(id);
         }}

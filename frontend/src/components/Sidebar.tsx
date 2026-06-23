@@ -81,6 +81,7 @@ interface SidebarProps {
   onGitPush: (sessionId: string) => void;
   appVersion?: string;
   onShowChangelog?: () => void;
+  workspaceSwitcher?: React.ReactNode;
 }
 
 function SidebarScrollArea({ children }: { children: React.ReactNode }) {
@@ -320,6 +321,7 @@ export function Sidebar({
   onGitPush,
   appVersion,
   onShowChangelog,
+  workspaceSwitcher,
 }: SidebarProps) {
   const openMenu = useMenu();
 
@@ -617,12 +619,14 @@ export function Sidebar({
             borderBottom: "1px solid var(--border-2)",
           }}
         >
-          <span
-            className="mono"
-            style={{ flex: 1, fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}
-          >
-            <span style={{ color: "var(--accent)" }}>{">"}</span> <span style={{ color: "var(--fg)" }}>quant</span>
-          </span>
+          {workspaceSwitcher ?? (
+            <span
+              className="mono"
+              style={{ flex: 1, fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}
+            >
+              <span style={{ color: "var(--accent)" }}>{">"}</span> <span style={{ color: "var(--fg)" }}>quant</span>
+            </span>
+          )}
           <IconButton name="plus" label="New repo" onClick={handleOpenRepoFromIcon} />
           <IconButton name="panelRight" label="collapse sidebar" onClick={() => setCollapsed(true)} />
         </div>
@@ -641,6 +645,16 @@ export function Sidebar({
 
         {/* tree nav with custom scrollbar */}
         <SidebarScrollArea>
+          {showArchived ? (
+            <ArchivedList
+              repos={repos}
+              tasksByRepo={tasksByRepo}
+              sessionsByTask={sessionsByTask}
+              onUnarchiveTask={onUnarchiveTask}
+              onUnarchiveSession={onUnarchiveSession}
+            />
+          ) : (
+            <>
           {repos.map((repo) => (
             <RepoNode
               key={repo.id}
@@ -675,10 +689,10 @@ export function Sidebar({
               onRemoveRepo={onRemoveRepo}
             />
           ))}
-          {!showArchived && (
-            <div style={{ padding: "2px 8px", margin: "4px 8px 0" }}>
-              <AddRow onClick={handleOpenRepoFromIcon}>repo</AddRow>
-            </div>
+          <div style={{ padding: "2px 8px", margin: "4px 8px 0" }}>
+            <AddRow onClick={handleOpenRepoFromIcon}>repo</AddRow>
+          </div>
+            </>
           )}
         </SidebarScrollArea>
 
@@ -756,6 +770,128 @@ export function Sidebar({
           style={{ width: 2, height: 32, borderRadius: 1, backgroundColor: "var(--fg-4)", transition: "background-color 150ms" }}
         />
       </div>
+    </div>
+  );
+}
+
+interface ArchItem {
+  kind: "task" | "session";
+  id: string;
+  icon: IconName;
+  label: string;
+  sub: string;
+  onRestore: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}
+
+function ArchRow({ icon, label, sub, onRestore, onContextMenu }: ArchItem) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onContextMenu={onContextMenu}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        padding: "7px 12px",
+        margin: "0 8px",
+        borderRadius: 8,
+        background: hover ? "var(--hover)" : "transparent",
+        cursor: "default",
+        opacity: 0.92,
+      }}
+    >
+      <Icon name={icon} size={13} color="var(--fg-4)" />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 12, color: "var(--fg-2)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{label}</div>
+        <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-4)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{sub}</div>
+      </div>
+      <button
+        onClick={(e) => { e.stopPropagation(); onRestore(); }}
+        title="Restore"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          padding: "3px 8px",
+          borderRadius: 6,
+          cursor: "pointer",
+          border: "1px solid var(--border)",
+          background: "transparent",
+          color: "var(--fg-3)",
+          fontFamily: "var(--sans)",
+          fontSize: 11,
+          opacity: hover ? 1 : 0.55,
+        }}
+      >
+        <Icon name="archive" size={12} /> restore
+      </button>
+    </div>
+  );
+}
+
+function ArchivedList({
+  repos,
+  tasksByRepo,
+  sessionsByTask,
+  onUnarchiveTask,
+  onUnarchiveSession,
+}: {
+  repos: Repo[];
+  tasksByRepo: Record<string, Task[]>;
+  sessionsByTask: Record<string, Session[]>;
+  onUnarchiveTask: (taskId: string) => void;
+  onUnarchiveSession: (sessionId: string) => void;
+}) {
+  const items: ArchItem[] = [];
+  for (const repo of repos) {
+    const tasks = tasksByRepo[repo.id] ?? [];
+    for (const task of tasks) {
+      if (task.archivedAt) {
+        const labelTag = task.name ? `${task.tag} ${task.name}` : task.tag;
+        items.push({
+          kind: "task",
+          id: `t:${task.id}`,
+          icon: "hash",
+          label: labelTag,
+          sub: repo.name,
+          onRestore: () => onUnarchiveTask(task.id),
+        });
+      }
+      const sessions = sessionsByTask[task.id] ?? [];
+      for (const session of sessions) {
+        if (session.archivedAt && session.sessionType !== "terminal") {
+          items.push({
+            kind: "session",
+            id: `s:${session.id}`,
+            icon: "terminal",
+            label: session.name,
+            sub: `${repo.name} · ${task.tag}`,
+            onRestore: () => onUnarchiveSession(session.id),
+          });
+        }
+      }
+    }
+  }
+
+  if (items.length === 0) {
+    return (
+      <div
+        className="mono"
+        style={{ padding: "26px 18px", fontSize: 11.5, color: "var(--fg-4)", textAlign: "center", lineHeight: 1.6 }}
+      >
+        no archived items.<br />archive a session or task to stash it here.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "4px 0" }}>
+      {items.map((it) => (
+        <ArchRow key={it.id} {...it} />
+      ))}
     </div>
   );
 }
@@ -1169,7 +1305,7 @@ function SessionNode({
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => onSessionContextMenu(e, session)}
         style={{
-          opacity: isArchived ? 0.6 : 1,
+          opacity: isArchived ? 0.6 : displayStatus === "paused" ? 0.55 : 1,
           borderLeft: isBoardDragOver ? "2px solid var(--accent)" : "2px solid transparent",
         }}
       >

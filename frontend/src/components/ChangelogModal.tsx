@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ChangelogEntry } from "../types";
 import { Pill } from "./Pill";
-import { Button } from "./Button";
+import { ModalShell, ModalTitle, ModalCancel } from "./ModalShell";
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string; color: string }> = {
   features: { label: "new features", icon: "+", color: "var(--ok)" },
@@ -22,38 +22,18 @@ export function ChangelogModal({ entries, currentVersion, onClose }: Props) {
   );
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "var(--scrim)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+    <ModalShell width={540} onClose={onClose}>
+      {/* header */}
       <div
-        className="w-full max-w-lg flex flex-col"
-        style={{
-          backgroundColor: "var(--panel-2)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--r3)",
-          boxShadow: "var(--shadow-pop)",
-          fontFamily: "var(--mono)",
-          maxHeight: "80vh",
-          overflow: "hidden",
-        }}
+        className="flex items-center justify-between px-6 py-4 shrink-0"
+        style={{ borderBottom: "1px solid var(--border)" }}
       >
-        {/* header */}
-        <div
-          className="flex items-center justify-between px-6 py-4 shrink-0"
-          style={{ borderBottom: "1px solid var(--border)" }}
-        >
-          <h2 className="text-sm font-bold lowercase" style={{ color: "var(--fg)" }}>
-            <span style={{ color: "var(--accent)" }}>{">"}</span> changelog
-          </h2>
-          <Pill tone="accent">{currentVersion}</Pill>
-        </div>
+        <ModalTitle>changelog</ModalTitle>
+        <Pill tone="accent">{currentVersion}</Pill>
+      </div>
 
-        {/* scrollable entries */}
-        <div className="flex-1 overflow-y-auto px-6 py-4" style={{ minHeight: 0 }}>
+      {/* scrollable entries */}
+      <div className="flex-1 overflow-y-auto px-6 py-4" style={{ minHeight: 0, fontFamily: "var(--mono)" }}>
           {entries.map((entry) => {
             const isExpanded = expandedVersion === entry.version;
             const isCurrent = entry.version === currentVersion;
@@ -128,18 +108,15 @@ export function ChangelogModal({ entries, currentVersion, onClose }: Props) {
               </div>
             );
           })}
-        </div>
-
-        {/* footer */}
-        <div
-          className="flex items-center justify-end px-6 py-3 shrink-0"
-          style={{ borderTop: "1px solid var(--border)" }}
-        >
-          <Button variant="subtle" onClick={onClose}>
-            close
-          </Button>
-        </div>
       </div>
-    </div>
+
+      {/* footer */}
+      <div
+        className="flex items-center justify-end px-6 py-3 shrink-0"
+        style={{ borderTop: "1px solid var(--border)" }}
+      >
+        <ModalCancel onClick={onClose}>close</ModalCancel>
+      </div>
+    </ModalShell>
   );
 }

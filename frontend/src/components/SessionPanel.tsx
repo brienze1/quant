@@ -187,76 +187,9 @@ export function SessionPanel({
             </Button>
           )}
 
-          {/* Terminal button */}
-          {!isArchived && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon="terminal"
-              active={terminalOpen}
-              onClick={terminalOpen ? handleCloseTerminal : handleOpenTerminal}
-            >
-              terminal
-            </Button>
-          )}
-
-          {/* Mindmap button */}
-          {!isArchived && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon="waypoints"
-              active={mindmapPaneOpen}
-              onClick={() => onMindmapPaneOpenChange(!mindmapPaneOpen)}
-            >
-              mindmap
-            </Button>
-          )}
-
-          {/* Voice button (mirrors the mindmap toggle; uses the themed
-              --purple accent so it tracks theme changes like its siblings).
-              Gated on TWO conditions, both of which must hold:
-                1. config.voice.enabled — voice feature turned on in Settings.
-                2. The session has a LIVE agent process. "running" (mid-turn),
-                   "waiting" and "done" (agent idle at the prompt, ready for
-                   input) all have a live PTY the kickoff can write to. Idle /
-                   paused / stopped / starting have no live process, so we
-                   disable the toggle (and never fire the kickoff) there to
-                   avoid a confusing "no process running" failure. */}
-          {!isArchived && (() => {
-            const voiceEnabled = termConfig?.voice?.enabled ?? false;
-            const agentAlive =
-              displayStatus === "running" ||
-              displayStatus === "waiting" ||
-              displayStatus === "done";
-            const canToggle = voiceEnabled && agentAlive;
-            const tooltip = !voiceEnabled
-              ? "Enable voice in Settings"
-              : !agentAlive
-                ? "Start the session's agent first"
-                : "toggle voice pane";
-            return (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="waveform"
-                disabled={!canToggle}
-                title={tooltip}
-                onClick={() => { if (canToggle) onVoicePaneOpenChange(!voicePaneOpen); }}
-                style={
-                  voicePaneOpen
-                    ? {
-                        background: "color-mix(in srgb, var(--purple) 13%, transparent)",
-                        color: "var(--purple)",
-                        borderColor: "color-mix(in srgb, var(--purple) 45%, var(--border))",
-                      }
-                    : { color: "var(--purple)" }
-                }
-              >
-                voice
-              </Button>
-            );
-          })()}
+          {/* Terminal / Mindmap / Voice toggles moved to the App-level ActionBar
+              (below the tab bar). The pane open/close props are still passed in
+              and owned by App; this header no longer renders the toggles. */}
 
           {/* Push-to-talk mic button (peer of the voice button). Quick click
               toggles a capture on/off; press-and-hold captures while held and
