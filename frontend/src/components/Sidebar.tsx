@@ -1384,7 +1384,7 @@ function BoardNode({
     activeBoard ?? localStorage.getItem("quant.mindmapBoard." + sessionId) ?? "default";
   const isActive = effectiveActiveBoard === board;
 
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const openMenu = useMenu();
   const [renaming, setRenaming] = useState(false);
 
   function handleDragStart(e: React.DragEvent) {
@@ -1394,7 +1394,6 @@ function BoardNode({
   }
 
   function startRename() {
-    setMenu(null);
     setRenaming(true);
   }
 
@@ -1423,9 +1422,11 @@ function BoardNode({
         onDragStart={handleDragStart}
         onClick={() => onSelectBoard && onSelectBoard(sessionId, board)}
         onContextMenu={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setMenu({ x: e.clientX, y: e.clientY });
+          const items: HostMenuItem[] = [
+            { header: "// board" },
+            { label: "rename", icon: "edit", onClick: startRename },
+          ];
+          openMenu(e, items);
         }}
       >
         <Icon name="waypoints" size={12} color={isActive ? "var(--accent)" : "var(--fg-4)"} />
@@ -1442,18 +1443,6 @@ function BoardNode({
           {board}
         </span>
       </TreeRow>
-
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          items={[
-            { type: "label", text: board },
-            { type: "item", icon: "✎", iconColor: "var(--accent)", label: "rename", onClick: startRename },
-          ]}
-          onClose={() => setMenu(null)}
-        />
-      )}
     </>
   );
 }

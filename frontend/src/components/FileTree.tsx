@@ -7,6 +7,7 @@ import { ContextMenu } from "./ContextMenu";
 import type { MenuItem } from "./ContextMenu";
 import { ConfirmModal } from "./ConfirmModal";
 import { Icon } from "./Icon";
+import { gitStatusColor, gitStatusLabel } from "./gitStatus";
 
 // Tree node keyed by rel path. Dirs start with children: [] and are filled in
 // on first expand (load-on-expand); files carry children: null so arborist
@@ -22,6 +23,8 @@ interface Props {
   sessionId: string;
   openPath: string | null;
   dirtyPaths: ReadonlySet<string>;
+  /** Git working-tree status keyed by rel path (M/A/D/R/?). */
+  gitStatus?: ReadonlyMap<string, string>;
   refreshNonce: number;
   /** Case-insensitive substring filter over filenames (client-side, already-loaded tree). */
   filter?: string;
@@ -72,6 +75,7 @@ export function FileTree({
   sessionId,
   openPath,
   dirtyPaths,
+  gitStatus,
   refreshNonce,
   filter,
   onOpen,
@@ -284,6 +288,10 @@ export function FileTree({
     const hidden = node.data.name.startsWith(".");
     const selected = openPath === node.data.id;
     const rowDirty = dirtyPaths.has(node.data.id);
+    // VCS status for files (dirs never carry one). Distinct from rowDirty,
+    // which is the unsaved editor-buffer marker — the two can coexist.
+    const status = !node.data.isDir ? gitStatus?.get(node.data.id) : undefined;
+    const statusColor = status ? gitStatusColor(status) : undefined;
     return (
       <div
         style={style}
@@ -311,9 +319,11 @@ export function FileTree({
             color={
               node.data.isDir
                 ? "var(--fg-3)"
-                : rowDirty
-                  ? "var(--warn)"
-                  : "var(--fg-3)"
+                : statusColor
+                  ? statusColor
+                  : rowDirty
+                    ? "var(--warn)"
+                    : "var(--fg-3)"
             }
           />
         </span>
@@ -331,11 +341,30 @@ export function FileTree({
             }}
           />
         ) : (
-          <span className={"files-row-name" + (node.data.isDir ? " files-row-name--dir" : "")}>
+          <span
+            className={"files-row-name" + (node.data.isDir ? " files-row-name--dir" : "")}
+            style={status ? { color: "var(--fg)" } : undefined}
+          >
             {node.data.name}
           </span>
         )}
         {rowDirty && <span className="files-row-dirty mono" title="unsaved changes">M</span>}
+        {status && (
+          <span
+            className="mono"
+            title={`git: ${status}`}
+            style={{
+              flex: "none",
+              width: 15,
+              textAlign: "center",
+              fontSize: 10.5,
+              fontWeight: 700,
+              color: statusColor,
+            }}
+          >
+            {gitStatusLabel(status)}
+          </span>
+        )}
       </div>
     );
   }

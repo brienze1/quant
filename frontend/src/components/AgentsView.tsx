@@ -22,7 +22,7 @@ const SPRITE_H = 10;
 const TICK_INTERVAL = 5;
 const CANVAS_W = 760;
 const CANVAS_H = 500;
-const SIDEBAR_W = 220;
+const SIDEBAR_W = 248;
 
 // CSS variable helper – reads a custom property from :root at call time
 function getCSSVar(name: string, fallback: string): string {

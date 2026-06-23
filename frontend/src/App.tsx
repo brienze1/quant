@@ -2951,6 +2951,7 @@ function App() {
         <NewTaskModal
           repoId={modal.repoId}
           repoName={repos.find((r) => r.id === modal.repoId)?.name}
+          repos={repos}
           onSubmit={handleCreateTask}
           onCancel={() => setModal({ type: "none" })}
         />
