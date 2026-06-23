@@ -154,7 +154,7 @@ svg, img { -webkit-user-drag: none; user-drag: none; }
 /* while dragging a dock panel, stop iframes from swallowing pointer events
    (so elementFromPoint hit-tests the panel behind, and the parent window keeps
    receiving pointermove over the Voice iframe) */
-body.rd-dragging iframe { pointer-events: none; }
+body.rd-dragging iframe, body.rd-dragging .xterm { pointer-events: none; }
 body.rd-dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
 body.rd-dragging * { cursor: grabbing !important; }
 

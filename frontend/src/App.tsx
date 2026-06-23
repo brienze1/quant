@@ -16,16 +16,14 @@ import type {
   UpdateJobRequest,
   CreateAgentRequest,
   UpdateAgentRequest,
+  Config,
 } from "./types";
 import * as api from "./api";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPanel } from "./components/SessionPanel";
-import { VoicePane } from "./components/VoicePane";
-import { PaneHeader } from "./components/PaneHeader";
-import { IconButton } from "./components/IconButton";
 import { EmptyState } from "./components/EmptyState";
 import { FileTabPanel } from "./components/FileTabPanel";
-import { FilesPanel } from "./components/FilesPanel";
+import { SessionDock, type DockLeafKey } from "./components/SessionDock";
 import {
   fileBasename,
   isFileTabId,
@@ -138,6 +136,9 @@ function App() {
   const [voiceSessionId, setVoiceSessionId] = useState<string | null>(null);
   // Derived boolean for the (still bool) global open/closed sync + pane toggles.
   const voicePaneOpen = voiceSessionId !== null;
+  // Terminal config for the dock's embedded-terminal pane (TerminalPane needs
+  // it; the dock is App-owned so we load it here once).
+  const [dockTermConfig, setDockTermConfig] = useState<Config | null>(null);
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -266,6 +267,19 @@ function App() {
     if (!activeSession) return;
     setMindmapPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
   }
+
+  // Which dock leaves are present (open) for the active session. The terminal
+  // leaf is present only once its embedded terminal session actually exists.
+  // Voice is global (pinned to voiceSessionId) so it shows regardless of which
+  // tab is active — matching the old persistent VoiceDock behaviour.
+  const dockPresent = ((): DockLeafKey[] => {
+    const out: DockLeafKey[] = [];
+    if (filesPanelOpen) out.push("files");
+    if (activeTerminalPaneOpen && activeEmbeddedTerminalSession) out.push("terminal");
+    if (activeMindmapPaneOpen && activeSession) out.push("mindmap");
+    if (voiceSessionId) out.push("voice");
+    return out;
+  })();
 
   // Tracks which session currently holds a LIVE voice attachment (kicked off),
   // so we inject the persona exactly once per attachment and never re-kick just
@@ -551,6 +565,7 @@ function App() {
         return api.startAssistantSession(model);
       })
       .catch((err) => console.error("failed to start quanti:", err));
+    api.getConfig().then(setDockTermConfig).catch(() => {});
   }, [loadAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -2699,11 +2714,12 @@ function App() {
           />
         )}
 
-        {/* Session area + persistent voice dock, side by side. The voice dock is
-            mounted HERE (App scope) — NOT inside SessionPanel — so it survives
+        {/* Session area + right-hand drag-tileable dock, side by side. The dock
+            (SessionDock) is mounted HERE (App scope) — NOT inside SessionPanel —
+            so its heavy panes (voice bridge, embedded terminal xterm) survive
             active-tab switches: the SessionPanel below remounts/swaps with the
-            active tab, but the VoiceDock stays mounted, keyed by voiceSessionId,
-            and only remounts when voice is closed or moved to another session. */}
+            active tab, but the dock's pane instances stay mounted (portaled into
+            their tiles) and only unmount when their pane is actually closed. */}
         <div className="flex-1 flex min-h-0">
           <div className="flex-1 flex flex-col min-w-0">
             {activeSession ? (
@@ -2761,44 +2777,47 @@ function App() {
             })}
           </div>
 
-          {voiceSessionId && (
-            <VoiceDock
-              // Keyed by the attached session so it remounts ONLY when voice is
-              // closed (key changes to null → unmounts) or moved (key changes to
-              // the new session → remounts onto it). A plain active-tab switch
-              // leaves voiceSessionId untouched, so this stays mounted + alive.
-              key={voiceSessionId}
-              sessionId={voiceSessionId}
-              sessionName={voiceSession?.name ?? voiceSessionId}
-              isActiveTab={voiceSessionId === activeTabId}
-              onClose={detachVoice}
-            />
-          )}
+          {/* Right-hand drag-tileable dock: files / embedded terminal / mindmap
+              / voice panes live here as resizable, re-tileable tiles. The heavy
+              panes (terminal xterm, voice bridge) are mounted ONCE inside
+              SessionDock and portaled into their tiles, so re-tiling never
+              unmounts them. Tree + width persist per active session. Voice may
+              be pinned to a non-active session and still appears here. */}
+          <SessionDock
+            activeSession={activeSession}
+            present={dockPresent}
+            filesSession={filesPanelSession}
+            filesActiveFilePath={
+              activeFileTab && filesPanelSession && activeFileTab.sessionId === filesPanelSession.id
+                ? activeFileTab.relPath
+                : null
+            }
+            filesDirtyPaths={panelDirtyPaths}
+            onFilesOpenFile={(path) => {
+              if (filesPanelSession) handleOpenFile(filesPanelSession.id, path);
+            }}
+            onFilesPathDeleted={(path) => {
+              if (filesPanelSession) handleTreePathDeleted(filesPanelSession.id, path);
+            }}
+            onFilesPathRenamed={(oldPath, newPath) => {
+              if (filesPanelSession) handleTreePathRenamed(filesPanelSession.id, oldPath, newPath);
+            }}
+            onFilesClose={() => handleFilesPanelOpenChange(false)}
+            onFilesError={(msg) => setError(msg)}
+            terminalSession={activeEmbeddedTerminalSession}
+            termConfig={dockTermConfig}
+            onStart={handleStart}
+            onResume={handleResume}
+            onTerminalClose={() => handleTerminalPaneOpenChange(false)}
+            mindmapSessionId={activeSession?.id ?? null}
+            onMindmapClose={() => handleMindmapPaneOpenChange(false)}
+            voiceSessionId={voiceSessionId}
+            voiceSessionName={voiceSession?.name ?? voiceSessionId ?? ""}
+            voiceIsActiveTab={voiceSessionId === activeTabId}
+            onVoiceClose={detachVoice}
+          />
         </div>
       </main>
-
-      {filesPanelOpen && (
-        <FilesPanel
-          session={filesPanelSession}
-          activeFilePath={
-            activeFileTab && filesPanelSession && activeFileTab.sessionId === filesPanelSession.id
-              ? activeFileTab.relPath
-              : null
-          }
-          dirtyPaths={panelDirtyPaths}
-          onOpenFile={(path) => {
-            if (filesPanelSession) handleOpenFile(filesPanelSession.id, path);
-          }}
-          onPathDeleted={(path) => {
-            if (filesPanelSession) handleTreePathDeleted(filesPanelSession.id, path);
-          }}
-          onPathRenamed={(oldPath, newPath) => {
-            if (filesPanelSession) handleTreePathRenamed(filesPanelSession.id, oldPath, newPath);
-          }}
-          onClose={() => handleFilesPanelOpenChange(false)}
-          onError={(msg) => setError(msg)}
-        />
-      )}
 
       {renderIconStrip()}
 
@@ -2999,75 +3018,6 @@ function App() {
       )}
     </div>
     </>
-  );
-}
-
-// VoiceDock is the persistent, App-scoped wrapper around VoicePane. It is mounted
-// once at App level (keyed by voiceSessionId) so it survives active-tab switches —
-// unlike the per-active-tab SessionPanel. The header names the session voice is
-// pinned to and makes it visually obvious when that session is NOT the active tab
-// (the case that previously produced a silently-dead pane). Closing detaches voice.
-function VoiceDock({
-  sessionId,
-  sessionName,
-  isActiveTab,
-  onClose,
-}: {
-  sessionId: string;
-  sessionName: string;
-  isActiveTab: boolean;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="flex flex-col min-h-0 shrink-0"
-      style={{
-        width: 340,
-        borderLeft: "1px solid var(--border-2)",
-        backgroundColor: "var(--bg)",
-        fontFamily: "var(--sans)",
-      }}
-    >
-      <PaneHeader
-        dot
-        dotColor="var(--purple)"
-        eyebrow="voice"
-        sub={
-          <span
-            className="overflow-hidden whitespace-nowrap inline-flex items-center gap-1.5"
-            style={{ textOverflow: "ellipsis", maxWidth: 180 }}
-            title={`voice attached to session "${sessionName}"`}
-          >
-            {sessionName}
-            {/* Make it visually clear voice is pinned to a session that is NOT the
-                currently-active tab (so the user isn't confused by a pane whose
-                transcript/agent belongs to a different session than they're viewing). */}
-            {!isActiveTab && (
-              <span
-                className="shrink-0 mono"
-                style={{
-                  fontSize: 8.5,
-                  color: "var(--warn)",
-                  border: "1px solid color-mix(in srgb, var(--warn) 45%, var(--border))",
-                  borderRadius: 3,
-                  padding: "0 3px",
-                  lineHeight: "13px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
-                }}
-                title="voice is pinned to this session, which is not the active tab"
-              >
-                background
-              </span>
-            )}
-          </span>
-        }
-        actions={<IconButton name="x" size={13} label="Close voice" onClick={onClose} />}
-      />
-      <div className="flex-1 min-h-0">
-        <VoicePane sessionId={sessionId} />
-      </div>
-    </div>
   );
 }
 
