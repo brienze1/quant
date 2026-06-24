@@ -105,8 +105,32 @@ function applyThemeToDOM(theme: ResolvedTheme) {
   root.setAttribute("data-theme", theme.type);
 }
 
+// Accent hexes mirror the new design-system --accent values in style.css.
+const ACCENT_HEX: Record<Accent, { base: string; hover: string }> = {
+  emerald: { base: "#2ed3a0", hover: "#25b88a" },
+  iris: { base: "#7b7bff", hover: "#6a68f2" },
+  blue: { base: "#3a8bff", hover: "#2f78ec" },
+};
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function applyAccentToDOM(accent: Accent) {
-  document.documentElement.setAttribute("data-accent", accent);
+  const root = document.documentElement;
+  root.setAttribute("data-accent", accent);
+  // Keep the legacy --q-* accent (editor cursor, selection, highlights) in sync
+  // with the picked accent so both token layers agree across the whole IDE.
+  const { base, hover } = ACCENT_HEX[accent];
+  root.style.setProperty("--q-accent", base);
+  root.style.setProperty("--q-accent-hover", hover);
+  root.style.setProperty("--q-accent-bg-faint", hexToRgba(base, 0.12));
+  root.style.setProperty("--q-term-cursor", base);
+  root.style.setProperty("--q-selection-bg", hexToRgba(base, 0.3));
 }
 
 function applyDensityToDOM(density: Density) {
@@ -124,8 +148,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Always read fresh from storage in case the same theme ID was re-imported with new colors
     applyThemeToDOM(resolveTheme(themeId));
+    // applyThemeToDOM rewrites --q-accent from the theme; re-apply the accent
+    // override so the picked accent survives a theme switch.
+    applyAccentToDOM(accent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [themeId, version]);
+  }, [themeId, version, accent]);
 
   useEffect(() => {
     applyAccentToDOM(accent);
