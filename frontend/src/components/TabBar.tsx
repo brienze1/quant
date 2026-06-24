@@ -296,7 +296,7 @@ export function TabBar({
       <div
         ref={scrollRef}
         className="flex items-stretch flex-1 min-w-0 overflow-x-auto"
-        style={{ scrollbarWidth: "none" }}
+        style={{ scrollbarWidth: "none", overflowY: "hidden" }}
         onWheel={(e) => {
           const el = scrollRef.current;
           if (el && e.deltaY !== 0) {

@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.41",
+      "date": "2026-06-24",
+      "changes": {
+        "fixes": [
+          "the tab bar no longer scrolls vertically — it now only scrolls sideways, so tabs can't drift up or down out of view"
+        ]
+      }
+    },
+    {
       "version": "v3.1.40",
       "date": "2026-06-24",
       "changes": {
