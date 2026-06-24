@@ -92,25 +92,35 @@ const CSS_VAR_MAP: Record<keyof ThemeColors, string> = {
   selectionBg: "--q-selection-bg",
 };
 
-function applyThemeToDOM(theme: ResolvedTheme) {
-  const root = document.documentElement;
-  const colors = theme.colors;
-
-  for (const [key, cssVar] of Object.entries(CSS_VAR_MAP)) {
-    root.style.setProperty(cssVar, colors[key as keyof ThemeColors]);
-  }
-
-  root.setAttribute("data-theme-type", theme.type);
-  // New design-system token layer: dark/light selector for --bg/--panel/... tokens.
-  root.setAttribute("data-theme", theme.type);
-}
-
 // Accent hexes mirror the new design-system --accent values in style.css.
 const ACCENT_HEX: Record<Accent, { base: string; hover: string }> = {
   emerald: { base: "#2ed3a0", hover: "#25b88a" },
   iris: { base: "#7b7bff", hover: "#6a68f2" },
   blue: { base: "#3a8bff", hover: "#2f78ec" },
 };
+
+// Bridge: new design-system tokens ← resolved ThemeColors. Lets an IMPORTED
+// theme recolor the whole chrome (sidebar/buttons/empty-state/...), not just
+// the legacy --q-* editor/terminal layer. The two builtins are tuned to match
+// the static design CSS, so for them we leave these unset and let the static
+// :root[data-theme] + data-accent rules win.
+const BRIDGE_MAP: [string, keyof ThemeColors][] = [
+  ["--bg", "bg"],
+  ["--panel", "bgElevated"],
+  ["--panel-2", "bgInput"],
+  ["--panel-3", "bgHover"],
+  ["--hover", "bgHover"],
+  ["--active", "bgInset"],
+  ["--border", "border"],
+  ["--border-2", "borderLight"],
+  ["--line", "borderLight"],
+  ["--fg", "fg"],
+  ["--fg-2", "fgTertiary"],
+  ["--fg-3", "fgSecondary"],
+  ["--fg-4", "fgMuted"],
+];
+// Accent-family vars driven inline for imported themes (removed for builtins).
+const BRIDGE_ACCENT_VARS = ["--accent", "--accent-2", "--on-accent", "--accent-soft", "--accent-line"];
 
 function hexToRgba(hex: string, alpha: number): string {
   const h = hex.replace("#", "");
@@ -120,17 +130,53 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function applyAccentToDOM(accent: Accent) {
+// Relative luminance (0=black, 1=white) for picking readable text on the accent.
+function luminance(hex: string): number {
+  const h = hex.replace("#", "");
+  if (h.length < 6) return 0.5;
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+// Apply theme + accent together so precedence is deterministic on every change.
+function applyThemeToDOM(theme: ResolvedTheme, accent: Accent) {
   const root = document.documentElement;
+  const colors = theme.colors;
+
+  // Legacy --q-* layer (terminal / codemirror / diff) — always theme-driven.
+  for (const [key, cssVar] of Object.entries(CSS_VAR_MAP)) {
+    root.style.setProperty(cssVar, colors[key as keyof ThemeColors]);
+  }
+  root.setAttribute("data-theme-type", theme.type);
+  root.setAttribute("data-theme", theme.type);
   root.setAttribute("data-accent", accent);
-  // Keep the legacy --q-* accent (editor cursor, selection, highlights) in sync
-  // with the picked accent so both token layers agree across the whole IDE.
-  const { base, hover } = ACCENT_HEX[accent];
-  root.style.setProperty("--q-accent", base);
-  root.style.setProperty("--q-accent-hover", hover);
-  root.style.setProperty("--q-accent-bg-faint", hexToRgba(base, 0.12));
-  root.style.setProperty("--q-term-cursor", base);
-  root.style.setProperty("--q-selection-bg", hexToRgba(base, 0.3));
+
+  if (theme.isBuiltin) {
+    // Static design CSS owns the new tokens; the accent picker owns the accent.
+    // Clear any inline bridge values left over from a previously-active import.
+    for (const [v] of BRIDGE_MAP) root.style.removeProperty(v);
+    for (const v of BRIDGE_ACCENT_VARS) root.style.removeProperty(v);
+    // Keep the legacy --q-* accent (editor cursor/selection) in sync with the
+    // picked accent so both token layers agree across the whole IDE.
+    const { base, hover } = ACCENT_HEX[accent];
+    root.style.setProperty("--q-accent", base);
+    root.style.setProperty("--q-accent-hover", hover);
+    root.style.setProperty("--q-accent-bg-faint", hexToRgba(base, 0.12));
+    root.style.setProperty("--q-term-cursor", base);
+    root.style.setProperty("--q-selection-bg", hexToRgba(base, 0.3));
+  } else {
+    // Imported VS Code theme: drive the WHOLE chrome from its palette.
+    for (const [v, key] of BRIDGE_MAP) root.style.setProperty(v, colors[key]);
+    const acc = colors.accent;
+    root.style.setProperty("--accent", acc);
+    root.style.setProperty("--accent-2", colors.accentHover);
+    root.style.setProperty("--on-accent", luminance(acc) < 0.5 ? "#ffffff" : "#04231a");
+    root.style.setProperty("--accent-soft", hexToRgba(acc, 0.16));
+    root.style.setProperty("--accent-line", hexToRgba(acc, 0.45));
+    // Legacy accent stays the theme's own (already set in the --q-* loop above).
+  }
 }
 
 function applyDensityToDOM(density: Density) {
@@ -146,17 +192,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const theme = resolveTheme(themeId);
 
   useEffect(() => {
-    // Always read fresh from storage in case the same theme ID was re-imported with new colors
-    applyThemeToDOM(resolveTheme(themeId));
-    // applyThemeToDOM rewrites --q-accent from the theme; re-apply the accent
-    // override so the picked accent survives a theme switch.
-    applyAccentToDOM(accent);
+    // Always read fresh from storage in case the same theme ID was re-imported
+    // with new colors. Theme + accent are applied together for deterministic
+    // precedence (imported theme drives the accent; builtins use the picker).
+    applyThemeToDOM(resolveTheme(themeId), accent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [themeId, version, accent]);
-
-  useEffect(() => {
-    applyAccentToDOM(accent);
-  }, [accent]);
 
   useEffect(() => {
     applyDensityToDOM(density);

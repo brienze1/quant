@@ -31,7 +31,6 @@ export function ThemeSettings() {
     setAccent,
     density,
     setDensity,
-    toggleThemeType,
   } = useTheme();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,11 +57,12 @@ export function ThemeSettings() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  // Selecting a preset drives the new token layer: flip dark/light to the target
-  // type (if it differs) and set the accent. toggleThemeType also switches the
-  // active builtin theme, which keeps terminal/editor palettes consistent.
+  // Selecting a preset activates the matching builtin theme (so it also leaves
+  // any imported theme, even one of the same dark/light type) and sets the
+  // accent. Both builtins are tuned to the static design palette, so the accent
+  // picker drives the accent on top.
   function selectPreset(p: { type: "dark" | "light"; accent: Accent }) {
-    if (themeType !== p.type) toggleThemeType();
+    setTheme(p.type === "light" ? "quant-light" : "quant-dark");
     setAccent(p.accent);
   }
 
