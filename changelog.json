@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.39",
+      "date": "2026-06-23",
+      "changes": {
+        "fixes": [
+          "consistent light/dark theme switching across the whole IDE — switching themes now re-skins everything together instead of leaving the terminal, code editor, and diff viewer on a mismatched palette. Light mode is a clean, neutral Quant Light that matches the rest of the app (the old Solarized-tinted panes are gone), and your chosen accent color (emerald / iris / ocean) now also drives the editor cursor and text selection, not just the chrome"
+        ]
+      }
+    },
+    {
       "version": "v3.1.37",
       "date": "2026-06-23",
       "changes": {
