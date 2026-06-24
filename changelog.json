@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.40",
+      "date": "2026-06-24",
+      "changes": {
+        "fixes": [
+          "imported VS Code themes now re-skin the whole app — picking or importing a theme (e.g. a red one) recolors the entire interface (sidebar, buttons, empty state, panels), not just the terminal and code editor. Choosing the Quant Dark or Quant Light preset now also reliably switches back from an imported theme"
+        ]
+      }
+    },
+    {
       "version": "v3.1.39",
       "date": "2026-06-23",
       "changes": {
