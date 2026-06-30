@@ -12,6 +12,7 @@ import type {
   Workspace,
   JobGroup,
   Changelog,
+  UpdateInfo,
   CreateRepoRequest,
   CreateTaskRequest,
   CreateSessionRequest,
@@ -567,6 +568,22 @@ export function getChangelog(): Promise<Changelog> {
 
 export function getVersion(): Promise<string> {
   return callGo(PKG, CHANGELOG_CTRL, "GetVersion");
+}
+
+// --- Updates ---
+
+const UPDATE_CTRL = "updateController";
+
+export function checkForUpdate(): Promise<UpdateInfo> {
+  return callGo(PKG, UPDATE_CTRL, "CheckForUpdate");
+}
+
+export function performUpdate(): Promise<void> {
+  return callGo(PKG, UPDATE_CTRL, "PerformUpdate");
+}
+
+export function restartApp(): Promise<void> {
+  return callGo(PKG, UPDATE_CTRL, "Restart");
 }
 
 // --- Remote Access ---
