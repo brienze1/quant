@@ -341,14 +341,10 @@ export function Sidebar({
   const isResizing = useRef(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  const handleOpenRepoButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+  // anchor the dropdown to the clicked "+" button, not the whole sidebar
+  // (anchoring to the full-height <aside> pushed the panel off-screen).
+  const handleOpenRepoButtonClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
     setRecentReposAnchor(e.currentTarget.getBoundingClientRect());
-  }, []);
-
-  // IconButton has no event arg; anchor the dropdown to the sidebar header.
-  const handleOpenRepoFromIcon = useCallback(() => {
-    const el = sidebarRef.current;
-    if (el) setRecentReposAnchor(el.getBoundingClientRect());
   }, []);
 
   const handleReopenRecent = useCallback(
@@ -550,7 +546,7 @@ export function Sidebar({
               </button>
             ))}
             <div style={{ width: 24, height: 1, backgroundColor: "var(--border-2)", marginTop: 4, marginBottom: 4 }} />
-            <IconButton name="plus" label="add repo" onClick={handleOpenRepoFromIcon} />
+            <IconButton name="plus" label="add repo" onClick={handleOpenRepoButtonClick} />
           </div>
 
           {/* bottom bar */}
@@ -627,7 +623,7 @@ export function Sidebar({
               <span style={{ color: "var(--accent)" }}>{">"}</span> <span style={{ color: "var(--fg)" }}>quant</span>
             </span>
           )}
-          <IconButton name="plus" label="New repo" onClick={handleOpenRepoFromIcon} />
+          <IconButton name="plus" label="New repo" onClick={handleOpenRepoButtonClick} />
           <IconButton name="panelRight" label="collapse sidebar" onClick={() => setCollapsed(true)} />
         </div>
 
@@ -690,7 +686,7 @@ export function Sidebar({
             />
           ))}
           <div style={{ padding: "2px 8px", margin: "4px 8px 0" }}>
-            <AddRow onClick={handleOpenRepoFromIcon}>repo</AddRow>
+            <AddRow onClick={handleOpenRepoButtonClick}>repo</AddRow>
           </div>
             </>
           )}
