@@ -510,3 +510,11 @@ export interface ChangelogEntry {
 export interface Changelog {
   entries: ChangelogEntry[];
 }
+
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseNotes: string;
+  releaseUrl: string;
+}

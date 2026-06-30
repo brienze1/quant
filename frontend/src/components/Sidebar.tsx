@@ -343,7 +343,7 @@ export function Sidebar({
 
   // anchor the dropdown to the clicked "+" button, not the whole sidebar
   // (anchoring to the full-height <aside> pushed the panel off-screen).
-  const handleOpenRepoButtonClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+  const handleOpenRepoButtonClick = useCallback((e: React.MouseEvent) => {
     setRecentReposAnchor(e.currentTarget.getBoundingClientRect());
   }, []);
 
