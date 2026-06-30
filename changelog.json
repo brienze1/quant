@@ -1,6 +1,24 @@
 {
   "entries": [
     {
+      "version": "v3.1.43",
+      "date": "2026-06-30",
+      "changes": {
+        "features": [
+          "check for updates from Settings → general: see when a new version is available, update with one click, and restart to apply it"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.42",
+      "date": "2026-06-30",
+      "changes": {
+        "fixes": [
+          "clicking + to open a new repo now shows the recent-repos dropdown in place instead of opening it off-screen where it was invisible"
+        ]
+      }
+    },
+    {
       "version": "v3.1.41",
       "date": "2026-06-24",
       "changes": {
