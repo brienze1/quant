@@ -499,6 +499,32 @@ export interface FileBase64Result {
   tooLarge: boolean;
 }
 
+// --- Crew ---
+
+// Report kinds a crew envelope can carry. `nudge` is synthesized by the Go
+// watchdog; the other four come from workers via report_to_supervisor.
+export type CrewEnvelopeType = "done" | "progress" | "question" | "blocked" | "nudge";
+
+// CrewAssignment mirrors the Go dto.CrewAssignmentResponse (crewController).
+export interface CrewAssignment {
+  workerSessionId: string;
+  supervisorSessionId: string;
+  createdAt: string;
+}
+
+// CrewEnvelope mirrors the Go dto.CrewEnvelopeResponse (crewController).
+// deliveredAt is "" while the envelope is still queued.
+export interface CrewEnvelope {
+  id: string;
+  fromSessionId: string;
+  toSessionId: string;
+  type: CrewEnvelopeType;
+  summary: string;
+  status: "queued" | "delivered";
+  createdAt: string;
+  deliveredAt: string;
+}
+
 // --- Changelog ---
 
 export interface ChangelogEntry {

@@ -24,6 +24,8 @@ import { TerminalPane } from "./TerminalPane";
 import { MindmapPane } from "./MindmapPane";
 import { VoicePane } from "./VoicePane";
 import { FileTabPanel } from "./FileTabPanel";
+import { CrewPane } from "./CrewPane";
+import { CrewSessionPanel } from "./CrewSessionPanel";
 
 /* ============================================================
    SessionDock — the right-hand drag-tileable dock.
@@ -39,7 +41,7 @@ import { FileTabPanel } from "./FileTabPanel";
    Tree + width are persisted per active session in localStorage.
    ============================================================ */
 
-export type DockLeafKey = "files" | "terminal" | "mindmap" | "voice";
+export type DockLeafKey = "files" | "terminal" | "mindmap" | "voice" | "crew";
 
 /** A file tab detached from the center strip into the dock. Its dock leaf key
  *  is the file-tab id itself (always prefixed "file:"), so it can't collide
@@ -48,6 +50,14 @@ export interface DetachedFile {
   key: string;
   sessionId: string;
   relPath: string;
+}
+
+/** A crew worker detached from the crew pane into its own dock panel. The
+ *  leaf key is "crewSession:<workerSessionId>" (same dynamic-leaf mechanism
+ *  as detached files: App pushes the key into `present`, we render it). */
+export interface DetachedCrewWorker {
+  key: string;
+  session: Session;
 }
 
 const TREE_KEY = "quant.dockTree.";
@@ -136,6 +146,18 @@ export interface SessionDockProps {
   onFileDirtyChange: (key: string, dirty: boolean) => void;
   onReattachFile: (key: string) => void;
   onCloseDetachedFile: (key: string) => void;
+
+  /* ---- crew leaf + detached worker leaves ("crewSession:…") ---- */
+  /** supervisor the crew pane targets (the active claude session), or null */
+  crewSupervisor: Session | null;
+  crewWorkers: Session[];
+  crewQueuedCount: number;
+  onCrewClose: () => void;
+  onCrewSelectSession: (id: string) => void;
+  onCrewDetachWorker: (id: string) => void;
+  onCrewError: (msg: string) => void;
+  detachedCrewWorkers: DetachedCrewWorker[];
+  onCloseDetachedCrewWorker: (key: string) => void;
 }
 
 /* Marks the pane header as the drag grip. The DockTree drag is forwarded from
@@ -222,6 +244,15 @@ export function SessionDock(props: SessionDockProps) {
     onFileDirtyChange,
     onReattachFile,
     onCloseDetachedFile,
+    crewSupervisor,
+    crewWorkers,
+    crewQueuedCount,
+    onCrewClose,
+    onCrewSelectSession,
+    onCrewDetachWorker,
+    onCrewError,
+    detachedCrewWorkers,
+    onCloseDetachedCrewWorker,
   } = props;
 
   // The dock's persistence/identity is keyed to the active session when there is
@@ -467,7 +498,57 @@ export function SessionDock(props: SessionDockProps) {
             </div>
           </PaneShell>
         ) : null;
+      case "crew":
+        return crewSupervisor ? (
+          <PaneShell
+            eyebrow="crew"
+            dotColor="var(--ok)"
+            sub={crewSupervisor.name}
+            onClose={onCrewClose}
+            closeLabel="Close crew"
+          >
+            <CrewPane
+              supervisor={crewSupervisor}
+              workers={crewWorkers}
+              queuedCount={crewQueuedCount}
+              onSelectSession={onCrewSelectSession}
+              onDetachWorker={onCrewDetachWorker}
+              onError={onCrewError}
+            />
+          </PaneShell>
+        ) : null;
       default: {
+        // Detached crew worker ("crewSession:<workerSessionId>") — the same
+        // dynamic-leaf mechanism as detached files below.
+        if (key.startsWith("crewSession:")) {
+          const wRow = detachedCrewWorkers.find((d) => d.key === key);
+          if (!wRow) return null;
+          return (
+            <PaneShell
+              eyebrow="session"
+              dotColor="var(--info)"
+              sub={wRow.session.name}
+              onClose={() => onCloseDetachedCrewWorker(key)}
+              closeLabel="Close worker panel"
+              leadingActions={
+                <IconButton
+                  name="terminal"
+                  size={13}
+                  label="Open as tab"
+                  onClick={() => onCrewSelectSession(wRow.session.id)}
+                />
+              }
+            >
+              <CrewSessionPanel
+                session={wRow.session}
+                termConfig={termConfig}
+                onStart={onStart}
+                onResume={onResume}
+                onError={onCrewError}
+              />
+            </PaneShell>
+          );
+        }
         // Detached file tab ("file:<sessionId>:<relPath>").
         if (key.startsWith("file:")) {
           const f = detachedFiles.find((d) => d.key === key);

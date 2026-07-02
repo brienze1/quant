@@ -32,6 +32,8 @@ import type {
   VoiceSpeechResult,
   VoicePingResult,
   ExternalSession,
+  CrewAssignment,
+  CrewEnvelope,
 } from "./types";
 
 // These functions map to Go controller methods bound via Wails.
@@ -515,6 +517,56 @@ export function renameBoard(
   newName: string
 ): Promise<string> {
   return callGo(PKG, MINDMAP_CTRL, "RenameBoard", sessionId, oldName, newName);
+}
+
+// --- Crew ---
+
+const CREW_CTRL = "crewController";
+
+// Worker assignments under a supervisor session.
+export function getCrew(sessionId: string): Promise<CrewAssignment[]> {
+  return callGo<CrewAssignment[] | null>(PKG, CREW_CTRL, "GetCrew", sessionId).then((r) => r ?? []);
+}
+
+// A worker's assignment, or null when unassigned.
+export function getCrewSupervisor(sessionId: string): Promise<CrewAssignment | null> {
+  return callGo<CrewAssignment | null>(PKG, CREW_CTRL, "GetSupervisor", sessionId).then(
+    (r) => r ?? null
+  );
+}
+
+export function getAllCrewAssignments(): Promise<CrewAssignment[]> {
+  return callGo<CrewAssignment[] | null>(PKG, CREW_CTRL, "GetAllAssignments").then((r) => r ?? []);
+}
+
+// Envelopes addressed to a session (queued, plus delivered history when asked).
+export function getCrewInbox(sessionId: string, includeDelivered: boolean): Promise<CrewEnvelope[]> {
+  return callGo<CrewEnvelope[] | null>(PKG, CREW_CTRL, "GetInbox", sessionId, includeDelivered).then(
+    (r) => r ?? []
+  );
+}
+
+// Queued (undelivered) envelope count per supervisor session id — the single
+// source of the sidebar/pane unread badges.
+export function getCrewQueuedCounts(): Promise<Record<string, number>> {
+  return callGo<Record<string, number> | null>(PKG, CREW_CTRL, "GetQueuedCounts").then(
+    (r) => r ?? {}
+  );
+}
+
+// Upsert: assigning an already-assigned worker moves it between crews.
+export function assignCrewWorker(workerSessionId: string, supervisorSessionId: string): Promise<void> {
+  return callGo(PKG, CREW_CTRL, "AssignWorker", workerSessionId, supervisorSessionId);
+}
+
+export function unassignCrewWorker(workerSessionId: string): Promise<void> {
+  return callGo(PKG, CREW_CTRL, "UnassignWorker", workerSessionId);
+}
+
+// Deliver one queued envelope to the supervisor immediately (bypasses the
+// idle gates; still requires a live process).
+export function crewDrainNow(sessionId: string): Promise<void> {
+  return callGo(PKG, CREW_CTRL, "DrainNow", sessionId);
 }
 
 // --- Files (sandboxed to the session workdir) ---
