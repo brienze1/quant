@@ -3,29 +3,32 @@ import type { Session, CrewEnvelope, CrewEnvelopeType } from "../types";
 import * as api from "../api";
 import { StatusDot } from "./StatusDot";
 import type { DisplayStatus } from "./StatusBadge";
-import { Pill } from "./Pill";
 import { IconButton } from "./IconButton";
 import { Icon } from "./Icon";
 
 /* ============================================================
    CrewPane — the supervisor's crew dock pane.
 
-   Shows the workers assigned to the supervisor session, the
-   inbox of report envelopes (queued first, delivered history
-   dimmed below), a drag-assign footer, and an empty state that
-   explains the first-assignment flow. Assignment data (workers,
-   queued count) is joined in App from the 3s sessions poll and
-   passed down; envelope bodies are fetched HERE (mount + 5s
-   poll + crew:updated refetch — the MindmapPane pattern).
+   Pixel spec: design_source/dock.jsx (CrewDock / CrewWorkerRow /
+   InboxEnvelope). Shows the workers assigned to the supervisor
+   session, the inbox of report envelopes (queued first,
+   delivered history dimmed below), a drag-assign footer, and an
+   empty state that explains the first-assignment flow.
+   Assignment data (workers, queued count) is joined in App from
+   the 3s sessions poll and passed down; envelope bodies are
+   fetched HERE (mount + 5s poll + crew:updated refetch — the
+   MindmapPane pattern).
    ============================================================ */
 
-/** Envelope-type → accent token (header text + left border). */
-export const ENV_TONE: Record<CrewEnvelopeType, string> = {
-  done: "var(--ok)",
-  progress: "var(--info)",
-  question: "var(--warn)",
-  blocked: "var(--danger)",
-  nudge: "var(--purple)",
+/** Envelope-type → [accent token, leading icon] (spec's ENV_TONE). done stays
+ *  var(--ok) per the locked plan (the spec's var(--accent) is the same green
+ *  in the base theme, but --ok is theme-stable). */
+export const ENV_TONE: Record<CrewEnvelopeType, [string, string]> = {
+  done: ["var(--ok)", "check"],
+  progress: ["var(--info)", "arrowDown"],
+  question: ["var(--warn)", "question"],
+  blocked: ["var(--danger)", "alert"],
+  nudge: ["var(--purple)", "sparkles"],
 };
 
 export interface CrewPaneProps {
@@ -52,14 +55,69 @@ function timeAgo(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-const SECTION_LABEL: React.CSSProperties = {
-  fontFamily: "var(--mono)",
-  fontSize: 9.5,
-  letterSpacing: "0.13em",
-  textTransform: "uppercase",
-  color: "var(--fg-3)",
-  fontWeight: 600,
-};
+function SectionLabel({
+  children,
+  note,
+  actions,
+}: {
+  children: React.ReactNode;
+  note?: string;
+  /** trailing right-aligned extras (e.g. the deliver-now button) */
+  actions?: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        gap: 8,
+        padding: "0 14px",
+        margin: "0 0 9px",
+        minWidth: 0,
+      }}
+    >
+      <span
+        className="mono"
+        style={{
+          fontSize: 9.5,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "var(--fg-3)",
+          fontWeight: 600,
+          flex: "none",
+        }}
+      >
+        {children}
+      </span>
+      {note && (
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--fg-4)",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {note}
+        </span>
+      )}
+      {actions && (
+        <>
+          <span style={{ flex: 1 }} />
+          {actions}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One dot of the worker row's 3×2 drag grip. */
+function Dotty() {
+  return (
+    <span style={{ width: 2.5, height: 2.5, borderRadius: "50%", background: "var(--fg-3)" }} />
+  );
+}
 
 function WorkerRow({
   session,
@@ -99,18 +157,43 @@ function WorkerRow({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 8,
-        padding: "6px 8px 6px 10px",
-        borderRadius: 8,
-        background: "var(--panel-2)",
+        gap: 9,
+        padding: "8px 10px",
+        borderRadius: 9,
+        background: hover ? "var(--panel-3)" : "var(--panel-2)",
         border: "1px solid var(--border-2)",
         cursor: "grab",
         minWidth: 0,
       }}
     >
-      <StatusDot status={status} size={7} />
+      {/* 6-dot (3×2) drag grip */}
       <span
         style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          opacity: hover ? 0.6 : 0.3,
+          flex: "none",
+        }}
+      >
+        <span style={{ display: "flex", gap: 2 }}>
+          <Dotty />
+          <Dotty />
+        </span>
+        <span style={{ display: "flex", gap: 2 }}>
+          <Dotty />
+          <Dotty />
+        </span>
+        <span style={{ display: "flex", gap: 2 }}>
+          <Dotty />
+          <Dotty />
+        </span>
+      </span>
+      <StatusDot status={status} size={8} glow />
+      <span
+        className="mono"
+        style={{
+          flex: 1,
           fontSize: 12,
           fontWeight: 500,
           color: "var(--fg)",
@@ -121,56 +204,51 @@ function WorkerRow({
       >
         {session.name}
       </span>
-      <Pill tone={status === "error" ? "danger" : status === "running" ? "accent" : "muted"}>
-        {status}
-      </Pill>
-      <span style={{ flex: 1 }} />
-      {hover ? (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 2, flex: "none" }}>
-          <IconButton
-            name="panelRight"
-            size={13}
-            label="Detach into a panel"
-            onClick={() => onDetachWorker(session.id)}
-          />
-          <IconButton
-            name="terminal"
-            size={13}
-            label="Focus session tab"
-            onClick={() => onSelectSession(session.id)}
-          />
-          <IconButton name="x" size={13} label="Unassign" onClick={() => onUnassign(session.id)} />
+      {meta && (
+        <span
+          style={{
+            fontSize: 10.5,
+            color: status === "error" ? "var(--warn)" : "var(--fg-3)",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+            maxWidth: 110,
+            flex: "none",
+          }}
+        >
+          {meta}
         </span>
-      ) : (
-        meta && (
-          <span
-            className="mono"
-            style={{
-              fontSize: 9.5,
-              color: "var(--fg-4)",
-              overflow: "hidden",
-              whiteSpace: "nowrap",
-              textOverflow: "ellipsis",
-              maxWidth: 110,
-              flex: "none",
-            }}
-          >
-            {meta}
-          </span>
-        )
       )}
+      {/* hover-reveal actions (alongside the meta, not replacing it) */}
+      <span
+        style={{
+          display: "flex",
+          gap: 1,
+          opacity: hover ? 1 : 0,
+          transition: "opacity .12s",
+          flex: "none",
+        }}
+      >
+        <IconButton
+          name="columns"
+          size={12}
+          label="Detach to panel"
+          onClick={() => onDetachWorker(session.id)}
+        />
+        <IconButton
+          name="terminal"
+          size={12}
+          label="Focus session tab"
+          onClick={() => onSelectSession(session.id)}
+        />
+        <IconButton name="x" size={12} label="Unassign" onClick={() => onUnassign(session.id)} />
+      </span>
     </div>
   );
 }
 
-function EnvelopeCard({
-  envelope,
-  fromName,
-}: {
-  envelope: CrewEnvelope;
-  fromName: string;
-}) {
-  const tone = ENV_TONE[envelope.type] ?? "var(--fg-3)";
+function EnvelopeCard({ envelope, fromName }: { envelope: CrewEnvelope; fromName: string }) {
+  const [tone, iconName] = ENV_TONE[envelope.type] ?? ["var(--fg-3)", "note"];
   const delivered = envelope.status === "delivered";
   const state = delivered
     ? `✓ delivered · ${timeAgo(envelope.deliveredAt || envelope.createdAt)}`
@@ -178,30 +256,31 @@ function EnvelopeCard({
   return (
     <div
       style={{
-        borderRadius: 8,
-        background: "var(--panel-2)",
+        borderRadius: 10,
+        overflow: "hidden",
+        opacity: delivered ? 0.62 : 1,
         border: "1px solid var(--border-2)",
-        borderLeft: `2px solid ${tone}`,
-        padding: "6px 9px 7px",
-        opacity: delivered ? 0.55 : 1,
+        background: "var(--panel-2)",
         minWidth: 0,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 11px", minWidth: 0 }}>
+        <Icon name={iconName} size={12} color={tone} />
         <span
           className="mono"
           style={{
             fontSize: 9.5,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
+            letterSpacing: "0.07em",
             textTransform: "uppercase",
             color: tone,
+            fontWeight: 600,
             flex: "none",
           }}
         >
-          [{envelope.type}]
+          {envelope.type}
         </span>
         <span
+          className="mono"
           style={{
             fontSize: 11,
             color: "var(--fg-2)",
@@ -217,7 +296,7 @@ function EnvelopeCard({
           {state}
         </span>
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--fg-2)", marginTop: 3, lineHeight: 1.45 }}>
+      <div style={{ padding: "0 11px 9px", fontSize: 11.5, lineHeight: 1.45, color: "var(--fg-2)" }}>
         {envelope.summary}
       </div>
     </div>
@@ -229,12 +308,10 @@ function AssignDropZone({
   supervisor,
   workers,
   onError,
-  compact,
 }: {
   supervisor: Session;
   workers: Session[];
   onError: (msg: string) => void;
-  compact?: boolean;
 }) {
   const [over, setOver] = useState(false);
 
@@ -274,17 +351,17 @@ function AssignDropZone({
         alignItems: "center",
         justifyContent: "center",
         gap: 7,
-        padding: compact ? "9px 10px" : "16px 10px",
-        borderRadius: 8,
-        border: `1.5px dashed ${over ? "var(--accent)" : "var(--border-2)"}`,
+        height: 40,
+        borderRadius: 10,
+        border: `1.5px dashed ${over ? "var(--accent)" : "var(--border)"}`,
         background: over ? "var(--accent-soft)" : "transparent",
-        color: over ? "var(--accent)" : "var(--fg-4)",
-        fontSize: 11,
+        color: over ? "var(--accent)" : "var(--fg-3)",
+        fontSize: 11.5,
         fontFamily: "var(--sans)",
         minWidth: 0,
       }}
     >
-      <Icon name="plus" size={12} />
+      <Icon name="plus" size={13} />
       drag a session here to assign
     </div>
   );
@@ -399,99 +476,76 @@ export function CrewPane({
         fontFamily: "var(--sans)",
       }}
     >
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
-          padding: "10px 10px 4px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-        }}
-      >
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingTop: 13 }}>
         {/* workers */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px 2px" }}>
-          <span style={SECTION_LABEL}>workers</span>
-          <span className="mono" style={{ fontSize: 9.5, color: "var(--fg-4)" }}>
-            {workers.length} assigned
-          </span>
+        <SectionLabel note={`${workers.length} assigned`}>Workers</SectionLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7, padding: "0 12px 6px" }}>
+          {workers.map((w) => (
+            <WorkerRow
+              key={w.id}
+              session={w}
+              supervisorId={supervisor.id}
+              onSelectSession={onSelectSession}
+              onDetachWorker={onDetachWorker}
+              onUnassign={(id) => api.unassignCrewWorker(id).catch((err) => onError(String(err)))}
+            />
+          ))}
         </div>
-        {workers.map((w) => (
-          <WorkerRow
-            key={w.id}
-            session={w}
-            supervisorId={supervisor.id}
-            onSelectSession={onSelectSession}
-            onDetachWorker={onDetachWorker}
-            onUnassign={(id) => api.unassignCrewWorker(id).catch((err) => onError(String(err)))}
-          />
-        ))}
+
+        {/* divider between Workers and Inbox */}
+        <div style={{ height: 1, background: "var(--border-2)", margin: "11px 14px" }} />
 
         {/* inbox */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 2px 2px",
-            minWidth: 0,
-          }}
-        >
-          <span style={SECTION_LABEL}>inbox</span>
-          <span
-            className="mono"
-            style={{
-              fontSize: 9.5,
-              color: "var(--fg-4)",
-              overflow: "hidden",
-              whiteSpace: "nowrap",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {queued.length > 0
+        <SectionLabel
+          note={
+            queued.length > 0
               ? `${queued.length} queued · injects when idle`
-              : "empty · injects when idle"}
-          </span>
-          <span style={{ flex: 1 }} />
-          {queued.length > 0 && (
-            <button
-              type="button"
-              onClick={() => api.crewDrainNow(supervisor.id).catch((err) => onError(String(err)))}
-              title="Deliver the next queued report now (bypasses the idle gates)"
-              style={{
-                flex: "none",
-                padding: "2px 8px",
-                borderRadius: 6,
-                border: "1px solid var(--accent-line)",
-                background: "var(--accent-soft)",
-                color: "var(--accent)",
-                fontFamily: "var(--sans)",
-                fontSize: 10.5,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              deliver now
-            </button>
+              : "empty · injects when idle"
+          }
+          actions={
+            queued.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => api.crewDrainNow(supervisor.id).catch((err) => onError(String(err)))}
+                title="Deliver the next queued report now (bypasses the idle gates)"
+                style={{
+                  flex: "none",
+                  padding: "2px 8px",
+                  borderRadius: 6,
+                  border: "1px solid var(--accent-line)",
+                  background: "var(--accent-soft)",
+                  color: "var(--accent)",
+                  fontFamily: "var(--sans)",
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                deliver now
+              </button>
+            ) : undefined
+          }
+        >
+          Inbox
+        </SectionLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 12px 12px" }}>
+          {queued.map((e) => (
+            <EnvelopeCard key={e.id} envelope={e} fromName={fromName(e)} />
+          ))}
+          {delivered.map((e) => (
+            <EnvelopeCard key={e.id} envelope={e} fromName={fromName(e)} />
+          ))}
+          {queuedCount === 0 && queued.length === 0 && delivered.length === 0 && (
+            <div style={{ fontSize: 11, color: "var(--fg-4)", padding: "2px 2px 4px" }}>
+              no reports yet — workers push them with report_to_supervisor.
+            </div>
           )}
         </div>
-        {queued.map((e) => (
-          <EnvelopeCard key={e.id} envelope={e} fromName={fromName(e)} />
-        ))}
-        {delivered.map((e) => (
-          <EnvelopeCard key={e.id} envelope={e} fromName={fromName(e)} />
-        ))}
-        {queuedCount === 0 && queued.length === 0 && delivered.length === 0 && (
-          <div style={{ fontSize: 11, color: "var(--fg-4)", padding: "2px 2px 4px" }}>
-            no reports yet — workers push them with report_to_supervisor.
-          </div>
-        )}
       </div>
 
       {/* drag-assign footer */}
-      <div style={{ flex: "none", padding: "6px 10px 10px" }}>
-        <AssignDropZone supervisor={supervisor} workers={workers} onError={onError} compact />
+      <div style={{ flex: "none", padding: "0 12px 12px" }}>
+        <AssignDropZone supervisor={supervisor} workers={workers} onError={onError} />
       </div>
     </div>
   );
