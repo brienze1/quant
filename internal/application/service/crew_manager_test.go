@@ -358,3 +358,228 @@ func TestCrewInCrewScope(t *testing.T) {
 		t.Fatalf("root→leaf: want (true, true), got (%v, %v)", hasWorkers, allowed)
 	}
 }
+
+// fakeSessionActivity is an in-memory implementation of usecase.SessionActivity.
+type fakeSessionActivity struct {
+	activities map[string]entity.ProcessActivity
+	live       map[string]bool
+	writes     []string
+}
+
+func (f *fakeSessionActivity) Activity(sessionID string) (entity.ProcessActivity, bool) {
+	if !f.live[sessionID] {
+		return entity.ProcessActivity{}, false
+	}
+	return f.activities[sessionID], true
+}
+
+func (f *fakeSessionActivity) WriteInjected(_ string, data string) error {
+	f.writes = append(f.writes, data)
+	return nil
+}
+
+func newTestCrewManagerWithActivity(activity *fakeSessionActivity, sessions ...entity.Session) (*crewManagerService, *fakeCrewStore, *fakeEventEmitter) {
+	store := newFakeCrewStore()
+	finder := &fakeSessionFinder{sessions: make(map[string]entity.Session)}
+	for _, s := range sessions {
+		finder.sessions[s.ID] = s
+	}
+	emitter := &fakeEventEmitter{}
+	manager := NewCrewManagerService(store, store, store, finder, nil, nil, activity, emitter)
+	return manager.(*crewManagerService), store, emitter
+}
+
+// queueReport assigns w under s and queues one "done" report from w.
+func queueReport(t *testing.T, manager *crewManagerService) {
+	t.Helper()
+	if err := manager.AssignWorker("w", "s"); err != nil {
+		t.Fatalf("AssignWorker: %v", err)
+	}
+	if err := manager.Report("w", "done", "finished"); err != nil {
+		t.Fatalf("Report: %v", err)
+	}
+}
+
+func TestCrewDrainGates(t *testing.T) {
+	now := time.Now()
+	idle := entity.ProcessActivity{
+		LastOutputAt:  now.Add(-10 * time.Second),
+		BusyClearedAt: now.Add(-3 * time.Second),
+	}
+	withTail := func(tail string) entity.ProcessActivity {
+		a := idle
+		a.Tail = []byte(tail)
+		return a
+	}
+	withInput := func(ago time.Duration) entity.ProcessActivity {
+		a := idle
+		a.LastUserInputAt = now.Add(-ago)
+		return a
+	}
+
+	cases := []struct {
+		name          string
+		live          bool
+		activity      entity.ProcessActivity
+		markersOff    bool
+		wantDelivered bool
+	}{
+		{"all gates open", true, idle, false, true},
+		{"gate1 no live process", false, idle, false, false},
+		{"gate2 busy", true, entity.ProcessActivity{Busy: true}, false, false},
+		{"gate2 busy released too recently", true, entity.ProcessActivity{BusyClearedAt: now.Add(-time.Second)}, false, false},
+		{"gate2 never busy passes", true, entity.ProcessActivity{LastOutputAt: now.Add(-10 * time.Second)}, false, true},
+		{"gate3 esc to interrupt", true, withTail("thinking… (esc to interrupt)"), false, false},
+		{"gate3 prompt marker", true, withTail("❯ "), false, false},
+		{"gate3 permission dialog", true, withTail("Do you want to allow this?"), false, false},
+		{"gate3 yes-no prompt", true, withTail("continue? (y/n)"), false, false},
+		{"gate3 trust dialog", true, withTail("Trust the files in this folder?"), false, false},
+		{"gate3 markers off bypasses", true, withTail("❯ Do you want (y/n)"), true, true},
+		{"gate4 user typed recently", true, withInput(3 * time.Second), false, false},
+		{"gate4 user typed long ago", true, withInput(9 * time.Second), false, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.markersOff {
+				t.Setenv("QUANT_CREW_MARKERS", "off")
+			} else {
+				t.Setenv("QUANT_CREW_MARKERS", "")
+			}
+
+			activity := &fakeSessionActivity{
+				activities: map[string]entity.ProcessActivity{"s": tc.activity},
+				live:       map[string]bool{"s": tc.live},
+			}
+			manager, store, _ := newTestCrewManagerWithActivity(activity, claudeSession("w"), claudeSession("s"))
+			queueReport(t, manager)
+
+			// Two ticks: the first can never deliver (2-tick hysteresis).
+			manager.drainTick(now)
+			manager.drainTick(now)
+
+			delivered := store.envelopes[0].Status == "delivered"
+			if delivered != tc.wantDelivered {
+				t.Fatalf("delivered = %v, want %v (writes: %q)", delivered, tc.wantDelivered, activity.writes)
+			}
+		})
+	}
+}
+
+func TestCrewDrainHysteresisAndFormat(t *testing.T) {
+	t.Setenv("QUANT_CREW_MARKERS", "")
+	now := time.Now()
+	activity := &fakeSessionActivity{
+		activities: map[string]entity.ProcessActivity{"s": {
+			LastOutputAt:  now.Add(-10 * time.Second),
+			BusyClearedAt: now.Add(-3 * time.Second),
+		}},
+		live: map[string]bool{"s": true},
+	}
+	manager, store, emitter := newTestCrewManagerWithActivity(activity, claudeSession("w"), claudeSession("s"))
+	queueReport(t, manager)
+
+	// First idle tick: hysteresis holds the envelope back.
+	manager.drainTick(now)
+	if store.envelopes[0].Status != "queued" {
+		t.Fatalf("delivered on the first idle tick — hysteresis not applied")
+	}
+
+	// Second idle tick: delivered as text + separate Enter keystroke.
+	manager.drainTick(now.Add(time.Second))
+	if store.envelopes[0].Status != "delivered" {
+		t.Fatalf("not delivered on the second idle tick")
+	}
+	if len(activity.writes) != 2 || activity.writes[0] != "[crew · done · w] finished" || activity.writes[1] != "\r" {
+		t.Fatalf("unexpected injected writes: %q", activity.writes)
+	}
+	if emitter.events[len(emitter.events)-1] != "crew:updated" {
+		t.Fatalf("want crew:updated after delivery, got %v", emitter.events)
+	}
+}
+
+func TestCrewDrainNow_BypassesGates(t *testing.T) {
+	t.Setenv("QUANT_CREW_MARKERS", "")
+	activity := &fakeSessionActivity{
+		activities: map[string]entity.ProcessActivity{"s": {Busy: true, Tail: []byte("❯ Do you want")}},
+		live:       map[string]bool{"s": true},
+	}
+	manager, store, _ := newTestCrewManagerWithActivity(activity, claudeSession("w"), claudeSession("s"))
+	queueReport(t, manager)
+
+	if err := manager.DrainNow("s"); err != nil {
+		t.Fatalf("DrainNow: %v", err)
+	}
+	if store.envelopes[0].Status != "delivered" {
+		t.Fatalf("DrainNow did not deliver while busy")
+	}
+
+	// Nothing queued is a no-op.
+	if err := manager.DrainNow("s"); err != nil {
+		t.Fatalf("DrainNow on empty inbox: %v", err)
+	}
+
+	// A dead process is an error.
+	activity.live["s"] = false
+	if err := manager.DrainNow("s"); err == nil || !strings.Contains(err.Error(), "no live process") {
+		t.Fatalf("want no-live-process error, got %v", err)
+	}
+}
+
+func TestCrewStuckEmittedOnce(t *testing.T) {
+	t.Setenv("QUANT_CREW_MARKERS", "")
+	now := time.Now()
+	activity := &fakeSessionActivity{
+		activities: map[string]entity.ProcessActivity{"s": {Busy: true}},
+		live:       map[string]bool{"s": true},
+	}
+	manager, _, emitter := newTestCrewManagerWithActivity(activity, claudeSession("w"), claudeSession("s"))
+	queueReport(t, manager)
+
+	countStuck := func() int {
+		n := 0
+		for _, e := range emitter.events {
+			if e == "crew:stuck" {
+				n++
+			}
+		}
+		return n
+	}
+
+	manager.drainTick(now)
+	manager.drainTick(now.Add(5 * time.Minute))
+	if countStuck() != 0 {
+		t.Fatalf("crew:stuck emitted before the 10-minute threshold")
+	}
+
+	manager.drainTick(now.Add(10 * time.Minute))
+	if countStuck() != 1 {
+		t.Fatalf("want exactly one crew:stuck at the threshold, got %d", countStuck())
+	}
+
+	// Still blocked: no re-emission.
+	manager.drainTick(now.Add(11 * time.Minute))
+	manager.drainTick(now.Add(20 * time.Minute))
+	if countStuck() != 1 {
+		t.Fatalf("crew:stuck re-emitted while still blocked, got %d", countStuck())
+	}
+
+	// Unblock and deliver: state resets, so a NEW blockage can emit again.
+	activity.activities["s"] = entity.ProcessActivity{
+		LastOutputAt:  now.Add(11 * time.Minute),
+		BusyClearedAt: now.Add(11 * time.Minute),
+	}
+	deliverAt := now.Add(21 * time.Minute)
+	manager.drainTick(deliverAt)
+	manager.drainTick(deliverAt.Add(time.Second))
+
+	if err := manager.Report("w", "progress", "again"); err != nil {
+		t.Fatalf("Report: %v", err)
+	}
+	activity.activities["s"] = entity.ProcessActivity{Busy: true}
+	manager.drainTick(deliverAt.Add(2 * time.Second))
+	manager.drainTick(deliverAt.Add(2*time.Second + 10*time.Minute))
+	if countStuck() != 2 {
+		t.Fatalf("want a second crew:stuck for the new blockage, got %d", countStuck())
+	}
+}

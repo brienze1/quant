@@ -471,7 +471,7 @@ func (i *Injector) CrewManager() appAdapter.CrewManager {
 			i.SessionPersistence(), // FindSession
 			i.SessionManager(),     // SessionManager
 			i.MindmapManager(),     // MindmapManager
-			nil,                    // SessionActivity — wired in a later milestone
+			i.ProcessManager(),     // SessionActivity
 			i.EventEmitter(),       // EventEmitter
 		)
 	}

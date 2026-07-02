@@ -2349,30 +2349,23 @@ func (s *QuantMCPServer) handleSendMessage(_ context.Context, request mcp.CallTo
 		submit, _ = v.(bool)
 	}
 
-	if err := s.sessionManager.SendMessage(id, message); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
 	if submit {
 		// The Claude CLI TUI treats a carriage return arriving in the same
 		// write as the message text as a multi-line newline, not a submit.
-		// Delivering Enter as a separate keystroke after a short delay lets the
-		// TUI process the pasted text first, so the return is read as a submit.
-		time.Sleep(submitKeyDelay)
-		if err := s.sessionManager.SendMessage(id, "\r"); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("message typed but submit (Enter) failed: %s", err.Error())), nil
+		// SendMessageAndSubmit delivers Enter as a separate keystroke after a
+		// short delay, so the return is read as a submit.
+		if err := s.sessionManager.SendMessageAndSubmit(id, message); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("Message sent and submitted to session %s", id)), nil
 	}
 
+	if err := s.sessionManager.SendMessage(id, message); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
 	return mcp.NewToolResultText(fmt.Sprintf("Message typed (not submitted) to session %s", id)), nil
 }
-
-// submitKeyDelay is the pause between writing a message to a session's PTY and
-// writing the Enter keystroke that submits it. It gives the Claude CLI TUI time
-// to process the pasted text before the carriage return arrives as a discrete
-// submit rather than a multi-line newline.
-const submitKeyDelay = 120 * time.Millisecond
 
 func (s *QuantMCPServer) handleGetSessionOutput(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")

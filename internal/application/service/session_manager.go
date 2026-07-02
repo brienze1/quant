@@ -581,6 +581,28 @@ func (s *sessionManagerService) SendMessage(id string, message string) error {
 	return nil
 }
 
+// submitKeyDelay is the pause between writing a message to a session's PTY and
+// writing the Enter keystroke that submits it. It gives the Claude CLI TUI time
+// to process the pasted text before the carriage return arrives as a discrete
+// submit rather than a multi-line newline.
+const submitKeyDelay = 120 * time.Millisecond
+
+// SendMessageAndSubmit types a message into a session's PTY and then delivers
+// Enter as a separate keystroke after submitKeyDelay, so the TUI reads it as a
+// submit rather than a multi-line paste.
+func (s *sessionManagerService) SendMessageAndSubmit(id string, message string) error {
+	if err := s.SendMessage(id, message); err != nil {
+		return err
+	}
+
+	time.Sleep(submitKeyDelay)
+	if err := s.SendMessage(id, "\r"); err != nil {
+		return fmt.Errorf("message typed but submit (Enter) failed: %w", err)
+	}
+
+	return nil
+}
+
 // ResizeTerminal resizes the PTY for the given session.
 func (s *sessionManagerService) ResizeTerminal(id string, rows int, cols int) error {
 	return s.spawnProcess.Resize(id, uint16(rows), uint16(cols))
@@ -614,12 +636,6 @@ func (s *sessionManagerService) UpdateSessionWorkspace(id string, workspaceID st
 	return s.updateSession.Update(*session)
 }
 
-// renameSubmitKeyDelay is the pause between writing the /rename command to a
-// session's PTY and writing the Enter keystroke that submits it. It gives the
-// Claude CLI TUI time to process the pasted text before the carriage return
-// arrives as a discrete submit rather than a multi-line newline.
-const renameSubmitKeyDelay = 120 * time.Millisecond
-
 // RenameSession updates the name of a session. For a running claude session it
 // also injects claude's /rename slash command into the PTY (best-effort) so the
 // claude CLI's own session title stays in sync.
@@ -639,13 +655,8 @@ func (s *sessionManagerService) RenameSession(id string, newName string) error {
 
 	if session.SessionType != sessiontype.Terminal && session.Status == sessionstatus.Running {
 		go func() {
-			if err := s.spawnProcess.SendMessage(id, "/rename "+newName); err != nil {
-				log.Printf("rename sync: failed to type /rename into session %s: %v", id, err)
-				return
-			}
-			time.Sleep(renameSubmitKeyDelay)
-			if err := s.spawnProcess.SendMessage(id, "\r"); err != nil {
-				log.Printf("rename sync: failed to submit /rename in session %s: %v", id, err)
+			if err := s.SendMessageAndSubmit(id, "/rename "+newName); err != nil {
+				log.Printf("rename sync: failed to inject /rename into session %s: %v", id, err)
 			}
 		}()
 	}
