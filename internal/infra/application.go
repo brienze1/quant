@@ -236,6 +236,8 @@ func Run(assets embed.FS, changelogData []byte) error {
 	workspaceCtrl := injector.WorkspaceController()
 	jobGroupCtrl := injector.JobGroupController()
 	mindmapCtrl := injector.MindmapController()
+	crewCtrl := injector.CrewController()
+	crewManager := injector.CrewManager()
 	fileCtrl := injector.FileController()
 	changelogCtrl := injector.ChangelogController()
 	// Voice bridge connects the MCP voice tools (Go) to the frontend audio
@@ -248,7 +250,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
-	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager(), injector.FileManager(), voiceBridge)
+	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager(), injector.FileManager(), crewManager, voiceBridge)
 	mcpPort := mcpServer.Port()
 	fmt.Printf("[quant] MCP server on port %d → http://localhost:%d/mcp\n", mcpPort, mcpPort)
 	if mcpPort != quantmcp.DefaultPort {
@@ -285,6 +287,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 		"workspaceController": workspaceCtrl,
 		"jobGroupController":  jobGroupCtrl,
 		"mindmapController":   mindmapCtrl,
+		"crewController":      crewCtrl,
 		"fileController":      fileCtrl,
 		"changelogController": changelogCtrl,
 		"voiceController":     voiceCtrl,
@@ -323,6 +326,8 @@ func Run(assets embed.FS, changelogData []byte) error {
 			workspaceCtrl.OnStartup(ctx)
 			jobGroupCtrl.OnStartup(ctx)
 			mindmapCtrl.OnStartup(ctx)
+			crewCtrl.OnStartup(ctx)
+			crewManager.Start()
 			fileCtrl.OnStartup(ctx)
 			changelogCtrl.OnStartup(ctx)
 			voiceCtrl.OnStartup(ctx)
@@ -343,6 +348,8 @@ func Run(assets embed.FS, changelogData []byte) error {
 			workspaceCtrl.OnShutdown(ctx)
 			jobGroupCtrl.OnShutdown(ctx)
 			mindmapCtrl.OnShutdown(ctx)
+			crewManager.Stop()
+			crewCtrl.OnShutdown(ctx)
 			fileCtrl.OnShutdown(ctx)
 			changelogCtrl.OnShutdown(ctx)
 			voiceCtrl.OnShutdown(ctx)
@@ -365,6 +372,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			workspaceCtrl,
 			jobGroupCtrl,
 			mindmapCtrl,
+			crewCtrl,
 			fileCtrl,
 			changelogCtrl,
 			voiceCtrl,

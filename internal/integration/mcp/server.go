@@ -41,6 +41,7 @@ type QuantMCPServer struct {
 	jobGroupManager  appAdapter.JobGroupManager
 	mindmapManager   appAdapter.MindmapManager
 	fileManager      appAdapter.FileManager
+	crewManager      appAdapter.CrewManager
 	voiceBridge      *voice.Bridge
 	httpServer       *http.Server
 	listener         net.Listener
@@ -49,7 +50,7 @@ type QuantMCPServer struct {
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
 // It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, voiceBridge *voice.Bridge) *QuantMCPServer {
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, crewManager appAdapter.CrewManager, voiceBridge *voice.Bridge) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
 	s := &QuantMCPServer{
@@ -61,6 +62,7 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 		jobGroupManager:  jobGroupManager,
 		mindmapManager:   mindmapManager,
 		fileManager:      fileManager,
+		crewManager:      crewManager,
 		voiceBridge:      voiceBridge,
 	}
 
@@ -765,6 +767,44 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("repoId", mcp.Description("Repository ID whose path is used as the directory (get from list_repos)")),
 		),
 		s.handleListAdoptableSessions,
+	)
+
+	// -----------------------------------------------------------------------
+	// Crew tools — supervisor/worker session orchestration.
+	// -----------------------------------------------------------------------
+
+	mcpServer.AddTool(
+		mcp.NewTool("assign_session",
+			mcp.WithDescription(`Assign a session to a crew as YOUR worker (or another supervisor's). The worker reports back with report_to_supervisor and its reports queue in the supervisor's inbox. Both sessions must be non-archived claude sessions. Assigning an already-assigned worker moves it to the new supervisor.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Worker session ID to assign (get from list_sessions)")),
+			mcp.WithString("supervisorSessionId", mcp.Description("Supervisor session ID. Omit to use THIS session as the supervisor (requires calling from within a quant session).")),
+		),
+		s.handleAssignSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("unassign_session",
+			mcp.WithDescription(`Remove a worker session from its crew. The worker keeps running; it just stops reporting to a supervisor.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Worker session ID to unassign")),
+		),
+		s.handleUnassignSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_crew",
+			mcp.WithDescription(`List a session's crew: its supervisor (or null) and its workers with name, status, queued report count and last report. Reads THIS session's crew by default; pass 'sessionId' to inspect another session's crew.`),
+			mcp.WithString("sessionId", mcp.Description("Session ID to inspect. Omit to inspect THIS session's crew.")),
+		),
+		s.handleListCrew,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("report_to_supervisor",
+			mcp.WithDescription(`Report progress to YOUR supervisor. The report is queued in the supervisor's inbox and injected into its terminal when it is idle. Requires this session to be assigned to a crew (see assign_session). Keep the summary short — at most 3 sentences.`),
+			mcp.WithString("type", mcp.Required(), mcp.Description("Report type: done | progress | question | blocked"), mcp.Enum("done", "progress", "question", "blocked")),
+			mcp.WithString("summary", mcp.Required(), mcp.Description("Short summary of the report (max ~3 sentences)")),
+		),
+		s.handleReportToSupervisor,
 	)
 
 	// -----------------------------------------------------------------------
@@ -2431,6 +2471,138 @@ func (s *QuantMCPServer) handleListAdoptableSessions(_ context.Context, request 
 	}
 
 	return marshalResult(result)
+}
+
+// ---------------------------------------------------------------------------
+// Crew handlers
+// ---------------------------------------------------------------------------
+
+func (s *QuantMCPServer) handleAssignSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	supervisorID := stringArg(request.GetArguments(), "supervisorSessionId")
+	if supervisorID == "" {
+		supervisorID = sessionFromCtx(ctx)
+	}
+	if supervisorID == "" {
+		return mcp.NewToolResultError("no supervisor — pass supervisorSessionId or call from within a quant session (X-Quant-Session header missing)"), nil
+	}
+
+	if err := s.crewManager.AssignWorker(sessionID, supervisorID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"assigned":            true,
+		"workerSessionId":     sessionID,
+		"supervisorSessionId": supervisorID,
+	})
+}
+
+func (s *QuantMCPServer) handleUnassignSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.crewManager.UnassignWorker(sessionID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{"unassigned": true, "workerSessionId": sessionID})
+}
+
+func (s *QuantMCPServer) handleListCrew(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID := stringArg(request.GetArguments(), "sessionId")
+	if sessionID == "" {
+		sessionID = sessionFromCtx(ctx)
+	}
+	if sessionID == "" {
+		return mcp.NewToolResultError("no session in scope — pass sessionId or call from within a quant session"), nil
+	}
+
+	supervisorAssignment, err := s.crewManager.GetSupervisor(sessionID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	var supervisor any
+	if supervisorAssignment != nil {
+		supervisor = supervisorAssignment.SupervisorSessionID
+	}
+
+	assignments, err := s.crewManager.GetCrew(sessionID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Queued report counts and last report per worker, from this session's inbox.
+	queuedByWorker := make(map[string]int)
+	if inbox, err := s.crewManager.GetInbox(sessionID, false); err == nil {
+		for _, envelope := range inbox {
+			queuedByWorker[envelope.FromSessionID]++
+		}
+	}
+	latestByWorker := make(map[string]entity.CrewEnvelope)
+	if all, err := s.crewManager.GetInbox(sessionID, true); err == nil {
+		for _, envelope := range all {
+			if latest, ok := latestByWorker[envelope.FromSessionID]; !ok || envelope.CreatedAt.After(latest.CreatedAt) {
+				latestByWorker[envelope.FromSessionID] = envelope
+			}
+		}
+	}
+
+	workers := make([]map[string]any, 0, len(assignments))
+	for _, assignment := range assignments {
+		worker := map[string]any{
+			"sessionId":     assignment.WorkerSessionID,
+			"name":          "",
+			"status":        "",
+			"queuedReports": queuedByWorker[assignment.WorkerSessionID],
+		}
+		if session, err := s.sessionManager.GetSession(assignment.WorkerSessionID); err == nil && session != nil {
+			worker["name"] = session.Name
+			worker["status"] = session.Status
+		}
+		if latest, ok := latestByWorker[assignment.WorkerSessionID]; ok {
+			worker["lastReportType"] = latest.Type
+			worker["lastReportAt"] = latest.CreatedAt.Format(time.RFC3339)
+		}
+		workers = append(workers, worker)
+	}
+
+	return marshalResult(map[string]any{
+		"sessionId":  sessionID,
+		"supervisor": supervisor,
+		"workers":    workers,
+	})
+}
+
+func (s *QuantMCPServer) handleReportToSupervisor(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	reportType, err := requiredString(request, "type")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	summary, err := requiredString(request, "summary")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	caller := sessionFromCtx(ctx)
+	if caller == "" {
+		return mcp.NewToolResultError("report_to_supervisor requires the calling session context (X-Quant-Session header) — call it from within a quant session"), nil
+	}
+
+	if err := s.crewManager.Report(caller, reportType, summary); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"queued": true,
+		"type":   reportType,
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -291,6 +291,62 @@ func runMigrations(db *sql.DB) error {
 		fmt.Printf("warning: mindmap_nodes color migration failed: %v\n", err)
 	}
 
+	crewAssignmentsTable := `
+	CREATE TABLE IF NOT EXISTS crew_assignments (
+		worker_session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+		supervisor_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		created_at TEXT NOT NULL
+	);`
+
+	_, err = db.Exec(crewAssignmentsTable)
+	if err != nil {
+		return fmt.Errorf("failed to create crew_assignments table: %w", err)
+	}
+
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_crew_assignments_supervisor ON crew_assignments(supervisor_session_id);`)
+	if err != nil {
+		return fmt.Errorf("failed to create crew_assignments supervisor index: %w", err)
+	}
+
+	// from_session_id deliberately has NO foreign key: a worker's reports must
+	// survive the worker session being deleted.
+	crewEnvelopesTable := `
+	CREATE TABLE IF NOT EXISTS crew_envelopes (
+		id TEXT PRIMARY KEY,
+		from_session_id TEXT NOT NULL,
+		to_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		type TEXT NOT NULL,
+		summary TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'queued',
+		created_at TEXT NOT NULL,
+		delivered_at TEXT
+	);`
+
+	_, err = db.Exec(crewEnvelopesTable)
+	if err != nil {
+		return fmt.Errorf("failed to create crew_envelopes table: %w", err)
+	}
+
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_crew_envelopes_to_status ON crew_envelopes(to_session_id, status);`)
+	if err != nil {
+		return fmt.Errorf("failed to create crew_envelopes recipient index: %w", err)
+	}
+
+	crewWatchdogsTable := `
+	CREATE TABLE IF NOT EXISTS crew_watchdogs (
+		id TEXT PRIMARY KEY,
+		worker_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+		supervisor_session_id TEXT NOT NULL,
+		expected_by TEXT NOT NULL,
+		fired INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL
+	);`
+
+	_, err = db.Exec(crewWatchdogsTable)
+	if err != nil {
+		return fmt.Errorf("failed to create crew_watchdogs table: %w", err)
+	}
+
 	// Ensure the "Default" workspace always exists.
 	var defaultCount int
 	_ = db.QueryRow(`SELECT COUNT(*) FROM workspaces WHERE name = 'Default'`).Scan(&defaultCount)

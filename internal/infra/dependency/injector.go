@@ -57,6 +57,9 @@ type Injector struct {
 	mindmapPersistence   intAdapter.MindmapPersistence
 	mindmapManager       appAdapter.MindmapManager
 	mindmapController    intAdapter.MindmapController
+	crewPersistence      intAdapter.CrewPersistence
+	crewManager          appAdapter.CrewManager
+	crewController       intAdapter.CrewController
 	fileManager          appAdapter.FileManager
 	fileController       intAdapter.FileController
 	eventEmitter         *events.Emitter
@@ -447,6 +450,40 @@ func (i *Injector) MindmapController() intAdapter.MindmapController {
 		i.mindmapController = controller.NewMindmapController(i.MindmapManager())
 	}
 	return i.mindmapController
+}
+
+// CrewPersistence returns the singleton CrewPersistence instance.
+func (i *Injector) CrewPersistence() intAdapter.CrewPersistence {
+	if i.crewPersistence == nil {
+		i.crewPersistence = persistence.NewCrewPersistence(i.db)
+	}
+	return i.crewPersistence
+}
+
+// CrewManager returns the singleton CrewManager service instance.
+func (i *Injector) CrewManager() appAdapter.CrewManager {
+	if i.crewManager == nil {
+		cp := i.CrewPersistence()
+		i.crewManager = service.NewCrewManagerService(
+			cp,                     // FindCrew
+			cp,                     // SaveCrew
+			cp,                     // DeleteCrew
+			i.SessionPersistence(), // FindSession
+			i.SessionManager(),     // SessionManager
+			i.MindmapManager(),     // MindmapManager
+			nil,                    // SessionActivity — wired in a later milestone
+			i.EventEmitter(),       // EventEmitter
+		)
+	}
+	return i.crewManager
+}
+
+// CrewController returns the singleton CrewController instance.
+func (i *Injector) CrewController() intAdapter.CrewController {
+	if i.crewController == nil {
+		i.crewController = controller.NewCrewController(i.CrewManager())
+	}
+	return i.crewController
 }
 
 // FileManager returns the singleton FileManager service instance.
