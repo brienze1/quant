@@ -170,8 +170,18 @@ func (f *fakeSessionFinder) FindByID(id string) (*entity.Session, error) {
 	return nil, nil
 }
 
-func (f *fakeSessionFinder) FindAll() ([]entity.Session, error)            { return nil, nil }
-func (f *fakeSessionFinder) FindByRepoID(string) ([]entity.Session, error) { return nil, nil }
+func (f *fakeSessionFinder) FindAll() ([]entity.Session, error) { return nil, nil }
+
+func (f *fakeSessionFinder) FindByRepoID(repoID string) ([]entity.Session, error) {
+	var out []entity.Session
+	for _, s := range f.sessions {
+		if s.RepoID == repoID {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeSessionFinder) FindByTaskID(string) ([]entity.Session, error) { return nil, nil }
 
 // fakeEventEmitter records emitted events.
@@ -581,5 +591,184 @@ func TestCrewStuckEmittedOnce(t *testing.T) {
 	manager.drainTick(deliverAt.Add(2*time.Second + 10*time.Minute))
 	if countStuck() != 2 {
 		t.Fatalf("want a second crew:stuck for the new blockage, got %d", countStuck())
+	}
+}
+
+// fakeDispatchSessionManager implements the SessionManager methods Dispatch
+// uses; the embedded interface panics on anything else.
+type fakeDispatchSessionManager struct {
+	adapter.SessionManager
+	finder      *fakeSessionFinder
+	activity    *fakeSessionActivity
+	createdOpts []entity.SessionOptions
+	started     []string
+	sent        map[string]string
+}
+
+func (f *fakeDispatchSessionManager) CreateSession(name, description, sessionType, repoID, taskID string, opts entity.SessionOptions) (*entity.Session, error) {
+	session := entity.Session{ID: "created-" + name, Name: name, SessionType: sessionType, RepoID: repoID, Status: "idle"}
+	f.finder.sessions[session.ID] = session
+	f.createdOpts = append(f.createdOpts, opts)
+	return &session, nil
+}
+
+func (f *fakeDispatchSessionManager) StartSession(id string, _ int, _ int) error {
+	f.started = append(f.started, id)
+	f.activity.live[id] = true
+	f.activity.activities[id] = entity.ProcessActivity{LastOutputAt: time.Now().Add(-10 * time.Second)}
+	return nil
+}
+
+func (f *fakeDispatchSessionManager) SendMessageAndSubmit(id string, message string) error {
+	f.sent[id] = message
+	return nil
+}
+
+func newTestDispatchManager(sessions ...entity.Session) (*crewManagerService, *fakeCrewStore, *fakeDispatchSessionManager, *fakeSessionActivity) {
+	store := newFakeCrewStore()
+	finder := &fakeSessionFinder{sessions: make(map[string]entity.Session)}
+	for _, s := range sessions {
+		finder.sessions[s.ID] = s
+	}
+	activity := &fakeSessionActivity{
+		activities: make(map[string]entity.ProcessActivity),
+		live:       make(map[string]bool),
+	}
+	sm := &fakeDispatchSessionManager{finder: finder, activity: activity, sent: make(map[string]string)}
+	manager := NewCrewManagerService(store, store, store, finder, sm, nil, activity, &fakeEventEmitter{}).(*crewManagerService)
+	manager.dispatchReadyTimeout = 300 * time.Millisecond
+	manager.dispatchPollInterval = 10 * time.Millisecond
+	return manager, store, sm, activity
+}
+
+func TestCrewDispatch_AdoptBySessionID(t *testing.T) {
+	manager, store, sm, activity := newTestDispatchManager(claudeSession("sup"), claudeSession("w"))
+	activity.live["w"] = true
+	activity.activities["w"] = entity.ProcessActivity{LastOutputAt: time.Now().Add(-10 * time.Second)}
+
+	result, err := manager.Dispatch("sup", "do the thing", adapter.CrewDispatchOptions{SessionID: "w"})
+	if err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if result.WorkerSessionID != "w" || result.AdoptedBy != "sessionId" || result.Created || result.Started {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if !result.PromptDelivered {
+		t.Fatalf("prompt not delivered: %+v", result)
+	}
+	if a := store.assignments["w"]; a.SupervisorSessionID != "sup" {
+		t.Fatalf("worker not assigned to supervisor: %+v", store.assignments)
+	}
+	message := sm.sent["w"]
+	for _, want := range []string{"do the thing", "report_to_supervisor", `"sup"`} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("delivered message missing %q:\n%s", want, message)
+		}
+	}
+}
+
+func TestCrewDispatch_AdoptByNameMostRecent(t *testing.T) {
+	now := time.Now()
+	old := claudeSession("w-old")
+	old.Name = "builder"
+	old.RepoID = "r1"
+	old.LastActiveAt = now.Add(-time.Hour)
+	newer := claudeSession("w-new")
+	newer.Name = "builder"
+	newer.RepoID = "r1"
+	newer.LastActiveAt = now
+	archived := claudeSession("w-arch")
+	archived.Name = "builder"
+	archived.RepoID = "r1"
+	archived.LastActiveAt = now.Add(time.Hour)
+	archivedAt := now
+	archived.ArchivedAt = &archivedAt
+	term := entity.Session{ID: "w-term", Name: "builder", SessionType: "terminal", RepoID: "r1", LastActiveAt: now.Add(time.Hour)}
+
+	manager, _, sm, _ := newTestDispatchManager(claudeSession("sup"), old, newer, archived, term)
+
+	result, err := manager.Dispatch("sup", "task", adapter.CrewDispatchOptions{Name: "builder", RepoID: "r1"})
+	if err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if result.WorkerSessionID != "w-new" || result.AdoptedBy != "name" || result.Created {
+		t.Fatalf("want adoption of most-recently-active claude session w-new, got %+v", result)
+	}
+	if !result.Started || len(sm.started) != 1 || sm.started[0] != "w-new" {
+		t.Fatalf("worker without a live process was not started: %+v", result)
+	}
+	if !result.PromptDelivered {
+		t.Fatalf("prompt not delivered after start: %+v", result)
+	}
+}
+
+func TestCrewDispatch_CreatesWhenNoMatch(t *testing.T) {
+	sup := claudeSession("sup")
+	sup.WorkspaceID = "ws1"
+	manager, store, sm, _ := newTestDispatchManager(sup)
+
+	result, err := manager.Dispatch("sup", "build it", adapter.CrewDispatchOptions{
+		Name:              "fresh",
+		RepoID:            "r1",
+		UseWorktree:       true,
+		Model:             "claude-sonnet-4-6",
+		SkipPermissions:   true,
+		ExpectedByMinutes: 5,
+	})
+	if err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if !result.Created || result.AdoptedBy != "" || result.WorkerSessionID != "created-fresh" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if len(sm.createdOpts) != 1 {
+		t.Fatalf("want one CreateSession call, got %d", len(sm.createdOpts))
+	}
+	opts := sm.createdOpts[0]
+	if !opts.UseWorktree || !opts.SkipPermissions || opts.Model != "claude-sonnet-4-6" || opts.WorkspaceID != "ws1" {
+		t.Fatalf("session options not passed through: %+v", opts)
+	}
+	if !result.Started || !result.PromptDelivered {
+		t.Fatalf("worker not started/delivered: %+v", result)
+	}
+	if !result.WatchdogSet || len(store.watchdogs) != 1 {
+		t.Fatalf("watchdog not set: %+v (watchdogs %d)", result, len(store.watchdogs))
+	}
+	if !strings.Contains(sm.sent[result.WorkerSessionID], "5 minutes") {
+		t.Fatalf("contract does not mention the expected report window:\n%s", sm.sent[result.WorkerSessionID])
+	}
+}
+
+func TestCrewDispatch_ReadyTimeoutIsNotAnError(t *testing.T) {
+	manager, store, sm, activity := newTestDispatchManager(claudeSession("sup"), claudeSession("w"))
+	activity.live["w"] = true
+	activity.activities["w"] = entity.ProcessActivity{LastOutputAt: time.Now(), Busy: true}
+
+	result, err := manager.Dispatch("sup", "task", adapter.CrewDispatchOptions{SessionID: "w", ExpectedByMinutes: 5})
+	if err != nil {
+		t.Fatalf("Dispatch timeout must not be an error: %v", err)
+	}
+	if result.PromptDelivered || result.WatchdogSet {
+		t.Fatalf("busy worker must not receive the prompt or a watchdog: %+v", result)
+	}
+	if len(sm.sent) != 0 || len(store.watchdogs) != 0 {
+		t.Fatalf("prompt/watchdog leaked despite timeout")
+	}
+}
+
+func TestCrewDispatch_Validation(t *testing.T) {
+	manager, _, _, _ := newTestDispatchManager(claudeSession("sup"))
+
+	if _, err := manager.Dispatch("sup", "  ", adapter.CrewDispatchOptions{SessionID: "w"}); err == nil || !strings.Contains(err.Error(), "prompt") {
+		t.Fatalf("want prompt-required error, got %v", err)
+	}
+	if _, err := manager.Dispatch("sup", "task", adapter.CrewDispatchOptions{}); err == nil || !strings.Contains(err.Error(), "sessionId") {
+		t.Fatalf("want resolution error, got %v", err)
+	}
+	if _, err := manager.Dispatch("sup", "task", adapter.CrewDispatchOptions{Name: "x"}); err == nil || !strings.Contains(err.Error(), "repoId") {
+		t.Fatalf("want repoId-required error, got %v", err)
+	}
+	if _, err := manager.Dispatch("missing", "task", adapter.CrewDispatchOptions{SessionID: "sup"}); err == nil || !strings.Contains(err.Error(), "supervisor session not found") {
+		t.Fatalf("want missing-supervisor error, got %v", err)
 	}
 }

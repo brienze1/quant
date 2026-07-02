@@ -13,6 +13,7 @@ import (
 	"quant/internal/application/adapter"
 	"quant/internal/application/usecase"
 	"quant/internal/domain/entity"
+	"quant/internal/domain/persona"
 )
 
 // validCrewReportTypes holds the report types a worker may send. "nudge" is
@@ -50,6 +51,14 @@ const (
 	crewStuckAfter = 10 * time.Minute
 )
 
+// Crew dispatch CLI-ready wait tuning: the worker's claude TUI must have
+// rendered output and gone quiet before pasted text lands in its input box.
+const (
+	crewDispatchReadyTimeout = 60 * time.Second
+	crewDispatchPollInterval = 250 * time.Millisecond
+	crewDispatchQuietPeriod  = 1500 * time.Millisecond
+)
+
 // crewHoldMarkers are screen fragments that mean the supervisor's terminal is
 // NOT safe to inject into (a running task, menu or permission dialog). The
 // whole marker gate is skipped when QUANT_CREW_MARKERS=off.
@@ -77,6 +86,10 @@ type crewManagerService struct {
 	drainState map[string]*crewDrainState
 	stopCh     chan struct{}
 	doneCh     chan struct{}
+
+	dispatchReadyTimeout time.Duration
+	dispatchPollInterval time.Duration
+	dispatchQuietPeriod  time.Duration
 }
 
 // NewCrewManagerService creates a new crew manager service.
@@ -100,6 +113,10 @@ func NewCrewManagerService(
 		sessionActivity: sessionActivity,
 		emitter:         emitter,
 		drainState:      make(map[string]*crewDrainState),
+
+		dispatchReadyTimeout: crewDispatchReadyTimeout,
+		dispatchPollInterval: crewDispatchPollInterval,
+		dispatchQuietPeriod:  crewDispatchQuietPeriod,
 	}
 }
 
@@ -261,9 +278,134 @@ func (s *crewManagerService) SetWatchdog(workerSessionID string, expectedBy time
 	return nil
 }
 
-// Dispatch creates/adopts a worker and delivers a prompt. Not available yet.
+// Dispatch resolves (adopts or creates) a worker session for a supervisor,
+// assigns it to the crew, starts it when it has no live process, and delivers
+// the prompt plus the worker reporting contract once the CLI is ready. A
+// CLI-ready timeout is reported as promptDelivered:false, not as an error.
 func (s *crewManagerService) Dispatch(supervisorSessionID, prompt string, opts adapter.CrewDispatchOptions) (adapter.CrewDispatchResult, error) {
-	return adapter.CrewDispatchResult{}, fmt.Errorf("crew dispatch is not available yet")
+	var result adapter.CrewDispatchResult
+
+	if s.sessionManager == nil || s.sessionActivity == nil {
+		return result, fmt.Errorf("crew dispatch is not available")
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return result, fmt.Errorf("prompt is required")
+	}
+
+	supervisor, err := s.findSession.FindByID(supervisorSessionID)
+	if err != nil {
+		return result, fmt.Errorf("failed to look up supervisor session: %w", err)
+	}
+	if supervisor == nil {
+		return result, fmt.Errorf("supervisor session not found: %s", supervisorSessionID)
+	}
+
+	worker, err := s.resolveDispatchWorker(&result, supervisor.WorkspaceID, opts)
+	if err != nil {
+		return result, err
+	}
+	result.WorkerSessionID = worker.ID
+	result.WorkerName = worker.Name
+
+	if err := s.AssignWorker(worker.ID, supervisorSessionID); err != nil {
+		return result, err
+	}
+
+	// Start the worker when it has no live process; a stale "running" status
+	// with a dead process gets restarted too.
+	if _, ok := s.sessionActivity.Activity(worker.ID); !ok {
+		if err := s.sessionManager.StartSession(worker.ID, 40, 120); err != nil {
+			return result, fmt.Errorf("failed to start worker session: %w", err)
+		}
+		result.Started = true
+	}
+
+	message := prompt + "\n\n" + persona.WorkerContract(supervisor.Name, opts.ExpectedByMinutes)
+	if s.waitForWorkerReady(worker.ID) {
+		if err := s.sessionManager.SendMessageAndSubmit(worker.ID, message); err == nil {
+			result.PromptDelivered = true
+		}
+	}
+
+	// Only arm a watchdog when the prompt actually landed — an undelivered
+	// prompt means no work was asked, so no report can be expected.
+	if opts.ExpectedByMinutes > 0 && result.PromptDelivered {
+		if err := s.SetWatchdog(worker.ID, time.Now().Add(time.Duration(opts.ExpectedByMinutes)*time.Minute)); err == nil {
+			result.WatchdogSet = true
+		}
+	}
+
+	return result, nil
+}
+
+// resolveDispatchWorker resolves the worker session for a dispatch: an explicit
+// sessionId adopts that session; name+repoId adopts the most-recently-active
+// non-archived claude session with that name in the repo, else creates one.
+func (s *crewManagerService) resolveDispatchWorker(result *adapter.CrewDispatchResult, workspaceID string, opts adapter.CrewDispatchOptions) (*entity.Session, error) {
+	if opts.SessionID != "" {
+		worker, err := s.findSession.FindByID(opts.SessionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up session: %w", err)
+		}
+		if worker == nil {
+			return nil, fmt.Errorf("session not found: %s", opts.SessionID)
+		}
+		result.AdoptedBy = "sessionId"
+		return worker, nil
+	}
+
+	if opts.Name == "" {
+		return nil, fmt.Errorf("provide sessionId, or name+repoId, to resolve the worker session")
+	}
+	if opts.RepoID == "" {
+		return nil, fmt.Errorf("repoId is required to adopt or create worker session %q by name", opts.Name)
+	}
+
+	sessions, err := s.findSession.FindByRepoID(opts.RepoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list repo sessions: %w", err)
+	}
+	var match *entity.Session
+	for i := range sessions {
+		candidate := &sessions[i]
+		if candidate.Name != opts.Name || candidate.SessionType != "claude" || candidate.ArchivedAt != nil {
+			continue
+		}
+		if match == nil || candidate.LastActiveAt.After(match.LastActiveAt) {
+			match = candidate
+		}
+	}
+	if match != nil {
+		result.AdoptedBy = "name"
+		return match, nil
+	}
+
+	worker, err := s.sessionManager.CreateSession(opts.Name, "", "claude", opts.RepoID, "", entity.SessionOptions{
+		UseWorktree:     opts.UseWorktree,
+		SkipPermissions: opts.SkipPermissions,
+		Model:           opts.Model,
+		WorkspaceID:     workspaceID,
+		NoFlicker:       true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create worker session: %w", err)
+	}
+	result.Created = true
+	return worker, nil
+}
+
+// waitForWorkerReady polls the worker's activity until the CLI has produced
+// output and gone quiet (ready to accept pasted input), or the timeout elapses.
+func (s *crewManagerService) waitForWorkerReady(workerSessionID string) bool {
+	deadline := time.Now().Add(s.dispatchReadyTimeout)
+	for time.Now().Before(deadline) {
+		activity, ok := s.sessionActivity.Activity(workerSessionID)
+		if ok && !activity.LastOutputAt.IsZero() && !activity.Busy && time.Since(activity.LastOutputAt) >= s.dispatchQuietPeriod {
+			return true
+		}
+		time.Sleep(s.dispatchPollInterval)
+	}
+	return false
 }
 
 // InCrewScope reports whether the caller has workers and whether the target is

@@ -719,6 +719,7 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID (must be running)")),
 			mcp.WithString("message", mcp.Required(), mcp.Description("Message text to send to the session")),
 			mcp.WithBoolean("submit", mcp.Description("Press Enter after the message to submit it. Default: true. Set false to only type the text without submitting.")),
+			mcp.WithBoolean("outsideCrew", mcp.Description("Bypass crew scoping. Once your session has crew workers, send_message is limited to yourself, your supervisor and your worker subtree; set true to message a session outside your crew. Default: false.")),
 		),
 		s.handleSendMessage,
 	)
@@ -805,6 +806,30 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("summary", mcp.Required(), mcp.Description("Short summary of the report (max ~3 sentences)")),
 		),
 		s.handleReportToSupervisor,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("crew_dispatch",
+			mcp.WithDescription(`Dispatch work to a crew worker session supervised by THIS session. The worker is resolved by sessionId, or by name+repoId — adopting the most recently active non-archived claude session with that name in the repo, else creating a new one. It is assigned to your crew, started if needed, and — once its CLI is ready — receives the prompt plus a reporting contract telling it to report back with report_to_supervisor. Requires calling from within a quant session (the caller becomes the supervisor). promptDelivered:false in the result means the worker CLI never became ready within 60s — inspect it with get_session_output.`),
+			mcp.WithString("prompt", mcp.Required(), mcp.Description("The task prompt delivered to the worker (the reporting contract is appended automatically)")),
+			mcp.WithString("sessionId", mcp.Description("Existing session to use as the worker. Omit to resolve by name+repoId.")),
+			mcp.WithString("name", mcp.Description("Worker session name — adopts the most recently active non-archived claude session with this name in the repo, else creates one")),
+			mcp.WithString("repoId", mcp.Description("Repository the worker session belongs to (required with name; get from list_repos)")),
+			mcp.WithBoolean("useWorktree", mcp.Description("Create a newly created worker session in a git worktree. Default: false")),
+			mcp.WithString("model", mcp.Description("Claude model for a newly created worker session")),
+			mcp.WithBoolean("skipPermissions", mcp.Description("Create the worker with --dangerously-skip-permissions. Default: false")),
+			mcp.WithNumber("expectedByMinutes", mcp.Description("Set a watchdog: expect the worker's first report within this many minutes")),
+		),
+		s.handleCrewDispatch,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("crew_set_watchdog",
+			mcp.WithDescription(`Set a watchdog on one of YOUR crew workers: expect a report within the given number of minutes. Any report from the worker clears its watchdogs. Requires calling from within a quant session; the worker must be assigned to your crew.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Worker session ID (must be in your crew)")),
+			mcp.WithNumber("expectedByMinutes", mcp.Required(), mcp.Description("Minutes from now within which a report is expected")),
+		),
+		s.handleCrewSetWatchdog,
 	)
 
 	// -----------------------------------------------------------------------
@@ -2330,7 +2355,7 @@ func (s *QuantMCPServer) handleDeleteSession(_ context.Context, request mcp.Call
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s deleted successfully", id)), nil
 }
 
-func (s *QuantMCPServer) handleSendMessage(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleSendMessage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -2339,6 +2364,16 @@ func (s *QuantMCPServer) handleSendMessage(_ context.Context, request mcp.CallTo
 	message, err := requiredString(request, "message")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Crew scoping: once the calling session has workers, messaging outside
+	// its crew (itself, its own supervisor, its worker subtree) is blocked
+	// unless explicitly bypassed. Headerless callers are unrestricted.
+	caller := sessionFromCtx(ctx)
+	if caller != "" && !boolArg(request.GetArguments(), "outsideCrew") {
+		if hasWorkers, allowed := s.crewManager.InCrewScope(caller, id); hasWorkers && !allowed {
+			return mcp.NewToolResultError(fmt.Sprintf("session %s is outside your crew (not you, your supervisor, or one of your workers). Use report_to_supervisor for upward reports, or pass outsideCrew:true to bypass crew scoping.", id)), nil
+		}
 	}
 
 	// submit defaults to true: the orchestration use case is to deliver a
@@ -2595,6 +2630,80 @@ func (s *QuantMCPServer) handleReportToSupervisor(ctx context.Context, request m
 	return marshalResult(map[string]any{
 		"queued": true,
 		"type":   reportType,
+	})
+}
+
+func (s *QuantMCPServer) handleCrewDispatch(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	prompt, err := requiredString(request, "prompt")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	caller := sessionFromCtx(ctx)
+	if caller == "" {
+		return mcp.NewToolResultError("crew_dispatch requires the calling session context (X-Quant-Session header) — the caller becomes the supervisor"), nil
+	}
+
+	args := request.GetArguments()
+	opts := appAdapter.CrewDispatchOptions{
+		SessionID:         stringArg(args, "sessionId"),
+		Name:              stringArg(args, "name"),
+		RepoID:            stringArg(args, "repoId"),
+		UseWorktree:       boolArg(args, "useWorktree"),
+		Model:             stringArg(args, "model"),
+		SkipPermissions:   boolArg(args, "skipPermissions"),
+		ExpectedByMinutes: intArg(args, "expectedByMinutes"),
+	}
+
+	result, err := s.crewManager.Dispatch(caller, prompt, opts)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"workerSessionId": result.WorkerSessionID,
+		"workerName":      result.WorkerName,
+		"created":         result.Created,
+		"started":         result.Started,
+		"promptDelivered": result.PromptDelivered,
+		"watchdogSet":     result.WatchdogSet,
+		"adoptedBy":       result.AdoptedBy,
+	})
+}
+
+func (s *QuantMCPServer) handleCrewSetWatchdog(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	caller := sessionFromCtx(ctx)
+	if caller == "" {
+		return mcp.NewToolResultError("crew_set_watchdog requires the calling session context (X-Quant-Session header) — call it from within a quant session"), nil
+	}
+
+	minutes := intArg(request.GetArguments(), "expectedByMinutes")
+	if minutes <= 0 {
+		return mcp.NewToolResultError("expectedByMinutes must be a positive number of minutes"), nil
+	}
+
+	assignment, err := s.crewManager.GetSupervisor(sessionID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if assignment == nil || assignment.SupervisorSessionID != caller {
+		return mcp.NewToolResultError(fmt.Sprintf("session %s is not in your crew — assign it first with assign_session or crew_dispatch", sessionID)), nil
+	}
+
+	expectedBy := time.Now().Add(time.Duration(minutes) * time.Minute)
+	if err := s.crewManager.SetWatchdog(sessionID, expectedBy); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"watchdogSet":     true,
+		"workerSessionId": sessionID,
+		"expectedBy":      expectedBy.Format(time.RFC3339),
 	})
 }
 
