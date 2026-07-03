@@ -202,6 +202,63 @@ func TestCrewDispatch(t *testing.T) {
 	}
 }
 
+// TestListSessionsByNameAndAssignByName covers the name filter on list_sessions
+// and resolving assign_session's worker by name+repoId instead of by id.
+func TestListSessionsByNameAndAssignByName(t *testing.T) {
+	t.Setenv("SHELL", "/bin/bash")
+	h := newHarness(t)
+	h.injector.ProcessManager().UpdateCliBinaryConfig(writeFakeInteractiveClaude(t, t.TempDir()), nil)
+
+	repo, err := h.injector.RepoManager().OpenRepo("byname-repo", t.TempDir(), h.wsID)
+	if err != nil {
+		t.Fatalf("OpenRepo: %v", err)
+	}
+
+	mk := func(name string) string {
+		created := h.call("create_session", map[string]any{"name": name, "sessionType": "claude", "repoId": repo.ID})
+		id, _ := created["id"].(string)
+		if id == "" {
+			t.Fatalf("create_session %s returned no id: %v", name, created)
+		}
+		return id
+	}
+	bossID := mk("byname-boss")
+	workerID := mk("crew-widget")
+	mk("unrelated")
+
+	// list_sessions name filter is a case-insensitive substring match.
+	listText := h.callRaw("list_sessions", map[string]any{"name": "WIDGET"}, false)
+	var arr []map[string]any
+	if err := json.Unmarshal([]byte(listText), &arr); err != nil {
+		t.Fatalf("list_sessions result is not a JSON array: %v\nraw: %s", err, listText)
+	}
+	if len(arr) != 1 {
+		t.Fatalf("name filter should match exactly one session, got %d: %s", len(arr), listText)
+	}
+	if got, _ := arr[0]["id"].(string); got != workerID {
+		t.Fatalf("name filter returned the wrong session: %v", arr[0])
+	}
+
+	// assign_session by name+repoId resolves to that worker under the caller.
+	bossClient := newSessionClient(t, h, bossID)
+	res := bossClient.call("assign_session", map[string]any{"name": "crew-widget", "repoId": repo.ID})
+	if res["assigned"] != true || res["workerSessionId"] != workerID {
+		t.Fatalf("assign_session by name resolved wrong: %v", res)
+	}
+
+	crew := bossClient.call("list_crew", nil)
+	workers, _ := crew["workers"].([]any)
+	if len(workers) != 1 {
+		t.Fatalf("expected 1 worker after assign-by-name, got: %v", crew)
+	}
+
+	// A name with no match is a clear error.
+	errText := bossClient.callRaw("assign_session", map[string]any{"name": "nope", "repoId": repo.ID}, true)
+	if !strings.Contains(errText, "no non-archived claude session") {
+		t.Fatalf("assign by unknown name should explain the miss, got: %s", errText)
+	}
+}
+
 // TestCrewSendMessageScoping exercises the crew scoping matrix for
 // send_message: headerless callers are unrestricted; a supervisor with workers
 // is blocked outside its crew unless outsideCrew:true; its own supervisor and

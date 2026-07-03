@@ -646,8 +646,9 @@ Returns the full system prompt text, or a message indicating the prompt is empty
 
 	mcpServer.AddTool(
 		mcp.NewTool("list_sessions",
-			mcp.WithDescription(`List sessions (lightweight summary: id, name, status, sessionType, workspaceId, repoId). Optionally filter by workspace. Use get_session(id) for full details.`),
+			mcp.WithDescription(`List sessions (lightweight summary: id, name, status, sessionType, workspaceId, repoId). Optionally filter by workspace and/or by name (case-insensitive substring). Use get_session(id) for full details.`),
 			mcp.WithString("workspaceId", mcp.Description("Filter by workspace ID (optional — omit to list all)")),
+			mcp.WithString("name", mcp.Description("Filter by name (optional — case-insensitive substring match)")),
 		),
 		s.handleListSessions,
 	)
@@ -776,8 +777,10 @@ Returns the created session object with generated ID. The session starts in 'idl
 
 	mcpServer.AddTool(
 		mcp.NewTool("assign_session",
-			mcp.WithDescription(`Assign a session to a crew as YOUR worker (or another supervisor's). The worker reports back with report_to_supervisor and its reports queue in the supervisor's inbox. Both sessions must be non-archived claude sessions. Assigning an already-assigned worker moves it to the new supervisor.`),
-			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Worker session ID to assign (get from list_sessions)")),
+			mcp.WithDescription(`Assign a session to a crew as YOUR worker (or another supervisor's). Identify the worker either by sessionId, or by name+repoId (adopts the most-recently-active non-archived claude session with that name in the repo). The worker reports back with report_to_supervisor and its reports queue in the supervisor's inbox. Both sessions must be non-archived claude sessions. Assigning an already-assigned worker moves it to the new supervisor.`),
+			mcp.WithString("sessionId", mcp.Description("Worker session ID to assign (get from list_sessions). Omit to resolve by name+repoId instead.")),
+			mcp.WithString("name", mcp.Description("Worker session name — provide with repoId as an alternative to sessionId.")),
+			mcp.WithString("repoId", mcp.Description("Repository ID for name resolution (get from list_repos). Required when using name.")),
 			mcp.WithString("supervisorSessionId", mcp.Description("Supervisor session ID. Omit to use THIS session as the supervisor (requires calling from within a quant session).")),
 		),
 		s.handleAssignSession,
@@ -2235,12 +2238,16 @@ func (s *QuantMCPServer) handleListSessions(_ context.Context, request mcp.CallT
 	}
 
 	wsFilter := stringArg(request.GetArguments(), "workspaceId")
+	nameFilter := strings.ToLower(stringArg(request.GetArguments(), "name"))
 
 	// Return lightweight summaries — use get_session(id) for full details
 	result := make([]map[string]any, 0, len(sessions))
 	for i := range sessions {
 		sess := &sessions[i]
 		if wsFilter != "" && sess.WorkspaceID != wsFilter {
+			continue
+		}
+		if nameFilter != "" && !strings.Contains(strings.ToLower(sess.Name), nameFilter) {
 			continue
 		}
 		result = append(result, map[string]any{
@@ -2506,12 +2513,25 @@ func (s *QuantMCPServer) handleListAdoptableSessions(_ context.Context, request 
 // ---------------------------------------------------------------------------
 
 func (s *QuantMCPServer) handleAssignSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sessionID, err := requiredString(request, "sessionId")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	args := request.GetArguments()
+	sessionID := stringArg(args, "sessionId")
+	if sessionID == "" {
+		name := stringArg(args, "name")
+		repoID := stringArg(args, "repoId")
+		if name == "" {
+			return mcp.NewToolResultError("provide sessionId, or name+repoId, to identify the worker session"), nil
+		}
+		if repoID == "" {
+			return mcp.NewToolResultError("repoId is required when identifying the worker by name"), nil
+		}
+		resolved, err := s.resolveSessionByName(name, repoID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		sessionID = resolved
 	}
 
-	supervisorID := stringArg(request.GetArguments(), "supervisorSessionId")
+	supervisorID := stringArg(args, "supervisorSessionId")
 	if supervisorID == "" {
 		supervisorID = sessionFromCtx(ctx)
 	}
@@ -2528,6 +2548,29 @@ func (s *QuantMCPServer) handleAssignSession(ctx context.Context, request mcp.Ca
 		"workerSessionId":     sessionID,
 		"supervisorSessionId": supervisorID,
 	})
+}
+
+// resolveSessionByName finds the most-recently-active non-archived claude
+// session with the given name in the repo, mirroring crew_dispatch's adoption.
+func (s *QuantMCPServer) resolveSessionByName(name, repoID string) (string, error) {
+	sessions, err := s.sessionManager.ListSessions()
+	if err != nil {
+		return "", err
+	}
+	var match *entity.Session
+	for i := range sessions {
+		c := &sessions[i]
+		if c.Name != name || c.RepoID != repoID || c.SessionType != "claude" || c.ArchivedAt != nil {
+			continue
+		}
+		if match == nil || c.LastActiveAt.After(match.LastActiveAt) {
+			match = c
+		}
+	}
+	if match == nil {
+		return "", fmt.Errorf("no non-archived claude session named %q in repo %s", name, repoID)
+	}
+	return match.ID, nil
 }
 
 func (s *QuantMCPServer) handleUnassignSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
