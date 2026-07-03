@@ -21,6 +21,7 @@ type SessionManager interface {
 	ListSessionsByTask(taskID string) ([]entity.Session, error)
 	GetSession(id string) (*entity.Session, error)
 	SendMessage(id string, message string) error
+	SendMessageAndSubmit(id string, message string) error
 	ResizeTerminal(id string, rows int, cols int) error
 	GetSessionOutput(id string) (string, error)
 	UpdateSessionTask(sessionID string, newTaskID string) error

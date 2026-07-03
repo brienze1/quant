@@ -27,12 +27,13 @@ import (
 // harness wires the full stack and exposes an MCP client pointed at the real
 // /mcp endpoint.
 type harness struct {
-	t         *testing.T
-	home      string
-	server    *quantmcp.QuantMCPServer
-	client    *mcpclient.Client
-	wsID      string
-	ctx       context.Context
+	t        *testing.T
+	home     string
+	server   *quantmcp.QuantMCPServer
+	client   *mcpclient.Client
+	injector *dependency.Injector
+	wsID     string
+	ctx      context.Context
 }
 
 // newHarness boots the in-process stack with an isolated HOME and returns a
@@ -69,6 +70,8 @@ func newHarness(t *testing.T) *harness {
 		injector.JobGroupManager(),
 		injector.MindmapManager(),
 		injector.FileManager(),
+		injector.CrewManager(),
+		injector.TaskManager(),
 		nil, // voice bridge — voice tools aren't exercised by these tests
 	)
 	if err := server.Start(); err != nil {
@@ -95,7 +98,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("client.Initialize: %v", err)
 	}
 
-	h := &harness{t: t, home: home, server: server, client: client, ctx: ctx}
+	h := &harness{t: t, home: home, server: server, client: client, injector: injector, ctx: ctx}
 
 	// Every test runs against the always-present Default workspace.
 	ws := h.call("get_current_workspace", nil)

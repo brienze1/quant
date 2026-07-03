@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Repo,
   Task,
@@ -17,6 +17,7 @@ import type {
   CreateAgentRequest,
   UpdateAgentRequest,
   Config,
+  CrewAssignment,
 } from "./types";
 import * as api from "./api";
 import { Sidebar } from "./components/Sidebar";
@@ -57,6 +58,7 @@ import { ThemeQuickPicker } from "./components/ThemeQuickPicker";
 import { Segmented } from "./components/Segmented";
 import { IconButton } from "./components/IconButton";
 import { Icon } from "./components/Icon";
+import { CountBadge } from "./components/CountBadge";
 import { Kbd } from "./components/Kbd";
 import { getActiveKeybindings, findMatchingAction, formatKeyCombo } from "./keybindings";
 import { isMac } from "./os";
@@ -100,6 +102,7 @@ function PaneToggle({
   active,
   disabled,
   title,
+  badge,
   onClick,
 }: {
   icon: string;
@@ -107,6 +110,8 @@ function PaneToggle({
   active?: boolean;
   disabled?: boolean;
   title?: string;
+  /** trailing unread count — hidden when 0/undefined */
+  badge?: number;
   onClick: () => void;
 }) {
   const [hover, setHover] = useState(false);
@@ -140,6 +145,7 @@ function PaneToggle({
     >
       <Icon name={icon} size={14} />
       {label}
+      {badge != null && badge > 0 && <CountBadge n={badge} />}
     </button>
   );
 }
@@ -188,6 +194,22 @@ function App() {
   // sessionId -> boolean, kept in local state only. Opening it for one session
   // must not open it for the others. Ephemeral — resets to closed on restart.
   const [mindmapPaneOpenMap, setMindmapPaneOpenMap] = useState<Record<string, boolean>>({});
+  // Crew pane open/closed is PER-SESSION (cloned from the mindmap trio above).
+  const [crewPaneOpenMap, setCrewPaneOpenMap] = useState<Record<string, boolean>>({});
+  // Crew orchestration state: every assignment edge + queued (undelivered)
+  // envelope count per supervisor. Refetched on crew:updated events and
+  // piggybacked on the 3s sessions poll as a fallback. queued counts are the
+  // SINGLE source of the sidebar/pane unread badges (never per-session calls).
+  const [crewAssignments, setCrewAssignments] = useState<CrewAssignment[]>([]);
+  const [crewQueued, setCrewQueued] = useState<Record<string, number>>({});
+  // Supervisors with the "always deliver" lock on (supervisor id → true). Loaded
+  // alongside crewQueued and reconciled from the crew:updated payload.
+  const [crewDeliveryLocks, setCrewDeliveryLocks] = useState<Record<string, boolean>>({});
+  // Worker session ids DETACHED from the crew pane into their own dock panels
+  // ("crewSession:<id>" leaves — mirrors detachedFileTabs). Scoped to the dock
+  // context via the worker's supervisor, so a worker panel only shows while
+  // its supervisor is the dock's session.
+  const [detachedCrewSessions, setDetachedCrewSessions] = useState<string[]>([]);
   // Voice is PINNED to the session it was opened on. The single source of truth
   // is the session id voice is attached to (null = voice closed). The pane stays
   // bound to this session even when the user switches the active tab, so it must
@@ -251,6 +273,12 @@ function App() {
   reposRef.current = repos;
   const tasksByRepoRef = useRef(tasksByRepo);
   tasksByRepoRef.current = tasksByRepo;
+  // Live mirrors of the session stores for mount-once event handlers that need
+  // to resolve session names (e.g. the crew:stuck toast).
+  const sessionsByRepoRef = useRef(sessionsByRepo);
+  sessionsByRepoRef.current = sessionsByRepo;
+  const sessionsByTaskRef = useRef(sessionsByTask);
+  sessionsByTaskRef.current = sessionsByTask;
 
   // find active session object (the one shown in the main panel)
   const activeSession = findSession(activeTabId, sessionsByRepo, sessionsByTask);
@@ -331,6 +359,68 @@ function App() {
     setMindmapPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
   }
 
+  // whether the crew pane is open for the active session (cloned from the
+  // mindmap trio above)
+  const activeCrewPaneOpen = activeSession ? (crewPaneOpenMap[activeSession.id] ?? false) : false;
+
+  function handleCrewPaneOpenChange(open: boolean) {
+    if (!activeSession) return;
+    setCrewPaneOpenMap(prev => ({ ...prev, [activeSession.id]: open }));
+  }
+
+  // --- crew derivations (frontend join of assignments onto the session store;
+  // no backend join) ---
+
+  // supervisorId -> worker Session[] (only workers still present in the store)
+  const workersBySupervisor = useMemo(() => {
+    const out: Record<string, Session[]> = {};
+    for (const a of crewAssignments) {
+      const w = findSession(a.workerSessionId, sessionsByRepo, sessionsByTask);
+      if (!w) continue;
+      (out[a.supervisorSessionId] ??= []).push(w);
+    }
+    return out;
+  }, [crewAssignments, sessionsByRepo, sessionsByTask]);
+
+  // workerId -> its supervisor (id + display name for the sidebar chip)
+  const supervisorByWorker = useMemo(() => {
+    const out: Record<string, { id: string; name: string }> = {};
+    for (const a of crewAssignments) {
+      const sup = findSession(a.supervisorSessionId, sessionsByRepo, sessionsByTask);
+      out[a.workerSessionId] = {
+        id: a.supervisorSessionId,
+        name: sup?.name ?? a.supervisorSessionId.slice(0, 8),
+      };
+    }
+    return out;
+  }, [crewAssignments, sessionsByRepo, sessionsByTask]);
+
+  const workerCountBySupervisor = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const a of crewAssignments) {
+      out[a.supervisorSessionId] = (out[a.supervisorSessionId] ?? 0) + 1;
+    }
+    return out;
+  }, [crewAssignments]);
+
+  // Detached crew workers resolved to live sessions (a deleted/unknown worker
+  // simply drops out of the dock).
+  const detachedCrewWorkers = detachedCrewSessions
+    .map((id) => {
+      const s = findSession(id, sessionsByRepo, sessionsByTask);
+      return s ? { key: "crewSession:" + id, session: s } : null;
+    })
+    .filter((d): d is { key: string; session: Session } => d !== null);
+
+  function handleDetachCrewWorker(workerId: string) {
+    setDetachedCrewSessions((prev) => (prev.includes(workerId) ? prev : [...prev, workerId]));
+  }
+
+  function handleCloseDetachedCrewWorker(key: string) {
+    const wid = key.startsWith("crewSession:") ? key.slice("crewSession:".length) : key;
+    setDetachedCrewSessions((prev) => prev.filter((x) => x !== wid));
+  }
+
   // Which dock leaves are present (open) for the active session. The terminal
   // leaf is present only once its embedded terminal session actually exists.
   // Voice is global (pinned to voiceSessionId) so it shows regardless of which
@@ -343,10 +433,16 @@ function App() {
     if (filesPanelOpen) out.push("files");
     if (activeTerminalPaneOpen && activeEmbeddedTerminalSession) out.push("terminal");
     if (activeMindmapPaneOpen && activeSession) out.push("mindmap");
+    if (activeCrewPaneOpen && activeSession?.sessionType === "claude") out.push("crew");
     if (voiceSessionId) out.push("voice");
     // Detached file panels belonging to the dock's current session.
     for (const id of detachedFileTabs) {
       if (parseFileTabId(id)?.sessionId === dockSessionId) out.push(id);
+    }
+    // Detached crew worker panels scoped to the dock's current session via
+    // their supervisor (unassigning a detached worker drops its panel).
+    for (const d of detachedCrewWorkers) {
+      if (supervisorByWorker[d.session.id]?.id === dockSessionId) out.push(d.key);
     }
     return out;
   })();
@@ -557,6 +653,23 @@ function App() {
     }
   }, [activeWorkspaceId]);
 
+  // Crew assignments + queued counts (one global fetch; the crew:updated event
+  // and the 3s sessions poll both funnel through here).
+  const fetchCrew = useCallback(async () => {
+    try {
+      const [assignments, queued, locks] = await Promise.all([
+        api.getAllCrewAssignments(),
+        api.getCrewQueuedCounts(),
+        api.getCrewDeliveryLocks(),
+      ]);
+      setCrewAssignments(assignments ?? []);
+      setCrewQueued(queued ?? {});
+      setCrewDeliveryLocks(locks ?? {});
+    } catch (err) {
+      console.error("failed to load crew state:", err);
+    }
+  }, []);
+
   // initial load
   const loadAll = useCallback(async () => {
     fetchShortcuts();
@@ -564,6 +677,7 @@ function App() {
     fetchAgents();
     fetchWorkspaces();
     fetchJobGroups();
+    fetchCrew();
     const repoList = await fetchRepos();
     for (const repo of repoList) {
       const tasks = await fetchTasksForRepo(repo.id);
@@ -572,7 +686,7 @@ function App() {
         await fetchSessionsForTask(task.id);
       }
     }
-  }, [fetchShortcuts, fetchJobs, fetchAgents, fetchWorkspaces, fetchJobGroups, fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
+  }, [fetchShortcuts, fetchJobs, fetchAgents, fetchWorkspaces, fetchJobGroups, fetchCrew, fetchRepos, fetchTasksForRepo, fetchSessionsForRepo, fetchSessionsForTask]);
 
   useEffect(() => {
     loadAll().then(async () => {
@@ -964,9 +1078,10 @@ function App() {
     };
   }, [pttToast]);
 
-  // poll sessions every 3s
+  // poll sessions every 3s (crew piggybacks as the event fallback)
   useEffect(() => {
     const interval = setInterval(async () => {
+      fetchCrew();
       const currentRepos = reposRef.current;
       const currentTasks = tasksByRepoRef.current;
       for (const repo of currentRepos) {
@@ -978,7 +1093,7 @@ function App() {
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [fetchSessionsForRepo, fetchSessionsForTask]);
+  }, [fetchSessionsForRepo, fetchSessionsForTask, fetchCrew]);
 
   // poll actions for all open tabs + expanded session every 2s
   useEffect(() => {
@@ -1040,6 +1155,55 @@ function App() {
           if (existing.includes(board)) return prev;
           return { ...prev, [sessionId]: [...existing, board] };
         });
+      }
+    );
+    return () => cancel && cancel();
+  }, []);
+
+  // Live crew refresh: the crew:updated event payload is intentionally tiny
+  // (assignments + queued counts + deliveryLocks) — consumers refetch bodies,
+  // so we funnel through fetchCrew (the 3s poll above is the fallback) while
+  // reconciling the lock map straight off the payload for immediacy.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w?.runtime?.EventsOn) return;
+    const cancel = w.runtime.EventsOn(
+      "crew:updated",
+      (d?: { deliveryLocks?: Record<string, boolean> }) => {
+        if (d?.deliveryLocks) setCrewDeliveryLocks(d.deliveryLocks);
+        fetchCrew();
+      }
+    );
+    return () => cancel && cancel();
+  }, [fetchCrew]);
+
+  // Crew drain blocked for too long → surface a toast pointing at the
+  // supervisor session (clicking it focuses the tab, same as the finished
+  // toast below).
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    if (!w?.runtime?.EventsOn) return;
+    const cancel = w.runtime.EventsOn(
+      "crew:stuck",
+      (d: { supervisorSessionId?: string; queued?: number; oldestQueuedAt?: string; reason?: string }) => {
+        if (!d || typeof d.supervisorSessionId !== "string" || d.supervisorSessionId === "") return;
+        const sup = findSession(d.supervisorSessionId, sessionsByRepoRef.current, sessionsByTaskRef.current);
+        const name = sup?.name ?? d.supervisorSessionId.slice(0, 8);
+        const n = d.queued ?? 0;
+        const id = ++toastIdRef.current;
+        setToasts((prev) => [
+          ...prev,
+          {
+            id,
+            message: `crew: ${n} report${n === 1 ? "" : "s"} stuck for "${name}"${d.reason ? ` — ${d.reason}` : ""}`,
+            sessionId: d.supervisorSessionId,
+          },
+        ]);
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 8000);
       }
     );
     return () => cancel && cancel();
@@ -1836,6 +2000,19 @@ function App() {
       await api.moveSessionToTask(sessionId, targetTaskId);
       setModal({ type: "none" });
       await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  // Unassign a crew worker (sidebar-root drop of a crew row, or the pane's
+  // row action). The crew:updated event refreshes state; fetchCrew is the
+  // immediate fallback.
+  async function handleUnassignCrewWorker(workerSessionId: string) {
+    try {
+      setError(null);
+      await api.unassignCrewWorker(workerSessionId);
+      fetchCrew();
     } catch (err) {
       setError(String(err));
     }
@@ -2653,6 +2830,25 @@ function App() {
           disabled={!hasSession}
           onClick={() => { if (activeSession) handleMindmapPaneOpenChange(!activeMindmapPaneOpen); }}
         />
+        {/* Always visible for claude sessions — the pane's empty state solves
+            the first-assignment chicken-and-egg. */}
+        <PaneToggle
+          icon="users"
+          label="Crew"
+          active={activeCrewPaneOpen}
+          disabled={!hasSession || activeSession?.sessionType !== "claude"}
+          title={
+            !hasSession
+              ? "Open a session first"
+              : activeSession?.sessionType !== "claude"
+                ? "Crew is only available for claude sessions"
+                : "Toggle crew pane"
+          }
+          badge={activeSession ? crewQueued[activeSession.id] ?? 0 : 0}
+          onClick={() => {
+            if (activeSession?.sessionType === "claude") handleCrewPaneOpenChange(!activeCrewPaneOpen);
+          }}
+        />
         <PaneToggle
           icon="waveform"
           label="Voice"
@@ -2864,6 +3060,10 @@ function App() {
         onSelectBoard={handleSelectBoard}
         onMoveBoard={handleMoveBoard}
         onRenameBoard={handleRenameBoard}
+        supervisorByWorker={supervisorByWorker}
+        workerCountBySupervisor={workerCountBySupervisor}
+        queuedBySupervisor={crewQueued}
+        onUnassignWorker={handleUnassignCrewWorker}
         onError={(msg) => setError(msg)}
         onOpenSettings={() => setView("settings")}
         onOpenJobs={() => { fetchJobs(); setView("jobs"); }}
@@ -3031,6 +3231,25 @@ function App() {
             }
             onReattachFile={handleReattachFile}
             onCloseDetachedFile={handleCloseDetachedFile}
+            crewSupervisor={activeSession?.sessionType === "claude" ? activeSession : null}
+            crewWorkers={
+              activeSession ? workersBySupervisor[activeSession.id] ?? [] : []
+            }
+            crewQueuedCount={activeSession ? crewQueued[activeSession.id] ?? 0 : 0}
+            crewDeliveryLocked={activeSession ? crewDeliveryLocks[activeSession.id] ?? false : false}
+            onCrewToggleLock={(locked) => {
+              if (!activeSession) return;
+              const id = activeSession.id;
+              // Optimistic: crew:updated reconciles the authoritative state.
+              setCrewDeliveryLocks((prev) => ({ ...prev, [id]: locked }));
+              api.setCrewDeliveryLock(id, locked).catch((err) => setError(String(err)));
+            }}
+            onCrewClose={() => handleCrewPaneOpenChange(false)}
+            onCrewSelectSession={handleOpenTab}
+            onCrewDetachWorker={handleDetachCrewWorker}
+            onCrewError={(msg) => setError(msg)}
+            detachedCrewWorkers={detachedCrewWorkers}
+            onCloseDetachedCrewWorker={handleCloseDetachedCrewWorker}
           />
 
       {modal.type === "openRepo" && (

@@ -41,6 +41,8 @@ type QuantMCPServer struct {
 	jobGroupManager  appAdapter.JobGroupManager
 	mindmapManager   appAdapter.MindmapManager
 	fileManager      appAdapter.FileManager
+	crewManager      appAdapter.CrewManager
+	taskManager      appAdapter.TaskManager
 	voiceBridge      *voice.Bridge
 	httpServer       *http.Server
 	listener         net.Listener
@@ -49,7 +51,7 @@ type QuantMCPServer struct {
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
 // It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, voiceBridge *voice.Bridge) *QuantMCPServer {
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, crewManager appAdapter.CrewManager, taskManager appAdapter.TaskManager, voiceBridge *voice.Bridge) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
 	s := &QuantMCPServer{
@@ -61,6 +63,8 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 		jobGroupManager:  jobGroupManager,
 		mindmapManager:   mindmapManager,
 		fileManager:      fileManager,
+		crewManager:      crewManager,
+		taskManager:      taskManager,
 		voiceBridge:      voiceBridge,
 	}
 
@@ -644,8 +648,9 @@ Returns the full system prompt text, or a message indicating the prompt is empty
 
 	mcpServer.AddTool(
 		mcp.NewTool("list_sessions",
-			mcp.WithDescription(`List sessions (lightweight summary: id, name, status, sessionType, workspaceId, repoId). Optionally filter by workspace. Use get_session(id) for full details.`),
+			mcp.WithDescription(`List sessions (lightweight summary: id, name, status, sessionType, workspaceId, repoId). Optionally filter by workspace and/or by name (case-insensitive substring). Use get_session(id) for full details.`),
 			mcp.WithString("workspaceId", mcp.Description("Filter by workspace ID (optional — omit to list all)")),
+			mcp.WithString("name", mcp.Description("Filter by name (optional — case-insensitive substring match)")),
 		),
 		s.handleListSessions,
 	)
@@ -664,12 +669,16 @@ Returns the full system prompt text, or a message indicating the prompt is empty
 - 'claude' type: a Claude CLI interactive session
 - 'terminal' type: a plain terminal session
 
+A repo-backed session (repoId set) must be filed under a task: pass taskId for an existing task, or taskTag to file it under the task with that tag (a new task is created if none matches). Use list_tasks to see existing tasks, or create_task to make one. Repoless sessions have no task.
+
 Returns the created session object with generated ID. The session starts in 'idle' status — use start_session to begin execution.`),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Session name (e.g. 'review-pr-123', 'debug-auth')")),
 			mcp.WithString("description", mcp.Description("What this session is for")),
 			mcp.WithString("sessionType", mcp.Required(), mcp.Description("'claude' or 'terminal'")),
 			mcp.WithString("repoId", mcp.Description("Repository ID to associate with this session (get from list_repos)")),
 			mcp.WithString("taskId", mcp.Description("Task ID to associate with this session")),
+			mcp.WithString("taskTag", mcp.Description("File the session under the task with this tag in the repo; created if none matches")),
+			mcp.WithString("taskName", mcp.Description("Name for the task when taskTag creates a new one")),
 			mcp.WithString("workspaceId", mcp.Description("Workspace ID to assign the session to")),
 			mcp.WithBoolean("useWorktree", mcp.Description("Create a git worktree for this session. Default: false")),
 			mcp.WithBoolean("skipPermissions", mcp.Description("Skip permission prompts (--dangerously-skip-permissions). Default: false")),
@@ -677,6 +686,24 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("claudeSessionId", mcp.Description("Adopt an existing claude CLI session: its UUID from another terminal. The session will resume that conversation; incompatible with useWorktree.")),
 		),
 		s.handleCreateSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_tasks",
+			mcp.WithDescription(`List the tasks in a repository. Returns id, tag, name, repoId and archived for each. Sessions are filed under a task (Repo → Task → Session); use these ids with create_session's taskId.`),
+			mcp.WithString("repoId", mcp.Required(), mcp.Description("Repository ID whose tasks to list (get from list_repos)")),
+		),
+		s.handleListTasks,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("create_task",
+			mcp.WithDescription(`Create a task in a repository. A task groups sessions under a repo (Repo → Task → Session). Returns the created task's id, tag, name and repoId. Reuse the id as create_session's taskId.`),
+			mcp.WithString("repoId", mcp.Required(), mcp.Description("Repository ID to create the task in (get from list_repos)")),
+			mcp.WithString("tag", mcp.Required(), mcp.Description("Short tag for the task (e.g. 'auth', 'crew')")),
+			mcp.WithString("name", mcp.Description("Human-readable task name")),
+		),
+		s.handleCreateTask,
 	)
 
 	mcpServer.AddTool(
@@ -717,6 +744,7 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID (must be running)")),
 			mcp.WithString("message", mcp.Required(), mcp.Description("Message text to send to the session")),
 			mcp.WithBoolean("submit", mcp.Description("Press Enter after the message to submit it. Default: true. Set false to only type the text without submitting.")),
+			mcp.WithBoolean("outsideCrew", mcp.Description("Bypass crew scoping. Once your session has crew workers, send_message is limited to yourself, your supervisor and your worker subtree; set true to message a session outside your crew. Default: false.")),
 		),
 		s.handleSendMessage,
 	)
@@ -765,6 +793,73 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("repoId", mcp.Description("Repository ID whose path is used as the directory (get from list_repos)")),
 		),
 		s.handleListAdoptableSessions,
+	)
+
+	// -----------------------------------------------------------------------
+	// Crew tools — supervisor/worker session orchestration.
+	// -----------------------------------------------------------------------
+
+	mcpServer.AddTool(
+		mcp.NewTool("assign_session",
+			mcp.WithDescription(`Assign a session to a crew as YOUR worker (or another supervisor's). Identify the worker either by sessionId, or by name+repoId (adopts the most-recently-active non-archived claude session with that name in the repo). The worker reports back with report_to_supervisor and its reports queue in the supervisor's inbox. Both sessions must be non-archived claude sessions. Assigning an already-assigned worker moves it to the new supervisor.`),
+			mcp.WithString("sessionId", mcp.Description("Worker session ID to assign (get from list_sessions). Omit to resolve by name+repoId instead.")),
+			mcp.WithString("name", mcp.Description("Worker session name — provide with repoId as an alternative to sessionId.")),
+			mcp.WithString("repoId", mcp.Description("Repository ID for name resolution (get from list_repos). Required when using name.")),
+			mcp.WithString("supervisorSessionId", mcp.Description("Supervisor session ID. Omit to use THIS session as the supervisor (requires calling from within a quant session).")),
+		),
+		s.handleAssignSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("unassign_session",
+			mcp.WithDescription(`Remove a worker session from its crew. The worker keeps running; it just stops reporting to a supervisor.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Worker session ID to unassign")),
+		),
+		s.handleUnassignSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_crew",
+			mcp.WithDescription(`List a session's crew: its supervisor (or null) and its workers with name, status, queued report count and last report. Reads THIS session's crew by default; pass 'sessionId' to inspect another session's crew.`),
+			mcp.WithString("sessionId", mcp.Description("Session ID to inspect. Omit to inspect THIS session's crew.")),
+		),
+		s.handleListCrew,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("report_to_supervisor",
+			mcp.WithDescription(`Report progress to YOUR supervisor. The report is queued in the supervisor's inbox and injected into its terminal when it is idle. Requires this session to be assigned to a crew (see assign_session). Keep the summary short — at most 3 sentences.`),
+			mcp.WithString("type", mcp.Required(), mcp.Description("Report type: done | progress | question | blocked"), mcp.Enum("done", "progress", "question", "blocked")),
+			mcp.WithString("summary", mcp.Required(), mcp.Description("Short summary of the report (max ~3 sentences)")),
+		),
+		s.handleReportToSupervisor,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("crew_dispatch",
+			mcp.WithDescription(`Dispatch work to a crew worker session supervised by THIS session. The worker is resolved by sessionId, or by name+repoId — adopting the most recently active non-archived claude session with that name in the repo, else creating a new one. It is assigned to your crew, started if needed, and — once its CLI is ready — receives the prompt plus a reporting contract telling it to report back with report_to_supervisor. Requires calling from within a quant session (the caller becomes the supervisor). promptDelivered:false in the result means the worker CLI never became ready within 60s — inspect it with get_session_output.`),
+			mcp.WithString("prompt", mcp.Required(), mcp.Description("The task prompt delivered to the worker (the reporting contract is appended automatically)")),
+			mcp.WithString("sessionId", mcp.Description("Existing session to use as the worker. Omit to resolve by name+repoId.")),
+			mcp.WithString("name", mcp.Description("Worker session name — adopts the most recently active non-archived claude session with this name in the repo, else creates one")),
+			mcp.WithString("repoId", mcp.Description("Repository the worker session belongs to (required with name; get from list_repos)")),
+			mcp.WithBoolean("useWorktree", mcp.Description("Create a newly created worker session in a git worktree. Default: false")),
+			mcp.WithString("model", mcp.Description("Claude model for a newly created worker session")),
+			mcp.WithBoolean("skipPermissions", mcp.Description("Create the worker with --dangerously-skip-permissions. Default: false")),
+			mcp.WithNumber("expectedByMinutes", mcp.Description("Set a watchdog: expect the worker's first report within this many minutes")),
+			mcp.WithString("taskId", mcp.Description("File a newly created worker under this task. Defaults to YOUR task, else a 'crew' task in the repo.")),
+			mcp.WithString("taskTag", mcp.Description("File a newly created worker under the task with this tag in the repo; created if none matches")),
+			mcp.WithString("taskName", mcp.Description("Name for the task when taskTag creates a new one")),
+		),
+		s.handleCrewDispatch,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("crew_set_watchdog",
+			mcp.WithDescription(`Set a watchdog on one of YOUR crew workers: expect a report within the given number of minutes. Any report from the worker clears its watchdogs. Requires calling from within a quant session; the worker must be assigned to your crew.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Worker session ID (must be in your crew)")),
+			mcp.WithNumber("expectedByMinutes", mcp.Required(), mcp.Description("Minutes from now within which a report is expected")),
+		),
+		s.handleCrewSetWatchdog,
 	)
 
 	// -----------------------------------------------------------------------
@@ -2170,12 +2265,16 @@ func (s *QuantMCPServer) handleListSessions(_ context.Context, request mcp.CallT
 	}
 
 	wsFilter := stringArg(request.GetArguments(), "workspaceId")
+	nameFilter := strings.ToLower(stringArg(request.GetArguments(), "name"))
 
 	// Return lightweight summaries — use get_session(id) for full details
 	result := make([]map[string]any, 0, len(sessions))
 	for i := range sessions {
 		sess := &sessions[i]
 		if wsFilter != "" && sess.WorkspaceID != wsFilter {
+			continue
+		}
+		if nameFilter != "" && !strings.Contains(strings.ToLower(sess.Name), nameFilter) {
 			continue
 		}
 		result = append(result, map[string]any{
@@ -2221,6 +2320,11 @@ func (s *QuantMCPServer) handleCreateSession(_ context.Context, request mcp.Call
 	repoID := stringArg(args, "repoId")
 	taskID := stringArg(args, "taskId")
 
+	taskID, err = s.resolveSessionTask(repoID, taskID, stringArg(args, "taskTag"), stringArg(args, "taskName"), name)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
 	opts := entity.SessionOptions{
 		UseWorktree:     boolArg(args, "useWorktree"),
 		SkipPermissions: boolArg(args, "skipPermissions"),
@@ -2236,6 +2340,100 @@ func (s *QuantMCPServer) handleCreateSession(_ context.Context, request mcp.Call
 	}
 
 	return marshalResult(sessionToMap(session))
+}
+
+// resolveSessionTask returns the task id a session should be filed under so
+// repo-backed sessions never land loose. Repoless sessions are exempt (they
+// cannot have a task). An explicit taskId is validated against the repo; a
+// taskTag finds-or-creates a task with that tag; otherwise it is an error.
+func (s *QuantMCPServer) resolveSessionTask(repoID, taskID, taskTag, taskName, fallbackName string) (string, error) {
+	if repoID == "" {
+		return taskID, nil
+	}
+
+	if taskID != "" {
+		task, err := s.taskManager.GetTask(taskID)
+		if err != nil {
+			return "", fmt.Errorf("failed to look up task %s: %w", taskID, err)
+		}
+		if task == nil {
+			return "", fmt.Errorf("task not found: %s", taskID)
+		}
+		if task.RepoID != repoID {
+			return "", fmt.Errorf("task %s does not belong to repo %s", taskID, repoID)
+		}
+		return taskID, nil
+	}
+
+	if taskTag != "" {
+		tag := strings.ToLower(taskTag)
+		tasks, err := s.taskManager.ListTasksByRepo(repoID)
+		if err != nil {
+			return "", fmt.Errorf("failed to list tasks for repo %s: %w", repoID, err)
+		}
+		for i := range tasks {
+			if tasks[i].ArchivedAt == nil && tasks[i].Tag == tag {
+				return tasks[i].ID, nil
+			}
+		}
+		task, err := s.taskManager.CreateTask(repoID, tag, strings.ToLower(firstNonEmpty(taskName, fallbackName)))
+		if err != nil {
+			return "", fmt.Errorf("failed to create task: %w", err)
+		}
+		return task.ID, nil
+	}
+
+	return "", fmt.Errorf("a task is required to create a session in this repo: pass taskId, or taskTag (a new task is created if none matches). Use list_tasks to see existing tasks, or create_task to make one.")
+}
+
+func (s *QuantMCPServer) handleListTasks(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	repoID, err := requiredString(request, "repoId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	tasks, err := s.taskManager.ListTasksByRepo(repoID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result := make([]map[string]any, 0, len(tasks))
+	for i := range tasks {
+		result = append(result, map[string]any{
+			"id":       tasks[i].ID,
+			"tag":      tasks[i].Tag,
+			"name":     tasks[i].Name,
+			"repoId":   tasks[i].RepoID,
+			"archived": tasks[i].ArchivedAt != nil,
+		})
+	}
+
+	return marshalResult(result)
+}
+
+func (s *QuantMCPServer) handleCreateTask(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	repoID, err := requiredString(request, "repoId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	tag, err := requiredString(request, "tag")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	name := stringArg(request.GetArguments(), "name")
+
+	task, err := s.taskManager.CreateTask(repoID, strings.ToLower(tag), strings.ToLower(name))
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"id":     task.ID,
+		"tag":    task.Tag,
+		"name":   task.Name,
+		"repoId": task.RepoID,
+	})
 }
 
 func (s *QuantMCPServer) handleStartSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -2290,7 +2488,7 @@ func (s *QuantMCPServer) handleDeleteSession(_ context.Context, request mcp.Call
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s deleted successfully", id)), nil
 }
 
-func (s *QuantMCPServer) handleSendMessage(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleSendMessage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -2301,6 +2499,16 @@ func (s *QuantMCPServer) handleSendMessage(_ context.Context, request mcp.CallTo
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	// Crew scoping: once the calling session has workers, messaging outside
+	// its crew (itself, its own supervisor, its worker subtree) is blocked
+	// unless explicitly bypassed. Headerless callers are unrestricted.
+	caller := sessionFromCtx(ctx)
+	if caller != "" && !boolArg(request.GetArguments(), "outsideCrew") {
+		if hasWorkers, allowed := s.crewManager.InCrewScope(caller, id); hasWorkers && !allowed {
+			return mcp.NewToolResultError(fmt.Sprintf("session %s is outside your crew (not you, your supervisor, or one of your workers). Use report_to_supervisor for upward reports, or pass outsideCrew:true to bypass crew scoping.", id)), nil
+		}
+	}
+
 	// submit defaults to true: the orchestration use case is to deliver a
 	// prompt to another session, which is useless if it just sits in the input
 	// box. Callers can opt out to only type the text.
@@ -2309,30 +2517,23 @@ func (s *QuantMCPServer) handleSendMessage(_ context.Context, request mcp.CallTo
 		submit, _ = v.(bool)
 	}
 
-	if err := s.sessionManager.SendMessage(id, message); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
 	if submit {
 		// The Claude CLI TUI treats a carriage return arriving in the same
 		// write as the message text as a multi-line newline, not a submit.
-		// Delivering Enter as a separate keystroke after a short delay lets the
-		// TUI process the pasted text first, so the return is read as a submit.
-		time.Sleep(submitKeyDelay)
-		if err := s.sessionManager.SendMessage(id, "\r"); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("message typed but submit (Enter) failed: %s", err.Error())), nil
+		// SendMessageAndSubmit delivers Enter as a separate keystroke after a
+		// short delay, so the return is read as a submit.
+		if err := s.sessionManager.SendMessageAndSubmit(id, message); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("Message sent and submitted to session %s", id)), nil
 	}
 
+	if err := s.sessionManager.SendMessage(id, message); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
 	return mcp.NewToolResultText(fmt.Sprintf("Message typed (not submitted) to session %s", id)), nil
 }
-
-// submitKeyDelay is the pause between writing a message to a session's PTY and
-// writing the Enter keystroke that submits it. It gives the Claude CLI TUI time
-// to process the pasted text before the carriage return arrives as a discrete
-// submit rather than a multi-line newline.
-const submitKeyDelay = 120 * time.Millisecond
 
 func (s *QuantMCPServer) handleGetSessionOutput(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
@@ -2431,6 +2632,279 @@ func (s *QuantMCPServer) handleListAdoptableSessions(_ context.Context, request 
 	}
 
 	return marshalResult(result)
+}
+
+// ---------------------------------------------------------------------------
+// Crew handlers
+// ---------------------------------------------------------------------------
+
+func (s *QuantMCPServer) handleAssignSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+	sessionID := stringArg(args, "sessionId")
+	if sessionID == "" {
+		name := stringArg(args, "name")
+		repoID := stringArg(args, "repoId")
+		if name == "" {
+			return mcp.NewToolResultError("provide sessionId, or name+repoId, to identify the worker session"), nil
+		}
+		if repoID == "" {
+			return mcp.NewToolResultError("repoId is required when identifying the worker by name"), nil
+		}
+		resolved, err := s.resolveSessionByName(name, repoID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		sessionID = resolved
+	}
+
+	supervisorID := stringArg(args, "supervisorSessionId")
+	if supervisorID == "" {
+		supervisorID = sessionFromCtx(ctx)
+	}
+	if supervisorID == "" {
+		return mcp.NewToolResultError("no supervisor — pass supervisorSessionId or call from within a quant session (X-Quant-Session header missing)"), nil
+	}
+
+	if err := s.crewManager.AssignWorker(sessionID, supervisorID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"assigned":            true,
+		"workerSessionId":     sessionID,
+		"supervisorSessionId": supervisorID,
+	})
+}
+
+// resolveSessionByName finds the most-recently-active non-archived claude
+// session with the given name in the repo, mirroring crew_dispatch's adoption.
+func (s *QuantMCPServer) resolveSessionByName(name, repoID string) (string, error) {
+	sessions, err := s.sessionManager.ListSessions()
+	if err != nil {
+		return "", err
+	}
+	var match *entity.Session
+	for i := range sessions {
+		c := &sessions[i]
+		if c.Name != name || c.RepoID != repoID || c.SessionType != "claude" || c.ArchivedAt != nil {
+			continue
+		}
+		if match == nil || c.LastActiveAt.After(match.LastActiveAt) {
+			match = c
+		}
+	}
+	if match == nil {
+		return "", fmt.Errorf("no non-archived claude session named %q in repo %s", name, repoID)
+	}
+	return match.ID, nil
+}
+
+func (s *QuantMCPServer) handleUnassignSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.crewManager.UnassignWorker(sessionID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{"unassigned": true, "workerSessionId": sessionID})
+}
+
+func (s *QuantMCPServer) handleListCrew(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID := stringArg(request.GetArguments(), "sessionId")
+	if sessionID == "" {
+		sessionID = sessionFromCtx(ctx)
+	}
+	if sessionID == "" {
+		return mcp.NewToolResultError("no session in scope — pass sessionId or call from within a quant session"), nil
+	}
+
+	supervisorAssignment, err := s.crewManager.GetSupervisor(sessionID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	var supervisor any
+	if supervisorAssignment != nil {
+		supervisor = supervisorAssignment.SupervisorSessionID
+	}
+
+	assignments, err := s.crewManager.GetCrew(sessionID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Queued report counts and last report per worker, from this session's inbox.
+	queuedByWorker := make(map[string]int)
+	if inbox, err := s.crewManager.GetInbox(sessionID, false); err == nil {
+		for _, envelope := range inbox {
+			queuedByWorker[envelope.FromSessionID]++
+		}
+	}
+	latestByWorker := make(map[string]entity.CrewEnvelope)
+	if all, err := s.crewManager.GetInbox(sessionID, true); err == nil {
+		for _, envelope := range all {
+			if latest, ok := latestByWorker[envelope.FromSessionID]; !ok || envelope.CreatedAt.After(latest.CreatedAt) {
+				latestByWorker[envelope.FromSessionID] = envelope
+			}
+		}
+	}
+
+	workers := make([]map[string]any, 0, len(assignments))
+	for _, assignment := range assignments {
+		worker := map[string]any{
+			"sessionId":     assignment.WorkerSessionID,
+			"name":          "",
+			"status":        "",
+			"queuedReports": queuedByWorker[assignment.WorkerSessionID],
+		}
+		if session, err := s.sessionManager.GetSession(assignment.WorkerSessionID); err == nil && session != nil {
+			worker["name"] = session.Name
+			worker["status"] = session.Status
+		}
+		if latest, ok := latestByWorker[assignment.WorkerSessionID]; ok {
+			worker["lastReportType"] = latest.Type
+			worker["lastReportAt"] = latest.CreatedAt.Format(time.RFC3339)
+		}
+		workers = append(workers, worker)
+	}
+
+	return marshalResult(map[string]any{
+		"sessionId":  sessionID,
+		"supervisor": supervisor,
+		"workers":    workers,
+	})
+}
+
+func (s *QuantMCPServer) handleReportToSupervisor(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	reportType, err := requiredString(request, "type")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	summary, err := requiredString(request, "summary")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	caller := sessionFromCtx(ctx)
+	if caller == "" {
+		return mcp.NewToolResultError("report_to_supervisor requires the calling session context (X-Quant-Session header) — call it from within a quant session"), nil
+	}
+
+	if err := s.crewManager.Report(caller, reportType, summary); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"queued": true,
+		"type":   reportType,
+	})
+}
+
+func (s *QuantMCPServer) handleCrewDispatch(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	prompt, err := requiredString(request, "prompt")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	caller := sessionFromCtx(ctx)
+	if caller == "" {
+		return mcp.NewToolResultError("crew_dispatch requires the calling session context (X-Quant-Session header) — the caller becomes the supervisor"), nil
+	}
+
+	args := request.GetArguments()
+	opts := appAdapter.CrewDispatchOptions{
+		SessionID:         stringArg(args, "sessionId"),
+		Name:              stringArg(args, "name"),
+		RepoID:            stringArg(args, "repoId"),
+		UseWorktree:       boolArg(args, "useWorktree"),
+		Model:             stringArg(args, "model"),
+		SkipPermissions:   boolArg(args, "skipPermissions"),
+		ExpectedByMinutes: intArg(args, "expectedByMinutes"),
+	}
+
+	// When the request may hit the create path (no explicit sessionId), file a
+	// newly created worker under a task so it never lands loose. Adopted workers
+	// (by sessionId or by existing name match) keep their own task — opts.TaskID
+	// is only consumed by resolveDispatchWorker's create branch.
+	if opts.SessionID == "" {
+		taskID, err := s.resolveDispatchTask(caller, opts, args)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		opts.TaskID = taskID
+	}
+
+	result, err := s.crewManager.Dispatch(caller, prompt, opts)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"workerSessionId": result.WorkerSessionID,
+		"workerName":      result.WorkerName,
+		"created":         result.Created,
+		"started":         result.Started,
+		"promptDelivered": result.PromptDelivered,
+		"watchdogSet":     result.WatchdogSet,
+		"adoptedBy":       result.AdoptedBy,
+	})
+}
+
+// resolveDispatchTask picks the task a newly created crew worker is filed under:
+// an explicit taskId/taskTag on the dispatch wins; else the supervisor's own
+// task; else a find-or-create "crew" task in the repo. A repoless dispatch has
+// no task.
+func (s *QuantMCPServer) resolveDispatchTask(supervisorSessionID string, opts appAdapter.CrewDispatchOptions, args map[string]any) (string, error) {
+	if opts.RepoID == "" {
+		return "", nil
+	}
+	taskID := stringArg(args, "taskId")
+	taskTag := stringArg(args, "taskTag")
+	if taskID != "" || taskTag != "" {
+		return s.resolveSessionTask(opts.RepoID, taskID, taskTag, stringArg(args, "taskName"), opts.Name)
+	}
+	if supervisor, err := s.sessionManager.GetSession(supervisorSessionID); err == nil && supervisor != nil && supervisor.TaskID != "" {
+		return supervisor.TaskID, nil
+	}
+	return s.resolveSessionTask(opts.RepoID, "", "crew", "crew", "crew")
+}
+
+func (s *QuantMCPServer) handleCrewSetWatchdog(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	caller := sessionFromCtx(ctx)
+	if caller == "" {
+		return mcp.NewToolResultError("crew_set_watchdog requires the calling session context (X-Quant-Session header) — call it from within a quant session"), nil
+	}
+
+	minutes := intArg(request.GetArguments(), "expectedByMinutes")
+	if minutes <= 0 {
+		return mcp.NewToolResultError("expectedByMinutes must be a positive number of minutes"), nil
+	}
+
+	assignment, err := s.crewManager.GetSupervisor(sessionID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if assignment == nil || assignment.SupervisorSessionID != caller {
+		return mcp.NewToolResultError(fmt.Sprintf("session %s is not in your crew — assign it first with assign_session or crew_dispatch", sessionID)), nil
+	}
+
+	expectedBy := time.Now().Add(time.Duration(minutes) * time.Minute)
+	if err := s.crewManager.SetWatchdog(sessionID, expectedBy); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"watchdogSet":     true,
+		"workerSessionId": sessionID,
+		"expectedBy":      expectedBy.Format(time.RFC3339),
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -3131,6 +3605,16 @@ func stringArg(args map[string]any, key string) string {
 	}
 	s, _ := v.(string)
 	return s
+}
+
+// firstNonEmpty returns the first non-empty string from its arguments, or "".
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func boolArg(args map[string]any, key string) bool {

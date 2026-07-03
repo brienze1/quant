@@ -11,6 +11,7 @@ import type { IconName } from "./Icon";
 import { IconButton } from "./IconButton";
 import { Segmented } from "./Segmented";
 import { Pill } from "./Pill";
+import { CountBadge } from "./CountBadge";
 import { useMenu } from "./MenuHost";
 import type { HostMenuItem } from "./MenuHost";
 import * as api from "../api";
@@ -71,6 +72,14 @@ interface SidebarProps {
   onSelectBoard?: (sessionId: string, board: string) => void;
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
+  /* ---- crew badges (all keyed by session id, fed from App's single
+     assignments + QueuedCounts state) ---- */
+  supervisorByWorker?: Record<string, { id: string; name: string }>;
+  workerCountBySupervisor?: Record<string, number>;
+  queuedBySupervisor?: Record<string, number>;
+  /** dropping a crew worker row (dataTransfer "crewsource") on the sidebar
+   *  root unassigns it */
+  onUnassignWorker?: (workerSessionId: string) => void;
   onError?: (msg: string) => void;
   onOpenSettings?: () => void;
   onOpenJobs?: () => void;
@@ -311,6 +320,10 @@ export function Sidebar({
   onSelectBoard,
   onMoveBoard,
   onRenameBoard,
+  supervisorByWorker,
+  workerCountBySupervisor,
+  queuedBySupervisor,
+  onUnassignWorker,
   onError,
   onOpenSettings,
   onOpenJobs,
@@ -386,6 +399,27 @@ export function Sidebar({
       document.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
+
+  /* ---------- crew: sidebar-root drop = unassign ---------- */
+  // A crew worker row dragged out of a crew pane carries the "crewsource"
+  // type. Dropping it on the sidebar's blank space unassigns it; drops on a
+  // task row still move the session (that inner handler runs first and marks
+  // the event defaultPrevented, so we skip the unassign here).
+  function handleRootDragOver(e: React.DragEvent) {
+    if (!onUnassignWorker) return;
+    if (!e.dataTransfer.types.includes("crewsource")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  function handleRootDrop(e: React.DragEvent) {
+    if (!onUnassignWorker) return;
+    if (e.defaultPrevented) return; // an inner drop target already handled it
+    if (!e.dataTransfer.types.includes("crewsource")) return;
+    e.preventDefault();
+    const sessionId = e.dataTransfer.getData("sessionId");
+    if (sessionId) onUnassignWorker(sessionId);
+  }
 
   /* ---------- context menus (Icon-based, design spec) ---------- */
   function openRepoContextMenu(e: React.MouseEvent, repo: Repo) {
@@ -597,6 +631,8 @@ export function Sidebar({
       <aside
         ref={sidebarRef}
         className="panel flex flex-col h-full shrink-0"
+        onDragOver={handleRootDragOver}
+        onDrop={handleRootDrop}
         style={{
           width: sidebarWidth,
           minWidth: SIDEBAR_MIN_WIDTH,
@@ -677,6 +713,9 @@ export function Sidebar({
               onSelectBoard={onSelectBoard}
               onMoveBoard={onMoveBoard}
               onRenameBoard={onRenameBoard}
+              supervisorByWorker={supervisorByWorker}
+              workerCountBySupervisor={workerCountBySupervisor}
+              queuedBySupervisor={queuedBySupervisor}
               onError={onError}
               filterSessions={filterSessions}
               showArchived={showArchived}
@@ -916,6 +955,9 @@ function RepoNode({
   onSelectBoard,
   onMoveBoard,
   onRenameBoard,
+  supervisorByWorker,
+  workerCountBySupervisor,
+  queuedBySupervisor,
   onError,
   filterSessions,
   showArchived,
@@ -946,6 +988,9 @@ function RepoNode({
   onSelectBoard?: (sessionId: string, board: string) => void;
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
+  supervisorByWorker?: Record<string, { id: string; name: string }>;
+  workerCountBySupervisor?: Record<string, number>;
+  queuedBySupervisor?: Record<string, number>;
   onError?: (msg: string) => void;
   filterSessions: (sessions: Session[]) => Session[];
   showArchived: boolean;
@@ -1011,6 +1056,9 @@ function RepoNode({
               onSelectBoard={onSelectBoard}
               onMoveBoard={onMoveBoard}
               onRenameBoard={onRenameBoard}
+              supervisorByWorker={supervisorByWorker}
+              workerCountBySupervisor={workerCountBySupervisor}
+              queuedBySupervisor={queuedBySupervisor}
               onError={onError}
               repoId={repo.id}
               showArchived={showArchived}
@@ -1049,6 +1097,9 @@ function TaskNode({
   onSelectBoard,
   onMoveBoard,
   onRenameBoard,
+  supervisorByWorker,
+  workerCountBySupervisor,
+  queuedBySupervisor,
   onError,
   repoId,
   showArchived,
@@ -1073,6 +1124,9 @@ function TaskNode({
   onSelectBoard?: (sessionId: string, board: string) => void;
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
+  supervisorByWorker?: Record<string, { id: string; name: string }>;
+  workerCountBySupervisor?: Record<string, number>;
+  queuedBySupervisor?: Record<string, number>;
   onError?: (msg: string) => void;
   repoId: string;
   showArchived: boolean;
@@ -1158,6 +1212,9 @@ function TaskNode({
                 onSelectBoard={onSelectBoard}
                 onMoveBoard={onMoveBoard}
                 onRenameBoard={onRenameBoard}
+                supervisor={supervisorByWorker?.[session.id]}
+                workerCount={workerCountBySupervisor?.[session.id] ?? 0}
+                queuedCount={queuedBySupervisor?.[session.id] ?? 0}
                 depth={2}
               />
             ))}
@@ -1189,6 +1246,9 @@ function SessionNode({
   onSelectBoard,
   onMoveBoard,
   onRenameBoard,
+  supervisor,
+  workerCount,
+  queuedCount,
   depth,
 }: {
   session: Session;
@@ -1207,6 +1267,12 @@ function SessionNode({
   onSelectBoard?: (sessionId: string, board: string) => void;
   onMoveBoard?: (board: string, fromSessionId: string, toSessionId: string) => void;
   onRenameBoard?: (sessionId: string, oldName: string, newName: string) => void;
+  /** this session's supervisor (set when it is a crew worker) */
+  supervisor?: { id: string; name: string };
+  /** workers under this session (set when it is a crew supervisor) */
+  workerCount?: number;
+  /** queued (undelivered) crew reports addressed to this session */
+  queuedCount?: number;
   depth: number;
 }) {
   const isActive = activeSessionId === session.id;
@@ -1320,6 +1386,13 @@ function SessionNode({
         >
           {session.name}
         </span>
+        {(workerCount ?? 0) > 0 && (
+          <Pill tone="accent" soft>
+            crew {workerCount}
+          </Pill>
+        )}
+        {(queuedCount ?? 0) > 0 && <CountBadge n={queuedCount} />}
+        {supervisor && <Pill soft>↳ {supervisor.name}</Pill>}
         {hasWorktree && <Pill tone="muted">wt</Pill>}
         {session.sessionType === "terminal" ? (
           <Pill tone="accent" soft style={{ color: "var(--purple)" }}>

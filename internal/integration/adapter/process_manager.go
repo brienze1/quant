@@ -12,5 +12,6 @@ type ProcessManager interface {
 	usecase.SpawnProcess
 	usecase.UpdateCliBinaryConfig
 	usecase.UpdateBasePersona
+	usecase.SessionActivity
 	SetContext(ctx context.Context)
 }

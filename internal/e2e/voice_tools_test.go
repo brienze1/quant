@@ -76,6 +76,8 @@ func TestVoiceToolsRoundTrip(t *testing.T) {
 		injector.JobGroupManager(),
 		injector.MindmapManager(),
 		injector.FileManager(),
+		injector.CrewManager(),
+		injector.TaskManager(),
 		bridge,
 	)
 	if err := server.Start(); err != nil {

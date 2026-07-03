@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/creack/pty"
 
+	"quant/internal/domain/entity"
 	"quant/internal/domain/persona"
 	"quant/internal/infra/paths"
 	"quant/internal/integration/adapter"
@@ -81,8 +83,9 @@ func withMCPToolTimeout(env []string) []string {
 
 // claudeProcess holds the running process and its PTY master.
 type claudeProcess struct {
-	cmd *exec.Cmd
-	ptm *os.File // PTY master
+	cmd      *exec.Cmd
+	ptm      *os.File // PTY master
+	activity *activityTracker
 }
 
 // processManager implements the adapter.ProcessManager interface using PTY.
@@ -336,7 +339,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 	// Set initial PTY size.
 	_ = pty.Setsize(ptm, &pty.Winsize{Rows: rows, Cols: cols})
 
-	cp := &claudeProcess{cmd: cmd, ptm: ptm}
+	cp := &claudeProcess{cmd: cmd, ptm: ptm, activity: &activityTracker{}}
 
 	m.mu.Lock()
 	m.processes[sessionID] = cp
@@ -389,6 +392,8 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 
 				if len(data) > 0 {
 					allOutput = append(allOutput, data...)
+
+					cp.activity.recordOutput(data, time.Now())
 
 					// Write to disk for persistence.
 					if outputFile != nil {
@@ -471,7 +476,9 @@ func (m *processManager) Stop(sessionID string) error {
 	return nil
 }
 
-// SendMessage writes raw data to the PTY (for terminal input).
+// SendMessage writes raw data to the PTY (for terminal input). It also arms
+// the user-typing guard (lastUserInputAt) — note that MCP send_message flows
+// through here too, so agent-driven sends arm the guard as well.
 func (m *processManager) SendMessage(sessionID string, message string) error {
 	m.mu.RLock()
 	cp, exists := m.processes[sessionID]
@@ -486,7 +493,43 @@ func (m *processManager) SendMessage(sessionID string, message string) error {
 		return fmt.Errorf("failed to write to PTY: %w", err)
 	}
 
+	cp.activity.recordUserInput(time.Now())
+
 	return nil
+}
+
+// WriteInjected writes raw data to the PTY exactly like SendMessage but does
+// NOT touch lastUserInputAt, so drainer injections never arm the user-typing
+// guard against themselves.
+func (m *processManager) WriteInjected(sessionID string, data string) error {
+	m.mu.RLock()
+	cp, exists := m.processes[sessionID]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("no process running for session: %s", sessionID)
+	}
+
+	_, err := cp.ptm.Write([]byte(data))
+	if err != nil {
+		return fmt.Errorf("failed to write to PTY: %w", err)
+	}
+
+	return nil
+}
+
+// Activity returns the activity snapshot for a session's live process. The
+// boolean is false when no process is running for the session.
+func (m *processManager) Activity(sessionID string) (entity.ProcessActivity, bool) {
+	m.mu.RLock()
+	cp, exists := m.processes[sessionID]
+	m.mu.RUnlock()
+
+	if !exists {
+		return entity.ProcessActivity{}, false
+	}
+
+	return cp.activity.snapshot(time.Now()), true
 }
 
 // Resize resizes the PTY for the given session.
