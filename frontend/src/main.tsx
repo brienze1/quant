@@ -18,6 +18,25 @@ import { MenuHost } from './components/MenuHost'
   document.head.appendChild(s)
 })()
 
+// iOS Safari doesn't shrink the layout viewport when the keyboard opens (unlike
+// Android Chrome with interactive-widget=resizes-content), so 100vh/100dvh stay
+// full-screen behind the keyboard and it just covers the bottom of the page.
+// Track the gap between the layout viewport and the visualViewport (i.e. the
+// keyboard's height) and expose it as a CSS var used as bottom padding, so the
+// page keeps its real 100% height (no drift when the keyboard is closed) and
+// only insets its content while the keyboard is open.
+;(function () {
+  const vv = window.visualViewport
+  if (!vv) return
+  const apply = () => {
+    const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+    document.documentElement.style.setProperty('--keyboard-inset', `${inset}px`)
+  }
+  vv.addEventListener('resize', apply)
+  vv.addEventListener('scroll', apply)
+  apply()
+})()
+
 const container = document.getElementById('root')
 
 const root = createRoot(container!)

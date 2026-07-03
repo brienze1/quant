@@ -546,6 +546,7 @@ export function Sidebar({
       <div className="flex h-full">
         <aside
           className="panel flex flex-col h-full shrink-0"
+          data-sidebar-collapsed="true"
           style={{ width: SIDEBAR_COLLAPSED_WIDTH }}
         >
           {/* header: logo + expand toggle */}

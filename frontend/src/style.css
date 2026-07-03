@@ -116,6 +116,7 @@
     padding: 0;
     height: 100%;
     overflow: hidden;
+    overscroll-behavior: none;
     /* Fallback chain: new --bg, then legacy --q-bg, then a hard dark default,
        so nothing ever renders transparent. */
     background: var(--bg, var(--q-bg, #0b0c0e));
@@ -128,18 +129,19 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* Touch/small screens (e.g. accessing quant remotely from a phone): the
-     desktop layout is taller/wider than the viewport, so release the fixed
-     viewport lock and allow scrolling. Scoped to coarse pointers so the
-     desktop webview is unaffected. Stopgap — the dashboard is not yet fully
-     responsive. */
-  @media (pointer: coarse) {
-    html, body, #root {
-      overflow: auto;
-      -webkit-overflow-scrolling: touch;
-      height: auto;
-      min-height: 100%;
-    }
+  html {
+    position: fixed;
+    inset: 0;
+  }
+
+  /* --keyboard-inset (set from visualViewport in main.tsx) is the on-screen
+     keyboard's height on mobile, 0 otherwise. Padding #root by it (rather
+     than resizing html/body) keeps the page's real height stable — no drift
+     when the keyboard is closed — and pushes content up above the keyboard
+     when it's open. */
+  #root {
+    padding-bottom: var(--keyboard-inset, 0px);
+    box-sizing: border-box;
   }
 }
 
@@ -168,6 +170,61 @@ body.rd-dragging * { cursor: grabbing !important; }
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--fg-4); background-clip: padding-box; }
 *::-webkit-scrollbar-corner { background: transparent; }
+
+/* Sidebar has a fixed width and never shrinks (shrink-0), so on a phone-width
+   screen it and the main panel can't both fit side by side — main gets
+   squeezed to a sliver and its content (terminal, tabs) is clipped off the
+   right edge, invisible since the page no longer scrolls. Below 700px, make
+   the sidebar a full-screen overlay (toggled by the same sidebar button)
+   instead of a flex sibling, so the main panel always gets the full width. */
+@media (max-width: 700px) {
+  /* The collapsed icon rail (SIDEBAR_COLLAPSED_WIDTH, ~56px) is already
+     narrow enough to coexist with the main panel — only the expanded
+     session-list variant needs the full-screen overlay treatment below. */
+  .app-sidebar-slot:has(aside[data-sidebar-collapsed="true"]) {
+    position: relative;
+  }
+  .app-sidebar-slot:not(:has(aside[data-sidebar-collapsed="true"])) {
+    position: fixed;
+    inset: 44px 0 0 0; /* below the 44px title bar */
+    z-index: 25;
+    background: var(--bg);
+  }
+  .app-sidebar-slot:not(:has(aside[data-sidebar-collapsed="true"])) > div {
+    width: 100% !important;
+    height: 100% !important;
+  }
+  .app-sidebar-slot:not(:has(aside[data-sidebar-collapsed="true"])) aside {
+    width: 100% !important;
+    max-width: none !important;
+  }
+  /* resize handle is meaningless on a full-width overlay */
+  .app-sidebar-slot:not(:has(aside[data-sidebar-collapsed="true"])) > div > div:last-child {
+    display: none !important;
+  }
+}
+
+/* title bar command-palette pill: centered floating pill on desktop, collapses
+   to a static icon button on narrow/mobile widths so it never overlaps the
+   Sessions/Jobs/Agents tabs to its left (see App.tsx renderTitleBar). */
+.titlebar-cmdk {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  width: 360px;
+  max-width: 32vw;
+}
+@media (max-width: 700px) {
+  .titlebar-cmdk {
+    position: static;
+    transform: none;
+    width: auto;
+    max-width: none;
+  }
+  .titlebar-cmdk-label, .titlebar-cmdk-kbd { display: none; }
+}
 
 /* utility */
 .mono { font-family: var(--mono); }
