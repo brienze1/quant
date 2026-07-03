@@ -1,11 +1,14 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"quant/internal/application/adapter"
+	"quant/internal/application/usecase"
 	"quant/internal/domain/entity"
 )
 
@@ -753,6 +756,298 @@ func TestCrewDispatch_ReadyTimeoutIsNotAnError(t *testing.T) {
 	}
 	if len(sm.sent) != 0 || len(store.watchdogs) != 0 {
 		t.Fatalf("prompt/watchdog leaked despite timeout")
+	}
+}
+
+// fakeMindmapManager is an in-memory implementation of adapter.MindmapManager.
+// When err is set every operation fails with it.
+type fakeMindmapManager struct {
+	nodes map[string]map[string]entity.MindmapNode
+	err   error
+}
+
+func newFakeMindmapManager() *fakeMindmapManager {
+	return &fakeMindmapManager{nodes: make(map[string]map[string]entity.MindmapNode)}
+}
+
+func (f *fakeMindmapManager) key(scopeType, scopeID, board string) string {
+	return scopeType + "|" + scopeID + "|" + board
+}
+
+// board returns the "crew (auto)" board nodes for a supervisor session.
+func (f *fakeMindmapManager) board(supervisorID string) map[string]entity.MindmapNode {
+	return f.nodes[f.key("session", supervisorID, "crew (auto)")]
+}
+
+func (f *fakeMindmapManager) SetNode(scopeType, scopeID, board string, node entity.MindmapNode) (entity.MindmapNode, error) {
+	if f.err != nil {
+		return entity.MindmapNode{}, f.err
+	}
+	if node.Status == "" {
+		node.Status = "planned"
+	}
+	k := f.key(scopeType, scopeID, board)
+	if f.nodes[k] == nil {
+		f.nodes[k] = make(map[string]entity.MindmapNode)
+	}
+	f.nodes[k][node.ID] = node
+	return node, nil
+}
+
+func (f *fakeMindmapManager) RemoveNode(scopeType, scopeID, board, id string, _ bool) error {
+	if f.err != nil {
+		return f.err
+	}
+	delete(f.nodes[f.key(scopeType, scopeID, board)], id)
+	return nil
+}
+
+func (f *fakeMindmapManager) ClearMindmap(scopeType, scopeID, board string) error {
+	if f.err != nil {
+		return f.err
+	}
+	delete(f.nodes, f.key(scopeType, scopeID, board))
+	return nil
+}
+
+func (f *fakeMindmapManager) GetMindmap(scopeType, scopeID, board string) ([]entity.MindmapNode, error) {
+	var out []entity.MindmapNode
+	for _, n := range f.nodes[f.key(scopeType, scopeID, board)] {
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+func (f *fakeMindmapManager) ListBoards(string, string) ([]string, error) { return nil, nil }
+func (f *fakeMindmapManager) MoveBoard(string, string, string, string) (string, error) {
+	return "", nil
+}
+func (f *fakeMindmapManager) RenameBoard(string, string, string, string) (string, error) {
+	return "", nil
+}
+
+func newBoardTestCrewManager(activity *fakeSessionActivity, sessions ...entity.Session) (*crewManagerService, *fakeCrewStore, *fakeMindmapManager, *fakeEventEmitter) {
+	store := newFakeCrewStore()
+	finder := &fakeSessionFinder{sessions: make(map[string]entity.Session)}
+	for _, s := range sessions {
+		finder.sessions[s.ID] = s
+	}
+	board := newFakeMindmapManager()
+	emitter := &fakeEventEmitter{}
+	var act usecase.SessionActivity
+	if activity != nil {
+		act = activity
+	}
+	manager := NewCrewManagerService(store, store, store, finder, nil, board, act, emitter).(*crewManagerService)
+	return manager, store, board, emitter
+}
+
+// deadSupervisorActivity keeps the supervisor process dead so queued envelopes
+// stay queued and watchdog assertions are not disturbed by deliveries.
+func deadSupervisorActivity() *fakeSessionActivity {
+	return &fakeSessionActivity{
+		activities: make(map[string]entity.ProcessActivity),
+		live:       make(map[string]bool),
+	}
+}
+
+func TestCrewWatchdogFiresOneNudge(t *testing.T) {
+	manager, store, board, emitter := newBoardTestCrewManager(deadSupervisorActivity(), claudeSession("w"), claudeSession("s"))
+	if err := manager.AssignWorker("w", "s"); err != nil {
+		t.Fatalf("AssignWorker: %v", err)
+	}
+
+	now := time.Now()
+	store.watchdogs = append(store.watchdogs, entity.CrewWatchdog{
+		ID:                  "wd1",
+		WorkerSessionID:     "w",
+		SupervisorSessionID: "s",
+		ExpectedBy:          now.Add(-time.Minute),
+		CreatedAt:           now.Add(-5 * time.Minute),
+	})
+
+	manager.drainTick(now)
+
+	if len(store.envelopes) != 1 {
+		t.Fatalf("want exactly one nudge envelope, got %d", len(store.envelopes))
+	}
+	nudge := store.envelopes[0]
+	if nudge.Type != "nudge" || nudge.FromSessionID != "w" || nudge.ToSessionID != "s" || nudge.Status != "queued" {
+		t.Fatalf("unexpected nudge envelope %+v", nudge)
+	}
+	if want := "No report from w within 4m — check get_session_output or nudge them."; nudge.Summary != want {
+		t.Fatalf("nudge summary = %q, want %q", nudge.Summary, want)
+	}
+	if !store.watchdogs[0].Fired {
+		t.Fatalf("watchdog not marked fired")
+	}
+	if emitter.events[len(emitter.events)-1] != "crew:updated" {
+		t.Fatalf("want crew:updated on nudge enqueue, got %v", emitter.events)
+	}
+
+	// The nudge mirrors onto the board as in_progress.
+	if node := board.board("s")["w"]; node.Status != "in_progress" {
+		t.Fatalf("want worker node in_progress after nudge, got %+v", node)
+	}
+
+	// No refire on the next tick.
+	manager.drainTick(now.Add(time.Second))
+	if len(store.envelopes) != 1 {
+		t.Fatalf("watchdog refired: %d envelopes", len(store.envelopes))
+	}
+}
+
+func TestCrewWatchdogClearedByReportBeforeFire(t *testing.T) {
+	manager, store, _, _ := newBoardTestCrewManager(deadSupervisorActivity(), claudeSession("w"), claudeSession("s"))
+	if err := manager.AssignWorker("w", "s"); err != nil {
+		t.Fatalf("AssignWorker: %v", err)
+	}
+
+	now := time.Now()
+	store.watchdogs = append(store.watchdogs, entity.CrewWatchdog{
+		ID:                  "wd1",
+		WorkerSessionID:     "w",
+		SupervisorSessionID: "s",
+		ExpectedBy:          now.Add(-time.Minute),
+		CreatedAt:           now.Add(-5 * time.Minute),
+	})
+
+	if err := manager.Report("w", "done", "finished"); err != nil {
+		t.Fatalf("Report: %v", err)
+	}
+	manager.drainTick(now)
+
+	if len(store.envelopes) != 1 || store.envelopes[0].Type != "done" {
+		t.Fatalf("want only the report envelope, got %+v", store.envelopes)
+	}
+	if len(store.watchdogs) != 0 {
+		t.Fatalf("want watchdogs cleared by the report, got %d", len(store.watchdogs))
+	}
+}
+
+func TestCrewWatchdogSupervisorGone(t *testing.T) {
+	manager, store, _, _ := newBoardTestCrewManager(deadSupervisorActivity(), claudeSession("w"))
+
+	now := time.Now()
+	store.watchdogs = append(store.watchdogs, entity.CrewWatchdog{
+		ID:                  "wd1",
+		WorkerSessionID:     "w",
+		SupervisorSessionID: "gone",
+		ExpectedBy:          now.Add(-time.Minute),
+		CreatedAt:           now.Add(-5 * time.Minute),
+	})
+
+	manager.drainTick(now)
+
+	if !store.watchdogs[0].Fired {
+		t.Fatalf("watchdog not marked fired for gone supervisor")
+	}
+	if len(store.envelopes) != 0 {
+		t.Fatalf("want no envelope for gone supervisor, got %+v", store.envelopes)
+	}
+}
+
+func TestCrewBoardMirror(t *testing.T) {
+	manager, _, board, _ := newBoardTestCrewManager(nil, claudeSession("w1"), claudeSession("w2"), claudeSession("s"))
+
+	// Assign builds root + planned worker node.
+	if err := manager.AssignWorker("w1", "s"); err != nil {
+		t.Fatalf("AssignWorker(w1): %v", err)
+	}
+	nodes := board.board("s")
+	root, ok := nodes["crew"]
+	if !ok || root.Label != "crew" || root.ParentID != "" {
+		t.Fatalf("want root node crew, got %+v", nodes)
+	}
+	worker := nodes["w1"]
+	if worker.ParentID != "crew" || worker.Label != "w1" || worker.Status != "planned" || worker.Note != "" {
+		t.Fatalf("unexpected worker node %+v", worker)
+	}
+
+	if err := manager.AssignWorker("w2", "s"); err != nil {
+		t.Fatalf("AssignWorker(w2): %v", err)
+	}
+	if len(board.board("s")) != 3 {
+		t.Fatalf("want root + 2 workers, got %+v", board.board("s"))
+	}
+
+	// Report flips status and rune-safe truncates the note to 120 chars.
+	long := strings.Repeat("é", 200)
+	if err := manager.Report("w1", "blocked", long); err != nil {
+		t.Fatalf("Report(blocked): %v", err)
+	}
+	worker = board.board("s")["w1"]
+	if worker.Status != "blocked" {
+		t.Fatalf("want blocked status, got %q", worker.Status)
+	}
+	if got := utf8.RuneCountInString(worker.Note); got != 120 {
+		t.Fatalf("want 120-rune note, got %d runes", got)
+	}
+	if !strings.HasPrefix(long, worker.Note) {
+		t.Fatalf("truncation split a rune: %q", worker.Note)
+	}
+
+	if err := manager.Report("w2", "progress", "halfway"); err != nil {
+		t.Fatalf("Report(progress): %v", err)
+	}
+	if node := board.board("s")["w2"]; node.Status != "in_progress" || node.Note != "halfway" {
+		t.Fatalf("want in_progress + note, got %+v", node)
+	}
+	if err := manager.Report("w2", "done", "shipped"); err != nil {
+		t.Fatalf("Report(done): %v", err)
+	}
+	if node := board.board("s")["w2"]; node.Status != "done" || node.Note != "shipped" {
+		t.Fatalf("want done + latest note, got %+v", node)
+	}
+
+	// Unassign rebuilds without the worker.
+	if err := manager.UnassignWorker("w1"); err != nil {
+		t.Fatalf("UnassignWorker(w1): %v", err)
+	}
+	nodes = board.board("s")
+	if _, gone := nodes["w1"]; gone || len(nodes) != 2 {
+		t.Fatalf("want root + w2 after unassign, got %+v", nodes)
+	}
+
+	// Last worker unassigned clears the board.
+	if err := manager.UnassignWorker("w2"); err != nil {
+		t.Fatalf("UnassignWorker(w2): %v", err)
+	}
+	if len(board.board("s")) != 0 {
+		t.Fatalf("want cleared board after last unassign, got %+v", board.board("s"))
+	}
+}
+
+func TestCrewBoardMirror_MoveRebuildsBothSupervisors(t *testing.T) {
+	manager, _, board, _ := newBoardTestCrewManager(nil, claudeSession("w"), claudeSession("s1"), claudeSession("s2"))
+
+	if err := manager.AssignWorker("w", "s1"); err != nil {
+		t.Fatalf("AssignWorker(w, s1): %v", err)
+	}
+	if err := manager.AssignWorker("w", "s2"); err != nil {
+		t.Fatalf("AssignWorker(w, s2) move: %v", err)
+	}
+
+	if len(board.board("s1")) != 0 {
+		t.Fatalf("want old supervisor board cleared on move, got %+v", board.board("s1"))
+	}
+	if _, ok := board.board("s2")["w"]; !ok {
+		t.Fatalf("want worker on new supervisor board, got %+v", board.board("s2"))
+	}
+}
+
+func TestCrewBoardMirrorErrorDoesNotFailPrimary(t *testing.T) {
+	manager, store, board, _ := newBoardTestCrewManager(nil, claudeSession("w"), claudeSession("s"))
+	board.err = errors.New("mindmap down")
+
+	if err := manager.AssignWorker("w", "s"); err != nil {
+		t.Fatalf("AssignWorker must survive mirror errors: %v", err)
+	}
+	if err := manager.Report("w", "done", "finished"); err != nil {
+		t.Fatalf("Report must survive mirror errors: %v", err)
+	}
+	if len(store.assignments) != 1 || len(store.envelopes) != 1 {
+		t.Fatalf("primary writes lost: %d assignments, %d envelopes", len(store.assignments), len(store.envelopes))
 	}
 }
 

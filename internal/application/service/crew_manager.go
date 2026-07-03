@@ -3,6 +3,7 @@ package service
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -57,6 +58,14 @@ const (
 	crewDispatchReadyTimeout = 60 * time.Second
 	crewDispatchPollInterval = 250 * time.Millisecond
 	crewDispatchQuietPeriod  = 1500 * time.Millisecond
+)
+
+// Auto board mirroring: every crew mutation full-rebuilds a mindmap board named
+// "crew (auto)" scoped to the supervisor's session.
+const (
+	crewAutoBoardName    = "crew (auto)"
+	crewAutoBoardRootID  = "crew"
+	crewAutoBoardNoteMax = 120
 )
 
 // crewHoldMarkers are screen fragments that mean the supervisor's terminal is
@@ -150,6 +159,8 @@ func (s *crewManagerService) AssignWorker(workerSessionID, supervisorSessionID s
 		current = assignment.SupervisorSessionID
 	}
 
+	previous, _ := s.findCrew.FindAssignmentByWorker(workerSessionID)
+
 	if err := s.saveCrew.SaveAssignment(entity.CrewAssignment{
 		WorkerSessionID:     workerSessionID,
 		SupervisorSessionID: supervisorSessionID,
@@ -159,6 +170,11 @@ func (s *crewManagerService) AssignWorker(workerSessionID, supervisorSessionID s
 	}
 
 	s.emitCrewUpdated()
+	s.mirrorCrewBoard(supervisorSessionID)
+	// A move between crews also reshapes the old supervisor's board.
+	if previous != nil && previous.SupervisorSessionID != supervisorSessionID {
+		s.mirrorCrewBoard(previous.SupervisorSessionID)
+	}
 
 	return nil
 }
@@ -184,11 +200,16 @@ func (s *crewManagerService) validateCrewSession(sessionID, role string) error {
 
 // UnassignWorker removes the worker's crew edge.
 func (s *crewManagerService) UnassignWorker(workerSessionID string) error {
+	assignment, _ := s.findCrew.FindAssignmentByWorker(workerSessionID)
+
 	if err := s.deleteCrew.DeleteAssignment(workerSessionID); err != nil {
 		return fmt.Errorf("failed to delete crew assignment: %w", err)
 	}
 
 	s.emitCrewUpdated()
+	if assignment != nil {
+		s.mirrorCrewBoard(assignment.SupervisorSessionID)
+	}
 
 	return nil
 }
@@ -250,6 +271,7 @@ func (s *crewManagerService) Report(fromSessionID, reportType, summary string) e
 	}
 
 	s.emitCrewUpdated()
+	s.mirrorCrewBoard(assignment.SupervisorSessionID)
 
 	return nil
 }
@@ -507,10 +529,13 @@ func (s *crewManagerService) drainLoop(stop <-chan struct{}, done chan<- struct{
 	}
 }
 
-// drainTick runs one drainer pass: for every supervisor with queued envelopes
-// it delivers at most ONE envelope when all injection gates are open, and
-// tracks continuously-blocked time for the crew:stuck signal.
+// drainTick runs one drainer pass: step 0 fires due watchdogs, then for every
+// supervisor with queued envelopes it delivers at most ONE envelope when all
+// injection gates are open, and tracks continuously-blocked time for the
+// crew:stuck signal.
 func (s *crewManagerService) drainTick(now time.Time) {
+	s.fireDueWatchdogs(now)
+
 	supervisors, err := s.findCrew.SupervisorsWithQueued()
 	if err != nil {
 		return
@@ -531,6 +556,53 @@ func (s *crewManagerService) drainTick(now time.Time) {
 		}
 	}
 	s.drainMu.Unlock()
+}
+
+// fireDueWatchdogs marks overdue watchdogs fired and enqueues a synthetic
+// "nudge" envelope to each supervisor; the nudge then flows through the normal
+// delivery gates like any envelope. A gone supervisor still marks the watchdog
+// fired, just without an envelope.
+func (s *crewManagerService) fireDueWatchdogs(now time.Time) {
+	due, err := s.findCrew.FindDueWatchdogs(now)
+	if err != nil {
+		return
+	}
+
+	for _, watchdog := range due {
+		if err := s.saveCrew.MarkWatchdogFired(watchdog.ID); err != nil {
+			continue
+		}
+
+		supervisor, err := s.findSession.FindByID(watchdog.SupervisorSessionID)
+		if err != nil || supervisor == nil {
+			continue
+		}
+
+		workerName := watchdog.WorkerSessionID
+		if session, err := s.findSession.FindByID(watchdog.WorkerSessionID); err == nil && session != nil {
+			workerName = session.Name
+		}
+
+		minutes := int(watchdog.ExpectedBy.Sub(watchdog.CreatedAt).Round(time.Minute) / time.Minute)
+		if minutes < 1 {
+			minutes = 1
+		}
+
+		if err := s.saveCrew.SaveEnvelope(entity.CrewEnvelope{
+			ID:            uuid.New().String(),
+			FromSessionID: watchdog.WorkerSessionID,
+			ToSessionID:   watchdog.SupervisorSessionID,
+			Type:          "nudge",
+			Summary:       fmt.Sprintf("No report from %s within %dm — check get_session_output or nudge them.", workerName, minutes),
+			Status:        "queued",
+			CreatedAt:     now,
+		}); err != nil {
+			continue
+		}
+
+		s.emitCrewUpdated()
+		s.mirrorCrewBoard(watchdog.SupervisorSessionID)
+	}
 }
 
 func (s *crewManagerService) drainSupervisor(supervisorID string, now time.Time) {
@@ -693,6 +765,84 @@ func (s *crewManagerService) emitCrewStuck(supervisorID, reason string) {
 		"oldestQueuedAt":      oldestQueuedAt,
 		"reason":              reason,
 	})
+}
+
+// mirrorCrewBoard full-rebuild-mirrors the "crew (auto)" mindmap board for a
+// supervisor. It runs AFTER the primary DB write and must never fail it:
+// mirror errors are logged and swallowed.
+func (s *crewManagerService) mirrorCrewBoard(supervisorSessionID string) {
+	if s.mindmapManager == nil {
+		return
+	}
+	if err := s.rebuildCrewBoard(supervisorSessionID); err != nil {
+		log.Printf("crew: failed to mirror %q board for session %s: %v", crewAutoBoardName, supervisorSessionID, err)
+	}
+}
+
+// rebuildCrewBoard clears the auto board and rebuilds it from the current
+// assignments: root node "crew", one child per worker whose status and note
+// come from the worker's latest envelope to this supervisor. No workers leaves
+// the board cleared.
+func (s *crewManagerService) rebuildCrewBoard(supervisorSessionID string) error {
+	assignments, err := s.findCrew.FindAssignmentsBySupervisor(supervisorSessionID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.mindmapManager.ClearMindmap("session", supervisorSessionID, crewAutoBoardName); err != nil {
+		return err
+	}
+	if len(assignments) == 0 {
+		return nil
+	}
+
+	latest, err := s.findCrew.LatestEnvelopeByWorker(supervisorSessionID)
+	if err != nil {
+		return err
+	}
+
+	if _, err := s.mindmapManager.SetNode("session", supervisorSessionID, crewAutoBoardName, entity.MindmapNode{
+		ID:    crewAutoBoardRootID,
+		Label: "crew",
+	}); err != nil {
+		return err
+	}
+
+	for _, assignment := range assignments {
+		label := assignment.WorkerSessionID
+		if session, err := s.findSession.FindByID(assignment.WorkerSessionID); err == nil && session != nil {
+			label = session.Name
+		}
+
+		node := entity.MindmapNode{
+			ID:       assignment.WorkerSessionID,
+			ParentID: crewAutoBoardRootID,
+			Label:    label,
+			Status:   "planned",
+		}
+		if envelope, ok := latest[assignment.WorkerSessionID]; ok {
+			node.Status = crewEnvelopeBoardStatus(envelope.Type)
+			node.Note = truncateRunes(envelope.Summary, crewAutoBoardNoteMax)
+		}
+
+		if _, err := s.mindmapManager.SetNode("session", supervisorSessionID, crewAutoBoardName, node); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// crewEnvelopeBoardStatus maps an envelope type to a mindmap node status.
+func crewEnvelopeBoardStatus(envelopeType string) string {
+	switch envelopeType {
+	case "done":
+		return "done"
+	case "blocked", "question":
+		return "blocked"
+	default: // progress, nudge
+		return "in_progress"
+	}
 }
 
 // emitCrewUpdated emits the tiny crew:updated payload; consumers refetch bodies.
