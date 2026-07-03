@@ -15,6 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
@@ -32,13 +33,21 @@ jobs:
           NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
           echo "next=${NEXT}" >> $GITHUB_OUTPUT
 
+      # Embed an up-to-date changelog in the release tag so the app reports the
+      # correct version (it reads the embedded changelog). main is PR-protected
+      # by a ruleset, so we commit this onto the tag only — never push to main.
       - name: Create and push tag
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           if git rev-parse "${{ steps.version.outputs.next }}" >/dev/null 2>&1; then
             echo "Tag ${{ steps.version.outputs.next }} already exists, skipping"
             exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          python3 scripts/sync_changelog.py "${{ steps.version.outputs.next }}"
+          if ! git diff --quiet changelog.json; then
+            git add changelog.json
+            git commit -m "chore(changelog): ${{ steps.version.outputs.next }}"
           fi
           git tag "${{ steps.version.outputs.next }}"
           git push origin "${{ steps.version.outputs.next }}"

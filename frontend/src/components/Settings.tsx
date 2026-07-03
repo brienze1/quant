@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Config, Repo, Shortcut, RemoteStatus } from "../types";
+import type { Config, Repo, Shortcut, RemoteStatus, UpdateInfo } from "../types";
 import * as api from "../api";
 import type { VoiceConfig } from "../types";
 import { ThemeSettings } from "./ThemeSettings";
@@ -230,6 +230,94 @@ function NavItem({ icon, label, active, onClick }: { icon: IconName; label: stri
 
 // --- Tab Components ---
 
+type UpdateState = "idle" | "checking" | "uptodate" | "available" | "updating" | "updated" | "error";
+
+// UpdateChecker drives the manual update flow: check GitHub for a newer release,
+// upgrade via Homebrew on demand, then offer a restart to apply it.
+function UpdateChecker() {
+  const [state, setState] = useState<UpdateState>("idle");
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const [message, setMessage] = useState("");
+
+  const check = useCallback(async () => {
+    setState("checking");
+    setMessage("");
+    try {
+      const result = await api.checkForUpdate();
+      setInfo(result);
+      setState(result.updateAvailable ? "available" : "uptodate");
+    } catch (err) {
+      setMessage(String(err));
+      setState("error");
+    }
+  }, []);
+
+  const doUpdate = useCallback(async () => {
+    setState("updating");
+    setMessage("");
+    try {
+      await api.performUpdate();
+      setState("updated");
+    } catch (err) {
+      setMessage(String(err));
+      setState("error");
+    }
+  }, []);
+
+  const restart = useCallback(async () => {
+    try {
+      await api.restartApp();
+    } catch (err) {
+      setMessage(String(err));
+      setState("error");
+    }
+  }, []);
+
+  let description: string;
+  switch (state) {
+    case "checking":
+      description = "checking for updates…";
+      break;
+    case "uptodate":
+      description = `you're on the latest version (${info?.currentVersion ?? ""})`;
+      break;
+    case "available":
+      description = `version ${info?.latestVersion} is available — you're on ${info?.currentVersion}`;
+      break;
+    case "updating":
+      description = "updating via homebrew — this can take a few minutes, don't quit quant";
+      break;
+    case "updated":
+      description = "update installed — restart quant to apply the new version";
+      break;
+    case "error":
+      description = `error: ${message || "something went wrong"}`;
+      break;
+    default:
+      description = "check whether a newer version of quant is available";
+  }
+
+  let right: React.ReactNode;
+  switch (state) {
+    case "available":
+      right = <Button variant="primary" size="sm" onClick={doUpdate}>update now</Button>;
+      break;
+    case "updating":
+      right = <SmallButton label="updating…" onClick={() => {}} disabled />;
+      break;
+    case "updated":
+      right = <Button variant="primary" size="sm" onClick={restart}>restart now</Button>;
+      break;
+    case "checking":
+      right = <SmallButton label="checking…" onClick={() => {}} disabled />;
+      break;
+    default:
+      right = <SmallButton label="check now" onClick={check} />;
+  }
+
+  return <SettingRow label="software updates" description={description} right={right} />;
+}
+
 function GeneralTab({ config, update }: TabProps) {
   const [newName, setNewName] = useState("");
   const [newCommand, setNewCommand] = useState("");
@@ -265,6 +353,7 @@ function GeneralTab({ config, update }: TabProps) {
           description="check for updates and upgrade quant automatically on startup"
           right={<Toggle checked={config.autoUpdate} onChange={(v) => update("autoUpdate", v)} />}
         />
+        <UpdateChecker />
       </Section>
 
       <Section title="left click shortcuts" description="commands executed when left-clicking a session (runs in session folder)">

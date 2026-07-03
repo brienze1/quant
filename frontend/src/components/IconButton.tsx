@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
 
@@ -8,7 +8,7 @@ export interface IconButtonProps {
   size?: number;
   label?: string;
   active?: boolean;
-  onClick?: () => void;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   /** color used for the glyph when active */
   tone?: string;
   disabled?: boolean;

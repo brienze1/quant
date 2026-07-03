@@ -48,6 +48,7 @@ type Injector struct {
 	sessionController    intAdapter.SessionController
 	configController     intAdapter.ConfigController
 	changelogController  intAdapter.ChangelogController
+	updateController     intAdapter.UpdateController
 	workspacePersistence intAdapter.WorkspacePersistence
 	workspaceManager     appAdapter.WorkspaceManager
 	workspaceController  intAdapter.WorkspaceController
@@ -511,4 +512,11 @@ func (i *Injector) ChangelogController() intAdapter.ChangelogController {
 		i.changelogController = controller.NewChangelogController(i.changelogData)
 	}
 	return i.changelogController
+}
+
+func (i *Injector) UpdateController() intAdapter.UpdateController {
+	if i.updateController == nil {
+		i.updateController = controller.NewUpdateController(i.changelogData)
+	}
+	return i.updateController
 }

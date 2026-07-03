@@ -111,10 +111,10 @@ func disableQuantInSettingsLocal(settingsPath string) {
 }
 
 // injectQuantMCP registers the Quant MCP server so all Claude accounts can discover it.
-// 1. Adds the "quant" server entry to the .mcp.json registry (real ~/.mcp.json in
-//    production; $QUANT_HOME/.mcp.json in isolated mode).
-// 2. Enables it in every detected Claude config dir's settings.local.json
-//    (production only; skipped in isolated mode, which relies on --mcp-config trust).
+//  1. Adds the "quant" server entry to the .mcp.json registry (real ~/.mcp.json in
+//     production; $QUANT_HOME/.mcp.json in isolated mode).
+//  2. Enables it in every detected Claude config dir's settings.local.json
+//     (production only; skipped in isolated mode, which relies on --mcp-config trust).
 func injectQuantMCP(port int) {
 	// 1. Add quant to the .mcp.json registry (only the quant entry — don't touch
 	// anything else). In isolated mode (QUANT_HOME set) this targets
@@ -164,10 +164,10 @@ func injectQuantMCP(port int) {
 }
 
 // removeQuantMCP removes the Quant MCP server on shutdown.
-// 1. Removes the "quant" entry from the .mcp.json registry (real ~/.mcp.json in
-//    production; $QUANT_HOME/.mcp.json in isolated mode).
-// 2. Removes it from every detected Claude config dir's settings.local.json
-//    (production only; skipped in isolated mode, mirroring inject).
+//  1. Removes the "quant" entry from the .mcp.json registry (real ~/.mcp.json in
+//     production; $QUANT_HOME/.mcp.json in isolated mode).
+//  2. Removes it from every detected Claude config dir's settings.local.json
+//     (production only; skipped in isolated mode, mirroring inject).
 func removeQuantMCP() {
 	// 1. Remove quant from the .mcp.json registry (isolated mode targets
 	// $QUANT_HOME/.mcp.json, mirroring injectQuantMCP).
@@ -240,6 +240,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 	crewManager := injector.CrewManager()
 	fileCtrl := injector.FileController()
 	changelogCtrl := injector.ChangelogController()
+	updateCtrl := injector.UpdateController()
 	// Voice bridge connects the MCP voice tools (Go) to the frontend audio
 	// pipeline: a tool emits "voice:request" via remote.Emit (native webview +
 	// remote browser clients) and blocks until VoiceResult resolves it. Shared
@@ -290,6 +291,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 		"crewController":      crewCtrl,
 		"fileController":      fileCtrl,
 		"changelogController": changelogCtrl,
+		"updateController":    updateCtrl,
 		"voiceController":     voiceCtrl,
 	}
 	remoteManager := remote.NewManager(assetsSub, remoteControllers, injector.ConfigPersistence())
@@ -330,6 +332,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			crewManager.Start()
 			fileCtrl.OnStartup(ctx)
 			changelogCtrl.OnStartup(ctx)
+			updateCtrl.OnStartup(ctx)
 			voiceCtrl.OnStartup(ctx)
 			remoteCtrl.OnStartup(ctx)
 			// Auto-resume remote access if it was enabled before the last shutdown.
@@ -352,6 +355,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			crewCtrl.OnShutdown(ctx)
 			fileCtrl.OnShutdown(ctx)
 			changelogCtrl.OnShutdown(ctx)
+			updateCtrl.OnShutdown(ctx)
 			voiceCtrl.OnShutdown(ctx)
 			remoteCtrl.OnShutdown(ctx)
 			remoteManager.Stop()
@@ -375,6 +379,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			crewCtrl,
 			fileCtrl,
 			changelogCtrl,
+			updateCtrl,
 			voiceCtrl,
 			remoteCtrl,
 		},
