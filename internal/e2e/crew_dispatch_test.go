@@ -131,6 +131,7 @@ func TestCrewDispatch(t *testing.T) {
 		"name":        "boss",
 		"sessionType": "claude",
 		"repoId":      repo.ID,
+		"taskTag":     "boss-task",
 	})
 	bossID, _ := boss["id"].(string)
 	if bossID == "" {
@@ -215,7 +216,7 @@ func TestListSessionsByNameAndAssignByName(t *testing.T) {
 	}
 
 	mk := func(name string) string {
-		created := h.call("create_session", map[string]any{"name": name, "sessionType": "claude", "repoId": repo.ID})
+		created := h.call("create_session", map[string]any{"name": name, "sessionType": "claude", "repoId": repo.ID, "taskTag": name})
 		id, _ := created["id"].(string)
 		if id == "" {
 			t.Fatalf("create_session %s returned no id: %v", name, created)

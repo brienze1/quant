@@ -71,6 +71,7 @@ func newHarness(t *testing.T) *harness {
 		injector.MindmapManager(),
 		injector.FileManager(),
 		injector.CrewManager(),
+		injector.TaskManager(),
 		nil, // voice bridge — voice tools aren't exercised by these tests
 	)
 	if err := server.Start(); err != nil {

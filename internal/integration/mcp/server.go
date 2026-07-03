@@ -42,6 +42,7 @@ type QuantMCPServer struct {
 	mindmapManager   appAdapter.MindmapManager
 	fileManager      appAdapter.FileManager
 	crewManager      appAdapter.CrewManager
+	taskManager      appAdapter.TaskManager
 	voiceBridge      *voice.Bridge
 	httpServer       *http.Server
 	listener         net.Listener
@@ -50,7 +51,7 @@ type QuantMCPServer struct {
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
 // It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, crewManager appAdapter.CrewManager, voiceBridge *voice.Bridge) *QuantMCPServer {
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, crewManager appAdapter.CrewManager, taskManager appAdapter.TaskManager, voiceBridge *voice.Bridge) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
 	s := &QuantMCPServer{
@@ -63,6 +64,7 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 		mindmapManager:   mindmapManager,
 		fileManager:      fileManager,
 		crewManager:      crewManager,
+		taskManager:      taskManager,
 		voiceBridge:      voiceBridge,
 	}
 
@@ -667,12 +669,16 @@ Returns the full system prompt text, or a message indicating the prompt is empty
 - 'claude' type: a Claude CLI interactive session
 - 'terminal' type: a plain terminal session
 
+A repo-backed session (repoId set) must be filed under a task: pass taskId for an existing task, or taskTag to file it under the task with that tag (a new task is created if none matches). Use list_tasks to see existing tasks, or create_task to make one. Repoless sessions have no task.
+
 Returns the created session object with generated ID. The session starts in 'idle' status — use start_session to begin execution.`),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Session name (e.g. 'review-pr-123', 'debug-auth')")),
 			mcp.WithString("description", mcp.Description("What this session is for")),
 			mcp.WithString("sessionType", mcp.Required(), mcp.Description("'claude' or 'terminal'")),
 			mcp.WithString("repoId", mcp.Description("Repository ID to associate with this session (get from list_repos)")),
 			mcp.WithString("taskId", mcp.Description("Task ID to associate with this session")),
+			mcp.WithString("taskTag", mcp.Description("File the session under the task with this tag in the repo; created if none matches")),
+			mcp.WithString("taskName", mcp.Description("Name for the task when taskTag creates a new one")),
 			mcp.WithString("workspaceId", mcp.Description("Workspace ID to assign the session to")),
 			mcp.WithBoolean("useWorktree", mcp.Description("Create a git worktree for this session. Default: false")),
 			mcp.WithBoolean("skipPermissions", mcp.Description("Skip permission prompts (--dangerously-skip-permissions). Default: false")),
@@ -680,6 +686,24 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("claudeSessionId", mcp.Description("Adopt an existing claude CLI session: its UUID from another terminal. The session will resume that conversation; incompatible with useWorktree.")),
 		),
 		s.handleCreateSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("list_tasks",
+			mcp.WithDescription(`List the tasks in a repository. Returns id, tag, name, repoId and archived for each. Sessions are filed under a task (Repo → Task → Session); use these ids with create_session's taskId.`),
+			mcp.WithString("repoId", mcp.Required(), mcp.Description("Repository ID whose tasks to list (get from list_repos)")),
+		),
+		s.handleListTasks,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("create_task",
+			mcp.WithDescription(`Create a task in a repository. A task groups sessions under a repo (Repo → Task → Session). Returns the created task's id, tag, name and repoId. Reuse the id as create_session's taskId.`),
+			mcp.WithString("repoId", mcp.Required(), mcp.Description("Repository ID to create the task in (get from list_repos)")),
+			mcp.WithString("tag", mcp.Required(), mcp.Description("Short tag for the task (e.g. 'auth', 'crew')")),
+			mcp.WithString("name", mcp.Description("Human-readable task name")),
+		),
+		s.handleCreateTask,
 	)
 
 	mcpServer.AddTool(
@@ -822,6 +846,9 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("model", mcp.Description("Claude model for a newly created worker session")),
 			mcp.WithBoolean("skipPermissions", mcp.Description("Create the worker with --dangerously-skip-permissions. Default: false")),
 			mcp.WithNumber("expectedByMinutes", mcp.Description("Set a watchdog: expect the worker's first report within this many minutes")),
+			mcp.WithString("taskId", mcp.Description("File a newly created worker under this task. Defaults to YOUR task, else a 'crew' task in the repo.")),
+			mcp.WithString("taskTag", mcp.Description("File a newly created worker under the task with this tag in the repo; created if none matches")),
+			mcp.WithString("taskName", mcp.Description("Name for the task when taskTag creates a new one")),
 		),
 		s.handleCrewDispatch,
 	)
@@ -2293,6 +2320,11 @@ func (s *QuantMCPServer) handleCreateSession(_ context.Context, request mcp.Call
 	repoID := stringArg(args, "repoId")
 	taskID := stringArg(args, "taskId")
 
+	taskID, err = s.resolveSessionTask(repoID, taskID, stringArg(args, "taskTag"), stringArg(args, "taskName"), name)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
 	opts := entity.SessionOptions{
 		UseWorktree:     boolArg(args, "useWorktree"),
 		SkipPermissions: boolArg(args, "skipPermissions"),
@@ -2308,6 +2340,100 @@ func (s *QuantMCPServer) handleCreateSession(_ context.Context, request mcp.Call
 	}
 
 	return marshalResult(sessionToMap(session))
+}
+
+// resolveSessionTask returns the task id a session should be filed under so
+// repo-backed sessions never land loose. Repoless sessions are exempt (they
+// cannot have a task). An explicit taskId is validated against the repo; a
+// taskTag finds-or-creates a task with that tag; otherwise it is an error.
+func (s *QuantMCPServer) resolveSessionTask(repoID, taskID, taskTag, taskName, fallbackName string) (string, error) {
+	if repoID == "" {
+		return taskID, nil
+	}
+
+	if taskID != "" {
+		task, err := s.taskManager.GetTask(taskID)
+		if err != nil {
+			return "", fmt.Errorf("failed to look up task %s: %w", taskID, err)
+		}
+		if task == nil {
+			return "", fmt.Errorf("task not found: %s", taskID)
+		}
+		if task.RepoID != repoID {
+			return "", fmt.Errorf("task %s does not belong to repo %s", taskID, repoID)
+		}
+		return taskID, nil
+	}
+
+	if taskTag != "" {
+		tag := strings.ToLower(taskTag)
+		tasks, err := s.taskManager.ListTasksByRepo(repoID)
+		if err != nil {
+			return "", fmt.Errorf("failed to list tasks for repo %s: %w", repoID, err)
+		}
+		for i := range tasks {
+			if tasks[i].ArchivedAt == nil && tasks[i].Tag == tag {
+				return tasks[i].ID, nil
+			}
+		}
+		task, err := s.taskManager.CreateTask(repoID, tag, strings.ToLower(firstNonEmpty(taskName, fallbackName)))
+		if err != nil {
+			return "", fmt.Errorf("failed to create task: %w", err)
+		}
+		return task.ID, nil
+	}
+
+	return "", fmt.Errorf("a task is required to create a session in this repo: pass taskId, or taskTag (a new task is created if none matches). Use list_tasks to see existing tasks, or create_task to make one.")
+}
+
+func (s *QuantMCPServer) handleListTasks(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	repoID, err := requiredString(request, "repoId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	tasks, err := s.taskManager.ListTasksByRepo(repoID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result := make([]map[string]any, 0, len(tasks))
+	for i := range tasks {
+		result = append(result, map[string]any{
+			"id":       tasks[i].ID,
+			"tag":      tasks[i].Tag,
+			"name":     tasks[i].Name,
+			"repoId":   tasks[i].RepoID,
+			"archived": tasks[i].ArchivedAt != nil,
+		})
+	}
+
+	return marshalResult(result)
+}
+
+func (s *QuantMCPServer) handleCreateTask(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	repoID, err := requiredString(request, "repoId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	tag, err := requiredString(request, "tag")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	name := stringArg(request.GetArguments(), "name")
+
+	task, err := s.taskManager.CreateTask(repoID, strings.ToLower(tag), strings.ToLower(name))
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return marshalResult(map[string]any{
+		"id":     task.ID,
+		"tag":    task.Tag,
+		"name":   task.Name,
+		"repoId": task.RepoID,
+	})
 }
 
 func (s *QuantMCPServer) handleStartSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -2698,6 +2824,18 @@ func (s *QuantMCPServer) handleCrewDispatch(ctx context.Context, request mcp.Cal
 		ExpectedByMinutes: intArg(args, "expectedByMinutes"),
 	}
 
+	// When the request may hit the create path (no explicit sessionId), file a
+	// newly created worker under a task so it never lands loose. Adopted workers
+	// (by sessionId or by existing name match) keep their own task — opts.TaskID
+	// is only consumed by resolveDispatchWorker's create branch.
+	if opts.SessionID == "" {
+		taskID, err := s.resolveDispatchTask(caller, opts, args)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		opts.TaskID = taskID
+	}
+
 	result, err := s.crewManager.Dispatch(caller, prompt, opts)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -2712,6 +2850,25 @@ func (s *QuantMCPServer) handleCrewDispatch(ctx context.Context, request mcp.Cal
 		"watchdogSet":     result.WatchdogSet,
 		"adoptedBy":       result.AdoptedBy,
 	})
+}
+
+// resolveDispatchTask picks the task a newly created crew worker is filed under:
+// an explicit taskId/taskTag on the dispatch wins; else the supervisor's own
+// task; else a find-or-create "crew" task in the repo. A repoless dispatch has
+// no task.
+func (s *QuantMCPServer) resolveDispatchTask(supervisorSessionID string, opts appAdapter.CrewDispatchOptions, args map[string]any) (string, error) {
+	if opts.RepoID == "" {
+		return "", nil
+	}
+	taskID := stringArg(args, "taskId")
+	taskTag := stringArg(args, "taskTag")
+	if taskID != "" || taskTag != "" {
+		return s.resolveSessionTask(opts.RepoID, taskID, taskTag, stringArg(args, "taskName"), opts.Name)
+	}
+	if supervisor, err := s.sessionManager.GetSession(supervisorSessionID); err == nil && supervisor != nil && supervisor.TaskID != "" {
+		return supervisor.TaskID, nil
+	}
+	return s.resolveSessionTask(opts.RepoID, "", "crew", "crew", "crew")
 }
 
 func (s *QuantMCPServer) handleCrewSetWatchdog(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -3448,6 +3605,16 @@ func stringArg(args map[string]any, key string) string {
 	}
 	s, _ := v.(string)
 	return s
+}
+
+// firstNonEmpty returns the first non-empty string from its arguments, or "".
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func boolArg(args map[string]any, key string) bool {

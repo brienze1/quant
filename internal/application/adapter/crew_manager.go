@@ -12,6 +12,7 @@ type CrewDispatchOptions struct {
 	SessionID         string
 	Name              string
 	RepoID            string
+	TaskID            string
 	UseWorktree       bool
 	Model             string
 	SkipPermissions   bool

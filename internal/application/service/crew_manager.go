@@ -402,7 +402,7 @@ func (s *crewManagerService) resolveDispatchWorker(result *adapter.CrewDispatchR
 		return match, nil
 	}
 
-	worker, err := s.sessionManager.CreateSession(opts.Name, "", "claude", opts.RepoID, "", entity.SessionOptions{
+	worker, err := s.sessionManager.CreateSession(opts.Name, "", "claude", opts.RepoID, opts.TaskID, entity.SessionOptions{
 		UseWorktree:     opts.UseWorktree,
 		SkipPermissions: opts.SkipPermissions,
 		Model:           opts.Model,

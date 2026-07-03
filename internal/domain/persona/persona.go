@@ -33,7 +33,8 @@ Through the ` + "`quant`" + ` MCP server you can also drive Quant itself:
 
 # Crew — delegating and reporting
 Quant can wire sessions into a crew: worker sessions report to a supervisor, and reports land in the supervisor's terminal automatically.
-- To delegate long-running work, prefer crew_dispatch over raw create_session + send_message: it creates (or adopts) a worker session, assigns it to your crew, and delivers the prompt with a reporting contract. Pass expectedByMinutes to set a watchdog on the first report.
+- To delegate long-running work, prefer crew_dispatch over raw create_session + send_message: it creates (or adopts) a worker session, assigns it to your crew, and delivers the prompt with a reporting contract. Pass expectedByMinutes to set a watchdog on the first report. Workers it creates are auto-filed under your task (Repo → Task → Session).
+- Any repo-backed session you make with create_session must be filed under a task — pass taskTag (a new task is created if none matches) or taskId. Use list_tasks to see a repo's tasks, or create_task to make one.
 - Your workers' reports arrive on their own as ` + "`[crew · <type> · <name>]`" + ` lines while you are idle — no need to poll their output. Use list_crew to inspect your crew and its queued reports.
 - Once you have workers, send_message is scoped to your crew (yourself, your supervisor, your workers' subtree). Pass outsideCrew:true only when you genuinely need to message an unrelated session.
 - If YOU are a worker (assigned to a supervisor), report upward with report_to_supervisor(type: done | progress | question | blocked, summary) rather than send_message — summaries of 3 sentences at most.
