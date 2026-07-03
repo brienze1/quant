@@ -24,6 +24,7 @@ func NewCrewPersistence(db *sql.DB) adapter.CrewPersistence {
 const crewAssignmentColumns = `worker_session_id, supervisor_session_id, created_at`
 const crewEnvelopeColumns = `id, from_session_id, to_session_id, type, summary, status, created_at, delivered_at`
 const crewWatchdogColumns = `id, worker_session_id, supervisor_session_id, expected_by, fired, created_at`
+const crewDeliveryLockColumns = `supervisor_session_id, locked, updated_at`
 
 func scanCrewAssignmentRow(scanner interface{ Scan(...any) error }) (pdto.CrewAssignmentRow, error) {
 	var row pdto.CrewAssignmentRow
@@ -304,6 +305,59 @@ func (p *crewPersistence) ClearWatchdogsForWorker(workerSessionID string) error 
 	_, err := p.db.Exec(`DELETE FROM crew_watchdogs WHERE worker_session_id = ?`, workerSessionID)
 	if err != nil {
 		return fmt.Errorf("failed to clear crew watchdogs for worker: %w", err)
+	}
+	return nil
+}
+
+// DeliveryLocks returns the supervisors whose "always deliver" lock is on,
+// keyed by supervisor session id. Unlocked supervisors keep no row.
+func (p *crewPersistence) DeliveryLocks() (map[string]bool, error) {
+	rows, err := p.db.Query(`SELECT supervisor_session_id FROM crew_delivery_locks WHERE locked = 1`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list crew delivery locks: %w", err)
+	}
+	defer rows.Close()
+
+	locks := make(map[string]bool)
+	for rows.Next() {
+		var sessionID string
+		if err := rows.Scan(&sessionID); err != nil {
+			return nil, fmt.Errorf("failed to scan crew delivery lock: %w", err)
+		}
+		locks[sessionID] = true
+	}
+	return locks, rows.Err()
+}
+
+// IsDeliveryLocked reports whether a supervisor's "always deliver" lock is on.
+func (p *crewPersistence) IsDeliveryLocked(supervisorSessionID string) (bool, error) {
+	var locked int
+	err := p.db.QueryRow(`SELECT locked FROM crew_delivery_locks WHERE supervisor_session_id = ?`, supervisorSessionID).Scan(&locked)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to read crew delivery lock: %w", err)
+	}
+	return locked != 0, nil
+}
+
+// SetDeliveryLock upserts a supervisor's "always deliver" lock. Turning the lock
+// off deletes the row so the table only holds active locks.
+func (p *crewPersistence) SetDeliveryLock(supervisorSessionID string, locked bool) error {
+	if !locked {
+		if _, err := p.db.Exec(`DELETE FROM crew_delivery_locks WHERE supervisor_session_id = ?`, supervisorSessionID); err != nil {
+			return fmt.Errorf("failed to clear crew delivery lock: %w", err)
+		}
+		return nil
+	}
+
+	_, err := p.db.Exec(
+		`INSERT OR REPLACE INTO crew_delivery_locks (`+crewDeliveryLockColumns+`) VALUES (?, ?, ?)`,
+		supervisorSessionID, 1, time.Now().Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save crew delivery lock: %w", err)
 	}
 	return nil
 }

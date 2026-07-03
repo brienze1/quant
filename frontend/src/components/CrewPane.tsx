@@ -37,6 +37,10 @@ export interface CrewPaneProps {
   workers: Session[];
   /** Queued envelope count from the shared QueuedCounts map/event. */
   queuedCount: number;
+  /** Whether the supervisor's "always deliver" lock is on. */
+  deliveryLocked: boolean;
+  /** Toggle the supervisor's "always deliver" lock. */
+  onToggleLock: (locked: boolean) => void;
   /** Focus a session tab (worker row "focus" action). */
   onSelectSession: (id: string) => void;
   /** Detach a worker into its own dock panel (CrewSessionPanel). */
@@ -371,6 +375,8 @@ export function CrewPane({
   supervisor,
   workers,
   queuedCount,
+  deliveryLocked,
+  onToggleLock,
   onSelectSession,
   onDetachWorker,
   onError,
@@ -498,32 +504,66 @@ export function CrewPane({
         {/* inbox */}
         <SectionLabel
           note={
-            queued.length > 0
-              ? `${queued.length} queued · injects when idle`
-              : "empty · injects when idle"
+            deliveryLocked
+              ? queued.length > 0
+                ? `${queued.length} queued · auto-delivering · injects immediately`
+                : "auto-delivering · injects immediately"
+              : queued.length > 0
+                ? `${queued.length} queued · injects when idle`
+                : "empty · injects when idle"
           }
           actions={
-            queued.length > 0 ? (
+            <>
+              {/* "always deliver" lock: the continuous form of deliver-now */}
               <button
                 type="button"
-                onClick={() => api.crewDrainNow(supervisor.id).catch((err) => onError(String(err)))}
-                title="Deliver the next queued report now (bypasses the idle gates)"
+                onClick={() => onToggleLock(!deliveryLocked)}
+                title={
+                  deliveryLocked
+                    ? "Auto-delivering every report immediately — click to stop"
+                    : "Always deliver reports immediately (bypasses the idle gates)"
+                }
                 style={{
                   flex: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
                   padding: "2px 8px",
                   borderRadius: 6,
-                  border: "1px solid var(--accent-line)",
-                  background: "var(--accent-soft)",
-                  color: "var(--accent)",
+                  border: `1px solid ${deliveryLocked ? "var(--accent-line)" : "var(--border-2)"}`,
+                  background: deliveryLocked ? "var(--accent-soft)" : "transparent",
+                  color: deliveryLocked ? "var(--accent)" : "var(--fg-3)",
                   fontFamily: "var(--sans)",
                   fontSize: 10.5,
                   fontWeight: 600,
                   cursor: "pointer",
                 }}
               >
-                deliver now
+                <Icon name="lock" size={11} />
+                {deliveryLocked ? "locked" : "lock"}
               </button>
-            ) : undefined
+              {queued.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => api.crewDrainNow(supervisor.id).catch((err) => onError(String(err)))}
+                  title="Deliver the next queued report now (bypasses the idle gates)"
+                  style={{
+                    flex: "none",
+                    padding: "2px 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--accent-line)",
+                    background: "var(--accent-soft)",
+                    color: "var(--accent)",
+                    fontFamily: "var(--sans)",
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  deliver now
+                </button>
+              )}
+            </>
           }
         >
           Inbox

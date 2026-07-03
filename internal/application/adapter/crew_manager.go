@@ -43,6 +43,8 @@ type CrewManager interface {
 	Dispatch(supervisorSessionID, prompt string, opts CrewDispatchOptions) (CrewDispatchResult, error)
 	InCrewScope(callerSessionID, targetSessionID string) (hasWorkers bool, allowed bool)
 	DrainNow(supervisorSessionID string) error
+	SetDeliveryLock(supervisorSessionID string, locked bool) error
+	GetDeliveryLocks() (map[string]bool, error)
 	Start()
 	Stop()
 }

@@ -11,4 +11,5 @@ type SaveCrew interface {
 	SaveWatchdog(watchdog entity.CrewWatchdog) error
 	MarkEnvelopeDelivered(id string) error
 	MarkWatchdogFired(id string) error
+	SetDeliveryLock(supervisorSessionID string, locked bool) error
 }

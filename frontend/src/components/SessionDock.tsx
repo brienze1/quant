@@ -152,6 +152,8 @@ export interface SessionDockProps {
   crewSupervisor: Session | null;
   crewWorkers: Session[];
   crewQueuedCount: number;
+  crewDeliveryLocked: boolean;
+  onCrewToggleLock: (locked: boolean) => void;
   onCrewClose: () => void;
   onCrewSelectSession: (id: string) => void;
   onCrewDetachWorker: (id: string) => void;
@@ -247,6 +249,8 @@ export function SessionDock(props: SessionDockProps) {
     crewSupervisor,
     crewWorkers,
     crewQueuedCount,
+    crewDeliveryLocked,
+    onCrewToggleLock,
     onCrewClose,
     onCrewSelectSession,
     onCrewDetachWorker,
@@ -511,6 +515,8 @@ export function SessionDock(props: SessionDockProps) {
               supervisor={crewSupervisor}
               workers={crewWorkers}
               queuedCount={crewQueuedCount}
+              deliveryLocked={crewDeliveryLocked}
+              onToggleLock={onCrewToggleLock}
               onSelectSession={onCrewSelectSession}
               onDetachWorker={onCrewDetachWorker}
               onError={onCrewError}

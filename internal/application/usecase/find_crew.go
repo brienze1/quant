@@ -17,4 +17,6 @@ type FindCrew interface {
 	SupervisorsWithQueued() ([]string, error)
 	LatestEnvelopeByWorker(supervisorSessionID string) (map[string]entity.CrewEnvelope, error)
 	FindDueWatchdogs(now time.Time) ([]entity.CrewWatchdog, error)
+	DeliveryLocks() (map[string]bool, error)
+	IsDeliveryLocked(supervisorSessionID string) (bool, error)
 }

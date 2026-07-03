@@ -91,3 +91,13 @@ func (c *crewController) UnassignWorker(workerSessionID string) error {
 func (c *crewController) DrainNow(sessionID string) error {
 	return c.crewManager.DrainNow(sessionID)
 }
+
+// SetDeliveryLock turns a supervisor's "always deliver" lock on or off.
+func (c *crewController) SetDeliveryLock(supervisorSessionID string, locked bool) error {
+	return c.crewManager.SetDeliveryLock(supervisorSessionID, locked)
+}
+
+// GetDeliveryLocks returns the supervisors whose "always deliver" lock is on.
+func (c *crewController) GetDeliveryLocks() (map[string]bool, error) {
+	return c.crewManager.GetDeliveryLocks()
+}

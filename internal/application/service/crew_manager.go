@@ -493,6 +493,23 @@ func (s *crewManagerService) DrainNow(supervisorSessionID string) error {
 	return nil
 }
 
+// SetDeliveryLock persists a supervisor's "always deliver" lock. While locked
+// the drainer delivers its queued reports on every tick, bypassing the idle,
+// marker and user-input gates (the continuous form of DrainNow). It emits
+// crew:updated so the UI reflects the new lock state.
+func (s *crewManagerService) SetDeliveryLock(supervisorSessionID string, locked bool) error {
+	if err := s.saveCrew.SetDeliveryLock(supervisorSessionID, locked); err != nil {
+		return fmt.Errorf("failed to set crew delivery lock: %w", err)
+	}
+	s.emitCrewUpdated()
+	return nil
+}
+
+// GetDeliveryLocks returns the supervisors whose "always deliver" lock is on.
+func (s *crewManagerService) GetDeliveryLocks() (map[string]bool, error) {
+	return s.findCrew.DeliveryLocks()
+}
+
 // Start launches the crew drainer goroutine.
 func (s *crewManagerService) Start() {
 	if s.sessionActivity == nil || s.stopCh != nil {
@@ -548,10 +565,17 @@ func (s *crewManagerService) drainTick(now time.Time) {
 		return
 	}
 
+	// Load the "always deliver" locks once per tick so a locked supervisor
+	// costs no extra per-supervisor query.
+	locks, err := s.findCrew.DeliveryLocks()
+	if err != nil {
+		locks = nil
+	}
+
 	queued := make(map[string]bool, len(supervisors))
 	for _, supervisorID := range supervisors {
 		queued[supervisorID] = true
-		s.drainSupervisor(supervisorID, now)
+		s.drainSupervisor(supervisorID, now, locks[supervisorID])
 	}
 
 	// Drop bookkeeping for supervisors whose inbox drained, so stale streaks
@@ -612,7 +636,20 @@ func (s *crewManagerService) fireDueWatchdogs(now time.Time) {
 	}
 }
 
-func (s *crewManagerService) drainSupervisor(supervisorID string, now time.Time) {
+func (s *crewManagerService) drainSupervisor(supervisorID string, now time.Time, locked bool) {
+	// A locked supervisor delivers on every tick, bypassing all gates except the
+	// technical requirement of a live process to inject into. It is never
+	// "stuck", so no blocked/stuck bookkeeping is tracked for it.
+	if locked {
+		if _, ok := s.sessionActivity.Activity(supervisorID); !ok {
+			return
+		}
+		if delivered, err := s.deliverNext(supervisorID); err == nil && delivered {
+			s.resetDrainState(supervisorID)
+		}
+		return
+	}
+
 	reason, open := s.evaluateGates(supervisorID, now)
 	if open {
 		if delivered, err := s.deliverNext(supervisorID); err == nil && delivered {
@@ -866,6 +903,10 @@ func (s *crewManagerService) emitCrewUpdated() {
 	if err != nil {
 		return
 	}
+	deliveryLocks, err := s.findCrew.DeliveryLocks()
+	if err != nil {
+		return
+	}
 
 	payloadAssignments := make([]map[string]any, 0, len(assignments))
 	for _, a := range assignments {
@@ -876,7 +917,8 @@ func (s *crewManagerService) emitCrewUpdated() {
 	}
 
 	s.emitter.Emit("crew:updated", map[string]any{
-		"assignments": payloadAssignments,
-		"queued":      queued,
+		"assignments":   payloadAssignments,
+		"queued":        queued,
+		"deliveryLocks": deliveryLocks,
 	})
 }

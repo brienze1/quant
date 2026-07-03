@@ -50,6 +50,11 @@ func newCrewTestDB(t *testing.T) *sql.DB {
 			fired INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS crew_delivery_locks (
+			supervisor_session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+			locked INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL
+		);`,
 	}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
@@ -243,6 +248,73 @@ func TestCrewWatchdogLifecycle(t *testing.T) {
 	}
 	if len(due) != 0 {
 		t.Fatalf("want no watchdogs after clear, got %+v", due)
+	}
+}
+
+func TestCrewDeliveryLockRoundTrip(t *testing.T) {
+	db := newCrewTestDB(t)
+	insertTestSessions(t, db, "s1", "s2")
+	p := NewCrewPersistence(db)
+
+	// No locks initially.
+	locks, err := p.DeliveryLocks()
+	if err != nil {
+		t.Fatalf("DeliveryLocks: %v", err)
+	}
+	if len(locks) != 0 {
+		t.Fatalf("want no locks initially, got %v", locks)
+	}
+
+	if err := p.SetDeliveryLock("s1", true); err != nil {
+		t.Fatalf("SetDeliveryLock(s1, true): %v", err)
+	}
+
+	locks, err = p.DeliveryLocks()
+	if err != nil {
+		t.Fatalf("DeliveryLocks: %v", err)
+	}
+	if len(locks) != 1 || !locks["s1"] {
+		t.Fatalf("want s1 locked, got %v", locks)
+	}
+	locked, err := p.IsDeliveryLocked("s1")
+	if err != nil || !locked {
+		t.Fatalf("IsDeliveryLocked(s1) = %v, %v; want true, nil", locked, err)
+	}
+	locked, err = p.IsDeliveryLocked("s2")
+	if err != nil || locked {
+		t.Fatalf("IsDeliveryLocked(s2) = %v, %v; want false, nil", locked, err)
+	}
+
+	// Re-locking is idempotent (upsert).
+	if err := p.SetDeliveryLock("s1", true); err != nil {
+		t.Fatalf("SetDeliveryLock(s1, true) again: %v", err)
+	}
+
+	// Unlocking deletes the row.
+	if err := p.SetDeliveryLock("s1", false); err != nil {
+		t.Fatalf("SetDeliveryLock(s1, false): %v", err)
+	}
+	locks, err = p.DeliveryLocks()
+	if err != nil {
+		t.Fatalf("DeliveryLocks after unlock: %v", err)
+	}
+	if len(locks) != 0 {
+		t.Fatalf("want no locks after unlock, got %v", locks)
+	}
+
+	// Deleting the supervisor session cascades its lock away.
+	if err := p.SetDeliveryLock("s2", true); err != nil {
+		t.Fatalf("SetDeliveryLock(s2, true): %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM sessions WHERE id = 's2'`); err != nil {
+		t.Fatalf("delete supervisor session: %v", err)
+	}
+	locks, err = p.DeliveryLocks()
+	if err != nil {
+		t.Fatalf("DeliveryLocks after cascade: %v", err)
+	}
+	if len(locks) != 0 {
+		t.Fatalf("want lock cascaded away, got %v", locks)
 	}
 }
 

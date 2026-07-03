@@ -18,4 +18,6 @@ type CrewController interface {
 	AssignWorker(workerSessionID, supervisorSessionID string) error
 	UnassignWorker(workerSessionID string) error
 	DrainNow(sessionID string) error
+	SetDeliveryLock(supervisorSessionID string, locked bool) error
+	GetDeliveryLocks() (map[string]bool, error)
 }

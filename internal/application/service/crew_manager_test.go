@@ -14,13 +14,17 @@ import (
 
 // fakeCrewStore is an in-memory implementation of the crew persistence usecases.
 type fakeCrewStore struct {
-	assignments map[string]entity.CrewAssignment
-	envelopes   []entity.CrewEnvelope
-	watchdogs   []entity.CrewWatchdog
+	assignments   map[string]entity.CrewAssignment
+	envelopes     []entity.CrewEnvelope
+	watchdogs     []entity.CrewWatchdog
+	deliveryLocks map[string]bool
 }
 
 func newFakeCrewStore() *fakeCrewStore {
-	return &fakeCrewStore{assignments: make(map[string]entity.CrewAssignment)}
+	return &fakeCrewStore{
+		assignments:   make(map[string]entity.CrewAssignment),
+		deliveryLocks: make(map[string]bool),
+	}
 }
 
 func (f *fakeCrewStore) FindAssignmentByWorker(workerSessionID string) (*entity.CrewAssignment, error) {
@@ -161,6 +165,29 @@ func (f *fakeCrewStore) ClearWatchdogsForWorker(workerSessionID string) error {
 	return nil
 }
 
+func (f *fakeCrewStore) DeliveryLocks() (map[string]bool, error) {
+	out := make(map[string]bool)
+	for id, locked := range f.deliveryLocks {
+		if locked {
+			out[id] = true
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeCrewStore) IsDeliveryLocked(supervisorSessionID string) (bool, error) {
+	return f.deliveryLocks[supervisorSessionID], nil
+}
+
+func (f *fakeCrewStore) SetDeliveryLock(supervisorSessionID string, locked bool) error {
+	if locked {
+		f.deliveryLocks[supervisorSessionID] = true
+	} else {
+		delete(f.deliveryLocks, supervisorSessionID)
+	}
+	return nil
+}
+
 // fakeSessionFinder is an in-memory implementation of usecase.FindSession.
 type fakeSessionFinder struct {
 	sessions map[string]entity.Session
@@ -187,13 +214,15 @@ func (f *fakeSessionFinder) FindByRepoID(repoID string) ([]entity.Session, error
 
 func (f *fakeSessionFinder) FindByTaskID(string) ([]entity.Session, error) { return nil, nil }
 
-// fakeEventEmitter records emitted events.
+// fakeEventEmitter records emitted events and their payloads.
 type fakeEventEmitter struct {
-	events []string
+	events   []string
+	payloads []any
 }
 
-func (f *fakeEventEmitter) Emit(name string, _ any) {
+func (f *fakeEventEmitter) Emit(name string, payload any) {
 	f.events = append(f.events, name)
+	f.payloads = append(f.payloads, payload)
 }
 
 func claudeSession(id string) entity.Session {
@@ -536,6 +565,74 @@ func TestCrewDrainNow_BypassesGates(t *testing.T) {
 	activity.live["s"] = false
 	if err := manager.DrainNow("s"); err == nil || !strings.Contains(err.Error(), "no live process") {
 		t.Fatalf("want no-live-process error, got %v", err)
+	}
+}
+
+func TestCrewDrainDeliveryLock(t *testing.T) {
+	t.Setenv("QUANT_CREW_MARKERS", "")
+	now := time.Now()
+
+	// An activity that trips EVERY gate: busy, a hold marker on screen, and a
+	// keystroke a moment ago. The only thing a locked supervisor still needs is
+	// a live process.
+	blocked := entity.ProcessActivity{
+		Busy:            true,
+		Tail:            []byte("❯ Do you want (y/n)"),
+		LastUserInputAt: now.Add(-time.Second),
+	}
+
+	// Locked: delivers on a single tick despite every gate being closed.
+	activity := &fakeSessionActivity{
+		activities: map[string]entity.ProcessActivity{"s": blocked},
+		live:       map[string]bool{"s": true},
+	}
+	manager, store, emitter := newTestCrewManagerWithActivity(activity, claudeSession("w"), claudeSession("s"))
+	queueReport(t, manager)
+	if err := manager.SetDeliveryLock("s", true); err != nil {
+		t.Fatalf("SetDeliveryLock: %v", err)
+	}
+
+	// SetDeliveryLock emits crew:updated whose payload carries the lock map.
+	payload, ok := emitter.payloads[len(emitter.payloads)-1].(map[string]any)
+	if !ok {
+		t.Fatalf("last payload not a map: %T", emitter.payloads[len(emitter.payloads)-1])
+	}
+	locks, ok := payload["deliveryLocks"].(map[string]bool)
+	if !ok || !locks["s"] {
+		t.Fatalf("crew:updated payload missing deliveryLocks[s]: %v", payload["deliveryLocks"])
+	}
+
+	manager.drainTick(now)
+	if store.envelopes[0].Status != "delivered" {
+		t.Fatalf("locked supervisor did not deliver through the closed gates (writes: %q)", activity.writes)
+	}
+
+	// Locked but no live process: still cannot inject, so nothing is delivered.
+	deadActivity := &fakeSessionActivity{
+		activities: map[string]entity.ProcessActivity{},
+		live:       map[string]bool{"s": false},
+	}
+	deadManager, deadStore, _ := newTestCrewManagerWithActivity(deadActivity, claudeSession("w"), claudeSession("s"))
+	queueReport(t, deadManager)
+	if err := deadManager.SetDeliveryLock("s", true); err != nil {
+		t.Fatalf("SetDeliveryLock (dead): %v", err)
+	}
+	deadManager.drainTick(now)
+	if deadStore.envelopes[0].Status != "queued" {
+		t.Fatalf("locked supervisor with no live process must not deliver")
+	}
+
+	// Unlocked and blocked: unchanged — the gates still hold the report back.
+	unlockActivity := &fakeSessionActivity{
+		activities: map[string]entity.ProcessActivity{"s": blocked},
+		live:       map[string]bool{"s": true},
+	}
+	unlockManager, unlockStore, _ := newTestCrewManagerWithActivity(unlockActivity, claudeSession("w"), claudeSession("s"))
+	queueReport(t, unlockManager)
+	unlockManager.drainTick(now)
+	unlockManager.drainTick(now)
+	if unlockStore.envelopes[0].Status != "queued" {
+		t.Fatalf("unlocked blocked supervisor should not deliver")
 	}
 }
 

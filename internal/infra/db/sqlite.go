@@ -347,6 +347,18 @@ func runMigrations(db *sql.DB) error {
 		return fmt.Errorf("failed to create crew_watchdogs table: %w", err)
 	}
 
+	crewDeliveryLocksTable := `
+	CREATE TABLE IF NOT EXISTS crew_delivery_locks (
+		supervisor_session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+		locked INTEGER NOT NULL DEFAULT 0,
+		updated_at TEXT NOT NULL
+	);`
+
+	_, err = db.Exec(crewDeliveryLocksTable)
+	if err != nil {
+		return fmt.Errorf("failed to create crew_delivery_locks table: %w", err)
+	}
+
 	// Ensure the "Default" workspace always exists.
 	var defaultCount int
 	_ = db.QueryRow(`SELECT COUNT(*) FROM workspaces WHERE name = 'Default'`).Scan(&defaultCount)

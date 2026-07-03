@@ -569,6 +569,20 @@ export function crewDrainNow(sessionId: string): Promise<void> {
   return callGo(PKG, CREW_CTRL, "DrainNow", sessionId);
 }
 
+// Turn a supervisor's "always deliver" lock on/off — the continuous form of
+// crewDrainNow: while locked the drainer delivers on every tick, bypassing the
+// idle gates (still one per tick, still requires a live process).
+export function setCrewDeliveryLock(supervisorId: string, locked: boolean): Promise<void> {
+  return callGo(PKG, CREW_CTRL, "SetDeliveryLock", supervisorId, locked);
+}
+
+// Supervisors whose "always deliver" lock is on, keyed by supervisor session id.
+export function getCrewDeliveryLocks(): Promise<Record<string, boolean>> {
+  return callGo<Record<string, boolean> | null>(PKG, CREW_CTRL, "GetDeliveryLocks").then(
+    (r) => r ?? {}
+  );
+}
+
 // --- Files (sandboxed to the session workdir) ---
 //
 // All paths are forward-slash relative to the session root ("" = root). The

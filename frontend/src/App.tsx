@@ -202,6 +202,9 @@ function App() {
   // SINGLE source of the sidebar/pane unread badges (never per-session calls).
   const [crewAssignments, setCrewAssignments] = useState<CrewAssignment[]>([]);
   const [crewQueued, setCrewQueued] = useState<Record<string, number>>({});
+  // Supervisors with the "always deliver" lock on (supervisor id → true). Loaded
+  // alongside crewQueued and reconciled from the crew:updated payload.
+  const [crewDeliveryLocks, setCrewDeliveryLocks] = useState<Record<string, boolean>>({});
   // Worker session ids DETACHED from the crew pane into their own dock panels
   // ("crewSession:<id>" leaves — mirrors detachedFileTabs). Scoped to the dock
   // context via the worker's supervisor, so a worker panel only shows while
@@ -654,12 +657,14 @@ function App() {
   // and the 3s sessions poll both funnel through here).
   const fetchCrew = useCallback(async () => {
     try {
-      const [assignments, queued] = await Promise.all([
+      const [assignments, queued, locks] = await Promise.all([
         api.getAllCrewAssignments(),
         api.getCrewQueuedCounts(),
+        api.getCrewDeliveryLocks(),
       ]);
       setCrewAssignments(assignments ?? []);
       setCrewQueued(queued ?? {});
+      setCrewDeliveryLocks(locks ?? {});
     } catch (err) {
       console.error("failed to load crew state:", err);
     }
@@ -1156,15 +1161,20 @@ function App() {
   }, []);
 
   // Live crew refresh: the crew:updated event payload is intentionally tiny
-  // (assignments + queued counts) — consumers refetch bodies, so we just
-  // funnel through fetchCrew (the 3s poll above is the fallback).
+  // (assignments + queued counts + deliveryLocks) — consumers refetch bodies,
+  // so we funnel through fetchCrew (the 3s poll above is the fallback) while
+  // reconciling the lock map straight off the payload for immediacy.
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
     if (!w?.runtime?.EventsOn) return;
-    const cancel = w.runtime.EventsOn("crew:updated", () => {
-      fetchCrew();
-    });
+    const cancel = w.runtime.EventsOn(
+      "crew:updated",
+      (d?: { deliveryLocks?: Record<string, boolean> }) => {
+        if (d?.deliveryLocks) setCrewDeliveryLocks(d.deliveryLocks);
+        fetchCrew();
+      }
+    );
     return () => cancel && cancel();
   }, [fetchCrew]);
 
@@ -3226,6 +3236,14 @@ function App() {
               activeSession ? workersBySupervisor[activeSession.id] ?? [] : []
             }
             crewQueuedCount={activeSession ? crewQueued[activeSession.id] ?? 0 : 0}
+            crewDeliveryLocked={activeSession ? crewDeliveryLocks[activeSession.id] ?? false : false}
+            onCrewToggleLock={(locked) => {
+              if (!activeSession) return;
+              const id = activeSession.id;
+              // Optimistic: crew:updated reconciles the authoritative state.
+              setCrewDeliveryLocks((prev) => ({ ...prev, [id]: locked }));
+              api.setCrewDeliveryLock(id, locked).catch((err) => setError(String(err)));
+            }}
             onCrewClose={() => handleCrewPaneOpenChange(false)}
             onCrewSelectSession={handleOpenTab}
             onCrewDetachWorker={handleDetachCrewWorker}
