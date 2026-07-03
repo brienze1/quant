@@ -532,8 +532,15 @@ func (s *crewManagerService) drainLoop(stop <-chan struct{}, done chan<- struct{
 // drainTick runs one drainer pass: step 0 fires due watchdogs, then for every
 // supervisor with queued envelopes it delivers at most ONE envelope when all
 // injection gates are open, and tracks continuously-blocked time for the
-// crew:stuck signal.
+// crew:stuck signal. A panic in any pass is recovered so the long-lived drain
+// goroutine survives to the next tick instead of silently dying.
 func (s *crewManagerService) drainTick(now time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("crew: recovered from panic in drain tick: %v", r)
+		}
+	}()
+
 	s.fireDueWatchdogs(now)
 
 	supervisors, err := s.findCrew.SupervisorsWithQueued()
