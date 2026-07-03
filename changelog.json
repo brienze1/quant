@@ -1,6 +1,31 @@
 {
   "entries": [
     {
+      "version": "v3.1.45",
+      "date": "2026-07-03",
+      "changes": {
+        "features": [
+          "Crew mode — turn any session into a JARVIS-style orchestrator: assign worker sessions to it, dispatch long-running work with crew_dispatch, and let workers report back on their own instead of you polling them",
+          "Worker reports queue in the orchestrator's inbox and inject into its terminal when it's idle; a per-orchestrator 'always deliver' lock injects them immediately, and Deliver-now flushes on demand",
+          "Crew pane with a typed report inbox, drag-and-drop to assign or unassign workers (in and out of a crew), a detachable live worker panel with a steer input, and crew/supervisor badges in the sidebar",
+          "A 'crew (auto)' mindmap board mirrors each orchestrator's supervision tree, and watchdogs nudge the orchestrator when a worker goes quiet past its expected report time"
+        ],
+        "improvements": [
+          "Sessions created through the MCP tools are now filed under a task instead of appearing loose — create_session takes a task, and new list_tasks / create_task tools let an agent pick or make one",
+          "assign_session and list_sessions can resolve a session by name, not just by id"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.44",
+      "date": "2026-06-30",
+      "changes": {
+        "internal": [
+          "release pipeline now embeds the synced changelog into the release tag so the app reports the correct version"
+        ]
+      }
+    },
+    {
       "version": "v3.1.43",
       "date": "2026-06-30",
       "changes": {
