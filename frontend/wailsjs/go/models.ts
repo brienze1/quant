@@ -61,17 +61,11 @@ export namespace dto {
 	export class VoiceConfigDTO {
 	    enabled: boolean;
 	    provider: string;
-	    baseUrl: string;
-	    sttBaseUrl: string;
-	    ttsBaseUrl: string;
-	    apiKey?: string;
-	    hasApiKey: boolean;
-	    sttModel: string;
-	    ttsModel: string;
 	    voice: string;
 	    speed: number;
 	    pauseMs: number;
 	    instructions: string;
+	    managedRuntime: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new VoiceConfigDTO(source);
@@ -81,17 +75,11 @@ export namespace dto {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
 	        this.provider = source["provider"];
-	        this.baseUrl = source["baseUrl"];
-	        this.sttBaseUrl = source["sttBaseUrl"];
-	        this.ttsBaseUrl = source["ttsBaseUrl"];
-	        this.apiKey = source["apiKey"];
-	        this.hasApiKey = source["hasApiKey"];
-	        this.sttModel = source["sttModel"];
-	        this.ttsModel = source["ttsModel"];
 	        this.voice = source["voice"];
 	        this.speed = source["speed"];
 	        this.pauseMs = source["pauseMs"];
 	        this.instructions = source["instructions"];
+	        this.managedRuntime = source["managedRuntime"];
 	    }
 	}
 	export class ShortcutDTO {
@@ -438,6 +426,48 @@ export namespace dto {
 	        this.name = source["name"];
 	        this.claudeConfigPath = source["claudeConfigPath"];
 	        this.mcpConfigPath = source["mcpConfigPath"];
+	    }
+	}
+	export class CrewAssignmentResponse {
+	    workerSessionId: string;
+	    supervisorSessionId: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CrewAssignmentResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.workerSessionId = source["workerSessionId"];
+	        this.supervisorSessionId = source["supervisorSessionId"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class CrewEnvelopeResponse {
+	    id: string;
+	    fromSessionId: string;
+	    toSessionId: string;
+	    type: string;
+	    summary: string;
+	    status: string;
+	    createdAt: string;
+	    deliveredAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CrewEnvelopeResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.fromSessionId = source["fromSessionId"];
+	        this.toSessionId = source["toSessionId"];
+	        this.type = source["type"];
+	        this.summary = source["summary"];
+	        this.status = source["status"];
+	        this.createdAt = source["createdAt"];
+	        this.deliveredAt = source["deliveredAt"];
 	    }
 	}
 	export class DiffFileResponse {
@@ -1263,6 +1293,26 @@ export namespace entity {
 	        this.source = source["source"];
 	    }
 	}
+	export class UpdateInfo {
+	    currentVersion: string;
+	    latestVersion: string;
+	    updateAvailable: boolean;
+	    releaseNotes: string;
+	    releaseUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.currentVersion = source["currentVersion"];
+	        this.latestVersion = source["latestVersion"];
+	        this.updateAvailable = source["updateAvailable"];
+	        this.releaseNotes = source["releaseNotes"];
+	        this.releaseUrl = source["releaseUrl"];
+	    }
+	}
 
 }
 
@@ -1324,6 +1374,69 @@ export namespace voice {
 	        this.audioB64 = source["audioB64"];
 	        this.contentType = source["contentType"];
 	    }
+	}
+
+}
+
+export namespace voiceruntime {
+	
+	export class ModelStatus {
+	    name: string;
+	    installed: boolean;
+	    sizeBytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.installed = source["installed"];
+	        this.sizeBytes = source["sizeBytes"];
+	    }
+	}
+	export class Status {
+	    installed: boolean;
+	    installing: boolean;
+	    managed: boolean;
+	    version: string;
+	    platform: string;
+	    models: ModelStatus[];
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.installed = source["installed"];
+	        this.installing = source["installing"];
+	        this.managed = source["managed"];
+	        this.version = source["version"];
+	        this.platform = source["platform"];
+	        this.models = this.convertValues(source["models"], ModelStatus);
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

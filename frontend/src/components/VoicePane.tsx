@@ -234,16 +234,10 @@ export function VoicePane({ sessionId, className, style }: Props) {
           // conflated with "unset" (the slider min is 500 today, but be safe).
           vad: { redemptionMs: cfg.voice?.pauseMs ?? undefined },
         };
-        // WI-5.5: derive the "voice not configured" gate from the SAME cfg the
-        // service init already fetched (no second getConfig). Local-only now:
-        // notConfigured when voice is enabled but lacks a usable STT or TTS URL
-        // (each falls back to the legacy single baseUrl). Mirrors Settings.tsx.
-        const v = cfg.voice;
-        if (alive && v) {
-          const hasSttUrl = !!(v.sttBaseUrl?.trim() || v.baseUrl?.trim());
-          const hasTtsUrl = !!(v.ttsBaseUrl?.trim() || v.baseUrl?.trim());
-          setNotConfigured(!!v.enabled && (!hasSttUrl || !hasTtsUrl));
-        }
+        // Voice now runs on the embedded managed runtime — there are no
+        // user-facing endpoint URLs to be missing, so the old "not configured"
+        // URL gate is gone (the state stays false; install/readiness issues
+        // surface through Settings → Voice instead).
       } catch {
         options = { bargeIn: false };
       }

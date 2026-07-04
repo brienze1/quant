@@ -1,0 +1,267 @@
+[
+ {
+  "id": 0,
+  "name": "af_alloy",
+  "lang": "en-us"
+ },
+ {
+  "id": 1,
+  "name": "af_aoede",
+  "lang": "en-us"
+ },
+ {
+  "id": 2,
+  "name": "af_bella",
+  "lang": "en-us"
+ },
+ {
+  "id": 3,
+  "name": "af_heart",
+  "lang": "en-us"
+ },
+ {
+  "id": 4,
+  "name": "af_jessica",
+  "lang": "en-us"
+ },
+ {
+  "id": 5,
+  "name": "af_kore",
+  "lang": "en-us"
+ },
+ {
+  "id": 6,
+  "name": "af_nicole",
+  "lang": "en-us"
+ },
+ {
+  "id": 7,
+  "name": "af_nova",
+  "lang": "en-us"
+ },
+ {
+  "id": 8,
+  "name": "af_river",
+  "lang": "en-us"
+ },
+ {
+  "id": 9,
+  "name": "af_sarah",
+  "lang": "en-us"
+ },
+ {
+  "id": 10,
+  "name": "af_sky",
+  "lang": "en-us"
+ },
+ {
+  "id": 11,
+  "name": "am_adam",
+  "lang": "en-us"
+ },
+ {
+  "id": 12,
+  "name": "am_echo",
+  "lang": "en-us"
+ },
+ {
+  "id": 13,
+  "name": "am_eric",
+  "lang": "en-us"
+ },
+ {
+  "id": 14,
+  "name": "am_fenrir",
+  "lang": "en-us"
+ },
+ {
+  "id": 15,
+  "name": "am_liam",
+  "lang": "en-us"
+ },
+ {
+  "id": 16,
+  "name": "am_michael",
+  "lang": "en-us"
+ },
+ {
+  "id": 17,
+  "name": "am_onyx",
+  "lang": "en-us"
+ },
+ {
+  "id": 18,
+  "name": "am_puck",
+  "lang": "en-us"
+ },
+ {
+  "id": 19,
+  "name": "am_santa",
+  "lang": "en-us"
+ },
+ {
+  "id": 20,
+  "name": "bf_alice",
+  "lang": "en-gb"
+ },
+ {
+  "id": 21,
+  "name": "bf_emma",
+  "lang": "en-gb"
+ },
+ {
+  "id": 22,
+  "name": "bf_isabella",
+  "lang": "en-gb"
+ },
+ {
+  "id": 23,
+  "name": "bf_lily",
+  "lang": "en-gb"
+ },
+ {
+  "id": 24,
+  "name": "bm_daniel",
+  "lang": "en-gb"
+ },
+ {
+  "id": 25,
+  "name": "bm_fable",
+  "lang": "en-gb"
+ },
+ {
+  "id": 26,
+  "name": "bm_george",
+  "lang": "en-gb"
+ },
+ {
+  "id": 27,
+  "name": "bm_lewis",
+  "lang": "en-gb"
+ },
+ {
+  "id": 28,
+  "name": "ef_dora",
+  "lang": "es"
+ },
+ {
+  "id": 29,
+  "name": "em_alex",
+  "lang": "es"
+ },
+ {
+  "id": 30,
+  "name": "ff_siwis",
+  "lang": "fr"
+ },
+ {
+  "id": 31,
+  "name": "hf_alpha",
+  "lang": "hi"
+ },
+ {
+  "id": 32,
+  "name": "hf_beta",
+  "lang": "hi"
+ },
+ {
+  "id": 33,
+  "name": "hm_omega",
+  "lang": "hi"
+ },
+ {
+  "id": 34,
+  "name": "hm_psi",
+  "lang": "hi"
+ },
+ {
+  "id": 35,
+  "name": "if_sara",
+  "lang": "it"
+ },
+ {
+  "id": 36,
+  "name": "im_nicola",
+  "lang": "it"
+ },
+ {
+  "id": 37,
+  "name": "jf_alpha",
+  "lang": "ja"
+ },
+ {
+  "id": 38,
+  "name": "jf_gongitsune",
+  "lang": "ja"
+ },
+ {
+  "id": 39,
+  "name": "jf_nezumi",
+  "lang": "ja"
+ },
+ {
+  "id": 40,
+  "name": "jf_tebukuro",
+  "lang": "ja"
+ },
+ {
+  "id": 41,
+  "name": "jm_kumo",
+  "lang": "ja"
+ },
+ {
+  "id": 42,
+  "name": "pf_dora",
+  "lang": "pt-br"
+ },
+ {
+  "id": 43,
+  "name": "pm_alex",
+  "lang": "pt-br"
+ },
+ {
+  "id": 44,
+  "name": "pm_santa",
+  "lang": "pt-br"
+ },
+ {
+  "id": 45,
+  "name": "zf_xiaobei",
+  "lang": "zh"
+ },
+ {
+  "id": 46,
+  "name": "zf_xiaoni",
+  "lang": "zh"
+ },
+ {
+  "id": 47,
+  "name": "zf_xiaoxiao",
+  "lang": "zh"
+ },
+ {
+  "id": 48,
+  "name": "zf_xiaoyi",
+  "lang": "zh"
+ },
+ {
+  "id": 49,
+  "name": "zm_yunjian",
+  "lang": "zh"
+ },
+ {
+  "id": 50,
+  "name": "zm_yunxi",
+  "lang": "zh"
+ },
+ {
+  "id": 51,
+  "name": "zm_yunxia",
+  "lang": "zh"
+ },
+ {
+  "id": 52,
+  "name": "zm_yunyang",
+  "lang": "zh"
+ }
+]

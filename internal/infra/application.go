@@ -25,6 +25,8 @@ import (
 	"quant/internal/integration/persistence"
 	"quant/internal/integration/remote"
 	"quant/internal/integration/voice"
+	"quant/internal/integration/voice/engine/sherpaengine"
+	"quant/internal/integration/voiceruntime"
 )
 
 // discoverClaudeConfigDirs finds all Claude config directories.
@@ -247,7 +249,16 @@ func Run(assets embed.FS, changelogData []byte) error {
 	// between the voice controller (which resolves) and the MCP server (which
 	// requests).
 	voiceBridge := voice.NewBridge(remote.Emit)
-	voiceCtrl := voice.NewVoiceController(injector.ConfigManager(), voiceBridge, injector.SessionManager())
+	// One shared embedded sherpa-onnx engine instance: the voice controller
+	// serves STT/TTS from it, and the voice runtime manager unloads it before
+	// deleting model files on uninstall.
+	sherpaEngine := sherpaengine.New(sherpaengine.Config{ModelsDir: paths.VoiceModelsDir()})
+	voiceCtrl := voice.NewVoiceControllerWithEngine(injector.ConfigManager(), voiceBridge, injector.SessionManager(), sherpaEngine)
+	// Voice runtime: one-click download of the local speech models the embedded
+	// engine loads in-process. Desktop-only (not added to remoteControllers) —
+	// installing/removing models must not be reachable through the tunnel.
+	voiceRuntimeMgr := voiceruntime.NewManager(injector.ConfigPersistence(), remote.Emit, sherpaEngine)
+	voiceRuntimeCtrl := controller.NewVoiceRuntimeController(voiceRuntimeMgr)
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
@@ -334,6 +345,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			changelogCtrl.OnStartup(ctx)
 			updateCtrl.OnStartup(ctx)
 			voiceCtrl.OnStartup(ctx)
+			voiceRuntimeCtrl.OnStartup(ctx)
 			remoteCtrl.OnStartup(ctx)
 			// Auto-resume remote access if it was enabled before the last shutdown.
 			// Runs after controllers have their context set, since RPC dispatch
@@ -356,7 +368,9 @@ func Run(assets embed.FS, changelogData []byte) error {
 			fileCtrl.OnShutdown(ctx)
 			changelogCtrl.OnShutdown(ctx)
 			updateCtrl.OnShutdown(ctx)
+			// voiceCtrl.OnShutdown unloads the shared embedded sherpa engine.
 			voiceCtrl.OnShutdown(ctx)
+			voiceRuntimeCtrl.OnShutdown(ctx)
 			remoteCtrl.OnShutdown(ctx)
 			remoteManager.Stop()
 			jobScheduler.Stop()
@@ -381,6 +395,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 			changelogCtrl,
 			updateCtrl,
 			voiceCtrl,
+			voiceRuntimeCtrl,
 			remoteCtrl,
 		},
 	})

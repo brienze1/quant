@@ -52,17 +52,20 @@ func (c *configController) GetConfig() (*dto.ConfigResponse, error) {
 
 // SaveConfig persists the given configuration from the request DTO.
 //
-// The voice API key is never returned to the frontend (it is masked in the DTO),
-// so an incoming empty voice APIKey means "keep the existing stored key" rather
-// than "clear it". We resolve that by reading the current config and carrying the
-// stored key forward when the request omits one.
+// The deprecated custom-endpoint voice fields (BaseURL/STTBaseURL/TTSBaseURL/
+// APIKey/STTModel/TTSModel) are hidden from the frontend DTO, so every save
+// must carry the stored values forward — otherwise a Settings save would wipe
+// a power user's hand-configured custom endpoints.
 func (c *configController) SaveConfig(request dto.SaveConfigRequest) error {
 	cfg := request.ToEntity()
 
-	if cfg.Voice.APIKey == "" {
-		if existing, err := c.configManager.GetConfig(); err == nil && existing != nil {
-			cfg.Voice.APIKey = existing.Voice.APIKey
-		}
+	if existing, err := c.configManager.GetConfig(); err == nil && existing != nil {
+		cfg.Voice.BaseURL = existing.Voice.BaseURL
+		cfg.Voice.STTBaseURL = existing.Voice.STTBaseURL
+		cfg.Voice.TTSBaseURL = existing.Voice.TTSBaseURL
+		cfg.Voice.APIKey = existing.Voice.APIKey
+		cfg.Voice.STTModel = existing.Voice.STTModel
+		cfg.Voice.TTSModel = existing.Voice.TTSModel
 	}
 
 	return c.configManager.SaveConfig(&cfg)
