@@ -3,13 +3,22 @@ package engine
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 )
 
-// DecodeWAV decodes an in-memory 16-bit PCM RIFF/WAVE file into normalized
-// float32 samples in [-1, 1] plus the sample rate. Stereo input is downmixed
-// to mono by averaging the channels. Chunks other than "fmt " and "data"
-// (LIST, fact, ...) are skipped, including their word-alignment pad bytes.
-// Non-PCM or non-16-bit encodings are rejected with a clear error.
+// WAVE format tags we understand (from the fmt chunk).
+const (
+	wavFormatPCM       = 1 // integer PCM
+	wavFormatIEEEFloat = 3 // IEEE float
+)
+
+// DecodeWAV decodes an in-memory RIFF/WAVE file into normalized float32 samples
+// in [-1, 1] plus the sample rate. Both 16-bit integer PCM (format 1) and
+// 32-bit IEEE float (format 3) are supported — the browser VAD/PTT capture
+// emits float32 WAV, while sherpa's own TTS output is 16-bit PCM. Stereo input
+// is downmixed to mono by averaging the channels. Chunks other than "fmt " and
+// "data" (LIST, fact, ...) are skipped, including their word-alignment pad
+// bytes. Other encodings are rejected with a clear error.
 func DecodeWAV(data []byte) ([]float32, int, error) {
 	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
 		return nil, 0, fmt.Errorf("not a RIFF/WAVE file")
@@ -47,19 +56,21 @@ func DecodeWAV(data []byte) ([]float32, int, error) {
 			if !haveFmt {
 				return nil, 0, fmt.Errorf("corrupt WAV: data chunk before fmt chunk")
 			}
-			if format != 1 {
-				return nil, 0, fmt.Errorf("unsupported WAV encoding (format %d): only 16-bit PCM is supported", format)
-			}
-			if bits != 16 {
-				return nil, 0, fmt.Errorf("unsupported WAV bit depth (%d): only 16-bit PCM is supported", bits)
-			}
 			if channels != 1 && channels != 2 {
 				return nil, 0, fmt.Errorf("unsupported WAV channel count (%d): only mono or stereo is supported", channels)
 			}
 			if sampleRate <= 0 {
 				return nil, 0, fmt.Errorf("corrupt WAV: invalid sample rate %d", sampleRate)
 			}
-			return decodePCM16(data[body:body+size], channels), sampleRate, nil
+			raw := data[body : body+size]
+			switch {
+			case format == wavFormatPCM && bits == 16:
+				return decodePCM16(raw, channels), sampleRate, nil
+			case format == wavFormatIEEEFloat && bits == 32:
+				return decodeFloat32(raw, channels), sampleRate, nil
+			default:
+				return nil, 0, fmt.Errorf("unsupported WAV encoding (format %d, %d-bit): want 16-bit PCM or 32-bit float", format, bits)
+			}
 		}
 
 		pos = body + size
@@ -86,6 +97,27 @@ func decodePCM16(pcm []byte, channels int) []float32 {
 		l := float32(int16(binary.LittleEndian.Uint16(pcm[off:])))
 		r := float32(int16(binary.LittleEndian.Uint16(pcm[off+2:])))
 		samples[i] = (l + r) / 2 / 32768
+	}
+	return samples
+}
+
+// decodeFloat32 reads little-endian 32-bit IEEE float PCM (already normalized
+// to [-1, 1]), averaging channel pairs into mono when channels == 2. A trailing
+// partial frame is dropped. This is the format the browser VAD/PTT capture
+// emits (@ricky0123/vad-web encodeWAV defaults to 32-bit float).
+func decodeFloat32(pcm []byte, channels int) []float32 {
+	frameBytes := 4 * channels
+	frames := len(pcm) / frameBytes
+	samples := make([]float32, frames)
+	for i := 0; i < frames; i++ {
+		off := i * frameBytes
+		if channels == 1 {
+			samples[i] = math.Float32frombits(binary.LittleEndian.Uint32(pcm[off:]))
+			continue
+		}
+		l := math.Float32frombits(binary.LittleEndian.Uint32(pcm[off:]))
+		r := math.Float32frombits(binary.LittleEndian.Uint32(pcm[off+4:]))
+		samples[i] = (l + r) / 2
 	}
 	return samples
 }

@@ -112,17 +112,59 @@ func TestDecodeWAVSkipsExtraChunks(t *testing.T) {
 	}
 }
 
-func TestDecodeWAVRejectsNonPCM(t *testing.T) {
-	// Format 3 = IEEE float.
-	data := wavFile(fmtChunk(3, 1, 16000, 32), chunk("data", make([]byte, 8)))
-	if _, _, err := DecodeWAV(data); err == nil || !strings.Contains(err.Error(), "only 16-bit PCM") {
-		t.Errorf("non-PCM error = %v, want mention of 16-bit PCM", err)
+func float32le(samples ...float32) []byte {
+	out := make([]byte, 0, 4*len(samples))
+	for _, s := range samples {
+		out = binary.LittleEndian.AppendUint32(out, math.Float32bits(s))
+	}
+	return out
+}
+
+// The browser VAD/PTT capture (@ricky0123/vad-web) emits 32-bit IEEE float WAV
+// by default — the format the embedded STT engine actually receives.
+func TestDecodeWAVFloat32Mono(t *testing.T) {
+	data := wavFile(fmtChunk(3, 1, 16000, 32), chunk("data", float32le(0, 0.5, -0.5, 1, -1)))
+
+	samples, rate, err := DecodeWAV(data)
+	if err != nil {
+		t.Fatalf("DecodeWAV: %v", err)
+	}
+	if rate != 16000 {
+		t.Errorf("sample rate = %d, want 16000", rate)
+	}
+	want := []float32{0, 0.5, -0.5, 1, -1}
+	if len(samples) != len(want) {
+		t.Fatalf("got %d samples, want %d", len(samples), len(want))
+	}
+	for i := range want {
+		if math.Abs(float64(samples[i]-want[i])) > 1e-6 {
+			t.Errorf("sample[%d] = %v, want %v", i, samples[i], want[i])
+		}
+	}
+}
+
+func TestDecodeWAVFloat32StereoDownmix(t *testing.T) {
+	data := wavFile(fmtChunk(3, 2, 24000, 32), chunk("data", float32le(0.5, -0.5, 1, 1)))
+	samples, _, err := DecodeWAV(data)
+	if err != nil {
+		t.Fatalf("DecodeWAV: %v", err)
+	}
+	if len(samples) != 2 || samples[0] != 0 || math.Abs(float64(samples[1]-1)) > 1e-6 {
+		t.Errorf("downmixed float32 = %v, want [0 1]", samples)
+	}
+}
+
+func TestDecodeWAVRejectsUnsupported(t *testing.T) {
+	// Format 3 IEEE float but 64-bit (only 32-bit float is supported).
+	data := wavFile(fmtChunk(3, 1, 16000, 64), chunk("data", make([]byte, 8)))
+	if _, _, err := DecodeWAV(data); err == nil || !strings.Contains(err.Error(), "unsupported WAV encoding") {
+		t.Errorf("64-bit float error = %v, want unsupported-encoding", err)
 	}
 
 	// PCM but 8-bit.
 	data = wavFile(fmtChunk(1, 1, 16000, 8), chunk("data", make([]byte, 4)))
-	if _, _, err := DecodeWAV(data); err == nil || !strings.Contains(err.Error(), "only 16-bit PCM") {
-		t.Errorf("8-bit error = %v, want mention of 16-bit PCM", err)
+	if _, _, err := DecodeWAV(data); err == nil || !strings.Contains(err.Error(), "unsupported WAV encoding") {
+		t.Errorf("8-bit error = %v, want unsupported-encoding", err)
 	}
 }
 
