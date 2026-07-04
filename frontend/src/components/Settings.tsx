@@ -1758,6 +1758,44 @@ function VoiceTab({ config, update }: TabProps) {
     setReady({ state: r.ok ? "ok" : "fail", detail: r.detail });
   }, []);
 
+  // Microphone permission: queried on mount where the Permissions API supports
+  // it, and requestable explicitly so the OS prompt happens here in Settings
+  // instead of surprising the user mid-session.
+  const [micState, setMicState] = useState<"unknown" | "prompt" | "granted" | "denied">("unknown");
+  const [micMsg, setMicMsg] = useState<string>("");
+  useEffect(() => {
+    let status: PermissionStatus | null = null;
+    void (async () => {
+      try {
+        status = await navigator.permissions.query({ name: "microphone" as PermissionName });
+        setMicState(status.state);
+        status.onchange = () => { if (status) setMicState(status.state); };
+      } catch {
+        /* Permissions API can't report the mic here (older WebKit) — leave "unknown". */
+      }
+    })();
+    return () => { if (status) status.onchange = null; };
+  }, []);
+  async function requestMic() {
+    setMicMsg("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      setMicState("granted");
+      setMicMsg("access granted ✓");
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        setMicState("denied");
+        setMicMsg("denied — allow quant under System Settings → Privacy & Security → Microphone, then try again");
+      } else if (name === "NotFoundError") {
+        setMicMsg("no microphone found");
+      } else {
+        setMicMsg(String(err instanceof Error ? err.message : err));
+      }
+    }
+  }
+
   // Voices discovered from the installed runtime (the Kokoro model's speaker
   // names), merged ahead of the curated fallbacks in the picker. Soft-fails to
   // [] when the runtime isn't installed, so the fallback list is used.
@@ -1894,6 +1932,30 @@ function VoiceTab({ config, update }: TabProps) {
           label="enable voice"
           description="turn on the voice pane toggle in the session header"
           right={<Toggle checked={voice.enabled} onChange={(v) => updateVoice("enabled", v)} />}
+        />
+        <SettingRow
+          label="microphone"
+          description="grant quant access to your mic (used by voice mode and push-to-talk)"
+          right={
+            <div className="flex items-center gap-3">
+              <SmallButton
+                label={micState === "granted" ? "granted ✓" : "request mic access"}
+                onClick={() => { void requestMic(); }}
+                disabled={micState === "granted"}
+              />
+              {micMsg && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    maxWidth: 320,
+                    color: micState === "granted" ? "var(--ok)" : micState === "denied" ? "var(--danger)" : "var(--fg-2)",
+                  }}
+                >
+                  {micMsg}
+                </span>
+              )}
+            </div>
+          }
         />
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 16px 13px", flexWrap: "wrap" }}>
           <StatusChip label="voice" state={ready.state === "pending" ? "untested" : ready.state} />
