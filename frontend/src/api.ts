@@ -822,6 +822,15 @@ export function uninstallVoiceRuntime(): Promise<VoiceRuntimeStatus> {
 }
 
 /**
+ * Download + install the speech-to-text model for a non-English language
+ * on demand (currently the ~374 MB multilingual Whisper for pt-br). Progress
+ * streams on the same "voice:runtime" event as installVoiceRuntime.
+ */
+export function installVoiceLanguage(lang: "pt-br"): Promise<VoiceRuntimeStatus> {
+  return callGo(PKG, VOICE_RUNTIME_CTRL, "InstallVoiceLanguage", lang);
+}
+
+/**
  * Subscribe to voice-runtime install/lifecycle events ("voice:runtime"). Returns
  * an unsubscribe function; a no-op when the Wails runtime is absent (SSR/tests).
  */

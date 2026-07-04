@@ -44,6 +44,15 @@ func (c *voiceRuntimeController) InstallVoiceRuntime() (voiceruntime.Status, err
 	return c.manager.Install()
 }
 
+// InstallVoiceLanguage downloads + verifies + extracts the on-demand model(s)
+// for a voice language (e.g. "pt-br"). Returns immediately with Installing=true;
+// progress streams on the voice:runtime event, ending with phase "ready". A
+// language with no artifacts in the manifest is a no-op. Desktop-only, like the
+// rest of this controller.
+func (c *voiceRuntimeController) InstallVoiceLanguage(lang string) (voiceruntime.Status, error) {
+	return c.manager.InstallLanguage(lang)
+}
+
 // UninstallVoiceRuntime unloads the in-process models and removes them from disk.
 func (c *voiceRuntimeController) UninstallVoiceRuntime() (voiceruntime.Status, error) {
 	return c.manager.Uninstall()

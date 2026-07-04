@@ -192,8 +192,9 @@ func TestSynthesizeUsesConfigDefaultsForVoiceAndSpeed(t *testing.T) {
 	if _, err := c.Synthesize("hi", "", 0); err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
-	if body.Voice != defaultVoice {
-		t.Errorf("voice = %q, want %q", body.Voice, defaultVoice)
+	wantVoice := sherpaengine.DefaultVoice(sherpaengine.LangEN)
+	if body.Voice != wantVoice {
+		t.Errorf("voice = %q, want %q", body.Voice, wantVoice)
 	}
 	if body.Speed != defaultSpeed {
 		t.Errorf("speed = %v, want %v", body.Speed, defaultSpeed)

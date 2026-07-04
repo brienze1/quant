@@ -305,6 +305,10 @@ export interface Config {
 export interface VoiceConfig {
   enabled: boolean;
   provider: "local";
+  // Spoken/recognized language. "en" uses the English STT model + English voices
+  // (af_heart default); "pt-br" uses the on-demand multilingual Whisper STT model
+  // + Brazilian Portuguese voices (pf_dora default).
+  language: "en" | "pt-br";
   voice: string;
   speed: number;
   // Milliseconds of silence the VAD waits through before ending the user's turn

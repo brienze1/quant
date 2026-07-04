@@ -22,6 +22,7 @@ type VoiceConfigDTO struct {
 	Enabled        bool    `json:"enabled"`
 	Provider       string  `json:"provider"`
 	Voice          string  `json:"voice"`
+	Language       string  `json:"language"` // voice language: "en" (default) or "pt-br"
 	Speed          float64 `json:"speed"`
 	PauseMs        int     `json:"pauseMs"`        // VAD redemption window (ms): how long the user can pause before their turn ends
 	Instructions   string  `json:"instructions"`   // optional user-authored guidance appended to the built-in voice persona
@@ -201,6 +202,7 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 			Enabled:        cfg.Voice.Enabled,
 			Provider:       cfg.Voice.Provider,
 			Voice:          cfg.Voice.Voice,
+			Language:       cfg.Voice.Language,
 			Speed:          cfg.Voice.Speed,
 			PauseMs:        cfg.Voice.PauseMs,
 			Instructions:   cfg.Voice.Instructions,
@@ -286,6 +288,7 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 			Enabled:        r.Voice.Enabled,
 			Provider:       r.Voice.Provider,
 			Voice:          r.Voice.Voice,
+			Language:       r.Voice.Language,
 			Speed:          r.Voice.Speed,
 			PauseMs:        r.Voice.PauseMs,
 			Instructions:   r.Voice.Instructions,

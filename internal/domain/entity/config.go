@@ -29,6 +29,10 @@ type VoiceConfig struct {
 	TTSModel   string  `json:"ttsModel"`
 	Voice      string  `json:"voice"` // default "af_heart"
 	Speed      float64 `json:"speed"` // default 1.2
+	// Language selects the voice language the embedded engine serves: "en"
+	// (default) or "pt-br". It drives both the Whisper STT model and the Kokoro
+	// default voice; the pt-br STT model is installed on demand.
+	Language string `json:"language"`
 	// PauseMs is the milliseconds of silence the VAD waits through before ending
 	// the user's turn (frontend redemption window); higher = more time to
 	// pause/think mid-sentence.
@@ -73,6 +77,11 @@ func (v VoiceConfig) WithDefaults() VoiceConfig {
 	}
 	if v.TTSBaseURL == legacyLocalTTSBaseURL {
 		v.TTSBaseURL = ""
+	}
+	// Language is English unless explicitly set to Brazilian Portuguese, so any
+	// unset/legacy/unknown value normalizes to "en".
+	if v.Language != "pt-br" {
+		v.Language = "en"
 	}
 	if v.Voice == "" {
 		v.Voice = "af_heart"

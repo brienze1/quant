@@ -33,13 +33,13 @@ import (
 )
 
 const (
-	// defaultVoice / defaultSpeed are the live-path fallbacks used when the
-	// frontend passes a blank voice / zero speed AND the saved config has none.
-	// They MUST stay in sync with entity.VoiceConfig.WithDefaults() (the single
-	// source of truth for voice defaults, in internal/domain/entity/config.go);
-	// they are duplicated here only to avoid an awkward cross-package import on
-	// the hot synth path.
-	defaultVoice   = "af_heart"
+	// defaultSpeed is the live-path fallback used when the frontend passes a zero
+	// speed AND the saved config has none. It MUST stay in sync with
+	// entity.VoiceConfig.WithDefaults() (the single source of truth for voice
+	// defaults, in internal/domain/entity/config.go); it is duplicated here only
+	// to avoid an awkward cross-package import on the hot synth path. The default
+	// voice is language-dependent, so it comes from sherpaengine.DefaultVoice
+	// rather than a const here.
 	defaultSpeed   = 1.2
 	defaultTimeout = 60 * time.Second
 )
@@ -256,6 +256,18 @@ func (c *voiceController) voiceConfig() (entity.VoiceConfig, error) {
 	return cfg.Voice.WithDefaults(), nil
 }
 
+// applyLanguage tells the embedded engine which language to serve, so the
+// subsequent Ready()/engine selection and any lazy model (re)build reflect the
+// user's configured voice language. It reads the (already-defaulted) config and
+// is a no-op when the embedded engine is absent (custom-endpoint-only setups).
+// Callers invoke it at the top of each engine-facing method, before engine
+// selection / sherpaReady().
+func (c *voiceController) applyLanguage(vc entity.VoiceConfig) {
+	if c.sherpa != nil {
+		c.sherpa.SetLanguage(vc.Language)
+	}
+}
+
 // reqCtx returns the app lifecycle context for outgoing engine calls, falling
 // back to Background before OnStartup (e.g. in tests).
 func (c *voiceController) reqCtx() context.Context {
@@ -367,6 +379,7 @@ func (c *voiceController) Transcribe(audioB64 string, mime string) (string, erro
 	if err != nil {
 		return "", err
 	}
+	c.applyLanguage(vc)
 
 	eng, err := c.engineFor(vc, httpengine.OpSTT)
 	if err != nil {
@@ -397,12 +410,13 @@ func (c *voiceController) Synthesize(text string, voice string, speed float64) (
 	if err != nil {
 		return SpeechResult{}, err
 	}
+	c.applyLanguage(vc)
 
 	if voice == "" {
 		voice = vc.Voice
 	}
 	if voice == "" {
-		voice = defaultVoice
+		voice = sherpaengine.DefaultVoice(vc.Language)
 	}
 	if speed == 0 {
 		speed = vc.Speed
@@ -433,12 +447,13 @@ func (c *voiceController) Synthesize(text string, voice string, speed float64) (
 // It soft-fails: on any error it returns an empty slice plus the error so the
 // frontend can fall back to its curated option list without surfacing a crash.
 func (c *voiceController) ListModels(op string) ([]string, error) {
-	if c.sherpaReady() {
-		return []string{sherpaSTTModel}, nil
-	}
 	vc, err := c.voiceConfig()
 	if err != nil {
 		return []string{}, err
+	}
+	c.applyLanguage(vc)
+	if c.sherpaReady() {
+		return []string{sherpaSTTModel}, nil
 	}
 	return c.httpEngine(vc).ListModels(httpengine.OpFromString(op))
 }
@@ -449,6 +464,11 @@ func (c *voiceController) ListModels(op string) ([]string, error) {
 //
 // It soft-fails like ListModels: any error yields an empty slice plus the error.
 func (c *voiceController) ListVoices() ([]string, error) {
+	vc, err := c.voiceConfig()
+	if err != nil {
+		return []string{}, err
+	}
+	c.applyLanguage(vc)
 	if c.sherpaReady() {
 		voices, err := c.sherpa.Voices()
 		if err != nil {
@@ -459,10 +479,6 @@ func (c *voiceController) ListVoices() ([]string, error) {
 			names[i] = v.Name
 		}
 		return names, nil
-	}
-	vc, err := c.voiceConfig()
-	if err != nil {
-		return []string{}, err
 	}
 	return c.httpEngine(vc).ListVoiceNames()
 }
@@ -488,6 +504,7 @@ func (c *voiceController) Ping(op string) (PingResult, error) {
 	if err != nil {
 		return PingResult{Ok: false, Detail: "could not load voice config: " + err.Error()}, nil
 	}
+	c.applyLanguage(vc)
 
 	if c.sherpaReady() {
 		return PingResult{Ok: true, Detail: "embedded voice engine ready"}, nil
