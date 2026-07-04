@@ -400,7 +400,8 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 						_, _ = outputFile.Write(data)
 					}
 
-					// Send to frontend via Wails event.
+					// Send to frontend via Wails event. remote.Publish's drop
+					// tracking depends on this map[string]string payload shape.
 					if m.ctx != nil {
 						remote.Emit(m.ctx, "session:output", map[string]string{
 							"sessionId": sessionID,

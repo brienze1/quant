@@ -115,6 +115,20 @@
   }
   connect();
 
+  // Send a raw frame over the event WebSocket. Returns false when the socket is
+  // not open so the caller falls back to the RPC POST path.
+  window.__quantRemoteWS = {
+    send: function (frame) {
+      if (!ws || ws.readyState !== 1) return false;
+      try {
+        ws.send(JSON.stringify(frame));
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
+  };
+
   window.runtime = window.runtime || {};
   window.runtime.EventsOn = function (name, cb) {
     (listeners[name] = listeners[name] || []).push(cb);

@@ -199,15 +199,47 @@ func (s *server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.readPump(c)
 }
 
+// wsInbound is a client→server frame carrying terminal input or a resize.
+// Only these two frame types are handled — generic RPC over the WebSocket is
+// intentionally not supported.
+type wsInbound struct {
+	Type      string `json:"type"`
+	SessionID string `json:"sessionId"`
+	Data      string `json:"data,omitempty"`
+	Rows      int    `json:"rows,omitempty"`
+	Cols      int    `json:"cols,omitempty"`
+}
+
+const wsReadLimit = 256 * 1024 // 16KB client chunks × worst-case 6-byte JSON escaping ≈ 96KB, ample headroom
+
+func jsonArg(v interface{}) json.RawMessage { b, _ := json.Marshal(v); return b }
+
+// readPump processes inbound frames sequentially on this one goroutine, so
+// per-client input ordering is guaranteed by TCP. An oversized frame closes
+// the connection; the shim reconnects and falls back to POST meanwhile — the
+// single reconnect instant is the one accepted residual reorder window.
 func (s *server) readPump(c *wsClient) {
 	defer func() {
 		s.hub.remove(c)
 		_ = c.conn.Close()
 	}()
-	c.conn.SetReadLimit(512)
+	c.conn.SetReadLimit(wsReadLimit)
 	for {
-		if _, _, err := c.conn.ReadMessage(); err != nil {
+		_, raw, err := c.conn.ReadMessage()
+		if err != nil {
 			return
+		}
+		var msg wsInbound
+		if json.Unmarshal(raw, &msg) != nil {
+			continue
+		}
+		switch msg.Type {
+		case "input":
+			_ = s.safeDispatch(rpcRequest{Struct: "sessionController", Method: "SendMessage",
+				Args: []json.RawMessage{jsonArg(msg.SessionID), jsonArg(msg.Data)}})
+		case "resize":
+			_ = s.safeDispatch(rpcRequest{Struct: "sessionController", Method: "ResizeTerminal",
+				Args: []json.RawMessage{jsonArg(msg.SessionID), jsonArg(msg.Rows), jsonArg(msg.Cols)}})
 		}
 	}
 }
@@ -227,6 +259,15 @@ func (s *server) writePump(c *wsClient) {
 				// Close so readPump unblocks and deregisters this client.
 				_ = c.conn.Close()
 				return
+			}
+			// Once the queue has drained, everything buffered was flushed, so a
+			// resync (full re-fetch) supersedes any events dropped by Publish.
+			if len(c.send) == 0 {
+				if ids := c.takeDropped(); ids != nil {
+					_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+					_ = c.conn.WriteJSON(eventMessage{Event: "session:resync",
+						Data: map[string]interface{}{"sessionIds": ids}})
+				}
 			}
 		case <-ping.C:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))

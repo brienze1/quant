@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import type { Session, Config } from "../types";
 import * as api from "../api";
+import { terminalIO } from "../terminal/terminalInput";
 import { useTheme } from "../theme";
 
 interface TerminalPaneProps {
@@ -115,11 +116,11 @@ export function TerminalPane({
 
     if (!isArchived) {
       term.onData((data) => {
-        api.sendMessage(sessionIdRef.current, data).catch(() => {});
+        terminalIO.sendInput(sessionIdRef.current, data);
       });
 
       term.onResize(({ rows, cols }) => {
-        api.resizeTerminal(sessionIdRef.current, rows, cols).catch(() => {});
+        terminalIO.sendResize(sessionIdRef.current, rows, cols);
       });
 
       // The fit() at open time ran BEFORE this onResize handler existed, so
@@ -130,7 +131,7 @@ export function TerminalPane({
       // agent's TUI keeps rendering at the stale column count, squeezing the
       // chat into a narrow band and leaving an empty gap beside it. Sync the
       // PTY to the freshly mounted grid explicitly.
-      api.resizeTerminal(sessionIdRef.current, term.rows, term.cols).catch(() => {});
+      terminalIO.sendResize(sessionIdRef.current, term.rows, term.cols);
     }
 
     const viewportEl = termContainerRef.current.querySelector('.xterm-viewport');
@@ -277,6 +278,54 @@ export function TerminalPane({
       }
     );
 
+    // Remote-only recovery: the server emits `session:resync` after it had to
+    // drop `session:output` events for a slow client (dropping mid-ANSI-stream
+    // corrupts rendering). Re-fetch the full buffer and repaint from scratch,
+    // reusing the same replay/liveQueue machinery as the mount replay so live
+    // output arriving mid-resync stays ordered. Desktop mode never receives
+    // this event. `active` guards against overlapping resyncs; `queued`
+    // coalesces repeat signals into exactly one follow-up pass.
+    const resyncState = { active: false, queued: false };
+    const startResync = () => {
+      if (resyncState.active) {
+        resyncState.queued = true;
+        return;
+      }
+      resyncState.active = true;
+      const finish = () => {
+        resyncState.active = false;
+        if (resyncState.queued && alive.current) {
+          resyncState.queued = false;
+          startResync();
+        }
+      };
+      api
+        .getSessionOutput(session.id)
+        .then((output) => {
+          const write = () => {
+            if (!alive.current || !termRef.current) return;
+            if (replayState.replaying) {
+              // A replay is still writing chunks; interleaving a second
+              // chunked writer would garble the terminal. Wait for it.
+              requestAnimationFrame(write);
+              return;
+            }
+            termRef.current.reset();
+            writeChunked(output ?? "", finish);
+          };
+          write();
+        })
+        .catch(finish);
+    };
+
+    const cancelResync = w.runtime.EventsOn(
+      "session:resync",
+      (data: { sessionIds: string[] }) => {
+        if (!alive.current || !data?.sessionIds?.includes(session.id)) return;
+        startResync();
+      }
+    );
+
     if (session.status === "running") {
       api
         .getSessionOutput(session.id)
@@ -305,6 +354,8 @@ export function TerminalPane({
         clearTimeout(timer);
         if (cancelOutput) cancelOutput();
         if (cancelExited) cancelExited();
+        if (cancelResync) cancelResync();
+        terminalIO.dispose(session.id);
         if (termRef.current) {
           termRef.current.dispose();
           termRef.current = null;
@@ -316,6 +367,8 @@ export function TerminalPane({
       alive.current = false;
       if (cancelOutput) cancelOutput();
       if (cancelExited) cancelExited();
+      if (cancelResync) cancelResync();
+      terminalIO.dispose(session.id);
       if (termRef.current) {
         termRef.current.dispose();
         termRef.current = null;
@@ -379,7 +432,7 @@ export function TerminalPane({
         try {
           fitAddonRef.current.fit();
           const { rows, cols } = termRef.current;
-          api.resizeTerminal(sessionIdRef.current, rows, cols).catch(() => {});
+          terminalIO.sendResize(sessionIdRef.current, rows, cols);
         } catch {
           // Ignore fit errors during disposal.
         }

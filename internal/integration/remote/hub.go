@@ -23,6 +23,36 @@ type eventMessage struct {
 type wsClient struct {
 	conn *websocket.Conn
 	send chan eventMessage
+
+	mu              sync.Mutex
+	droppedSessions map[string]struct{} // sessions with output dropped by Publish, pending resync
+}
+
+// markDropped records that a session:output event for sessionID was dropped
+// because this client's send buffer was full.
+func (c *wsClient) markDropped(sessionID string) {
+	c.mu.Lock()
+	if c.droppedSessions == nil {
+		c.droppedSessions = make(map[string]struct{})
+	}
+	c.droppedSessions[sessionID] = struct{}{}
+	c.mu.Unlock()
+}
+
+// takeDropped returns the sessions with dropped output and clears the set,
+// or nil when nothing was dropped.
+func (c *wsClient) takeDropped() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.droppedSessions) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(c.droppedSessions))
+	for id := range c.droppedSessions {
+		ids = append(ids, id)
+	}
+	c.droppedSessions = nil
+	return ids
 }
 
 // EventHub fans out backend events to every connected browser (remote) client,
@@ -62,6 +92,15 @@ func (h *EventHub) Publish(event string, data interface{}) {
 		select {
 		case c.send <- msg:
 		default:
+			// Dropped terminal output corrupts the remote render, so remember
+			// the session for a resync once the client drains. The payload is
+			// always map[string]string{"sessionId","data"} — emitted in
+			// internal/integration/process/manager.go.
+			if event == "session:output" {
+				if m, ok := data.(map[string]string); ok {
+					c.markDropped(m["sessionId"])
+				}
+			}
 		}
 	}
 	h.mu.RUnlock()
