@@ -21,7 +21,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.resolve(__dirname, "tests/fixtures/utterance.wav");
 
 export default defineConfig({
-  testDir: "./tests/voice",
+  // Covers tests/voice (audio+orb harnesses) and tests/remote (input queue).
+  testDir: "./tests",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
