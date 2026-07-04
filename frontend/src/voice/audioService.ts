@@ -889,7 +889,7 @@ export class AudioService implements IAudioService {
       // single STT hiccup is skipped instead of killing the whole recording.
       let audioB64: string;
       try {
-        const wav = utils.encodeWAV(audio); // defaults: PCM, 16000Hz, mono, 16-bit
+        const wav = utils.encodeWAV(audio); // 32-bit float WAV, 16000Hz mono (vad-web default); backend decodes float32
         audioB64 = utils.arrayBufferToBase64(wav);
       } catch {
         return; // skip the segment; keep recording
@@ -942,7 +942,7 @@ export class AudioService implements IAudioService {
     // Assemble a 16kHz mono PCM WAV from the VAD's Float32 samples.
     let audioB64: string;
     try {
-      const wav = utils.encodeWAV(audio); // defaults: PCM, 16000Hz, mono, 16-bit
+      const wav = utils.encodeWAV(audio); // 32-bit float WAV, 16000Hz mono (vad-web default); backend decodes float32
       audioB64 = utils.arrayBufferToBase64(wav);
     } catch (e) {
       this.failListen({ kind: "stt", message: "Failed to encode captured audio.", cause: e });

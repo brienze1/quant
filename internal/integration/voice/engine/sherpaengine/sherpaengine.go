@@ -201,7 +201,7 @@ func (e *Engine) Transcribe(ctx context.Context, audio []byte, _ string) (string
 	}
 	samples, sampleRate, err := engine.DecodeWAV(audio)
 	if err != nil {
-		return "", fmt.Errorf("embedded voice engine requires 16-bit PCM WAV audio: %w", err)
+		return "", fmt.Errorf("embedded voice engine could not decode the audio: %w", err)
 	}
 	if len(samples) == 0 {
 		return "", fmt.Errorf("empty audio")
