@@ -1,54 +1,52 @@
-// Package voice implements a thin Go proxy for OpenAI-compatible speech-to-text
-// (STT) and text-to-speech (TTS) endpoints. Audio capture and playback live in
-// the webview (JS); this proxy exists so the provider API key never reaches the
-// frontend or remote/browser clients, and so the same loop works over the
-// remote/Cloudflare-tunnel transport.
+// Package voice exposes quant's voice mode (STT/TTS) to the frontend. Audio
+// capture and playback live in the webview (JS); this controller routes each
+// request to a speech backend:
 //
-// Endpoints (OpenAI-compatible):
-//   - POST {baseURL}/v1/audio/transcriptions  (multipart: model, file, response_format, language?)
-//   - POST {baseURL}/v1/audio/speech          (json: model, input, voice, response_format, speed)
+//   - the embedded sherpa-onnx engine (Kokoro TTS + Whisper STT) once its
+//     models are installed under the voice runtime models dir — the default,
+//     fully in-process path, or
+//   - the HTTP proxy for a power user's own OpenAI-compatible local endpoints
+//     (kept Go-side so any API key never reaches the frontend or
+//     remote/browser clients).
 //
-// This feature is LOCAL-ONLY by design: requests target the user's self-hosted
-// engines (Whisper STT + Kokoro TTS) and NEVER fall back to a cloud provider, so
-// captured mic audio and TTS text never leave the machine.
+// This feature is LOCAL-ONLY by design: both backends run on the user's
+// machine and NEVER fall back to a cloud provider, so captured mic audio and
+// TTS text never leave the machine.
 package voice
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"quant/internal/application/adapter"
 	"quant/internal/domain/entity"
+	"quant/internal/infra/paths"
+	"quant/internal/integration/voice/engine"
+	"quant/internal/integration/voice/engine/httpengine"
+	"quant/internal/integration/voice/engine/sherpaengine"
 )
 
 const (
-	defaultSTTModel = "whisper-1"
-	defaultTTSModel = "tts-1"
 	// defaultVoice / defaultSpeed are the live-path fallbacks used when the
 	// frontend passes a blank voice / zero speed AND the saved config has none.
 	// They MUST stay in sync with entity.VoiceConfig.WithDefaults() (the single
 	// source of truth for voice defaults, in internal/domain/entity/config.go);
 	// they are duplicated here only to avoid an awkward cross-package import on
 	// the hot synth path.
-	defaultVoice   = "am_onyx"
+	defaultVoice   = "af_heart"
 	defaultSpeed   = 1.2
 	defaultTimeout = 60 * time.Second
-	// discoverTimeout bounds the model/voice discovery probes. It is short so a
-	// down or slow local server fails fast and the UI falls back to its curated
-	// option list instead of hanging the Settings tab.
-	discoverTimeout = 4 * time.Second
 )
+
+// sherpaSTTModel is the fixed model id reported by ListModels while the
+// embedded engine is active (it has exactly one STT model).
+const sherpaSTTModel = "whisper-small.en"
 
 // kickoffSubmitDelay is the pause between writing the persona message to a
 // session's PTY and writing the Enter keystroke that submits it. The Claude CLI
@@ -96,11 +94,13 @@ type voiceController struct {
 	client        *http.Client
 	bridge        *Bridge
 	sessions      SessionMessenger
+	sherpa        *sherpaengine.Engine
 }
 
-// NewVoiceController constructs the voice STT/TTS proxy controller. It reads the
-// voice configuration (provider, base URL, models, API key, voice/speed) from the
-// config manager at call time, so settings changes take effect without a restart.
+// NewVoiceController constructs the voice STT/TTS controller with the default
+// embedded engine rooted at the voice runtime models dir. It reads the voice
+// configuration from the config manager at call time, so settings changes take
+// effect without a restart.
 //
 // The bridge connects the MCP voice tools (Go) to the frontend audio pipeline;
 // VoiceResult forwards frontend replies into it. Pass nil only in tests that do
@@ -109,11 +109,21 @@ type voiceController struct {
 // sessions is used by StartVoiceSession to inject the voice-mode kickoff message
 // into a running session; pass nil only in tests that do not exercise it.
 func NewVoiceController(configManager adapter.ConfigManager, bridge *Bridge, sessions SessionMessenger) *voiceController {
+	return NewVoiceControllerWithEngine(configManager, bridge, sessions,
+		sherpaengine.New(sherpaengine.Config{ModelsDir: paths.VoiceModelsDir()}))
+}
+
+// NewVoiceControllerWithEngine is NewVoiceController with an injected embedded
+// engine, so the app wiring can share the single sherpa instance with the
+// voice runtime installer/uninstaller (which must Unload it before deleting
+// model files) and tests can point it at a temp dir.
+func NewVoiceControllerWithEngine(configManager adapter.ConfigManager, bridge *Bridge, sessions SessionMessenger, sherpa *sherpaengine.Engine) *voiceController {
 	return &voiceController{
 		configManager: configManager,
 		client:        &http.Client{Timeout: defaultTimeout},
 		bridge:        bridge,
 		sessions:      sessions,
+		sherpa:        sherpa,
 	}
 }
 
@@ -228,7 +238,11 @@ func (c *voiceController) OnStartup(ctx context.Context) {
 }
 
 // OnShutdown is called when the Wails app is shutting down.
-func (c *voiceController) OnShutdown(_ context.Context) {}
+func (c *voiceController) OnShutdown(_ context.Context) {
+	if c.sherpa != nil {
+		c.sherpa.Unload()
+	}
+}
 
 // voiceConfig loads the voice config with defaults applied.
 func (c *voiceController) voiceConfig() (entity.VoiceConfig, error) {
@@ -240,6 +254,15 @@ func (c *voiceController) voiceConfig() (entity.VoiceConfig, error) {
 		return entity.VoiceConfig{}.WithDefaults(), nil
 	}
 	return cfg.Voice.WithDefaults(), nil
+}
+
+// reqCtx returns the app lifecycle context for outgoing engine calls, falling
+// back to Background before OnStartup (e.g. in tests).
+func (c *voiceController) reqCtx() context.Context {
+	if c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
 }
 
 // isLocal reports whether the given base URL points at the local machine
@@ -266,28 +289,15 @@ func isLocal(rawURL string) bool {
 	return false
 }
 
-// op identifies which speech operation a base-URL list is being built for, so
-// errors can name the exact Settings field the user must fill in.
-type op int
-
-const (
-	opSTT op = iota
-	opTTS
-)
-
-func (o op) field() string {
-	if o == opTTS {
-		return "TTS (Kokoro) URL"
-	}
-	return "STT (Whisper) URL"
-}
-
-// resolveBase picks the operation-specific base URL, falling back to the legacy
-// shared BaseURL: sttBaseUrl/ttsBaseUrl → baseUrl. Returns "" if none is set.
-func resolveBase(vc entity.VoiceConfig, o op) string {
+// resolveBase picks the operation-specific custom base URL, falling back to
+// the legacy shared BaseURL: sttBaseUrl/ttsBaseUrl → baseUrl. Returns "" if
+// none is set (the common case post-migration: the embedded engine is used and
+// no custom endpoint exists). LOCAL-ONLY: this only ever returns URLs the user
+// configured — there is NO cloud fallback on any code path.
+func resolveBase(vc entity.VoiceConfig, o httpengine.Op) string {
 	trim := func(s string) string { return strings.TrimRight(strings.TrimSpace(s), "/") }
 	specific := vc.STTBaseURL
-	if o == opTTS {
+	if o == httpengine.OpTTS {
 		specific = vc.TTSBaseURL
 	}
 	if s := trim(specific); s != "" {
@@ -296,106 +306,52 @@ func resolveBase(vc entity.VoiceConfig, o op) string {
 	return trim(vc.BaseURL)
 }
 
-// baseURLs builds the list of provider base URLs to try for one operation (STT
-// or TTS). This feature is LOCAL-ONLY: there is NO cloud fallback on any code
-// path. It returns the operation-specific local URL (sttBaseUrl/ttsBaseUrl),
-// falling back to the legacy shared BaseURL. If none is set it returns nil and
-// the caller surfaces a clear error naming the field to fill in. The OpenAI /
-// cloud endpoint is never returned — a transient local failure must never ship
-// the user's mic audio or TTS text off-machine. (Provider is normalized to
-// "local" by VoiceConfig.WithDefaults; legacy "auto"/"cloud" are treated the
-// same local-only way here as defense in depth.)
-func baseURLs(vc entity.VoiceConfig, o op) []string {
-	if base := resolveBase(vc, o); base != "" {
-		return []string{base}
-	}
-	return nil
+// httpEngine builds the HTTP backend for the given (already defaulted) config.
+// It is cheap to construct per call — the underlying http.Client is shared —
+// which keeps settings changes effective without a restart.
+func (c *voiceController) httpEngine(vc entity.VoiceConfig) *httpengine.Engine {
+	return httpengine.New(httpengine.Config{
+		STTBaseURL: resolveBase(vc, httpengine.OpSTT),
+		TTSBaseURL: resolveBase(vc, httpengine.OpTTS),
+		STTModel:   vc.STTModel,
+		TTSModel:   vc.TTSModel,
+		APIKey:     vc.APIKey,
+	}, c.client)
 }
 
-// filenameForMIME maps an audio MIME type to a plausible filename so the
-// multipart upload carries a sensible extension for the provider.
-func filenameForMIME(mime string) string {
-	switch {
-	case strings.Contains(mime, "webm"):
-		return "audio.webm"
-	case strings.Contains(mime, "wav"), strings.Contains(mime, "x-wav"):
-		return "audio.wav"
-	case strings.Contains(mime, "mp3"), strings.Contains(mime, "mpeg"):
-		return "audio.mp3"
-	case strings.Contains(mime, "ogg"):
-		return "audio.ogg"
-	case strings.Contains(mime, "m4a"), strings.Contains(mime, "mp4"):
-		return "audio.m4a"
-	case strings.Contains(mime, "flac"):
-		return "audio.flac"
-	default:
-		return "audio.webm"
+// sherpaReady reports whether the embedded engine's model files are installed.
+func (c *voiceController) sherpaReady() bool {
+	if c.sherpa == nil {
+		return false
 	}
+	ok, _ := c.sherpa.Ready()
+	return ok
 }
 
-// doRequest centralizes the HTTP boilerplate shared by every voice proxy call:
-// it builds the request with the given context, sets the Content-Type (when
-// non-empty), attaches the optional Bearer auth header from the voice config,
-// performs the request, and fully reads + closes the body. It returns the
-// response (for status/headers) and the read body bytes. The caller owns all
-// status-code handling, so this preserves each caller's distinct semantics
-// (doTranscribe/doSynthesize's 5xx-vs-4xx fallthrough, discoverGET's >=400
-// error, Ping's "any response = up").
-//
-// ctx selects the timeout/cancellation the caller wants: doTranscribe and
-// doSynthesize pass c.ctx (the long-lived app lifecycle context); discoverGET
-// and Ping pass a short discoverTimeout context. A nil ctx is allowed (used by
-// doTranscribe/doSynthesize when the controller's lifecycle context is not yet
-// set, e.g. in tests) and falls back to the request's default background context.
-//
-// The Authorization header is omitted entirely when apiKey is empty so local
-// servers that reject an empty bearer still work.
-func (c *voiceController) doRequest(ctx context.Context, method, url string, body io.Reader, contentType, apiKey string) (*http.Response, []byte, error) {
-	var (
-		req *http.Request
-		err error
-	)
-	if ctx != nil {
-		req, err = http.NewRequestWithContext(ctx, method, url, body)
-	} else {
-		req, err = http.NewRequest(method, url, body)
+// engineFor selects the speech backend for one operation: the embedded sherpa
+// runtime when its models are installed, else the user's custom HTTP endpoint,
+// else a clear error pointing at the one-click install in Settings.
+func (c *voiceController) engineFor(vc entity.VoiceConfig, o httpengine.Op) (engine.Engine, error) {
+	if c.sherpaReady() {
+		return c.sherpa, nil
 	}
-	if err != nil {
-		return nil, nil, err
+	if resolveBase(vc, o) != "" {
+		return c.httpEngine(vc), nil
 	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp, nil, err
-	}
-	return resp, data, nil
+	return nil, fmt.Errorf("voice mode is not installed — download it in Settings → Voice (or configure a custom %s there)", opField(o))
 }
 
-// shouldFallthrough reports whether an error or response status should cause us
-// to try the next provider in the ordered list. Connection errors and 5xx
-// responses fall through; other (e.g. 4xx) responses are returned to the caller.
-func shouldFallthrough(status int, err error) bool {
-	if err != nil {
-		return true
+// opField names the Settings field for one operation, for error messages.
+func opField(o httpengine.Op) string {
+	if o == httpengine.OpTTS {
+		return "TTS (Kokoro) URL"
 	}
-	return status >= 500
+	return "STT (Whisper) URL"
 }
 
-// Transcribe decodes base64 audio and proxies a speech-to-text request to the
-// first reachable provider. Audio arrives base64-encoded because the Wails
-// bridge marshals []byte awkwardly across the remote transport.
+// Transcribe decodes base64 audio and runs speech-to-text on the selected
+// backend. Audio arrives base64-encoded because the Wails bridge marshals
+// []byte awkwardly across the remote transport.
 //
 // It returns the trimmed transcript text.
 func (c *voiceController) Transcribe(audioB64 string, mime string) (string, error) {
@@ -412,76 +368,11 @@ func (c *voiceController) Transcribe(audioB64 string, mime string) (string, erro
 		return "", err
 	}
 
-	model := vc.STTModel
-	if model == "" {
-		model = defaultSTTModel
-	}
-	filename := filenameForMIME(mime)
-
-	urls := baseURLs(vc, opSTT)
-	if len(urls) == 0 {
-		return "", fmt.Errorf("voice provider is set to \"local\" but no %s is configured — set it in Settings → Voice", opSTT.field())
-	}
-
-	var lastErr error
-	for _, base := range urls {
-		text, status, err := c.doTranscribe(base, model, filename, mime, audio, vc.APIKey)
-		if shouldFallthrough(status, err) {
-			if err != nil {
-				lastErr = err
-			} else {
-				lastErr = fmt.Errorf("provider %s returned status %d", base, status)
-			}
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		if status >= 400 {
-			return "", fmt.Errorf("transcription failed: status %d: %s", status, text)
-		}
-		return strings.TrimSpace(text), nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no provider succeeded")
-	}
-	return "", fmt.Errorf("transcription failed: %w", lastErr)
-}
-
-// doTranscribe performs a single multipart transcription request against one base URL.
-// It returns the raw response body, the HTTP status (0 on transport error), and any error.
-func (c *voiceController) doTranscribe(base, model, filename, mime string, audio []byte, apiKey string) (string, int, error) {
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-
-	if err := mw.WriteField("model", model); err != nil {
-		return "", 0, err
-	}
-	if err := mw.WriteField("response_format", "text"); err != nil {
-		return "", 0, err
-	}
-
-	fw, err := mw.CreateFormFile("file", filename)
+	eng, err := c.engineFor(vc, httpengine.OpSTT)
 	if err != nil {
-		return "", 0, err
+		return "", err
 	}
-	if _, err := fw.Write(audio); err != nil {
-		return "", 0, err
-	}
-	if err := mw.Close(); err != nil {
-		return "", 0, err
-	}
-
-	endpoint := base + "/v1/audio/transcriptions"
-	resp, data, err := c.doRequest(c.ctx, http.MethodPost, endpoint, &body, mw.FormDataContentType(), apiKey)
-	if err != nil {
-		// On a transport/build error resp is nil; on a body-read error resp is set.
-		if resp != nil {
-			return "", resp.StatusCode, err
-		}
-		return "", 0, err
-	}
-	return string(data), resp.StatusCode, nil
+	return eng.Transcribe(c.reqCtx(), audio, mime)
 }
 
 // SpeechResult is the return payload for Synthesize. It is returned as a single
@@ -493,19 +384,10 @@ type SpeechResult struct {
 	ContentType string `json:"contentType"`
 }
 
-// speechRequest is the JSON body for the /v1/audio/speech endpoint.
-type speechRequest struct {
-	Model          string  `json:"model"`
-	Input          string  `json:"input"`
-	Voice          string  `json:"voice"`
-	ResponseFormat string  `json:"response_format"`
-	Speed          float64 `json:"speed"`
-}
-
-// Synthesize proxies a text-to-speech request and returns base64-encoded audio
-// bytes plus the response content-type (as a SpeechResult). The voice and speed
-// arguments override the config defaults when non-empty / non-zero. Audio is
-// returned base64-encoded for the Wails bridge.
+// Synthesize runs text-to-speech on the selected backend and returns
+// base64-encoded audio bytes plus the content-type (as a SpeechResult). The
+// voice and speed arguments override the config defaults when non-empty /
+// non-zero. Audio is returned base64-encoded for the Wails bridge.
 func (c *voiceController) Synthesize(text string, voice string, speed float64) (SpeechResult, error) {
 	if strings.TrimSpace(text) == "" {
 		return SpeechResult{}, fmt.Errorf("empty text")
@@ -516,10 +398,6 @@ func (c *voiceController) Synthesize(text string, voice string, speed float64) (
 		return SpeechResult{}, err
 	}
 
-	model := vc.TTSModel
-	if model == "" {
-		model = defaultTTSModel
-	}
 	if voice == "" {
 		voice = vc.Voice
 	}
@@ -533,273 +411,93 @@ func (c *voiceController) Synthesize(text string, voice string, speed float64) (
 		speed = defaultSpeed
 	}
 
-	payload, err := json.Marshal(speechRequest{
-		Model:          model,
-		Input:          text,
-		Voice:          voice,
-		ResponseFormat: "mp3",
-		Speed:          speed,
-	})
+	eng, err := c.engineFor(vc, httpengine.OpTTS)
 	if err != nil {
 		return SpeechResult{}, err
 	}
-
-	urls := baseURLs(vc, opTTS)
-	if len(urls) == 0 {
-		return SpeechResult{}, fmt.Errorf("voice provider is set to \"local\" but no %s is configured — set it in Settings → Voice", opTTS.field())
-	}
-
-	var lastErr error
-	for _, base := range urls {
-		audio, contentType, status, err := c.doSynthesize(base, payload, vc.APIKey)
-		if shouldFallthrough(status, err) {
-			if err != nil {
-				lastErr = err
-			} else {
-				lastErr = fmt.Errorf("provider %s returned status %d", base, status)
-			}
-			continue
-		}
-		if err != nil {
-			return SpeechResult{}, err
-		}
-		if status >= 400 {
-			return SpeechResult{}, fmt.Errorf("speech failed: status %d: %s", status, strconv.Quote(string(audio)))
-		}
-		return SpeechResult{
-			AudioB64:    base64.StdEncoding.EncodeToString(audio),
-			ContentType: contentType,
-		}, nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no provider succeeded")
-	}
-	return SpeechResult{}, fmt.Errorf("speech failed: %w", lastErr)
-}
-
-// doSynthesize performs a single TTS request against one base URL. It returns
-// the audio bytes, content-type, HTTP status (0 on transport error), and any error.
-func (c *voiceController) doSynthesize(base string, payload []byte, apiKey string) ([]byte, string, int, error) {
-	endpoint := base + "/v1/audio/speech"
-	resp, data, err := c.doRequest(c.ctx, http.MethodPost, endpoint, bytes.NewReader(payload), "application/json", apiKey)
+	audio, err := eng.Synthesize(c.reqCtx(), text, voice, speed)
 	if err != nil {
-		// On a transport/build error resp is nil; on a body-read error resp is set.
-		if resp != nil {
-			return nil, "", resp.StatusCode, err
-		}
-		return nil, "", 0, err
+		return SpeechResult{}, err
 	}
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "audio/mpeg"
-	}
-	return data, contentType, resp.StatusCode, nil
+	return SpeechResult{
+		AudioB64:    base64.StdEncoding.EncodeToString(audio.Data),
+		ContentType: audio.ContentType,
+	}, nil
 }
 
-// opFromString maps the frontend's "stt"/"tts" discovery argument to the
-// internal op enum, defaulting to STT for anything else.
-func opFromString(s string) op {
-	if strings.EqualFold(strings.TrimSpace(s), "tts") {
-		return opTTS
-	}
-	return opSTT
-}
-
-// discoverGET issues a short-timeout GET against {base}/{path} for one
-// operation's resolved base URL and returns the raw response body. It soft-fails:
-// the timeout is intentionally tight so a down/slow local server doesn't hang the
-// Settings tab, and the caller turns any error into an empty list. The api key
-// header is attached when configured, mirroring Synthesize/Transcribe.
-func (c *voiceController) discoverGET(o op, path string) ([]byte, error) {
-	vc, err := c.voiceConfig()
-	if err != nil {
-		return nil, err
-	}
-	base := resolveBase(vc, o)
-	if base == "" {
-		// Fall back to the provider list (e.g. cloud default) so discovery still
-		// works when only the legacy/cloud config is set.
-		if urls := baseURLs(vc, o); len(urls) > 0 {
-			base = urls[0]
-		}
-	}
-	if base == "" {
-		return nil, fmt.Errorf("no %s configured — set it in Settings → Voice", o.field())
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), discoverTimeout)
-	defer cancel()
-
-	resp, data, err := c.doRequest(ctx, http.MethodGet, base+path, nil, "", vc.APIKey)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("discovery failed: status %d", resp.StatusCode)
-	}
-	return data, nil
-}
-
-// idFromAny extracts a string id from a discovery list element that may be a
-// bare string or an object carrying an "id" (or "name") field.
-func idFromAny(v interface{}) string {
-	switch t := v.(type) {
-	case string:
-		return strings.TrimSpace(t)
-	case map[string]interface{}:
-		for _, key := range []string{"id", "name"} {
-			if s, ok := t[key].(string); ok && strings.TrimSpace(s) != "" {
-				return strings.TrimSpace(s)
-			}
-		}
-	}
-	return ""
-}
-
-// idsFromList maps a slice of mixed string/object elements to their ids,
-// dropping empties.
-func idsFromList(items []interface{}) []string {
-	out := make([]string, 0, len(items))
-	for _, it := range items {
-		if id := idFromAny(it); id != "" {
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
-// ListModels probes the OpenAI-compatible models endpoint for the given
-// operation ("stt" or "tts") and returns the available model ids. It tolerates
-// the standard {"data":[{"id":...}]} shape as well as {"models":[...]} or a bare
-// array; elements may be strings or objects with an id/name.
+// ListModels returns the available model ids for the given operation ("stt" or
+// "tts"). With the embedded engine active it is a fixed stub (there is exactly
+// one bundled model); otherwise it probes the custom endpoint's
+// OpenAI-compatible models endpoint.
 //
 // It soft-fails: on any error it returns an empty slice plus the error so the
 // frontend can fall back to its curated option list without surfacing a crash.
 func (c *voiceController) ListModels(op string) ([]string, error) {
-	data, err := c.discoverGET(opFromString(op), "/v1/models")
+	if c.sherpaReady() {
+		return []string{sherpaSTTModel}, nil
+	}
+	vc, err := c.voiceConfig()
 	if err != nil {
 		return []string{}, err
 	}
-
-	// Try the standard {"data": [...]} / {"models": [...]} shapes first.
-	var obj struct {
-		Data   []interface{} `json:"data"`
-		Models []interface{} `json:"models"`
-	}
-	if err := json.Unmarshal(data, &obj); err == nil {
-		if len(obj.Data) > 0 {
-			return idsFromList(obj.Data), nil
-		}
-		if len(obj.Models) > 0 {
-			return idsFromList(obj.Models), nil
-		}
-	}
-
-	// Fall back to a bare array of strings/objects.
-	var arr []interface{}
-	if err := json.Unmarshal(data, &arr); err == nil {
-		return idsFromList(arr), nil
-	}
-
-	return []string{}, fmt.Errorf("could not parse models response")
+	return c.httpEngine(vc).ListModels(httpengine.OpFromString(op))
 }
 
-// ListVoices probes the TTS server's voices endpoint (Kokoro:
-// {base}/v1/audio/voices) and returns the available voice ids. The response is
-// expected as {"voices":[...]} where each element is a string or an object with
-// an id/name; a bare array is also tolerated.
+// ListVoices returns the available TTS voice names. With the embedded engine
+// active this is the bundled Kokoro speaker table (no model load, no network);
+// otherwise it probes the custom TTS server's voices endpoint.
 //
 // It soft-fails like ListModels: any error yields an empty slice plus the error.
 func (c *voiceController) ListVoices() ([]string, error) {
-	data, err := c.discoverGET(opTTS, "/v1/audio/voices")
+	if c.sherpaReady() {
+		voices, err := c.sherpa.Voices()
+		if err != nil {
+			return []string{}, err
+		}
+		names := make([]string, len(voices))
+		for i, v := range voices {
+			names[i] = v.Name
+		}
+		return names, nil
+	}
+	vc, err := c.voiceConfig()
 	if err != nil {
 		return []string{}, err
 	}
-
-	var obj struct {
-		Voices []interface{} `json:"voices"`
-	}
-	if err := json.Unmarshal(data, &obj); err == nil && len(obj.Voices) > 0 {
-		return idsFromList(obj.Voices), nil
-	}
-
-	var arr []interface{}
-	if err := json.Unmarshal(data, &arr); err == nil {
-		return idsFromList(arr), nil
-	}
-
-	return []string{}, fmt.Errorf("could not parse voices response")
+	return c.httpEngine(vc).ListVoiceNames()
 }
 
-// PingResult is the return payload for Ping: whether the engine's server is
-// listening plus a short human-readable detail. Returned as a struct so it
-// round-trips over both the Wails desktop and remote/tunnel transports.
+// PingResult is the return payload for Ping: whether the engine for one
+// operation is usable plus a short human-readable detail. Returned as a struct
+// so it round-trips over both the Wails desktop and remote/tunnel transports.
 type PingResult struct {
 	Ok     bool   `json:"ok"`
 	Detail string `json:"detail"`
 }
 
-// Ping probes whether the configured engine for one operation ("stt" or "tts")
-// is reachable. It resolves that op's base URL and issues a short-timeout GET to
-// {base}/v1/models. Semantics:
-//   - the URL for that op is unset → Ok=false, "no STT|TTS URL configured".
-//   - ANY HTTP response (even non-2xx) → the server is listening, Ok=true with a
-//     helpful detail (a non-2xx status is still "server up").
-//   - connection refused / timeout / DNS failure → Ok=false naming the host:port.
+// Ping probes whether the engine for one operation ("stt" or "tts") is usable.
+// With the embedded engine's models installed it reports ready without loading
+// anything; with a custom endpoint configured it issues a short-timeout GET to
+// {base}/v1/models (any HTTP response — even non-2xx — means the server is
+// listening); otherwise it points the user at the one-click install.
 //
 // It soft-fails (never panics): a load/config error is reported as Ok=false with
 // the error text rather than returned as a hard error.
 func (c *voiceController) Ping(op string) (PingResult, error) {
-	o := opFromString(op)
-
 	vc, err := c.voiceConfig()
 	if err != nil {
 		return PingResult{Ok: false, Detail: "could not load voice config: " + err.Error()}, nil
 	}
 
-	base := resolveBase(vc, o)
-	if base == "" {
-		// Fall back to the provider list so a cloud/legacy-only config still pings.
-		if urls := baseURLs(vc, o); len(urls) > 0 {
-			base = urls[0]
-		}
-	}
-	if base == "" {
-		kind := "STT"
-		if o == opTTS {
-			kind = "TTS"
-		}
-		return PingResult{Ok: false, Detail: "no " + kind + " URL configured"}, nil
+	if c.sherpaReady() {
+		return PingResult{Ok: true, Detail: "embedded voice engine ready"}, nil
 	}
 
-	hostPort := base
-	if u, perr := url.Parse(base); perr == nil && u.Host != "" {
-		hostPort = u.Host
+	o := httpengine.OpFromString(op)
+	if resolveBase(vc, o) == "" {
+		return PingResult{Ok: false, Detail: "voice mode is not installed — download it in Settings → Voice"}, nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), discoverTimeout)
-	defer cancel()
-
-	// doRequest builds + performs the request and fully reads (drains) the body so
-	// the connection can be reused. A nil resp means a build or transport error
-	// (invalid URL / connection refused / timeout / DNS) — i.e. not reachable. A
-	// body-read error with a non-nil resp still means the server responded, so we
-	// fall through to the status-based "server up" logic below.
-	resp, _, err := c.doRequest(ctx, http.MethodGet, base+"/v1/models", nil, "", vc.APIKey)
-	if err != nil && resp == nil {
-		// Connection refused / timeout / DNS failure: the server is not listening.
-		return PingResult{
-			Ok:     false,
-			Detail: fmt.Sprintf("not reachable — is the server running on %s?", hostPort),
-		}, nil
-	}
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return PingResult{Ok: true, Detail: "reachable"}, nil
-	}
-	// Any other response still means the server is up and listening.
-	return PingResult{
-		Ok:     true,
-		Detail: fmt.Sprintf("reachable (HTTP %d on /v1/models — server up)", resp.StatusCode),
-	}, nil
+	ok, detail := c.httpEngine(vc).Ping(o)
+	return PingResult{Ok: ok, Detail: detail}, nil
 }

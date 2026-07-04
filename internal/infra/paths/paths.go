@@ -27,6 +27,24 @@ func QuantHome() string {
 	return filepath.Join(home, ".quant")
 }
 
+// VoiceRuntimeDir returns the directory where the quant-managed voice engines
+// (whisper STT + kokoro TTS binaries, models, and runtime state) are installed.
+// It lives under QuantHome() so QUANT_HOME redirects it off the user's real
+// ~/.quant during E2E/tests. The directory is NOT created here; callers must
+// MkdirAll as needed.
+func VoiceRuntimeDir() string {
+	return filepath.Join(QuantHome(), "voice")
+}
+
+// VoiceModelsDir returns the directory holding the embedded speech models
+// (sherpa-onnx Kokoro TTS + Whisper STT), downloaded by the voice runtime
+// installer and loaded by the embedded voice engine. It matches the
+// voiceruntime manager's models dir ({VoiceRuntimeDir}/models). The directory
+// is NOT created here; callers must MkdirAll as needed.
+func VoiceModelsDir() string {
+	return filepath.Join(VoiceRuntimeDir(), "models")
+}
+
 // MCPConfigPath returns the registered .mcp.json path. When QUANT_HOME is set,
 // the file lives inside that dir (so E2E does not mutate ~/.mcp.json).
 // Otherwise it lives at $HOME/.mcp.json.

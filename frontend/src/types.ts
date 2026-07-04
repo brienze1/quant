@@ -299,24 +299,12 @@ export interface Config {
   voice: VoiceConfig;
 }
 
-// VoiceConfig mirrors the Go entity.VoiceConfig / VoiceConfigDTO. The raw API key
-// is never sent to the frontend: `apiKey` is write-only (set it to change the key,
-// leave it empty/undefined to keep the existing one) and `hasApiKey` reports
-// whether a key is currently stored Go-side.
+// VoiceConfig mirrors the Go entity.VoiceConfig / VoiceConfigDTO. Voice runs on
+// the embedded local sherpa-onnx runtime — there is no user-facing endpoint or
+// API-key configuration anymore (the backend keeps a hidden config fallback).
 export interface VoiceConfig {
   enabled: boolean;
-  provider: "auto" | "local" | "cloud";
-  // baseUrl is the legacy single endpoint, kept as a back-compat fallback for
-  // both STT and TTS when the per-operation URLs below are empty.
-  baseUrl: string;
-  // Separate self-hosted STT/TTS endpoints (e.g. Whisper :2022, Kokoro :8880).
-  // Empty = fall back to baseUrl, then the provider default. Not secrets.
-  sttBaseUrl: string;
-  ttsBaseUrl: string;
-  apiKey?: string;
-  hasApiKey?: boolean;
-  sttModel: string;
-  ttsModel: string;
+  provider: "local";
   voice: string;
   speed: number;
   // Milliseconds of silence the VAD waits through before ending the user's turn
@@ -325,6 +313,50 @@ export interface VoiceConfig {
   // Optional user-authored guidance appended to the built-in voice persona at
   // session kickoff. Empty = none.
   instructions: string;
+  // Whether the user opted into quant downloading + supervising the local
+  // voice models itself (the one-click "Download voice mode" flow).
+  managedRuntime?: boolean;
+}
+
+// VoiceRuntimeModelStatus mirrors the Go voiceruntime model entry: one managed
+// voice model's install state.
+export interface VoiceRuntimeModelStatus {
+  name: string;
+  installed: boolean;
+  sizeBytes: number;
+}
+
+// VoiceRuntimeStatus mirrors the Go voiceruntime.Status returned by
+// voiceRuntimeController: the aggregate install + model snapshot the Settings
+// Voice tab renders (download button vs. progress vs. installed status).
+export interface VoiceRuntimeStatus {
+  installed: boolean;
+  installing: boolean;
+  managed: boolean;
+  version: string;
+  platform: string;
+  models: VoiceRuntimeModelStatus[];
+  error?: string;
+}
+
+// VoiceRuntimeEvent mirrors the Go voiceruntime.RuntimeEvent streamed on the
+// "voice:runtime" event channel during install and on engine up/down.
+export interface VoiceRuntimeEvent {
+  phase:
+    | "download"
+    | "verify"
+    | "extract"
+    | "health"
+    | "ready"
+    | "down"
+    | "external"
+    | "error"
+    | "idle";
+  engine?: string;
+  done?: number;
+  total?: number;
+  message?: string;
+  error?: string;
 }
 
 // VoiceSpeechResult is the payload returned by the Synthesize proxy: base64

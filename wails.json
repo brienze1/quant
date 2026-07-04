@@ -6,6 +6,9 @@
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
+  "postBuildHooks": {
+    "darwin/*": "bash ../../scripts/fixup-macos-dylibs.sh ${bin}"
+  },
   "author": {
     "name": "Luis Brienze",
     "email": "lfbrienze@gmail.com"

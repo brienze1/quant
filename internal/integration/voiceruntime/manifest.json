@@ -1,0 +1,20 @@
+{
+  "schema": 2,
+  "version": "kokoro-v1.0 + whisper-small.en (int8)",
+  "models": [
+    {
+      "name": "kokoro tts",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2",
+      "sha256": "75654a84864be26f345f020f4070c2c019e96dd1b7f9bf6e2ffd59efac6aa5a3",
+      "size": 131839838,
+      "dir": "kokoro-int8-multi-lang-v1_0"
+    },
+    {
+      "name": "whisper stt",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.en.tar.bz2",
+      "sha256": "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a",
+      "size": 635693775,
+      "dir": "sherpa-onnx-whisper-small.en"
+    }
+  ]
+}

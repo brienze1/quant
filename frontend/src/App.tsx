@@ -2949,7 +2949,7 @@ function App() {
         <div className="flex flex-col h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
           {renderTitleBar()}
           <div className="flex-1 min-h-0 relative">
-            <Settings repos={repos} onBack={() => { fetchShortcuts(); setView("dashboard"); }} />
+            <Settings repos={repos} onBack={() => { fetchShortcuts(); api.getConfig().then(setDockTermConfig).catch(() => {}); setView("dashboard"); }} />
           </div>
         </div>
         {commandPaletteOpen && <CommandPalette commands={paletteCommands} onClose={() => setCommandPaletteOpen(false)} />}

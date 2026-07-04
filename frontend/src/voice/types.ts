@@ -39,7 +39,7 @@ export type VoiceErrorCb = (err: VoiceError) => void;
  *
  * - `transcribe(audioB64, mime)` → transcript string.
  * - `synthesize(text, voice, speed)` → { audioB64, contentType }.
- *   (Pass "" / 0 to use the server defaults am_onyx / 1.2.)
+ *   (Pass "" / 0 to use the server defaults af_heart / 1.2.)
  */
 export interface VoiceTransport {
   transcribe(audioB64: string, mime: string): Promise<string>;
@@ -68,7 +68,7 @@ export interface AudioServiceOptions {
   vadModel?: "v5" | "legacy";
   /** Max time (ms) a single listen() will wait for a complete utterance. */
   maxListenMs?: number;
-  /** TTS voice id; "" → server default (am_onyx). */
+  /** TTS voice id; "" → server default (af_heart). */
   voice?: string;
   /** TTS speed; 0 → server default (1.2). */
   speed?: number;

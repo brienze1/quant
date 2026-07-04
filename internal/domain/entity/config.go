@@ -9,23 +9,25 @@ type Shortcut struct {
 
 // VoiceConfig holds settings for the native voice mode (STT/TTS pipeline).
 // The APIKey is stored Go-side only and is never exposed to the frontend / remote
-// clients — the DTO masks it (see internal/integration/entrypoint/dto/config.go).
+// clients (see internal/integration/entrypoint/dto/config.go).
 type VoiceConfig struct {
 	Enabled  bool   `json:"enabled"`
 	Provider string `json:"provider"` // always normalized to "local" (local-only; legacy "auto"/"cloud" migrate to "local")
-	// BaseURL is the legacy single endpoint used for BOTH STT and TTS. It is kept
-	// as a back-compat fallback: when STTBaseURL / TTSBaseURL are empty the proxy
-	// falls back to BaseURL, then to the provider default.
-	BaseURL string `json:"baseUrl"`
-	// STTBaseURL / TTSBaseURL let local self-hosted engines run as separate servers
-	// on different ports (e.g. Whisper http://localhost:2022, Kokoro http://localhost:8880).
-	// Empty means "fall back to BaseURL, then provider default". Not secrets — not masked.
+	// Deprecated: BaseURL / STTBaseURL / TTSBaseURL / APIKey / STTModel /
+	// TTSModel are hidden power-user overrides for bring-your-own
+	// OpenAI-compatible STT/TTS servers. The embedded sherpa-onnx runtime is the
+	// default engine; these fields are no longer exposed in the Settings UI (the
+	// DTO omits them) but are preserved across saves and, when set, are used
+	// whenever the embedded engine's models are not installed. BaseURL is the
+	// legacy single endpoint used for BOTH STT and TTS when the specific one is
+	// empty.
+	BaseURL    string  `json:"baseUrl"`
 	STTBaseURL string  `json:"sttBaseUrl"`
 	TTSBaseURL string  `json:"ttsBaseUrl"`
 	APIKey     string  `json:"apiKey"`
 	STTModel   string  `json:"sttModel"`
 	TTSModel   string  `json:"ttsModel"`
-	Voice      string  `json:"voice"` // default "am_onyx"
+	Voice      string  `json:"voice"` // default "af_heart"
 	Speed      float64 `json:"speed"` // default 1.2
 	// PauseMs is the milliseconds of silence the VAD waits through before ending
 	// the user's turn (frontend redemption window); higher = more time to
@@ -34,13 +36,22 @@ type VoiceConfig struct {
 	// Instructions is optional user-authored guidance appended to the built-in
 	// voice persona at session kickoff. Empty = none (no default).
 	Instructions string `json:"instructions"`
+	// ManagedRuntime records that the user opted into quant downloading and
+	// supervising the local STT/TTS engines itself (the one-click "Download
+	// voice mode" flow) rather than bringing their own servers. It is user
+	// intent only; the concrete install facts (version, per-engine state) live
+	// in ~/.quant/voice/state.json, owned by the voiceruntime manager.
+	ManagedRuntime bool `json:"managedRuntime"`
 }
 
-// Local-first default endpoints for the self-hosted STT/TTS engines: whisper.cpp
-// serves OpenAI-compatible STT on :2022, Kokoro-FastAPI serves TTS on :8880.
+// Legacy localhost endpoints for the previously self-hosted STT/TTS engines
+// (whisper.cpp on :2022, Kokoro-FastAPI on :8880). Older versions filled these
+// into blank STT/TTS URLs; they are kept only so WithDefaults can migrate such
+// configs back to "no custom endpoint" now that the embedded sherpa-onnx
+// runtime is the default engine.
 const (
-	defaultLocalSTTBaseURL = "http://localhost:2022"
-	defaultLocalTTSBaseURL = "http://localhost:8880"
+	legacyLocalSTTBaseURL = "http://localhost:2022"
+	legacyLocalTTSBaseURL = "http://localhost:8880"
 )
 
 // WithDefaults returns a copy of the voice config with sensible defaults applied
@@ -53,17 +64,18 @@ func (v VoiceConfig) WithDefaults() VoiceConfig {
 	if v.Provider != "local" {
 		v.Provider = "local"
 	}
-	// Provider is always "local" by the time we reach here (normalized above), so
-	// blank STT/TTS URLs always get the localhost engine defaults filled in; a
-	// local user who clears a field gets the sensible default back.
-	if v.STTBaseURL == "" {
-		v.STTBaseURL = defaultLocalSTTBaseURL
+	// Migration: older versions auto-filled the localhost engine defaults into
+	// blank STT/TTS URLs. Those exact values were never user intent, so strip
+	// them back to "" — empty now means "use the embedded engine" and only a
+	// deliberately customized endpoint survives.
+	if v.STTBaseURL == legacyLocalSTTBaseURL {
+		v.STTBaseURL = ""
 	}
-	if v.TTSBaseURL == "" {
-		v.TTSBaseURL = defaultLocalTTSBaseURL
+	if v.TTSBaseURL == legacyLocalTTSBaseURL {
+		v.TTSBaseURL = ""
 	}
 	if v.Voice == "" {
-		v.Voice = "am_onyx"
+		v.Voice = "af_heart"
 	}
 	if v.Speed == 0 {
 		v.Speed = 1.2
@@ -201,11 +213,11 @@ func NewDefaultConfig() Config {
 		RemoteAccessPort:     0,
 		RemoteAccessPasscode: "",
 
-		// Voice — disabled by default; local-first provider pointing at the
-		// self-hosted whisper.cpp (:2022) + Kokoro-FastAPI (:8880) engines.
+		// Voice — disabled by default; the embedded sherpa-onnx engine serves
+		// STT/TTS once its models are installed (no endpoint URLs needed).
 		// Delegate to WithDefaults() so the voice defaults (provider "local",
-		// voice "am_onyx", speed 1.2, pauseMs 3000, the localhost STT/TTS URLs)
-		// live in exactly one place. Enabled stays false (zero value untouched).
+		// voice "af_heart", speed 1.2, pauseMs 3000) live in exactly one place.
+		// Enabled stays false (zero value untouched).
 		Voice: VoiceConfig{}.WithDefaults(),
 	}
 }

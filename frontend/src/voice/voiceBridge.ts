@@ -85,14 +85,24 @@ export function registerVoiceBridge(
   const cancel = w.runtime.EventsOn("voice:request", (req: VoiceRequest) => {
     // Ignore events for other sessions (each pane handles only its own).
     if (!req || req.sessionId !== sessionId) return;
-    void handleRequest(req, service, callbacks, inFlight);
+    void handleRequest(req, service, callbacks, inFlight, {
+      start: startExtend,
+      stop: stopExtend,
+    });
   });
 
-  // Recording keepalive: while the service reports "recording", periodically
-  // extend the in-flight listen request's Go-side timeout so a long recording
-  // isn't cut off by ListenTimeout. Driven off the service state so it works
-  // identically in the native webview and remote browser clients (the api call
-  // goes through the same callGo transport as voiceResult).
+  // Recording keepalive: while a record-mode listen is in flight, periodically
+  // extend its Go-side ListenTimeout (120s) so the request isn't falsely reported
+  // as an ended voice session. This runs for the ENTIRE lifetime of the listen
+  // request — crucially including the post-recording STT window, where the
+  // service state has already left "recording" (audioService sets "thinking"
+  // before awaiting transcription) but listen() has not yet resolved. Driving the
+  // keepalive off the request lifetime rather than the "recording" state closes a
+  // gap where transcribing a long recording (which can exceed 120s) let the Go
+  // side time out mid-transcription and tell the agent "Voice mode has ENDED"
+  // even though the pane was alive and the transcript was moments away. The api
+  // call goes through the same callGo transport as voiceResult, so it works
+  // identically in the native webview and remote browser clients.
   let extendTimer: ReturnType<typeof setInterval> | null = null;
   const stopExtend = () => {
     if (extendTimer) {
@@ -100,26 +110,21 @@ export function registerVoiceBridge(
       extendTimer = null;
     }
   };
-  const offRecordingState = service.onState((s) => {
-    if (s === "recording") {
-      if (extendTimer) return;
-      const ping = () => {
-        const id = inFlight.requestId;
-        if (id) void api.voiceListenExtend(id).catch(() => {});
-      };
-      // Extend immediately (the listen may already be near its deadline), then
-      // on the interval.
-      ping();
-      extendTimer = setInterval(ping, RECORDING_EXTEND_INTERVAL_MS);
-    } else {
-      stopExtend();
-    }
-  });
+  const startExtend = () => {
+    if (extendTimer) return;
+    const ping = () => {
+      const id = inFlight.requestId;
+      if (id) void api.voiceListenExtend(id).catch(() => {});
+    };
+    // Extend immediately (the listen may already be near its deadline), then
+    // on the interval.
+    ping();
+    extendTimer = setInterval(ping, RECORDING_EXTEND_INTERVAL_MS);
+  };
 
   return () => {
     if (cancel) cancel();
     stopExtend();
-    offRecordingState();
     // If a request is still unsettled at tear-down, tell Go the voice ended so
     // the waiting tool returns immediately (graceful, not an error). Clear the
     // marker first so we fire exactly once.
@@ -153,16 +158,25 @@ async function handleRequest(
   service: IAudioService,
   callbacks: VoiceBridgeCallbacks,
   inFlight: { requestId: string | null },
+  keepalive: { start: () => void; stop: () => void },
 ): Promise<void> {
   // Mark this request as in-flight so a teardown mid-request can gracefully
   // close it (see registerVoiceBridge's unsubscribe). We clear it the instant
   // the request settles so a completed request is never double-resolved.
   inFlight.requestId = req.requestId;
   const settle = () => {
-    if (inFlight.requestId === req.requestId) inFlight.requestId = null;
+    if (inFlight.requestId === req.requestId) {
+      inFlight.requestId = null;
+      keepalive.stop();
+    }
   };
   try {
     if (req.kind === "listen") {
+      // Keep the Go side alive for the whole record-mode listen — capture AND the
+      // final STT window, where the service state has already left "recording" but
+      // listen() hasn't resolved yet. A normal single-utterance listen resolves
+      // well within the 120s ListenTimeout, so it needs no keepalive.
+      if (req.record) keepalive.start();
       const transcript = await service.listen(req.record ? { record: true } : undefined);
       settle();
       safeCb(callbacks.onUserTranscript, transcript);

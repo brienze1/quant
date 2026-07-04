@@ -12,23 +12,20 @@ type ShortcutDTO struct {
 	Command string `json:"command"`
 }
 
-// VoiceConfigDTO is the frontend-facing voice config. The raw APIKey is NEVER
-// included here; only HasAPIKey indicates whether a key is stored. On save, an
-// empty APIKey is treated as "keep the existing key" (see controller SaveConfig).
+// VoiceConfigDTO is the frontend-facing voice config. The deprecated custom
+// endpoint fields (BaseURL/STTBaseURL/TTSBaseURL/APIKey/STTModel/TTSModel) are
+// deliberately NOT exposed here: the embedded engine needs no endpoints, and
+// the controller carries the stored values forward on every save so a power
+// user's hand-edited custom endpoints are never wiped by the Settings UI (see
+// controller SaveConfig).
 type VoiceConfigDTO struct {
-	Enabled      bool    `json:"enabled"`
-	Provider     string  `json:"provider"`
-	BaseURL      string  `json:"baseUrl"`
-	STTBaseURL   string  `json:"sttBaseUrl"`       // separate STT endpoint (e.g. Whisper); not a secret
-	TTSBaseURL   string  `json:"ttsBaseUrl"`       // separate TTS endpoint (e.g. Kokoro); not a secret
-	APIKey       string  `json:"apiKey,omitempty"` // write-only: set to change; empty = unchanged
-	HasAPIKey    bool    `json:"hasApiKey"`        // read-only: whether a key is stored
-	STTModel     string  `json:"sttModel"`
-	TTSModel     string  `json:"ttsModel"`
-	Voice        string  `json:"voice"`
-	Speed        float64 `json:"speed"`
-	PauseMs      int     `json:"pauseMs"`      // VAD redemption window (ms): how long the user can pause before their turn ends
-	Instructions string  `json:"instructions"` // optional user-authored guidance appended to the built-in voice persona
+	Enabled        bool    `json:"enabled"`
+	Provider       string  `json:"provider"`
+	Voice          string  `json:"voice"`
+	Speed          float64 `json:"speed"`
+	PauseMs        int     `json:"pauseMs"`        // VAD redemption window (ms): how long the user can pause before their turn ends
+	Instructions   string  `json:"instructions"`   // optional user-authored guidance appended to the built-in voice persona
+	ManagedRuntime bool    `json:"managedRuntime"` // user opted into quant-managed local engines (one-click install)
 }
 
 // SaveConfigRequest represents the request payload for saving configuration.
@@ -148,7 +145,7 @@ type ConfigResponse struct {
 	RemoteAccessPort     int    `json:"remoteAccessPort"`
 	RemoteAccessPasscode string `json:"remoteAccessPasscode"`
 
-	// Voice — APIKey is masked (never returned); HasAPIKey reports its presence.
+	// Voice — the deprecated endpoint/key/model fields are never returned.
 	Voice VoiceConfigDTO `json:"voice"`
 }
 
@@ -199,20 +196,15 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		RemoteAccessEnabled:   cfg.RemoteAccessEnabled,
 		RemoteAccessPort:      cfg.RemoteAccessPort,
 		RemoteAccessPasscode:  cfg.RemoteAccessPasscode,
-		// APIKey is intentionally omitted; only its presence is reported.
+		// The deprecated endpoint/key/model fields are intentionally omitted.
 		Voice: VoiceConfigDTO{
-			Enabled:      cfg.Voice.Enabled,
-			Provider:     cfg.Voice.Provider,
-			BaseURL:      cfg.Voice.BaseURL,
-			STTBaseURL:   cfg.Voice.STTBaseURL,
-			TTSBaseURL:   cfg.Voice.TTSBaseURL,
-			HasAPIKey:    cfg.Voice.APIKey != "",
-			STTModel:     cfg.Voice.STTModel,
-			TTSModel:     cfg.Voice.TTSModel,
-			Voice:        cfg.Voice.Voice,
-			Speed:        cfg.Voice.Speed,
-			PauseMs:      cfg.Voice.PauseMs,
-			Instructions: cfg.Voice.Instructions,
+			Enabled:        cfg.Voice.Enabled,
+			Provider:       cfg.Voice.Provider,
+			Voice:          cfg.Voice.Voice,
+			Speed:          cfg.Voice.Speed,
+			PauseMs:        cfg.Voice.PauseMs,
+			Instructions:   cfg.Voice.Instructions,
+			ManagedRuntime: cfg.Voice.ManagedRuntime,
 		},
 	}
 }
@@ -288,19 +280,16 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		RemoteAccessEnabled:   r.RemoteAccessEnabled,
 		RemoteAccessPort:      r.RemoteAccessPort,
 		RemoteAccessPasscode:  r.RemoteAccessPasscode,
+		// The deprecated endpoint/key/model fields are not carried by the DTO;
+		// the controller copies the stored values forward on save.
 		Voice: entity.VoiceConfig{
-			Enabled:      r.Voice.Enabled,
-			Provider:     r.Voice.Provider,
-			BaseURL:      r.Voice.BaseURL,
-			STTBaseURL:   r.Voice.STTBaseURL,
-			TTSBaseURL:   r.Voice.TTSBaseURL,
-			APIKey:       r.Voice.APIKey, // may be empty = preserve existing (handled in controller)
-			STTModel:     r.Voice.STTModel,
-			TTSModel:     r.Voice.TTSModel,
-			Voice:        r.Voice.Voice,
-			Speed:        r.Voice.Speed,
-			PauseMs:      r.Voice.PauseMs,
-			Instructions: r.Voice.Instructions,
+			Enabled:        r.Voice.Enabled,
+			Provider:       r.Voice.Provider,
+			Voice:          r.Voice.Voice,
+			Speed:          r.Voice.Speed,
+			PauseMs:        r.Voice.PauseMs,
+			Instructions:   r.Voice.Instructions,
+			ManagedRuntime: r.Voice.ManagedRuntime,
 		},
 	}
 }

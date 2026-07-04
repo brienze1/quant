@@ -32,6 +32,8 @@ import type {
   RemoteStatus,
   VoiceSpeechResult,
   VoicePingResult,
+  VoiceRuntimeStatus,
+  VoiceRuntimeEvent,
   ExternalSession,
   CrewAssignment,
   CrewEnvelope,
@@ -767,22 +769,10 @@ export function startVoiceSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Discover the models the configured server offers for the given operation
- * ("stt" or "tts") by probing {base}/v1/models. Used by Settings → Voice to
- * populate the model pickers. Soft-fails: resolves to [] if the server is
- * unreachable or returns an error, so the UI can fall back to curated options.
- */
-export function listModels(op: "stt" | "tts"): Promise<string[]> {
-  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListModels", op).then(
-    (r) => r ?? [],
-    () => [],
-  );
-}
-
-/**
- * Discover the voices the configured TTS server offers by probing
- * {ttsBase}/v1/audio/voices (Kokoro). Used by Settings → Voice to populate the
- * voice picker. Soft-fails to [] like listModels.
+ * Discover the speaker voices the installed voice runtime offers (the Kokoro
+ * model's speaker names, e.g. af_bella / am_onyx). Used by Settings → Voice to
+ * populate the voice picker. Soft-fails: resolves to [] when the runtime is not
+ * installed / unreachable, so the UI can fall back to curated options.
  */
 export function listVoices(): Promise<string[]> {
   return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListVoices").then(
@@ -792,14 +782,54 @@ export function listVoices(): Promise<string[]> {
 }
 
 /**
- * Probe whether the configured engine for the given operation ("stt" or "tts")
- * is reachable, by GET-ing {base}/v1/models with a short timeout. Used by
- * Settings → Voice "Test connection". Soft-fails: resolves to
- * { ok: false, detail: "probe failed" } on throw/null so the UI never crashes.
+ * Probe whether the local voice runtime is ready. The `op` argument is kept for
+ * bridge-signature compatibility but is ignored backend-side — one call drives
+ * the single "Voice ready / Not installed" chip in Settings → Voice. Soft-fails:
+ * resolves to { ok: false, detail: "probe failed" } on throw/null so the UI
+ * never crashes.
  */
 export function pingVoiceEndpoint(op: "stt" | "tts"): Promise<VoicePingResult> {
   return callGo<VoicePingResult | null>(VOICE_PKG, VOICE_CTRL, "Ping", op).then(
     (r) => r ?? { ok: false, detail: "probe failed" },
     () => ({ ok: false, detail: "probe failed" }),
   );
+}
+
+// --- Voice runtime (one-click managed local voice models) ---
+//
+// Unlike the voice proxy above (Go package `voice`), the runtime installer lives
+// in the shared `controller` package, so it binds under
+// window.go.controller.voiceRuntimeController (PKG, not VOICE_PKG).
+const VOICE_RUNTIME_CTRL = "voiceRuntimeController";
+
+/** Current install + model snapshot for Settings → Voice. */
+export function voiceRuntimeStatus(): Promise<VoiceRuntimeStatus> {
+  return callGo(PKG, VOICE_RUNTIME_CTRL, "VoiceRuntimeStatus");
+}
+
+/**
+ * Download + install the local voice models. Returns immediately with
+ * installing=true; progress streams on the "voice:runtime" event (subscribe via
+ * onVoiceRuntimeEvent).
+ */
+export function installVoiceRuntime(): Promise<VoiceRuntimeStatus> {
+  return callGo(PKG, VOICE_RUNTIME_CTRL, "InstallVoiceRuntime");
+}
+
+/** Remove the installed voice models. */
+export function uninstallVoiceRuntime(): Promise<VoiceRuntimeStatus> {
+  return callGo(PKG, VOICE_RUNTIME_CTRL, "UninstallVoiceRuntime");
+}
+
+/**
+ * Subscribe to voice-runtime install/lifecycle events ("voice:runtime"). Returns
+ * an unsubscribe function; a no-op when the Wails runtime is absent (SSR/tests).
+ */
+export function onVoiceRuntimeEvent(
+  handler: (ev: VoiceRuntimeEvent) => void,
+): () => void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const w = window as any;
+  if (!w?.runtime?.EventsOn) return () => {};
+  return w.runtime.EventsOn("voice:runtime", handler) as () => void;
 }
