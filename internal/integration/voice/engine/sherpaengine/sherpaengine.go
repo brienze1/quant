@@ -36,8 +36,8 @@ const (
 	defaultNumThreads = 4
 	defaultIdleUnload = 10 * time.Minute
 
-	// defaultSpeakerID is am_onyx, quant's default voice.
-	defaultSpeakerID = 17
+	// defaultSpeakerID is af_heart, quant's default voice.
+	defaultSpeakerID = 3
 
 	whisperSampleRate = 16000
 	whisperFeatureDim = 80
@@ -172,8 +172,8 @@ func (e *Engine) Voices() ([]engine.Voice, error) {
 	return out, nil
 }
 
-// speakerID maps a voice name (e.g. "am_onyx") or a numeric speaker-id string
-// to a Kokoro speaker id. Unknown or empty names fall back to am_onyx.
+// speakerID maps a voice name (e.g. "af_heart") or a numeric speaker-id string
+// to a Kokoro speaker id. Unknown or empty names fall back to af_heart.
 func speakerID(voiceName string) int {
 	name := strings.TrimSpace(voiceName)
 	if name == "" {

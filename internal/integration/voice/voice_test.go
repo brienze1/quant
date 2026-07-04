@@ -393,8 +393,8 @@ func TestWithDefaultsMigratesLegacyLocalhostURLs(t *testing.T) {
 	if b.STTBaseURL != "" || b.TTSBaseURL != "" {
 		t.Errorf("blank config URLs = %q / %q, want empty", b.STTBaseURL, b.TTSBaseURL)
 	}
-	if b.Voice != "am_onyx" || b.Speed != 1.2 || b.PauseMs != 3000 {
-		t.Errorf("voice defaults = %q/%v/%d, want am_onyx/1.2/3000", b.Voice, b.Speed, b.PauseMs)
+	if b.Voice != "af_heart" || b.Speed != 1.2 || b.PauseMs != 3000 {
+		t.Errorf("voice defaults = %q/%v/%d, want af_heart/1.2/3000", b.Voice, b.Speed, b.PauseMs)
 	}
 
 	// Custom endpoints survive untouched.

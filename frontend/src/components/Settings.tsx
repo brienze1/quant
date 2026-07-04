@@ -1661,7 +1661,7 @@ function DangerButton({ label, onClick }: { label: string; onClick: () => void }
 const VOICE_DEFAULTS: VoiceConfig = {
   enabled: false,
   provider: "local",
-  voice: "am_onyx",
+  voice: "af_heart",
   speed: 1.2,
   pauseMs: 3000,
   instructions: "",
@@ -2016,13 +2016,13 @@ function VoiceTab({ config, update }: TabProps) {
       >
         <SettingRow
           label="voice"
-          description="the spoken voice · pick one of the installed voices or type a name (default am_onyx)"
+          description="the spoken voice · pick one of the installed voices or type a name (default af_heart)"
           right={
             <ComboInput
               value={voice.voice}
               onChange={(v) => updateVoice("voice", v)}
               width={200}
-              placeholder="am_onyx"
+              placeholder="af_heart"
               options={voiceOptions}
               listId="voice-voices"
             />

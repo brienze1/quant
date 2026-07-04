@@ -39,7 +39,7 @@ const (
 	// source of truth for voice defaults, in internal/domain/entity/config.go);
 	// they are duplicated here only to avoid an awkward cross-package import on
 	// the hot synth path.
-	defaultVoice   = "am_onyx"
+	defaultVoice   = "af_heart"
 	defaultSpeed   = 1.2
 	defaultTimeout = 60 * time.Second
 )

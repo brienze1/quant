@@ -27,7 +27,7 @@ type VoiceConfig struct {
 	APIKey     string  `json:"apiKey"`
 	STTModel   string  `json:"sttModel"`
 	TTSModel   string  `json:"ttsModel"`
-	Voice      string  `json:"voice"` // default "am_onyx"
+	Voice      string  `json:"voice"` // default "af_heart"
 	Speed      float64 `json:"speed"` // default 1.2
 	// PauseMs is the milliseconds of silence the VAD waits through before ending
 	// the user's turn (frontend redemption window); higher = more time to
@@ -75,7 +75,7 @@ func (v VoiceConfig) WithDefaults() VoiceConfig {
 		v.TTSBaseURL = ""
 	}
 	if v.Voice == "" {
-		v.Voice = "am_onyx"
+		v.Voice = "af_heart"
 	}
 	if v.Speed == 0 {
 		v.Speed = 1.2
@@ -216,7 +216,7 @@ func NewDefaultConfig() Config {
 		// Voice — disabled by default; the embedded sherpa-onnx engine serves
 		// STT/TTS once its models are installed (no endpoint URLs needed).
 		// Delegate to WithDefaults() so the voice defaults (provider "local",
-		// voice "am_onyx", speed 1.2, pauseMs 3000) live in exactly one place.
+		// voice "af_heart", speed 1.2, pauseMs 3000) live in exactly one place.
 		// Enabled stays false (zero value untouched).
 		Voice: VoiceConfig{}.WithDefaults(),
 	}

@@ -34,16 +34,17 @@ func TestVoicesEmbeddedTable(t *testing.T) {
 func TestSpeakerIDMapping(t *testing.T) {
 	cases := map[string]int{
 		"am_onyx":    17,
+		"af_heart":   3,
 		"af_bella":   2,
 		"zm_yunyang": 52,
 		"17":         17,
 		"0":          0,
 		"52":         52,
-		"":           17, // empty → default
+		"":           3,  // empty → default (af_heart)
 		"  am_onyx ": 17, // trimmed
-		"nope":       17, // unknown → default
-		"999":        17, // out of range → default
-		"-1":         17,
+		"nope":       3,  // unknown → default
+		"999":        3,  // out of range → default
+		"-1":         3,
 	}
 	for name, want := range cases {
 		if got := speakerID(name); got != want {
