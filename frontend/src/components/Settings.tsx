@@ -1978,7 +1978,8 @@ function VoiceTab({ config, update }: TabProps) {
     setTestState("playing");
     setTestMsg("synthesizing…");
     try {
-      const res = await api.synthesize("Voice is working.", voice.voice || "", voice.speed || 0);
+      const phrase = voice.language === "pt-br" ? "A voz está funcionando." : "Voice is working.";
+      const res = await api.synthesize(phrase, voice.voice || "", voice.speed || 0);
       const audio = new Audio(`data:${res.contentType || "audio/mpeg"};base64,${res.audioB64}`);
       audio.onended = () => { setTestState("ok"); setTestMsg("played ✓"); };
       audio.onerror = () => { setTestState("error"); setTestMsg("playback failed"); };
@@ -2288,7 +2289,7 @@ function VoiceTab({ config, update }: TabProps) {
         />
         <SettingRow
           label="test voice"
-          description="speaks “Voice is working.” using the current voice + speed"
+          description={`speaks a short ${voice.language === "pt-br" ? "Portuguese" : "English"} phrase using the current voice + speed`}
           right={
             <div className="flex items-center gap-3">
               <SmallButton
