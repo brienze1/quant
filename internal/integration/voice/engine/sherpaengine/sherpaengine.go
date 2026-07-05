@@ -302,6 +302,35 @@ func (e *Engine) Voices() ([]engine.Voice, error) {
 	return out, nil
 }
 
+// VoicesFor returns only the embedded Kokoro speakers usable for a language:
+// the English variants (en-us / en-gb) for LangEN, the Brazilian Portuguese
+// speakers for LangPTBR. Filtering keeps the voice picker language-appropriate
+// (a pt-br build can't voice an English-only speaker cleanly, and vice versa).
+func (e *Engine) VoicesFor(lang string) ([]engine.Voice, error) {
+	table, _, err := loadSpeakers()
+	if err != nil {
+		return nil, err
+	}
+	norm := normalizeLang(lang)
+	out := make([]engine.Voice, 0, len(table))
+	for _, v := range table {
+		if voiceLangMatches(v.Lang, norm) {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+// voiceLangMatches reports whether a speaker's language tag (from the Kokoro
+// speaker table, e.g. "en-us", "en-gb", "pt-br") belongs to the given
+// normalized quant voice language (LangEN or LangPTBR).
+func voiceLangMatches(voiceLang, norm string) bool {
+	if norm == LangPTBR {
+		return voiceLang == LangPTBR
+	}
+	return strings.HasPrefix(voiceLang, "en")
+}
+
 // speakerID maps a voice name (e.g. "af_heart") or a numeric speaker-id string
 // to a Kokoro speaker id. Unknown or empty names fall back to af_heart.
 func speakerID(voiceName string) int {

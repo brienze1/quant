@@ -302,21 +302,37 @@ export interface Config {
 // VoiceConfig mirrors the Go entity.VoiceConfig / VoiceConfigDTO. Voice runs on
 // the embedded local sherpa-onnx runtime — there is no user-facing endpoint or
 // API-key configuration anymore (the backend keeps a hidden config fallback).
+// LangVoiceConfig mirrors the Go entity.LangVoiceConfig: one language's voice +
+// playback speed.
+export interface LangVoiceConfig {
+  voice: string;
+  speed: number;
+}
+
 export interface VoiceConfig {
   enabled: boolean;
   provider: "local";
-  // Spoken/recognized language. "en" uses the English STT model + English voices
-  // (af_heart default); "pt-br" uses the on-demand multilingual Whisper STT model
-  // + Brazilian Portuguese voices (pf_dora default).
+  // Default/last-used voice language a session's voice pane opens with. "en" uses
+  // the English STT model + English voices (af_heart default); "pt-br" uses the
+  // on-demand multilingual Whisper STT model + Brazilian Portuguese voices
+  // (pf_dora default). The pane lets the user switch languages live per session.
   language: "en" | "pt-br";
+  // Currently-selected language's voice + speed (mirrored from langVoices by the
+  // backend for backward compat).
   voice: string;
   speed: number;
+  // Per-language voice + speed, keyed by language code ("en", "pt-br"). Source of
+  // truth for each language's configured voice; edited in Settings → Voice.
+  langVoices: Record<string, LangVoiceConfig>;
   // Milliseconds of silence the VAD waits through before ending the user's turn
   // (frontend redemption window); higher = more time to pause/think mid-sentence.
   pauseMs: number;
   // Optional user-authored guidance appended to the built-in voice persona at
   // session kickoff. Empty = none.
   instructions: string;
+  // Turn OFF the short audio earcons played on voice-mode state transitions.
+  // Inverted (default false = cues on) so existing configs keep cues enabled.
+  muteSoundCues?: boolean;
   // Whether the user opted into quant downloading + supervising the local
   // voice models itself (the one-click "Download voice mode" flow).
   managedRuntime?: boolean;
@@ -340,6 +356,10 @@ export interface VoiceRuntimeStatus {
   version: string;
   platform: string;
   models: VoiceRuntimeModelStatus[];
+  // Voice languages whose models are fully installed (e.g. ["en"] or
+  // ["en","pt-br"]). Drives which languages the Settings + session voice UIs let
+  // the user select vs. still need an on-demand download.
+  languages: string[];
   error?: string;
 }
 

@@ -1664,8 +1664,13 @@ const VOICE_DEFAULTS: VoiceConfig = {
   language: "en",
   voice: "af_heart",
   speed: 1.2,
+  langVoices: {
+    en: { voice: "af_heart", speed: 1.2 },
+    "pt-br": { voice: "pf_dora", speed: 1.2 },
+  },
   pauseMs: 3000,
   instructions: "",
+  muteSoundCues: false,
 };
 
 // Curated fallback speaker names (the bundled Kokoro voice model's English
@@ -1684,17 +1689,13 @@ const FALLBACK_VOICES = [
 // speakers). Shown ahead of the English list when the pt-br language is selected.
 const PT_FALLBACK_VOICES = ["pf_dora", "pm_alex", "pm_santa"];
 
-// Per-language default voice + speaker-name prefixes used to auto-snap the voice
-// when the user switches language (pt voices start pf_/pm_; en voices start
-// af_/am_/bf_/bm_).
+// Per-language default voice, used to seed a language's config the first time
+// it's edited (pt-br → pf_dora, en → af_heart).
 const VOICE_LANG_DEFAULTS: Record<VoiceConfig["language"], string> = {
   en: "af_heart",
   "pt-br": "pf_dora",
 };
-function voiceMatchesLanguage(name: string, lang: VoiceConfig["language"]): boolean {
-  const v = (name || "").trim();
-  return lang === "pt-br" ? /^p[fm]_/.test(v) : /^(af_|am_|bf_|bm_)/.test(v);
-}
+const DEFAULT_SPEED = 1.2;
 
 // mergeOptions puts runtime-discovered values first, then curated fallbacks,
 // de-duplicated while preserving order.
@@ -1867,9 +1868,11 @@ function VoiceTab({ config, update }: TabProps) {
   // names), merged ahead of the curated fallbacks in the picker. Soft-fails to
   // [] when the runtime isn't installed, so the fallback list is used.
   const [discoveredVoices, setDiscoveredVoices] = useState<string[]>([]);
+  // Discover only the SELECTED language's voices so the picker is
+  // language-appropriate (English speakers for "en", pt-br speakers for "pt-br").
   const loadVoices = useCallback(async () => {
-    setDiscoveredVoices(await api.listVoices());
-  }, []);
+    setDiscoveredVoices(await api.listVoices(voice.language));
+  }, [voice.language]);
 
   // Best-effort: discover voices once on mount.
   useEffect(() => {
@@ -1945,19 +1948,37 @@ function VoiceTab({ config, update }: TabProps) {
   const langFallback = voice.language === "pt-br" ? PT_FALLBACK_VOICES : FALLBACK_VOICES;
   const voiceOptions = mergeOptions(discoveredVoices, langFallback);
 
+  // The voice + speed being edited belong to the SELECTED language. Read them
+  // from the per-language store (falling back to that language's defaults) so
+  // English and Português each keep their own configuration.
+  const langCfg = voice.langVoices?.[voice.language];
+  const curVoice = langCfg?.voice || VOICE_LANG_DEFAULTS[voice.language];
+  const curSpeed = langCfg?.speed || DEFAULT_SPEED;
+
   function updateVoice<K extends keyof VoiceConfig>(key: K, value: VoiceConfig[K]) {
     update("voice", { ...voice, [key]: value });
   }
 
-  // Switch language and auto-snap the voice: if the current voice doesn't belong
-  // to the new language, reset it to that language's default. Both fields ride in
-  // a single update so one save carries them together.
+  // Write the selected language's voice/speed into its per-language slot, keeping
+  // the top-level Voice/Speed mirrored to the current language for backward compat.
+  function setLangVoice(patch: Partial<{ voice: string; speed: number }>) {
+    const next = { voice: curVoice, speed: curSpeed, ...patch };
+    const nextLangVoices = { ...(voice.langVoices ?? {}), [voice.language]: next };
+    update("voice", { ...voice, langVoices: nextLangVoices, voice: next.voice, speed: next.speed });
+  }
+
+  // Switch which language is being configured (also the default a session's
+  // voice pane opens with). The top-level Voice/Speed mirror snaps to the new
+  // language's stored values; each language keeps its own config.
   function changeLanguage(lang: VoiceConfig["language"]) {
     if (lang === voice.language) return;
-    const nextVoice = voiceMatchesLanguage(voice.voice, lang)
-      ? voice.voice
-      : VOICE_LANG_DEFAULTS[lang];
-    update("voice", { ...voice, language: lang, voice: nextVoice });
+    const lc = voice.langVoices?.[lang];
+    update("voice", {
+      ...voice,
+      language: lang,
+      voice: lc?.voice || VOICE_LANG_DEFAULTS[lang],
+      speed: lc?.speed || DEFAULT_SPEED,
+    });
   }
 
   // On-demand PT speech-to-text model: the multilingual Whisper entry in the
@@ -1979,7 +2000,7 @@ function VoiceTab({ config, update }: TabProps) {
     setTestMsg("synthesizing…");
     try {
       const phrase = voice.language === "pt-br" ? "A voz está funcionando." : "Voice is working.";
-      const res = await api.synthesize(phrase, voice.voice || "", voice.speed || 0);
+      const res = await api.synthesize(phrase, curVoice || "", curSpeed || 0, voice.language);
       const audio = new Audio(`data:${res.contentType || "audio/mpeg"};base64,${res.audioB64}`);
       audio.onended = () => { setTestState("ok"); setTestMsg("played ✓"); };
       audio.onerror = () => { setTestState("error"); setTestMsg("playback failed"); };
@@ -2181,7 +2202,7 @@ function VoiceTab({ config, update }: TabProps) {
       >
         <SettingRow
           label="language"
-          description="the language you speak and quant replies in · English uses the built-in model, Português (BR) downloads an extra speech-recognition model"
+          description="the language you're configuring below (and the one a session's voice mode opens with) · each language keeps its own voice + speed, and you can switch languages live inside a session · English uses the built-in model, Português (BR) downloads an extra speech-recognition model"
           right={
             <SegmentedControl<VoiceConfig["language"]>
               value={voice.language}
@@ -2238,14 +2259,14 @@ function VoiceTab({ config, update }: TabProps) {
           </div>
         )}
         <SettingRow
-          label="voice"
-          description="the spoken voice · pick one of the installed voices or type a name (default af_heart)"
+          label={`voice · ${voice.language === "pt-br" ? "Português (BR)" : "English"}`}
+          description={`the spoken voice for ${voice.language === "pt-br" ? "Português (BR)" : "English"} · only ${voice.language === "pt-br" ? "Portuguese" : "English"} voices are shown (default ${VOICE_LANG_DEFAULTS[voice.language]})`}
           right={
             <ComboInput
-              value={voice.voice}
-              onChange={(v) => updateVoice("voice", v)}
+              value={curVoice}
+              onChange={(v) => setLangVoice({ voice: v })}
               width={200}
-              placeholder="af_heart"
+              placeholder={VOICE_LANG_DEFAULTS[voice.language]}
               options={voiceOptions}
               listId="voice-voices"
             />
@@ -2253,7 +2274,7 @@ function VoiceTab({ config, update }: TabProps) {
         />
         <SettingRow
           label="speed"
-          description="playback rate, 0.5–2.0 (default 1.2)"
+          description={`playback rate for ${voice.language === "pt-br" ? "Português (BR)" : "English"}, 0.5–2.0 (default 1.2)`}
           right={
             <div className="flex items-center gap-3">
               <input
@@ -2261,11 +2282,11 @@ function VoiceTab({ config, update }: TabProps) {
                 min={0.5}
                 max={2.0}
                 step={0.1}
-                value={voice.speed}
-                onChange={(e) => updateVoice("speed", parseFloat(e.target.value))}
+                value={curSpeed}
+                onChange={(e) => setLangVoice({ speed: parseFloat(e.target.value) })}
                 style={{ width: 160, accentColor: "var(--accent)" }}
               />
-              <span style={{ color: "var(--fg)", fontSize: 12, width: 32 }}>{voice.speed.toFixed(1)}x</span>
+              <span style={{ color: "var(--fg)", fontSize: 12, width: 32 }}>{curSpeed.toFixed(1)}x</span>
             </div>
           }
         />
@@ -2313,6 +2334,16 @@ function VoiceTab({ config, update }: TabProps) {
                 </span>
               )}
             </div>
+          }
+        />
+        <SettingRow
+          label="sound cues"
+          description="play short audio cues on voice-mode transitions (listening, thinking, speaking, ended)"
+          right={
+            <Toggle
+              checked={!voice.muteSoundCues}
+              onChange={(v) => updateVoice("muteSoundCues", !v)}
+            />
           }
         />
       </Section>

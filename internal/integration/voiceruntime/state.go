@@ -110,6 +110,19 @@ func languageInstalled(lang string) bool {
 	return true
 }
 
+// installedLanguages returns the supported voice languages whose models are
+// fully present on disk, in a stable order (English first). The UI uses it to
+// gate which languages are selectable vs. still need an on-demand download.
+func installedLanguages() []string {
+	out := []string{}
+	for _, lang := range []string{sherpaengine.LangEN, sherpaengine.LangPTBR} {
+		if languageInstalled(lang) {
+			out = append(out, lang)
+		}
+	}
+	return out
+}
+
 // dirSize sums the file sizes under root (best-effort; unreadable entries are
 // skipped). Used to report the real on-disk size of an installed model.
 func dirSize(root string) int64 {

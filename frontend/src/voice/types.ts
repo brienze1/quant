@@ -37,16 +37,21 @@ export type VoiceErrorCb = (err: VoiceError) => void;
  * STT/TTS transport, injectable so tests/harness can pass mocks instead of the
  * Wails-bridged api.ts functions (which throw outside the desktop app).
  *
- * - `transcribe(audioB64, mime)` → transcript string.
- * - `synthesize(text, voice, speed)` → { audioB64, contentType }.
+ * - `transcribe(audioB64, mime, lang)` → transcript string.
+ * - `synthesize(text, voice, speed, lang)` → { audioB64, contentType }.
  *   (Pass "" / 0 to use the server defaults af_heart / 1.2.)
+ *
+ * `lang` is the per-request voice language ("en"/"pt-br"; "" = configured
+ * default) so the session voice pane can switch languages live without a config
+ * change.
  */
 export interface VoiceTransport {
-  transcribe(audioB64: string, mime: string): Promise<string>;
+  transcribe(audioB64: string, mime: string, lang?: string): Promise<string>;
   synthesize(
     text: string,
     voice: string,
     speed: number,
+    lang?: string,
   ): Promise<{ audioB64: string; contentType: string }>;
 }
 
@@ -72,6 +77,12 @@ export interface AudioServiceOptions {
   voice?: string;
   /** TTS speed; 0 → server default (1.2). */
   speed?: number;
+  /**
+   * Voice language ("en"/"pt-br") the session opens with; passed on every
+   * STT/TTS call so the engine serves the right language. "" → configured
+   * default. Switchable live via IAudioService.setLanguage().
+   */
+  lang?: string;
   /** Enable barge-in: pause TTS when VAD detects speech during playback. */
   bargeIn?: boolean;
   /**
@@ -196,6 +207,16 @@ export interface IAudioService {
    * "" when recording state resets. Returns an unsubscribe fn.
    */
   onRecordingTranscript(cb: RecordingTranscriptCb): () => void;
+
+  /**
+   * Switch the voice language served on subsequent STT/TTS turns (the session's
+   * live language toggle). Updates the language passed to transcribe/synthesize
+   * and the voice + speed used for TTS, all effective on the next turn — the mic
+   * capture / VAD graph is untouched, so it's safe to call mid-conversation.
+   * Pass the language-appropriate voice + speed (from the per-language config);
+   * "" voice / 0 speed fall back to the server default for that language.
+   */
+  setLanguage(lang: string, voice: string, speed: number): void;
 
   /** Synthesize + play `text`; resolve on playback end. */
   speak(text: string): Promise<void>;

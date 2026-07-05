@@ -691,23 +691,29 @@ const VOICE_CTRL = "voiceController";
  * Transcribe base64-encoded audio via the Go STT proxy.
  * @param audioB64 base64-encoded audio bytes (no data: prefix)
  * @param mime audio MIME type, e.g. "audio/webm" or "audio/wav"
+ * @param lang optional per-request voice language ("en"/"pt-br"); "" uses the
+ *   configured default. The voice pane passes the session's live language so STT
+ *   decodes in the right language without a config change.
  * @returns the transcript text (trimmed)
  */
-export function transcribe(audioB64: string, mime: string): Promise<string> {
-  return callGo(VOICE_PKG, VOICE_CTRL, "Transcribe", audioB64, mime);
+export function transcribe(audioB64: string, mime: string, lang = ""): Promise<string> {
+  return callGo(VOICE_PKG, VOICE_CTRL, "Transcribe", audioB64, mime, lang);
 }
 
 /**
  * Synthesize speech for the given text via the Go TTS proxy.
  * Pass an empty `voice` and/or `speed === 0` to use the configured defaults.
+ * @param lang optional per-request voice language ("en"/"pt-br"); "" uses the
+ *   configured default. Drives which Kokoro phonemizer + default voice are used.
  * @returns { audioB64, contentType } — base64-encoded audio + its content type
  */
 export function synthesize(
   text: string,
   voice: string,
   speed: number,
+  lang = "",
 ): Promise<VoiceSpeechResult> {
-  return callGo(VOICE_PKG, VOICE_CTRL, "Synthesize", text, voice, speed);
+  return callGo(VOICE_PKG, VOICE_CTRL, "Synthesize", text, voice, speed, lang);
 }
 
 /**
@@ -769,13 +775,16 @@ export function startVoiceSession(sessionId: string): Promise<void> {
 }
 
 /**
- * Discover the speaker voices the installed voice runtime offers (the Kokoro
- * model's speaker names, e.g. af_bella / am_onyx). Used by Settings → Voice to
- * populate the voice picker. Soft-fails: resolves to [] when the runtime is not
- * installed / unreachable, so the UI can fall back to curated options.
+ * Discover the speaker voices the installed voice runtime offers for a language
+ * (the Kokoro model's speaker names filtered by language, e.g. af_bella / am_onyx
+ * for "en", pf_dora for "pt-br"). Used by Settings → Voice and the session voice
+ * pane to populate the language-appropriate voice picker. Soft-fails: resolves to
+ * [] when the runtime is not installed / unreachable, so the UI can fall back to
+ * curated options.
+ * @param lang "en"/"pt-br"; "" uses the configured default language.
  */
-export function listVoices(): Promise<string[]> {
-  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListVoices").then(
+export function listVoices(lang = ""): Promise<string[]> {
+  return callGo<string[] | null>(VOICE_PKG, VOICE_CTRL, "ListVoices", lang).then(
     (r) => r ?? [],
     () => [],
   );

@@ -229,8 +229,8 @@ export async function openMicStreamFor(deviceId: string | null): Promise<MediaSt
 
 /** Default transport = the real Wails-bridged api.ts wrappers. */
 const defaultTransport: VoiceTransport = {
-  transcribe: (audioB64, mime) => api.transcribe(audioB64, mime),
-  synthesize: (text, voice, speed) => api.synthesize(text, voice, speed),
+  transcribe: (audioB64, mime, lang) => api.transcribe(audioB64, mime, lang),
+  synthesize: (text, voice, speed, lang) => api.synthesize(text, voice, speed, lang),
 };
 
 export class AudioService implements IAudioService {
@@ -239,8 +239,11 @@ export class AudioService implements IAudioService {
   private readonly onnxWasmPath: string;
   private readonly vadModel: "v5" | "legacy";
   private readonly maxListenMs: number;
-  private readonly voice: string;
-  private readonly speed: number;
+  // Mutable so the session voice pane can switch language (and its per-language
+  // voice/speed) live via setLanguage() without recreating the service.
+  private voice: string;
+  private speed: number;
+  private lang: string;
   private readonly vadOptions: ReturnType<typeof resolveVadOptions>;
   private bargeIn: boolean;
   private bargeInGuardMs: number;
@@ -352,6 +355,7 @@ export class AudioService implements IAudioService {
     this.maxListenMs = opts.maxListenMs ?? DEFAULT_MAX_LISTEN_MS;
     this.voice = opts.voice ?? "";
     this.speed = opts.speed ?? 0;
+    this.lang = opts.lang ?? "";
     this.vadOptions = resolveVadOptions(opts.vad, FRAME_SAMPLES_BY_MODEL[this.vadModel]);
     this.bargeIn = opts.bargeIn ?? false;
     this.bargeInGuardMs = opts.bargeInGuardMs ?? BARGE_IN_GUARD_MS;
@@ -399,6 +403,17 @@ export class AudioService implements IAudioService {
 
   setBargeIn(enabled: boolean): void {
     this.bargeIn = enabled;
+  }
+
+  /**
+   * Switch the voice language served on subsequent STT/TTS turns, along with the
+   * voice + speed to use for TTS. Effective on the next transcribe/synthesize
+   * call; the live mic/VAD graph is untouched, so it's safe mid-conversation.
+   */
+  setLanguage(lang: string, voice: string, speed: number): void {
+    this.lang = lang ?? "";
+    this.voice = voice ?? "";
+    this.speed = speed ?? 0;
   }
 
   /** Tune (or disable, with 0) the post-playback barge-in suppression window. */
@@ -904,7 +919,7 @@ export class AudioService implements IAudioService {
       // the same per-segment results (a segment that was only the stop phrase
       // strips to "" and is dropped by joinSegmentTexts).
       const p = this.transport
-        .transcribe(audioB64, "audio/wav")
+        .transcribe(audioB64, "audio/wav", this.lang)
         .catch(() => "")
         .then((raw) => {
           const { text, matched } = stripStopPhrase(raw);
@@ -951,7 +966,7 @@ export class AudioService implements IAudioService {
 
     // STT via the (injectable) transport.
     try {
-      const transcript = await this.transport.transcribe(audioB64, "audio/wav");
+      const transcript = await this.transport.transcribe(audioB64, "audio/wav", this.lang);
       this.resolveListen(transcript);
     } catch (e) {
       this.failListen({
@@ -1219,7 +1234,7 @@ export class AudioService implements IAudioService {
     let audioB64: string;
     let contentType: string;
     try {
-      const res = await this.transport.synthesize(text, this.voice, this.speed);
+      const res = await this.transport.synthesize(text, this.voice, this.speed, this.lang);
       audioB64 = res.audioB64;
       contentType = res.contentType || "audio/mpeg";
     } catch (e) {

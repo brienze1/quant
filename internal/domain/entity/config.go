@@ -1,10 +1,21 @@
 // Package entity contains domain entities representing core business objects.
 package entity
 
+import "strings"
+
 // Shortcut represents a named shell command for session left-click menus.
 type Shortcut struct {
 	Name    string `json:"name"`
 	Command string `json:"command"`
+}
+
+// LangVoiceConfig is the per-language voice selection + playback speed. Each
+// supported voice language ("en", "pt-br") owns its own voice + speed so the
+// user can configure them independently and switch languages live in a session
+// without losing the other language's preferences.
+type LangVoiceConfig struct {
+	Voice string  `json:"voice"`
+	Speed float64 `json:"speed"`
 }
 
 // VoiceConfig holds settings for the native voice mode (STT/TTS pipeline).
@@ -27,12 +38,24 @@ type VoiceConfig struct {
 	APIKey     string  `json:"apiKey"`
 	STTModel   string  `json:"sttModel"`
 	TTSModel   string  `json:"ttsModel"`
-	Voice      string  `json:"voice"` // default "af_heart"
-	Speed      float64 `json:"speed"` // default 1.2
+	// Voice / Speed are the CURRENTLY-selected language's voice + playback speed,
+	// mirrored from LangVoices[Language] by WithDefaults. They are kept as
+	// top-level fields for backward compatibility (older configs, the Synthesize
+	// fallback, and consumers that don't yet know about per-language config); the
+	// authoritative per-language store is LangVoices.
+	Voice string  `json:"voice"` // default "af_heart"
+	Speed float64 `json:"speed"` // default 1.2
 	// Language selects the voice language the embedded engine serves: "en"
-	// (default) or "pt-br". It drives both the Whisper STT model and the Kokoro
-	// default voice; the pt-br STT model is installed on demand.
+	// (default) or "pt-br". It is the default/last-used language a session's voice
+	// pane opens with; the pane lets the user switch languages live (per session),
+	// which does not rewrite this. It drives both the Whisper STT model and the
+	// Kokoro default voice; the pt-br STT model is installed on demand.
 	Language string `json:"language"`
+	// LangVoices holds the per-language voice + speed, keyed by language code
+	// ("en", "pt-br"). This is the source of truth for which voice + speed each
+	// language uses; WithDefaults seeds both entries and mirrors the selected
+	// language's entry into the top-level Voice/Speed for backward compat.
+	LangVoices map[string]LangVoiceConfig `json:"langVoices"`
 	// PauseMs is the milliseconds of silence the VAD waits through before ending
 	// the user's turn (frontend redemption window); higher = more time to
 	// pause/think mid-sentence.
@@ -40,6 +63,10 @@ type VoiceConfig struct {
 	// Instructions is optional user-authored guidance appended to the built-in
 	// voice persona at session kickoff. Empty = none (no default).
 	Instructions string `json:"instructions"`
+	// MuteSoundCues turns OFF the short audio earcons played on voice-mode state
+	// transitions (listening / thinking / speaking / ended / error). Inverted so
+	// the zero value (false) keeps cues ON for new and existing configs alike.
+	MuteSoundCues bool `json:"muteSoundCues"`
 	// ManagedRuntime records that the user opted into quant downloading and
 	// supervising the local STT/TTS engines itself (the one-click "Download
 	// voice mode" flow) rather than bringing their own servers. It is user
@@ -83,16 +110,86 @@ func (v VoiceConfig) WithDefaults() VoiceConfig {
 	if v.Language != "pt-br" {
 		v.Language = "en"
 	}
-	if v.Voice == "" {
-		v.Voice = "af_heart"
+	// Migrate the pre-per-language single Voice/Speed into the selected language's
+	// slot so an upgrading user keeps their chosen voice. Only when nothing has
+	// been stored per-language yet.
+	if len(v.LangVoices) == 0 && (v.Voice != "" || v.Speed != 0) {
+		v.LangVoices = map[string]LangVoiceConfig{
+			v.Language: {Voice: v.Voice, Speed: v.Speed},
+		}
 	}
-	if v.Speed == 0 {
-		v.Speed = 1.2
+	if v.LangVoices == nil {
+		v.LangVoices = map[string]LangVoiceConfig{}
 	}
+	// Seed both languages with sensible defaults for any unset field. English
+	// defaults to af_heart; Brazilian Portuguese to pf_dora; both to speed 1.2.
+	en := v.LangVoices[voiceLangEN]
+	if en.Voice == "" {
+		en.Voice = defaultVoiceEN
+	}
+	if en.Speed == 0 {
+		en.Speed = defaultVoiceSpeed
+	}
+	v.LangVoices[voiceLangEN] = en
+	pt := v.LangVoices[voiceLangPTBR]
+	if pt.Voice == "" {
+		pt.Voice = defaultVoicePTBR
+	}
+	if pt.Speed == 0 {
+		pt.Speed = defaultVoiceSpeed
+	}
+	v.LangVoices[voiceLangPTBR] = pt
+	// Mirror the selected language's entry into the top-level Voice/Speed so
+	// legacy consumers (and the Synthesize fallback) see the active selection.
+	sel := v.LangVoices[v.Language]
+	v.Voice = sel.Voice
+	v.Speed = sel.Speed
 	if v.PauseMs == 0 {
 		v.PauseMs = 3000
 	}
 	return v
+}
+
+// Voice-language constants + defaults, kept here (the config source of truth)
+// and mirrored by sherpaengine's own language handling.
+const (
+	voiceLangEN       = "en"
+	voiceLangPTBR     = "pt-br"
+	defaultVoiceEN    = "af_heart"
+	defaultVoicePTBR  = "pf_dora"
+	defaultVoiceSpeed = 1.2
+)
+
+// normalizeVoiceLang collapses any input to a supported voice language: "pt-br"
+// only for a case-insensitive "pt-br", otherwise "en" (covers "" and unknowns).
+// Mirrors sherpaengine.normalizeLang without importing it (domain stays leaf).
+func normalizeVoiceLang(lang string) string {
+	if strings.EqualFold(strings.TrimSpace(lang), voiceLangPTBR) {
+		return voiceLangPTBR
+	}
+	return voiceLangEN
+}
+
+// VoiceForLang returns the configured voice for a language, falling back to the
+// language default. Call on a config already passed through WithDefaults.
+func (v VoiceConfig) VoiceForLang(lang string) string {
+	lc := v.LangVoices[normalizeVoiceLang(lang)]
+	if lc.Voice != "" {
+		return lc.Voice
+	}
+	if normalizeVoiceLang(lang) == voiceLangPTBR {
+		return defaultVoicePTBR
+	}
+	return defaultVoiceEN
+}
+
+// SpeedForLang returns the configured playback speed for a language, falling
+// back to the default. Call on a config already passed through WithDefaults.
+func (v VoiceConfig) SpeedForLang(lang string) float64 {
+	if lc := v.LangVoices[normalizeVoiceLang(lang)]; lc.Speed != 0 {
+		return lc.Speed
+	}
+	return defaultVoiceSpeed
 }
 
 // Config represents the application configuration settings.

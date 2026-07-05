@@ -50,7 +50,11 @@ type Status struct {
 	Version    string        `json:"version"`
 	Platform   string        `json:"platform"`
 	Models     []ModelStatus `json:"models"`
-	Error      string        `json:"error,omitempty"`
+	// Languages lists the voice languages whose models are fully installed
+	// (e.g. ["en"] or ["en","pt-br"]). The Settings + session voice UIs use it to
+	// know which languages can be selected vs. still need an on-demand download.
+	Languages []string `json:"languages"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // RuntimeEvent is the payload streamed on the voice:runtime channel. Engine
@@ -243,6 +247,7 @@ func (m *Manager) statusLocked() Status {
 		Installing: m.installing,
 		Platform:   platformKey(),
 		Models:     modelStatuses(),
+		Languages:  installedLanguages(),
 		Error:      m.lastErr,
 	}
 	if s, err := loadState(); err == nil {
