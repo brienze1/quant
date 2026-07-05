@@ -6,8 +6,8 @@ export function ListModels(arg1) {
   return window['go']['voice']['voiceController']['ListModels'](arg1);
 }
 
-export function ListVoices() {
-  return window['go']['voice']['voiceController']['ListVoices']();
+export function ListVoices(arg1) {
+  return window['go']['voice']['voiceController']['ListVoices'](arg1);
 }
 
 export function OnShutdown(arg1) {
@@ -26,12 +26,12 @@ export function StartVoiceSession(arg1) {
   return window['go']['voice']['voiceController']['StartVoiceSession'](arg1);
 }
 
-export function Synthesize(arg1, arg2, arg3) {
-  return window['go']['voice']['voiceController']['Synthesize'](arg1, arg2, arg3);
+export function Synthesize(arg1, arg2, arg3, arg4) {
+  return window['go']['voice']['voiceController']['Synthesize'](arg1, arg2, arg3, arg4);
 }
 
-export function Transcribe(arg1, arg2) {
-  return window['go']['voice']['voiceController']['Transcribe'](arg1, arg2);
+export function Transcribe(arg1, arg2, arg3) {
+  return window['go']['voice']['voiceController']['Transcribe'](arg1, arg2, arg3);
 }
 
 export function VoiceListenExtend(arg1) {

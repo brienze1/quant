@@ -58,13 +58,30 @@ export namespace dto {
 	        this.updatedAt = source["updatedAt"];
 	    }
 	}
+	export class LangVoiceConfigDTO {
+	    voice: string;
+	    speed: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new LangVoiceConfigDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.voice = source["voice"];
+	        this.speed = source["speed"];
+	    }
+	}
 	export class VoiceConfigDTO {
 	    enabled: boolean;
 	    provider: string;
 	    voice: string;
+	    language: string;
 	    speed: number;
+	    langVoices: Record<string, LangVoiceConfigDTO>;
 	    pauseMs: number;
 	    instructions: string;
+	    muteSoundCues: boolean;
 	    managedRuntime: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -76,11 +93,32 @@ export namespace dto {
 	        this.enabled = source["enabled"];
 	        this.provider = source["provider"];
 	        this.voice = source["voice"];
+	        this.language = source["language"];
 	        this.speed = source["speed"];
+	        this.langVoices = this.convertValues(source["langVoices"], LangVoiceConfigDTO, true);
 	        this.pauseMs = source["pauseMs"];
 	        this.instructions = source["instructions"];
+	        this.muteSoundCues = source["muteSoundCues"];
 	        this.managedRuntime = source["managedRuntime"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ShortcutDTO {
 	    name: string;
@@ -734,6 +772,7 @@ export namespace dto {
 	        this.finishedAt = source["finishedAt"];
 	    }
 	}
+	
 	export class MindmapNodeRequest {
 	    id: string;
 	    parentId: string;
@@ -1403,6 +1442,7 @@ export namespace voiceruntime {
 	    version: string;
 	    platform: string;
 	    models: ModelStatus[];
+	    languages: string[];
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -1417,6 +1457,7 @@ export namespace voiceruntime {
 	        this.version = source["version"];
 	        this.platform = source["platform"];
 	        this.models = this.convertValues(source["models"], ModelStatus);
+	        this.languages = source["languages"];
 	        this.error = source["error"];
 	    }
 	

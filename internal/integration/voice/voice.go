@@ -33,13 +33,13 @@ import (
 )
 
 const (
-	// defaultVoice / defaultSpeed are the live-path fallbacks used when the
-	// frontend passes a blank voice / zero speed AND the saved config has none.
-	// They MUST stay in sync with entity.VoiceConfig.WithDefaults() (the single
-	// source of truth for voice defaults, in internal/domain/entity/config.go);
-	// they are duplicated here only to avoid an awkward cross-package import on
-	// the hot synth path.
-	defaultVoice   = "af_heart"
+	// defaultSpeed is the live-path fallback used when the frontend passes a zero
+	// speed AND the saved config has none. It MUST stay in sync with
+	// entity.VoiceConfig.WithDefaults() (the single source of truth for voice
+	// defaults, in internal/domain/entity/config.go); it is duplicated here only
+	// to avoid an awkward cross-package import on the hot synth path. The default
+	// voice is language-dependent, so it comes from sherpaengine.DefaultVoice
+	// rather than a const here.
 	defaultSpeed   = 1.2
 	defaultTimeout = 60 * time.Second
 )
@@ -256,6 +256,28 @@ func (c *voiceController) voiceConfig() (entity.VoiceConfig, error) {
 	return cfg.Voice.WithDefaults(), nil
 }
 
+// effectiveLang resolves which voice language a request should use: the explicit
+// per-request override (the frontend voice pane's live language switch) when
+// non-empty, otherwise the configured default language.
+func effectiveLang(vc entity.VoiceConfig, override string) string {
+	if strings.TrimSpace(override) != "" {
+		return override
+	}
+	return vc.Language
+}
+
+// applyLanguage tells the embedded engine which language to serve, so the
+// subsequent Ready()/engine selection and any lazy model (re)build reflect the
+// requested voice language. `override` is the per-request language from the
+// frontend (empty = use the configured default). It is a no-op when the embedded
+// engine is absent (custom-endpoint-only setups). Callers invoke it at the top of
+// each engine-facing method, before engine selection / sherpaReady().
+func (c *voiceController) applyLanguage(vc entity.VoiceConfig, override string) {
+	if c.sherpa != nil {
+		c.sherpa.SetLanguage(effectiveLang(vc, override))
+	}
+}
+
 // reqCtx returns the app lifecycle context for outgoing engine calls, falling
 // back to Background before OnStartup (e.g. in tests).
 func (c *voiceController) reqCtx() context.Context {
@@ -353,8 +375,11 @@ func opField(o httpengine.Op) string {
 // backend. Audio arrives base64-encoded because the Wails bridge marshals
 // []byte awkwardly across the remote transport.
 //
-// It returns the trimmed transcript text.
-func (c *voiceController) Transcribe(audioB64 string, mime string) (string, error) {
+// It returns the trimmed transcript text. `lang` is an optional per-request
+// language override ("en"/"pt-br"); empty uses the configured default. The
+// frontend voice pane passes the session's live-selected language so STT
+// decodes in the right language without a config change.
+func (c *voiceController) Transcribe(audioB64 string, mime string, lang string) (string, error) {
 	audio, err := base64.StdEncoding.DecodeString(audioB64)
 	if err != nil {
 		return "", fmt.Errorf("invalid base64 audio: %w", err)
@@ -367,6 +392,7 @@ func (c *voiceController) Transcribe(audioB64 string, mime string) (string, erro
 	if err != nil {
 		return "", err
 	}
+	c.applyLanguage(vc, lang)
 
 	eng, err := c.engineFor(vc, httpengine.OpSTT)
 	if err != nil {
@@ -387,8 +413,11 @@ type SpeechResult struct {
 // Synthesize runs text-to-speech on the selected backend and returns
 // base64-encoded audio bytes plus the content-type (as a SpeechResult). The
 // voice and speed arguments override the config defaults when non-empty /
-// non-zero. Audio is returned base64-encoded for the Wails bridge.
-func (c *voiceController) Synthesize(text string, voice string, speed float64) (SpeechResult, error) {
+// non-zero. `lang` is an optional per-request language override ("en"/"pt-br");
+// empty uses the configured default. When voice/speed are unset they fall back
+// to the per-language config for the effective language. Audio is returned
+// base64-encoded for the Wails bridge.
+func (c *voiceController) Synthesize(text string, voice string, speed float64, lang string) (SpeechResult, error) {
 	if strings.TrimSpace(text) == "" {
 		return SpeechResult{}, fmt.Errorf("empty text")
 	}
@@ -397,15 +426,17 @@ func (c *voiceController) Synthesize(text string, voice string, speed float64) (
 	if err != nil {
 		return SpeechResult{}, err
 	}
+	c.applyLanguage(vc, lang)
+	effLang := effectiveLang(vc, lang)
 
 	if voice == "" {
-		voice = vc.Voice
+		voice = vc.VoiceForLang(effLang)
 	}
 	if voice == "" {
-		voice = defaultVoice
+		voice = sherpaengine.DefaultVoice(effLang)
 	}
 	if speed == 0 {
-		speed = vc.Speed
+		speed = vc.SpeedForLang(effLang)
 	}
 	if speed == 0 {
 		speed = defaultSpeed
@@ -433,36 +464,46 @@ func (c *voiceController) Synthesize(text string, voice string, speed float64) (
 // It soft-fails: on any error it returns an empty slice plus the error so the
 // frontend can fall back to its curated option list without surfacing a crash.
 func (c *voiceController) ListModels(op string) ([]string, error) {
-	if c.sherpaReady() {
-		return []string{sherpaSTTModel}, nil
-	}
 	vc, err := c.voiceConfig()
 	if err != nil {
 		return []string{}, err
+	}
+	c.applyLanguage(vc, "")
+	if c.sherpaReady() {
+		return []string{sherpaSTTModel}, nil
 	}
 	return c.httpEngine(vc).ListModels(httpengine.OpFromString(op))
 }
 
-// ListVoices returns the available TTS voice names. With the embedded engine
-// active this is the bundled Kokoro speaker table (no model load, no network);
-// otherwise it probes the custom TTS server's voices endpoint.
+// ListVoices returns the available TTS voice names for a language. With the
+// embedded engine active this is the bundled Kokoro speaker table filtered to
+// the requested language (no model load, no network); otherwise it probes the
+// custom TTS server's voices endpoint. `lang` is "en"/"pt-br"; empty uses the
+// configured default so the picker shows only language-appropriate voices.
 //
 // It soft-fails like ListModels: any error yields an empty slice plus the error.
-func (c *voiceController) ListVoices() ([]string, error) {
-	if c.sherpaReady() {
-		voices, err := c.sherpa.Voices()
-		if err != nil {
-			return []string{}, err
-		}
-		names := make([]string, len(voices))
-		for i, v := range voices {
-			names[i] = v.Name
-		}
-		return names, nil
-	}
+func (c *voiceController) ListVoices(lang string) ([]string, error) {
 	vc, err := c.voiceConfig()
 	if err != nil {
 		return []string{}, err
+	}
+	// Voice names come from the embedded Kokoro speaker table, which is available
+	// as soon as the base engine is installed — it does NOT depend on the
+	// requested language's Whisper (STT) model. So gate on base readiness (not the
+	// current-language readiness used for transcribe/synthesize): this lets the
+	// picker list pt-br voices before the pt-br language pack is downloaded.
+	if c.sherpa != nil {
+		if ok, _ := c.sherpa.ReadyFor(sherpaengine.LangEN); ok {
+			voices, err := c.sherpa.VoicesFor(effectiveLang(vc, lang))
+			if err != nil {
+				return []string{}, err
+			}
+			names := make([]string, len(voices))
+			for i, v := range voices {
+				names[i] = v.Name
+			}
+			return names, nil
+		}
 	}
 	return c.httpEngine(vc).ListVoiceNames()
 }
@@ -488,6 +529,7 @@ func (c *voiceController) Ping(op string) (PingResult, error) {
 	if err != nil {
 		return PingResult{Ok: false, Detail: "could not load voice config: " + err.Error()}, nil
 	}
+	c.applyLanguage(vc, "")
 
 	if c.sherpaReady() {
 		return PingResult{Ok: true, Detail: "embedded voice engine ready"}, nil

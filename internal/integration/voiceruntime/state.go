@@ -72,7 +72,7 @@ func saveState(s State) error {
 // embedded engine requires from that dir exists. Dirs the engine does not know
 // about (e.g. a test manifest's fake model) count as installed when present.
 func modelInstalled(dir string) bool {
-	required, known := sherpaengine.RequiredFiles()[dir]
+	required, known := sherpaengine.FilesByDir()[dir]
 	if !known {
 		fi, err := os.Stat(filepath.Join(modelsDir(), dir))
 		return err == nil && fi.IsDir()
@@ -85,16 +85,42 @@ func modelInstalled(dir string) bool {
 	return true
 }
 
-// isInstalled reports whether every model the embedded engine needs is fully
-// present under the models dir. This is the same file set sherpaengine.Ready
-// checks, so the installer and the engine always agree.
+// isInstalled reports whether the base voice models (Kokoro TTS + English
+// Whisper) are fully present under the models dir. Base install alone means
+// "voice installed"; an on-demand language pack (e.g. pt-br) present in the
+// manifest but not on disk must NOT flip this to false.
 func isInstalled() bool {
-	for dir := range sherpaengine.RequiredFiles() {
+	for dir := range sherpaengine.BaseRequiredFiles() {
 		if !modelInstalled(dir) {
 			return false
 		}
 	}
 	return true
+}
+
+// languageInstalled reports whether every model file required to serve lang is
+// present on disk (used to tell whether an on-demand language pack has been
+// installed yet).
+func languageInstalled(lang string) bool {
+	for dir := range sherpaengine.RequiredFilesFor(lang) {
+		if !modelInstalled(dir) {
+			return false
+		}
+	}
+	return true
+}
+
+// installedLanguages returns the supported voice languages whose models are
+// fully present on disk, in a stable order (English first). The UI uses it to
+// gate which languages are selectable vs. still need an on-demand download.
+func installedLanguages() []string {
+	out := []string{}
+	for _, lang := range []string{sherpaengine.LangEN, sherpaengine.LangPTBR} {
+		if languageInstalled(lang) {
+			out = append(out, lang)
+		}
+	}
+	return out
 }
 
 // dirSize sums the file sizes under root (best-effort; unreadable entries are

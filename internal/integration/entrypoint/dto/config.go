@@ -19,13 +19,24 @@ type ShortcutDTO struct {
 // user's hand-edited custom endpoints are never wiped by the Settings UI (see
 // controller SaveConfig).
 type VoiceConfigDTO struct {
-	Enabled        bool    `json:"enabled"`
-	Provider       string  `json:"provider"`
-	Voice          string  `json:"voice"`
-	Speed          float64 `json:"speed"`
-	PauseMs        int     `json:"pauseMs"`        // VAD redemption window (ms): how long the user can pause before their turn ends
-	Instructions   string  `json:"instructions"`   // optional user-authored guidance appended to the built-in voice persona
-	ManagedRuntime bool    `json:"managedRuntime"` // user opted into quant-managed local engines (one-click install)
+	Enabled  bool   `json:"enabled"`
+	Provider string `json:"provider"`
+	Voice    string `json:"voice"`
+	Language string `json:"language"` // default/last-used voice language: "en" or "pt-br"
+	Speed    float64 `json:"speed"`
+	// LangVoices holds the per-language voice + speed, keyed by language code
+	// ("en", "pt-br"). Source of truth for each language's configured voice.
+	LangVoices     map[string]LangVoiceConfigDTO `json:"langVoices"`
+	PauseMs        int                           `json:"pauseMs"`        // VAD redemption window (ms): how long the user can pause before their turn ends
+	Instructions   string                        `json:"instructions"`   // optional user-authored guidance appended to the built-in voice persona
+	MuteSoundCues  bool                          `json:"muteSoundCues"`  // turn off voice-mode transition earcons (default false = cues on)
+	ManagedRuntime bool                          `json:"managedRuntime"` // user opted into quant-managed local engines (one-click install)
+}
+
+// LangVoiceConfigDTO mirrors entity.LangVoiceConfig: one language's voice + speed.
+type LangVoiceConfigDTO struct {
+	Voice string  `json:"voice"`
+	Speed float64 `json:"speed"`
 }
 
 // SaveConfigRequest represents the request payload for saving configuration.
@@ -155,6 +166,12 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 	for i, s := range cfg.Shortcuts {
 		shortcuts[i] = ShortcutDTO{Name: s.Name, Command: s.Command}
 	}
+	// Present the voice config to the frontend fully defaulted: this seeds the
+	// per-language LangVoices map (and migrates a legacy single voice/speed into
+	// the selected language's slot) for display, so the Settings + session voice
+	// UIs always receive a complete per-language config. Read-only — it does not
+	// persist; a save round-trips through ToEntity + WithDefaults anyway.
+	cfg.Voice = cfg.Voice.WithDefaults()
 	return ConfigResponse{
 		StartOnLogin:          cfg.StartOnLogin,
 		Notifications:         cfg.Notifications,
@@ -201,9 +218,12 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 			Enabled:        cfg.Voice.Enabled,
 			Provider:       cfg.Voice.Provider,
 			Voice:          cfg.Voice.Voice,
+			Language:       cfg.Voice.Language,
 			Speed:          cfg.Voice.Speed,
+			LangVoices:     langVoicesToDTO(cfg.Voice.LangVoices),
 			PauseMs:        cfg.Voice.PauseMs,
 			Instructions:   cfg.Voice.Instructions,
+			MuteSoundCues:  cfg.Voice.MuteSoundCues,
 			ManagedRuntime: cfg.Voice.ManagedRuntime,
 		},
 	}
@@ -286,10 +306,37 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 			Enabled:        r.Voice.Enabled,
 			Provider:       r.Voice.Provider,
 			Voice:          r.Voice.Voice,
+			Language:       r.Voice.Language,
 			Speed:          r.Voice.Speed,
+			LangVoices:     langVoicesToEntity(r.Voice.LangVoices),
 			PauseMs:        r.Voice.PauseMs,
 			Instructions:   r.Voice.Instructions,
+			MuteSoundCues:  r.Voice.MuteSoundCues,
 			ManagedRuntime: r.Voice.ManagedRuntime,
 		},
 	}
+}
+
+// langVoicesToDTO / langVoicesToEntity convert the per-language voice map across
+// the DTO boundary, returning nil for an empty/nil map so WithDefaults can seed it.
+func langVoicesToDTO(m map[string]entity.LangVoiceConfig) map[string]LangVoiceConfigDTO {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]LangVoiceConfigDTO, len(m))
+	for lang, lc := range m {
+		out[lang] = LangVoiceConfigDTO{Voice: lc.Voice, Speed: lc.Speed}
+	}
+	return out
+}
+
+func langVoicesToEntity(m map[string]LangVoiceConfigDTO) map[string]entity.LangVoiceConfig {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]entity.LangVoiceConfig, len(m))
+	for lang, lc := range m {
+		out[lang] = entity.LangVoiceConfig{Voice: lc.Voice, Speed: lc.Speed}
+	}
+	return out
 }

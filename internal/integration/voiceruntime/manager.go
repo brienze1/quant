@@ -50,7 +50,11 @@ type Status struct {
 	Version    string        `json:"version"`
 	Platform   string        `json:"platform"`
 	Models     []ModelStatus `json:"models"`
-	Error      string        `json:"error,omitempty"`
+	// Languages lists the voice languages whose models are fully installed
+	// (e.g. ["en"] or ["en","pt-br"]). The Settings + session voice UIs use it to
+	// know which languages can be selected vs. still need an on-demand download.
+	Languages []string `json:"languages"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // RuntimeEvent is the payload streamed on the voice:runtime channel. Engine
@@ -68,9 +72,13 @@ type RuntimeEvent struct {
 // The whisper archive ships both fp32 and int8 models; the embedded engine
 // only loads int8, so dropping the fp32 pair saves ~450 MB of disk.
 var pruneAfterExtract = map[string][]string{
-	sherpaengine.WhisperDirName: {
+	sherpaengine.WhisperEnDirName: {
 		"small.en-encoder.onnx",
 		"small.en-decoder.onnx",
+	},
+	sherpaengine.WhisperMultiDirName: {
+		"small-encoder.onnx",
+		"small-decoder.onnx",
 	},
 }
 
@@ -115,12 +123,49 @@ func (m *Manager) Install() (Status, error) {
 	m.lastErr = ""
 	m.mu.Unlock()
 
-	go m.doInstall()
+	go m.doInstall(func(a ModelArtifact) bool { return a.isBase() })
 
 	return m.Status(), nil
 }
 
-func (m *Manager) doInstall() {
+// InstallLanguage downloads, verifies, and extracts the model artifacts tagged
+// with the given language (an on-demand language pack such as "pt-br"). It uses
+// the same installing-guard/async pattern as Install and emits the same
+// voice:runtime events (ending with "ready"). If the manifest contains no
+// artifacts for lang, it is a no-op that returns the current Status without
+// error.
+func (m *Manager) InstallLanguage(lang string) (Status, error) {
+	manifest, err := loadManifest()
+	if err != nil {
+		return m.Status(), err
+	}
+	hasLang := false
+	for _, a := range manifest.Models {
+		if a.Lang == lang {
+			hasLang = true
+			break
+		}
+	}
+	if !hasLang {
+		return m.Status(), nil
+	}
+
+	m.mu.Lock()
+	if m.installing {
+		st := m.statusLocked()
+		m.mu.Unlock()
+		return st, nil
+	}
+	m.installing = true
+	m.lastErr = ""
+	m.mu.Unlock()
+
+	go m.doInstall(func(a ModelArtifact) bool { return a.Lang == lang })
+
+	return m.Status(), nil
+}
+
+func (m *Manager) doInstall(filter func(ModelArtifact) bool) {
 	defer func() {
 		m.mu.Lock()
 		m.installing = false
@@ -134,6 +179,9 @@ func (m *Manager) doInstall() {
 	}
 
 	for _, model := range manifest.Models {
+		if !filter(model) {
+			continue
+		}
 		if modelInstalled(model.Dir) {
 			continue
 		}
@@ -199,6 +247,7 @@ func (m *Manager) statusLocked() Status {
 		Installing: m.installing,
 		Platform:   platformKey(),
 		Models:     modelStatuses(),
+		Languages:  installedLanguages(),
 		Error:      m.lastErr,
 	}
 	if s, err := loadState(); err == nil {
@@ -220,7 +269,7 @@ func modelStatuses() []ModelStatus {
 		}
 		return out
 	}
-	for _, dir := range []string{sherpaengine.KokoroDirName, sherpaengine.WhisperDirName} {
+	for _, dir := range []string{sherpaengine.KokoroDirName, sherpaengine.WhisperEnDirName} {
 		out = append(out, modelStatus(dir, dir, 0))
 	}
 	return out

@@ -2950,6 +2950,16 @@ func voiceEndedResult() *mcp.CallToolResult {
 	return mcp.NewToolResultText("The voice pane is no longer responding (it was closed, or this session is no longer the active voice session). Voice mode has ENDED. Stop calling voice tools (voice_listen/voice_speak/voice_converse) and resume normal text interaction. Do not retry voice unless the user asks.")
 }
 
+// voiceTimeoutResult is returned (as a successful tool result, NOT an error) when
+// a voice request times out (errors.Is(err, voice.ErrVoiceTimeout)). Unlike a
+// pane-closed, a timeout does NOT mean voice mode is over: the user is allowed to
+// stay quiet, and a single request event can be missed during a re-subscription
+// gap (issue #86). So we tell the agent voice is STILL ACTIVE and to simply try
+// again, rather than ejecting it to text.
+func voiceTimeoutResult() *mcp.CallToolResult {
+	return mcp.NewToolResultText("The voice pane did not respond in time — but this does NOT mean it closed (the user may just be quiet, or the turn's event was missed). You are STILL in VOICE MODE. Do NOT switch to terminal text. Continue by calling voice_converse (to speak + listen again) or voice_listen (to keep waiting). Only fall back to text if several attempts in a row keep timing out.")
+}
+
 func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if s.voiceBridge == nil {
 		return mcp.NewToolResultError("voice bridge not available"), nil
@@ -2962,6 +2972,10 @@ func (s *QuantMCPServer) handleVoiceListen(ctx context.Context, request mcp.Call
 
 	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", record, voice.ListenTimeout)
 	if err != nil {
+		if errors.Is(err, voice.ErrVoiceTimeout) {
+			// Silence/missed event, not a close — treat like "no speech, keep going".
+			return voiceTurnResult(""), nil
+		}
 		if errors.Is(err, voice.ErrVoiceEnded) {
 			return voiceEndedResult(), nil
 		}
@@ -2984,6 +2998,9 @@ func (s *QuantMCPServer) handleVoiceSpeak(ctx context.Context, request mcp.CallT
 	}
 
 	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, false, voice.SpeakTimeout); err != nil {
+		if errors.Is(err, voice.ErrVoiceTimeout) {
+			return voiceTimeoutResult(), nil
+		}
 		if errors.Is(err, voice.ErrVoiceEnded) {
 			return voiceEndedResult(), nil
 		}
@@ -3008,6 +3025,9 @@ func (s *QuantMCPServer) handleVoiceConverse(ctx context.Context, request mcp.Ca
 
 	// Speak first, then listen for the reply — one combined turn.
 	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, false, voice.SpeakTimeout); err != nil {
+		if errors.Is(err, voice.ErrVoiceTimeout) {
+			return voiceTimeoutResult(), nil
+		}
 		if errors.Is(err, voice.ErrVoiceEnded) {
 			return voiceEndedResult(), nil
 		}
@@ -3015,6 +3035,10 @@ func (s *QuantMCPServer) handleVoiceConverse(ctx context.Context, request mcp.Ca
 	}
 	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", record, voice.ListenTimeout)
 	if err != nil {
+		if errors.Is(err, voice.ErrVoiceTimeout) {
+			// Silence/missed event, not a close — treat like "no speech, keep going".
+			return voiceTurnResult(""), nil
+		}
 		if errors.Is(err, voice.ErrVoiceEnded) {
 			return voiceEndedResult(), nil
 		}

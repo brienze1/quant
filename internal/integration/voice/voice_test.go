@@ -155,7 +155,7 @@ func TestTranscribeRoutesToCustomEndpoint(t *testing.T) {
 		STTModel:   "whisper-1",
 	})
 
-	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("FAKE_WEBM_AUDIO")), "audio/webm")
+	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("FAKE_WEBM_AUDIO")), "audio/webm", "")
 	if err != nil {
 		t.Fatalf("Transcribe error: %v", err)
 	}
@@ -189,11 +189,12 @@ func TestSynthesizeUsesConfigDefaultsForVoiceAndSpeed(t *testing.T) {
 	defer srv.Close()
 
 	c := newController(t, entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL})
-	if _, err := c.Synthesize("hi", "", 0); err != nil {
+	if _, err := c.Synthesize("hi", "", 0, ""); err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
-	if body.Voice != defaultVoice {
-		t.Errorf("voice = %q, want %q", body.Voice, defaultVoice)
+	wantVoice := sherpaengine.DefaultVoice(sherpaengine.LangEN)
+	if body.Voice != wantVoice {
+		t.Errorf("voice = %q, want %q", body.Voice, wantVoice)
 	}
 	if body.Speed != defaultSpeed {
 		t.Errorf("speed = %v, want %v", body.Speed, defaultSpeed)
@@ -214,7 +215,7 @@ func TestSynthesizeReturnsBase64AndContentType(t *testing.T) {
 	defer srv.Close()
 
 	c := newController(t, entity.VoiceConfig{Provider: "local", TTSBaseURL: srv.URL})
-	res, err := c.Synthesize("hello world", "am_onyx", 1.2)
+	res, err := c.Synthesize("hello world", "am_onyx", 1.2, "")
 	if err != nil {
 		t.Fatalf("Synthesize error: %v", err)
 	}
@@ -236,10 +237,10 @@ func TestSynthesizeReturnsBase64AndContentType(t *testing.T) {
 func TestNotInstalledError(t *testing.T) {
 	c := newController(t, entity.VoiceConfig{Provider: "local"})
 
-	if _, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm"); err == nil || !strings.Contains(err.Error(), "download it in Settings → Voice") {
+	if _, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm", ""); err == nil || !strings.Contains(err.Error(), "download it in Settings → Voice") {
 		t.Errorf("Transcribe error = %v, want download-voice-mode error", err)
 	}
-	if _, err := c.Synthesize("hi", "", 0); err == nil || !strings.Contains(err.Error(), "download it in Settings → Voice") {
+	if _, err := c.Synthesize("hi", "", 0, ""); err == nil || !strings.Contains(err.Error(), "download it in Settings → Voice") {
 		t.Errorf("Synthesize error = %v, want download-voice-mode error", err)
 	}
 }
@@ -354,14 +355,14 @@ func TestTranscribeAndSynthesizeHitSeparateURLs(t *testing.T) {
 		TTSBaseURL: tts.URL,
 	})
 
-	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm")
+	transcript, err := c.Transcribe(base64.StdEncoding.EncodeToString([]byte("x")), "audio/webm", "")
 	if err != nil {
 		t.Fatalf("Transcribe: %v", err)
 	}
 	if transcript != "hi from whisper" {
 		t.Errorf("transcript = %q", transcript)
 	}
-	if _, err := c.Synthesize("hello", "", 0); err != nil {
+	if _, err := c.Synthesize("hello", "", 0, ""); err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
 	if !sttHit {
@@ -465,17 +466,42 @@ func TestListModelsAndVoicesSherpaStub(t *testing.T) {
 		t.Errorf("models = %v, want [%s]", models, sherpaSTTModel)
 	}
 
-	voices, err := c.ListVoices()
+	// ListVoices filters the 53-speaker table by language. English (en-us +
+	// en-gb) = 28 voices and must include am_onyx; Brazilian Portuguese = 3.
+	enVoices, err := c.ListVoices("en")
 	if err != nil {
-		t.Fatalf("ListVoices: %v", err)
+		t.Fatalf("ListVoices(en): %v", err)
 	}
-	if len(voices) != 53 || voices[17] != "am_onyx" {
-		t.Errorf("got %d voices (voices[17]=%q), want 53 with am_onyx at 17", len(voices), voices[17])
+	if len(enVoices) != 28 {
+		t.Errorf("got %d English voices, want 28", len(enVoices))
+	}
+	if !containsStr(enVoices, "am_onyx") {
+		t.Errorf("English voices %v missing am_onyx", enVoices)
+	}
+	if containsStr(enVoices, "pf_dora") {
+		t.Errorf("English voices %v should not include the pt-br voice pf_dora", enVoices)
+	}
+	ptVoices, err := c.ListVoices("pt-br")
+	if err != nil {
+		t.Fatalf("ListVoices(pt-br): %v", err)
+	}
+	if len(ptVoices) != 3 || !containsStr(ptVoices, "pf_dora") {
+		t.Errorf("got %d pt-br voices (%v), want 3 including pf_dora", len(ptVoices), ptVoices)
 	}
 
 	if r, _ := c.Ping("stt"); !r.Ok || !strings.Contains(r.Detail, "embedded") {
 		t.Errorf("Ping with models installed = %+v, want embedded-ready", r)
 	}
+}
+
+// containsStr reports whether s is in xs.
+func containsStr(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // writeFakeSherpaModels creates every file RequiredFiles demands as an empty

@@ -1,9 +1,11 @@
 // Package sherpaengine implements the embedded local speech engine on top of
-// sherpa-onnx: Kokoro (multi-lang v1.0, int8) for TTS and Whisper small.en
-// (int8) for STT. Models are loaded lazily on first use and unloaded again
-// after an idle period so quant does not hold ~1 GB of RAM while voice mode is
-// not in use. All sherpa calls are serialized through one mutex (the C objects
-// are not safe for concurrent use).
+// sherpa-onnx: Kokoro (multi-lang v1.0, int8) for TTS and Whisper small (int8)
+// for STT. The engine serves one language at a time (English or Brazilian
+// Portuguese) and rebuilds its TTS/STT objects when the language changes, since
+// a sherpa instance's language is fixed at build time. Models are loaded lazily
+// on first use and unloaded again after an idle period so quant does not hold
+// ~1 GB of RAM while voice mode is not in use. All sherpa calls are serialized
+// through one mutex (the C objects are not safe for concurrent use).
 package sherpaengine
 
 import (
@@ -26,47 +28,144 @@ import (
 
 // Model directory names under Config.ModelsDir. The voice runtime installer
 // extracts the model archives into exactly these directories; Ready() and the
-// installer's isInstalled check agree via RequiredFiles().
+// installer's isInstalled check agree via RequiredFilesFor().
 const (
-	KokoroDirName  = "kokoro-int8-multi-lang-v1_0"
-	WhisperDirName = "sherpa-onnx-whisper-small.en"
+	KokoroDirName = "kokoro-int8-multi-lang-v1_0"
+
+	// WhisperEnDirName holds the English-only Whisper small.en model (file
+	// prefix "small.en"). WhisperMultiDirName holds the multilingual Whisper
+	// small model (file prefix "small") used for Portuguese.
+	WhisperEnDirName    = "sherpa-onnx-whisper-small.en"
+	WhisperMultiDirName = "sherpa-onnx-whisper-small"
+
+	// WhisperDirName is a deprecated alias for WhisperEnDirName kept so existing
+	// callers keep compiling. Prefer sttDirName(lang) / WhisperEnDirName.
+	WhisperDirName = WhisperEnDirName
+)
+
+// Supported languages. Language is fixed per sherpa instance.
+const (
+	LangEN   = "en"
+	LangPTBR = "pt-br"
 )
 
 const (
 	defaultNumThreads = 4
 	defaultIdleUnload = 10 * time.Minute
 
-	// defaultSpeakerID is af_heart, quant's default voice.
+	// defaultSpeakerID is af_heart, quant's default English voice.
 	defaultSpeakerID = 3
 
 	whisperSampleRate = 16000
 	whisperFeatureDim = 80
+
+	defaultVoiceEN   = "af_heart"
+	defaultVoicePTBR = "pf_dora"
 )
 
-// RequiredFiles returns, per model directory, the files (or directories) that
-// must exist under {ModelsDir}/{dir}/ for the engine to be considered
-// installed. Exported for the voice runtime installer's isInstalled check.
-func RequiredFiles() map[string][]string {
-	return map[string][]string{
-		KokoroDirName: {
-			"model.int8.onnx",
-			"voices.bin",
-			"tokens.txt",
-			"espeak-ng-data",
-			"dict",
-			"lexicon-us-en.txt",
-			"lexicon-gb-en.txt",
-			"lexicon-zh.txt",
-			"date-zh.fst",
-			"number-zh.fst",
-			"phone-zh.fst",
-		},
-		WhisperDirName: {
-			"small.en-encoder.int8.onnx",
-			"small.en-decoder.int8.onnx",
-			"small.en-tokens.txt",
-		},
+// normalizeLang collapses any input to a supported language: LangPTBR only for
+// "pt-br" (case-insensitive), otherwise LangEN (covers "" and unknowns).
+func normalizeLang(lang string) string {
+	if strings.ToLower(strings.TrimSpace(lang)) == LangPTBR {
+		return LangPTBR
 	}
+	return LangEN
+}
+
+// sttDirName is the Whisper model directory for a language.
+func sttDirName(lang string) string {
+	if normalizeLang(lang) == LangPTBR {
+		return WhisperMultiDirName
+	}
+	return WhisperEnDirName
+}
+
+// sttFilePrefix is the Whisper file prefix for a language ("small" vs "small.en").
+func sttFilePrefix(lang string) string {
+	if normalizeLang(lang) == LangPTBR {
+		return "small"
+	}
+	return "small.en"
+}
+
+// whisperLang is the Whisper decoder Language value for a language.
+func whisperLang(lang string) string {
+	if normalizeLang(lang) == LangPTBR {
+		return "pt"
+	}
+	return "en"
+}
+
+// DefaultVoice returns the default Kokoro voice name for a language.
+func DefaultVoice(lang string) string {
+	if normalizeLang(lang) == LangPTBR {
+		return defaultVoicePTBR
+	}
+	return defaultVoiceEN
+}
+
+// kokoroFiles is the shared Kokoro model file set (same on disk for all langs).
+func kokoroFiles() []string {
+	return []string{
+		"model.int8.onnx",
+		"voices.bin",
+		"tokens.txt",
+		"espeak-ng-data",
+		"dict",
+		"lexicon-us-en.txt",
+		"lexicon-gb-en.txt",
+		"lexicon-zh.txt",
+		"date-zh.fst",
+		"number-zh.fst",
+		"phone-zh.fst",
+	}
+}
+
+// sttFiles is the Whisper file set for a language.
+func sttFiles(lang string) []string {
+	p := sttFilePrefix(lang)
+	return []string{
+		p + "-encoder.int8.onnx",
+		p + "-decoder.int8.onnx",
+		p + "-tokens.txt",
+	}
+}
+
+// RequiredFilesFor returns, per model directory, the files (or directories)
+// that must exist under {ModelsDir}/{dir}/ for the engine to serve lang: the
+// shared Kokoro set plus the Whisper dir for that language.
+func RequiredFilesFor(lang string) map[string][]string {
+	return map[string][]string{
+		KokoroDirName:    kokoroFiles(),
+		sttDirName(lang): sttFiles(lang),
+	}
+}
+
+// BaseRequiredFiles is the English/base required file set.
+func BaseRequiredFiles() map[string][]string {
+	return RequiredFilesFor(LangEN)
+}
+
+// RequiredFiles returns the base (English) required file set. Deprecated:
+// prefer RequiredFilesFor / BaseRequiredFiles. Kept for back-compat with the
+// voice runtime installer's isInstalled check.
+func RequiredFiles() map[string][]string {
+	return BaseRequiredFiles()
+}
+
+// FilesByDir returns the union of required files across all supported
+// languages, keyed by model directory. Kokoro appears once; each language's
+// Whisper directory appears with its own file set.
+func FilesByDir() map[string][]string {
+	out := map[string][]string{}
+	for _, lang := range []string{LangEN, LangPTBR} {
+		for dir, files := range RequiredFilesFor(lang) {
+			if _, ok := out[dir]; !ok {
+				out[dir] = files
+			}
+		}
+	}
+	return out
 }
 
 // speakersJSON is the Kokoro multi-lang v1.0 speaker table (id → name/lang),
@@ -99,7 +198,7 @@ func loadSpeakers() ([]engine.Voice, map[string]int, error) {
 
 // Config configures the embedded engine.
 type Config struct {
-	// ModelsDir is the directory containing KokoroDirName and WhisperDirName.
+	// ModelsDir is the directory containing KokoroDirName and the Whisper dirs.
 	ModelsDir string
 	// NumThreads is the ONNX intra-op thread count (default 4).
 	NumThreads int
@@ -113,15 +212,21 @@ type Engine struct {
 	cfg Config
 
 	// mu serializes ALL sherpa calls and guards the fields below.
-	mu       sync.Mutex
-	tts      *sherpa.OfflineTts
-	rec      *sherpa.OfflineRecognizer
+	mu sync.Mutex
+	// lang is the language the engine currently serves.
+	lang string
+	tts  *sherpa.OfflineTts
+	// ttsLang is the language e.tts was built for ("" when not loaded).
+	ttsLang string
+	rec     *sherpa.OfflineRecognizer
+	// recLang is the language e.rec was built for ("" when not loaded).
+	recLang  string
 	idle     *time.Timer
 	lastUsed time.Time
 }
 
-// New creates an embedded engine rooted at cfg.ModelsDir. No models are
-// loaded until the first Transcribe/Synthesize call.
+// New creates an embedded engine rooted at cfg.ModelsDir. It defaults to
+// English; no models are loaded until the first Transcribe/Synthesize call.
 func New(cfg Config) *Engine {
 	if cfg.NumThreads <= 0 {
 		cfg.NumThreads = defaultNumThreads
@@ -129,13 +234,30 @@ func New(cfg Config) *Engine {
 	if cfg.IdleUnload <= 0 {
 		cfg.IdleUnload = defaultIdleUnload
 	}
-	return &Engine{cfg: cfg}
+	return &Engine{cfg: cfg, lang: LangEN}
 }
 
-// Ready reports whether all required model files exist on disk (no model is
-// loaded to answer this). When files are missing, the detail names them.
-func (e *Engine) Ready() (bool, string) {
-	required := RequiredFiles()
+// SetLanguage sets the language the engine serves. It normalizes and stores the
+// value; the TTS/STT rebuild is deferred to the next call.
+func (e *Engine) SetLanguage(lang string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.lang = normalizeLang(lang)
+}
+
+// currentLang returns the engine's current language. Caller must hold e.mu.
+func (e *Engine) currentLang() string {
+	if e.lang == "" {
+		return LangEN
+	}
+	return e.lang
+}
+
+// ReadyFor reports whether all model files required to serve lang exist on disk
+// (no model is loaded to answer this). When files are missing, the detail names
+// them.
+func (e *Engine) ReadyFor(lang string) (bool, string) {
+	required := RequiredFilesFor(lang)
 	dirs := make([]string, 0, len(required))
 	for dir := range required {
 		dirs = append(dirs, dir)
@@ -161,6 +283,14 @@ func (e *Engine) Ready() (bool, string) {
 	return true, ""
 }
 
+// Ready reports whether the model files for the current language exist on disk.
+func (e *Engine) Ready() (bool, string) {
+	e.mu.Lock()
+	lang := e.currentLang()
+	e.mu.Unlock()
+	return e.ReadyFor(lang)
+}
+
 // Voices returns the embedded Kokoro speaker table without loading the model.
 func (e *Engine) Voices() ([]engine.Voice, error) {
 	table, _, err := loadSpeakers()
@@ -170,6 +300,35 @@ func (e *Engine) Voices() ([]engine.Voice, error) {
 	out := make([]engine.Voice, len(table))
 	copy(out, table)
 	return out, nil
+}
+
+// VoicesFor returns only the embedded Kokoro speakers usable for a language:
+// the English variants (en-us / en-gb) for LangEN, the Brazilian Portuguese
+// speakers for LangPTBR. Filtering keeps the voice picker language-appropriate
+// (a pt-br build can't voice an English-only speaker cleanly, and vice versa).
+func (e *Engine) VoicesFor(lang string) ([]engine.Voice, error) {
+	table, _, err := loadSpeakers()
+	if err != nil {
+		return nil, err
+	}
+	norm := normalizeLang(lang)
+	out := make([]engine.Voice, 0, len(table))
+	for _, v := range table {
+		if voiceLangMatches(v.Lang, norm) {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+// voiceLangMatches reports whether a speaker's language tag (from the Kokoro
+// speaker table, e.g. "en-us", "en-gb", "pt-br") belongs to the given
+// normalized quant voice language (LangEN or LangPTBR).
+func voiceLangMatches(voiceLang, norm string) bool {
+	if norm == LangPTBR {
+		return voiceLang == LangPTBR
+	}
+	return strings.HasPrefix(voiceLang, "en")
 }
 
 // speakerID maps a voice name (e.g. "af_heart") or a numeric speaker-id string
@@ -257,15 +416,33 @@ func (e *Engine) Unload() {
 	e.unloadLocked()
 }
 
-// ensureTTS lazily loads the Kokoro model. Caller must hold e.mu.
+// kokoroLangLexicon returns the Kokoro Lang value and lexicon file list for a
+// language. English uses the en+zh lexicons; other languages keep only the
+// Chinese lexicon (so zh still branches) and route through espeak-ng G2P.
+func kokoroLangLexicon(lang, dir string) (string, string) {
+	if normalizeLang(lang) == LangPTBR {
+		return "pt-br", filepath.Join(dir, "lexicon-zh.txt")
+	}
+	return "en-us", filepath.Join(dir, "lexicon-us-en.txt") + "," + filepath.Join(dir, "lexicon-zh.txt")
+}
+
+// ensureTTS lazily loads (or rebuilds) the Kokoro model for the current
+// language. Caller must hold e.mu.
 func (e *Engine) ensureTTS() error {
-	if e.tts != nil {
+	lang := e.currentLang()
+	if e.tts != nil && e.ttsLang == lang {
 		return nil
 	}
-	if ok, detail := e.Ready(); !ok {
+	if e.tts != nil {
+		sherpa.DeleteOfflineTts(e.tts)
+		e.tts = nil
+		e.ttsLang = ""
+	}
+	if ok, detail := e.ReadyFor(lang); !ok {
 		return fmt.Errorf("embedded voice engine not ready: %s", detail)
 	}
 	dir := filepath.Join(e.cfg.ModelsDir, KokoroDirName)
+	ttsLang, lexicon := kokoroLangLexicon(lang, dir)
 	cfg := sherpa.OfflineTtsConfig{
 		Model: sherpa.OfflineTtsModelConfig{
 			Kokoro: sherpa.OfflineTtsKokoroModelConfig{
@@ -274,8 +451,8 @@ func (e *Engine) ensureTTS() error {
 				Tokens:  filepath.Join(dir, "tokens.txt"),
 				DataDir: filepath.Join(dir, "espeak-ng-data"),
 				DictDir: filepath.Join(dir, "dict"),
-				Lexicon: filepath.Join(dir, "lexicon-us-en.txt") + "," + filepath.Join(dir, "lexicon-zh.txt"),
-				Lang:    "en-us",
+				Lexicon: lexicon,
+				Lang:    ttsLang,
 			},
 			NumThreads: e.cfg.NumThreads,
 			Debug:      0,
@@ -288,28 +465,37 @@ func (e *Engine) ensureTTS() error {
 		return fmt.Errorf("failed to load Kokoro TTS model from %s", dir)
 	}
 	e.tts = tts
+	e.ttsLang = lang
 	return nil
 }
 
-// ensureSTT lazily loads the Whisper model. Caller must hold e.mu.
+// ensureSTT lazily loads (or rebuilds) the Whisper model for the current
+// language. Caller must hold e.mu.
 func (e *Engine) ensureSTT() error {
-	if e.rec != nil {
+	lang := e.currentLang()
+	if e.rec != nil && e.recLang == lang {
 		return nil
 	}
-	if ok, detail := e.Ready(); !ok {
+	if e.rec != nil {
+		sherpa.DeleteOfflineRecognizer(e.rec)
+		e.rec = nil
+		e.recLang = ""
+	}
+	if ok, detail := e.ReadyFor(lang); !ok {
 		return fmt.Errorf("embedded voice engine not ready: %s", detail)
 	}
-	dir := filepath.Join(e.cfg.ModelsDir, WhisperDirName)
+	dir := filepath.Join(e.cfg.ModelsDir, sttDirName(lang))
+	prefix := sttFilePrefix(lang)
 	cfg := sherpa.OfflineRecognizerConfig{
 		FeatConfig: sherpa.FeatureConfig{SampleRate: whisperSampleRate, FeatureDim: whisperFeatureDim},
 		ModelConfig: sherpa.OfflineModelConfig{
 			Whisper: sherpa.OfflineWhisperModelConfig{
-				Encoder:  filepath.Join(dir, "small.en-encoder.int8.onnx"),
-				Decoder:  filepath.Join(dir, "small.en-decoder.int8.onnx"),
-				Language: "en",
+				Encoder:  filepath.Join(dir, prefix+"-encoder.int8.onnx"),
+				Decoder:  filepath.Join(dir, prefix+"-decoder.int8.onnx"),
+				Language: whisperLang(lang),
 				Task:     "transcribe",
 			},
-			Tokens:     filepath.Join(dir, "small.en-tokens.txt"),
+			Tokens:     filepath.Join(dir, prefix+"-tokens.txt"),
 			NumThreads: e.cfg.NumThreads,
 			Debug:      0,
 			Provider:   "cpu",
@@ -322,6 +508,7 @@ func (e *Engine) ensureSTT() error {
 		return fmt.Errorf("failed to load Whisper STT model from %s", dir)
 	}
 	e.rec = rec
+	e.recLang = lang
 	return nil
 }
 
@@ -355,10 +542,12 @@ func (e *Engine) unloadLocked() {
 		sherpa.DeleteOfflineTts(e.tts)
 		e.tts = nil
 	}
+	e.ttsLang = ""
 	if e.rec != nil {
 		sherpa.DeleteOfflineRecognizer(e.rec)
 		e.rec = nil
 	}
+	e.recLang = ""
 	if e.idle != nil {
 		e.idle.Stop()
 		e.idle = nil

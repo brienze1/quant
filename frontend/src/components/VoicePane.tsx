@@ -19,6 +19,7 @@ import * as api from "../api";
 import { useTheme } from "../theme";
 import { createAudioService } from "../voice/audioService";
 import { setVoicePaneMicBusy } from "../voice/pttService";
+import { playTransitionCue, playErrorCue, setVoiceCuesEnabled } from "../voice/voiceCues";
 import { registerVoiceBridge } from "../voice/voiceBridge";
 import { loadTranscript, saveTranscript, nextLineId } from "../voice/transcriptStore";
 import type {
@@ -30,6 +31,46 @@ import type {
 
 // Number of segments in the live input-level meter.
 const METER_SEGMENTS = 12;
+
+// Supported voice languages for the in-session switcher.
+type VoiceLang = "en" | "pt-br";
+const LANG_LABEL: Record<VoiceLang, string> = { en: "EN", "pt-br": "PT" };
+const LANG_FULL: Record<VoiceLang, string> = { en: "English", "pt-br": "Português (BR)" };
+const LANG_DEFAULT_VOICE: Record<VoiceLang, string> = { en: "af_heart", "pt-br": "pf_dora" };
+
+// Per-session persisted language choice: the pane's language is a live, per-
+// session control (NOT a config change), so it survives close/reopen via
+// localStorage keyed by session, independent of the global default in config.
+const langLSKey = (sessionId: string) => `quant.voice.lang.${sessionId}`;
+function loadSessionLang(sessionId: string): VoiceLang | null {
+  try {
+    const v = localStorage.getItem(langLSKey(sessionId));
+    return v === "en" || v === "pt-br" ? v : null;
+  } catch {
+    return null;
+  }
+}
+function saveSessionLang(sessionId: string, lang: VoiceLang) {
+  try {
+    localStorage.setItem(langLSKey(sessionId), lang);
+  } catch {
+    /* ignore */
+  }
+}
+
+// Resolve a language's configured voice + speed from the loaded config, falling
+// back to the language default voice / 0 speed (0 → the backend applies the
+// per-language default). Kept lenient so a partial/legacy config still works.
+function voiceForLang(
+  cfg: { voice?: { langVoices?: Record<string, { voice?: string; speed?: number }> } } | null,
+  lang: VoiceLang,
+): { voice: string; speed: number } {
+  const lv = cfg?.voice?.langVoices?.[lang];
+  return {
+    voice: lv?.voice || LANG_DEFAULT_VOICE[lang],
+    speed: lv?.speed || 0,
+  };
+}
 
 interface TranscriptLine {
   id: number;
@@ -138,6 +179,17 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // WI-5.5: "voice not configured" gate (local STT/TTS URLs missing).
   const [notConfigured, setNotConfigured] = useState(false);
 
+  // Live per-session voice language. Seeded from the per-session persisted value
+  // (falls back to the config default in the mount effect once it loads). The
+  // switch is ephemeral to the session — it does NOT rewrite the global config.
+  const [activeLang, setActiveLang] = useState<VoiceLang>(() => loadSessionLang(sessionId) ?? "en");
+  // Voice languages whose models are installed on disk. pt-br needs an on-demand
+  // download; until it's present the pane offers it as a disabled/install hint.
+  const [installedLangs, setInstalledLangs] = useState<VoiceLang[]>(["en"]);
+  // Loaded voice config (for per-language voice/speed on a live switch). Held in
+  // a ref so switching doesn't depend on / re-run the service-init effect.
+  const cfgRef = useRef<Awaited<ReturnType<typeof api.getConfig>> | null>(null);
+
   // Device selection + live input metering.
   const [devices, setDevices] = useState<AudioInputDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
@@ -224,16 +276,28 @@ export function VoicePane({ sessionId, className, style }: Props) {
       // window. The settings apply when the service initializes (pane open /
       // session switch / refresh) — we do NOT live-reinit the VAD.
       let options: Parameters<typeof createAudioService>[0];
+      // Language the service opens with: the per-session persisted choice, else
+      // the config default. Resolved here so the FIRST turn already uses it.
+      let initialLang: VoiceLang = loadSessionLang(sessionId) ?? "en";
       try {
         const cfg = await api.getConfig();
+        cfgRef.current = cfg;
+        // Honor the user's sound-cue preference (default on).
+        setVoiceCuesEnabled(!cfg.voice?.muteSoundCues);
+        if (!loadSessionLang(sessionId)) {
+          initialLang = cfg.voice?.language === "pt-br" ? "pt-br" : "en";
+        }
+        const lv = voiceForLang(cfg, initialLang);
         options = {
           bargeIn: false,
-          voice: cfg.voice?.voice || undefined,
-          speed: cfg.voice?.speed || undefined,
+          lang: initialLang,
+          voice: lv.voice || undefined,
+          speed: lv.speed || undefined,
           // `?? undefined` (not `||`) so a legitimately-saved 0 pause isn't
           // conflated with "unset" (the slider min is 500 today, but be safe).
           vad: { redemptionMs: cfg.voice?.pauseMs ?? undefined },
         };
+        if (initialLang !== activeLang) setActiveLang(initialLang);
         // Voice now runs on the embedded managed runtime — there are no
         // user-facing endpoint URLs to be missing, so the old "not configured"
         // URL gate is gone (the state stays false; install/readiness issues
@@ -259,11 +323,19 @@ export function VoicePane({ sessionId, className, style }: Props) {
       // an extra re-render the orb ignores).
       // Mirror non-idle states into the shared PTT flag so push-to-talk won't
       // grab the mic while this pane owns a turn.
+      // Track the previous state so transition cues know what we're leaving
+      // (e.g. only chime "ended" when an active turn returns to idle).
+      let prevState: VoiceServiceState = "idle";
       const offState = service.onState((s) => {
+        playTransitionCue(s, prevState);
+        prevState = s;
         setState(s);
         setVoicePaneMicBusy(s !== "idle");
       });
-      const offError = service.onError((e) => setError(e));
+      const offError = service.onError((e) => {
+        playErrorCue();
+        setError(e);
+      });
       // Live recording draft: the service emits the accumulated transcript as
       // each segment's STT resolves ("" on reset → clears the draft).
       const offRecTranscript = service.onRecordingTranscript((text) => setDraft(text));
@@ -405,6 +477,39 @@ export function VoicePane({ sessionId, className, style }: Props) {
     } else {
       svc.startRecording();
     }
+  };
+
+  // Discover which voice languages are installed on disk so the switcher can
+  // disable (and hint to download) a language whose models aren't present yet.
+  useEffect(() => {
+    let alive = true;
+    void api
+      .voiceRuntimeStatus()
+      .then((st) => {
+        if (!alive) return;
+        const langs = (st.languages ?? []).filter(
+          (l): l is VoiceLang => l === "en" || l === "pt-br",
+        );
+        // English is always available once the base engine is installed; keep at
+        // least ["en"] so the switcher never renders empty.
+        setInstalledLangs(langs.length ? langs : ["en"]);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sessionId]);
+
+  // Live language switch: update the audio service (voice + speed + language for
+  // the next STT/TTS turn) and persist the per-session choice. Does NOT touch the
+  // global config. No-op if the language isn't installed or is already active.
+  const changeLang = (lang: VoiceLang) => {
+    if (lang === activeLang) return;
+    if (!installedLangs.includes(lang)) return;
+    const { voice, speed } = voiceForLang(cfgRef.current, lang);
+    serviceRef.current?.setLanguage(lang, voice, speed);
+    setActiveLang(lang);
+    saveSessionLang(sessionId, lang);
   };
 
   // Tick the mm:ss elapsed indicator while recording.
@@ -778,6 +883,62 @@ export function VoicePane({ sessionId, className, style }: Props) {
             enable microphone
           </button>
         )}
+
+        {/* Live language switcher (EN | PT). Switching is instant and per-session
+            — the next spoken turn uses the chosen language's STT + voice. A
+            language whose models aren't installed is disabled with a hint to
+            download it in Settings → Voice. */}
+        <div
+          role="group"
+          aria-label="voice language"
+          title="voice language for this session"
+          style={{
+            flex: "none",
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            padding: 1,
+            backgroundColor: "var(--panel-2)",
+            border: "1px solid var(--border-2)",
+            borderRadius: 8,
+          }}
+        >
+          {(["en", "pt-br"] as VoiceLang[]).map((lang) => {
+            const active = activeLang === lang;
+            const installed = installedLangs.includes(lang);
+            return (
+              <button
+                key={lang}
+                onClick={() => changeLang(lang)}
+                disabled={!installed}
+                title={
+                  installed
+                    ? `speak ${LANG_FULL[lang]}`
+                    : `${LANG_FULL[lang]} not installed — download it in Settings → Voice`
+                }
+                style={{
+                  flex: "none",
+                  minWidth: 26,
+                  fontFamily: "var(--sans)",
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
+                  color: active ? "var(--on-accent, #fff)" : installed ? "var(--fg-2)" : "var(--fg-4)",
+                  backgroundColor: active ? "var(--accent)" : "transparent",
+                  border: "none",
+                  borderRadius: 6,
+                  padding: "2px 7px",
+                  cursor: installed ? "pointer" : "not-allowed",
+                  opacity: installed ? 1 : 0.55,
+                  transition: "background-color .12s ease, color .12s ease",
+                }}
+              >
+                {LANG_LABEL[lang]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Listen/status bar: current state + mic/permission/error indicator. */}

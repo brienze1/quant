@@ -1661,10 +1661,16 @@ function DangerButton({ label, onClick }: { label: string; onClick: () => void }
 const VOICE_DEFAULTS: VoiceConfig = {
   enabled: false,
   provider: "local",
+  language: "en",
   voice: "af_heart",
   speed: 1.2,
+  langVoices: {
+    en: { voice: "af_heart", speed: 1.2 },
+    "pt-br": { voice: "pf_dora", speed: 1.2 },
+  },
   pauseMs: 3000,
   instructions: "",
+  muteSoundCues: false,
 };
 
 // Curated fallback speaker names (the bundled Kokoro voice model's English
@@ -1679,6 +1685,18 @@ const FALLBACK_VOICES = [
   "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
 ];
 
+// Curated fallback speakers for Brazilian Portuguese (the Kokoro model's pt-br
+// speakers). Shown ahead of the English list when the pt-br language is selected.
+const PT_FALLBACK_VOICES = ["pf_dora", "pm_alex", "pm_santa"];
+
+// Per-language default voice, used to seed a language's config the first time
+// it's edited (pt-br → pf_dora, en → af_heart).
+const VOICE_LANG_DEFAULTS: Record<VoiceConfig["language"], string> = {
+  en: "af_heart",
+  "pt-br": "pf_dora",
+};
+const DEFAULT_SPEED = 1.2;
+
 // mergeOptions puts runtime-discovered values first, then curated fallbacks,
 // de-duplicated while preserving order.
 function mergeOptions(server: string[], fallback: string[]): string[] {
@@ -1692,6 +1710,56 @@ function mergeOptions(server: string[], fallback: string[]): string[] {
     }
   }
   return out;
+}
+
+// SegmentedControl is a compact two-or-more-option pill selector (used by the
+// voice language toggle). Styled with the same tokens as the neighboring
+// controls; the active option is filled with the accent.
+function SegmentedControl<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div
+      className="mono"
+      style={{
+        display: "inline-flex",
+        padding: 2,
+        borderRadius: 8,
+        border: "1px solid var(--border)",
+        background: "var(--panel-2)",
+        gap: 2,
+      }}
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            onClick={() => { if (!active) onChange(opt.value); }}
+            style={{
+              height: 28,
+              padding: "0 12px",
+              borderRadius: 6,
+              fontSize: 11,
+              border: "none",
+              cursor: active ? "default" : "pointer",
+              color: active ? "var(--accent-fg, #fff)" : "var(--fg-3)",
+              background: active ? "var(--accent)" : "transparent",
+              fontWeight: active ? 600 : 400,
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // pingStateColor maps the readiness-probe state to its themed color: ok →
@@ -1800,15 +1868,23 @@ function VoiceTab({ config, update }: TabProps) {
   // names), merged ahead of the curated fallbacks in the picker. Soft-fails to
   // [] when the runtime isn't installed, so the fallback list is used.
   const [discoveredVoices, setDiscoveredVoices] = useState<string[]>([]);
+  // Discover only the SELECTED language's voices so the picker is
+  // language-appropriate (English speakers for "en", pt-br speakers for "pt-br").
   const loadVoices = useCallback(async () => {
-    setDiscoveredVoices(await api.listVoices());
-  }, []);
+    setDiscoveredVoices(await api.listVoices(voice.language));
+  }, [voice.language]);
 
-  // Best-effort: probe readiness + discover voices once on mount.
+  // Best-effort: discover voices once on mount.
+  useEffect(() => {
+    void loadVoices();
+  }, [loadVoices]);
+
+  // Re-probe readiness whenever the selected language changes (and on mount).
+  // The backend ping reflects the SELECTED language, so switching to pt-br while
+  // its STT model is missing flips the chip to "not installed", and back.
   useEffect(() => {
     void pingReadiness();
-    void loadVoices();
-  }, [pingReadiness, loadVoices]);
+  }, [pingReadiness, voice.language]);
 
   // --- Managed voice runtime (one-click download) ---
   // runtime = the install/model snapshot from Go; progress = the latest
@@ -1866,17 +1942,65 @@ function VoiceTab({ config, update }: TabProps) {
     }
   }
 
-  const voiceOptions = mergeOptions(discoveredVoices, FALLBACK_VOICES);
+  // Voice picker options are language-aware: the selected language's curated
+  // speakers come first (merged ahead of runtime-discovered names), so pt-br
+  // shows pf_dora/pm_* first and en shows the af_/am_/... list.
+  const langFallback = voice.language === "pt-br" ? PT_FALLBACK_VOICES : FALLBACK_VOICES;
+  const voiceOptions = mergeOptions(discoveredVoices, langFallback);
+
+  // The voice + speed being edited belong to the SELECTED language. Read them
+  // from the per-language store (falling back to that language's defaults) so
+  // English and Português each keep their own configuration.
+  const langCfg = voice.langVoices?.[voice.language];
+  const curVoice = langCfg?.voice || VOICE_LANG_DEFAULTS[voice.language];
+  const curSpeed = langCfg?.speed || DEFAULT_SPEED;
 
   function updateVoice<K extends keyof VoiceConfig>(key: K, value: VoiceConfig[K]) {
     update("voice", { ...voice, [key]: value });
+  }
+
+  // Write the selected language's voice/speed into its per-language slot, keeping
+  // the top-level Voice/Speed mirrored to the current language for backward compat.
+  function setLangVoice(patch: Partial<{ voice: string; speed: number }>) {
+    const next = { voice: curVoice, speed: curSpeed, ...patch };
+    const nextLangVoices = { ...(voice.langVoices ?? {}), [voice.language]: next };
+    update("voice", { ...voice, langVoices: nextLangVoices, voice: next.voice, speed: next.speed });
+  }
+
+  // Switch which language is being configured (also the default a session's
+  // voice pane opens with). The top-level Voice/Speed mirror snaps to the new
+  // language's stored values; each language keeps its own config.
+  function changeLanguage(lang: VoiceConfig["language"]) {
+    if (lang === voice.language) return;
+    const lc = voice.langVoices?.[lang];
+    update("voice", {
+      ...voice,
+      language: lang,
+      voice: lc?.voice || VOICE_LANG_DEFAULTS[lang],
+      speed: lc?.speed || DEFAULT_SPEED,
+    });
+  }
+
+  // On-demand PT speech-to-text model: the multilingual Whisper entry in the
+  // runtime snapshot. Present when its `installed` flag is set.
+  const ptSttModel = (runtime?.models ?? []).find((m) => /multilingual/i.test(m.name));
+  const ptSttInstalled = !!ptSttModel?.installed;
+
+  async function installLanguage() {
+    setProgress({ phase: "download", message: "starting…", done: 0, total: 0 });
+    try {
+      setRuntime(await api.installVoiceLanguage("pt-br"));
+    } catch (err) {
+      setProgress({ phase: "error", error: String(err instanceof Error ? err.message : err) });
+    }
   }
 
   async function testVoice() {
     setTestState("playing");
     setTestMsg("synthesizing…");
     try {
-      const res = await api.synthesize("Voice is working.", voice.voice || "", voice.speed || 0);
+      const phrase = voice.language === "pt-br" ? "A voz está funcionando." : "Voice is working.";
+      const res = await api.synthesize(phrase, curVoice || "", curSpeed || 0, voice.language);
       const audio = new Audio(`data:${res.contentType || "audio/mpeg"};base64,${res.audioB64}`);
       audio.onended = () => { setTestState("ok"); setTestMsg("played ✓"); };
       audio.onerror = () => { setTestState("error"); setTestMsg("playback failed"); };
@@ -2077,14 +2201,72 @@ function VoiceTab({ config, update }: TabProps) {
         description="how quant sounds when it talks back"
       >
         <SettingRow
-          label="voice"
-          description="the spoken voice · pick one of the installed voices or type a name (default af_heart)"
+          label="language"
+          description="the language you're configuring below (and the one a session's voice mode opens with) · each language keeps its own voice + speed, and you can switch languages live inside a session · English uses the built-in model, Português (BR) downloads an extra speech-recognition model"
+          right={
+            <SegmentedControl<VoiceConfig["language"]>
+              value={voice.language}
+              onChange={changeLanguage}
+              options={[
+                { value: "en", label: "English" },
+                { value: "pt-br", label: "Português (BR)" },
+              ]}
+            />
+          }
+        />
+        {voice.language === "pt-br" && installed && !ptSttInstalled && (
+          <div style={{ padding: "0 16px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+            {installing ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--fg)" }}>{phaseLabel(progress)}</span>
+                <div
+                  style={{
+                    height: 6,
+                    borderRadius: 999,
+                    background: "var(--panel-3)",
+                    overflow: "hidden",
+                    border: "1px solid var(--border-2)",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: progressPct != null ? `${progressPct}%` : "40%",
+                      background: "var(--accent)",
+                      borderRadius: 999,
+                      transition: "width 200ms ease",
+                      opacity: progressPct != null ? 1 : 0.6,
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                  keep this window open — the Portuguese model is about 374 MB and can take a few minutes
+                </span>
+              </div>
+            ) : (
+              <>
+                <span style={{ fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
+                  Brazilian Portuguese needs an extra speech-recognition model (~374 MB). Download it once and quant sets it up — private and zero-cost, like the base voice models.
+                </span>
+                <div>
+                  <DownloadButton label="download Português (BR) model" onClick={() => void installLanguage()} />
+                </div>
+                {progress?.phase === "error" && (
+                  <span style={{ fontSize: 11, color: "var(--danger)" }}>{progress.error}</span>
+                )}
+              </>
+            )}
+          </div>
+        )}
+        <SettingRow
+          label={`voice · ${voice.language === "pt-br" ? "Português (BR)" : "English"}`}
+          description={`the spoken voice for ${voice.language === "pt-br" ? "Português (BR)" : "English"} · only ${voice.language === "pt-br" ? "Portuguese" : "English"} voices are shown (default ${VOICE_LANG_DEFAULTS[voice.language]})`}
           right={
             <ComboInput
-              value={voice.voice}
-              onChange={(v) => updateVoice("voice", v)}
+              value={curVoice}
+              onChange={(v) => setLangVoice({ voice: v })}
               width={200}
-              placeholder="af_heart"
+              placeholder={VOICE_LANG_DEFAULTS[voice.language]}
               options={voiceOptions}
               listId="voice-voices"
             />
@@ -2092,7 +2274,7 @@ function VoiceTab({ config, update }: TabProps) {
         />
         <SettingRow
           label="speed"
-          description="playback rate, 0.5–2.0 (default 1.2)"
+          description={`playback rate for ${voice.language === "pt-br" ? "Português (BR)" : "English"}, 0.5–2.0 (default 1.2)`}
           right={
             <div className="flex items-center gap-3">
               <input
@@ -2100,11 +2282,11 @@ function VoiceTab({ config, update }: TabProps) {
                 min={0.5}
                 max={2.0}
                 step={0.1}
-                value={voice.speed}
-                onChange={(e) => updateVoice("speed", parseFloat(e.target.value))}
+                value={curSpeed}
+                onChange={(e) => setLangVoice({ speed: parseFloat(e.target.value) })}
                 style={{ width: 160, accentColor: "var(--accent)" }}
               />
-              <span style={{ color: "var(--fg)", fontSize: 12, width: 32 }}>{voice.speed.toFixed(1)}x</span>
+              <span style={{ color: "var(--fg)", fontSize: 12, width: 32 }}>{curSpeed.toFixed(1)}x</span>
             </div>
           }
         />
@@ -2128,7 +2310,7 @@ function VoiceTab({ config, update }: TabProps) {
         />
         <SettingRow
           label="test voice"
-          description="speaks “Voice is working.” using the current voice + speed"
+          description={`speaks a short ${voice.language === "pt-br" ? "Portuguese" : "English"} phrase using the current voice + speed`}
           right={
             <div className="flex items-center gap-3">
               <SmallButton
@@ -2152,6 +2334,16 @@ function VoiceTab({ config, update }: TabProps) {
                 </span>
               )}
             </div>
+          }
+        />
+        <SettingRow
+          label="sound cues"
+          description="play short audio cues on voice-mode transitions (listening, thinking, speaking, ended)"
+          right={
+            <Toggle
+              checked={!voice.muteSoundCues}
+              onChange={(v) => updateVoice("muteSoundCues", !v)}
+            />
           }
         />
       </Section>

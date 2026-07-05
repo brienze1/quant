@@ -3,6 +3,8 @@
 import {voiceruntime} from '../models';
 import {context} from '../models';
 
+export function InstallVoiceLanguage(arg1:string):Promise<voiceruntime.Status>;
+
 export function InstallVoiceRuntime():Promise<voiceruntime.Status>;
 
 export function OnShutdown(arg1:context.Context):Promise<void>;

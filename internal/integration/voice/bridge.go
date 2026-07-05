@@ -10,12 +10,20 @@ import (
 	"time"
 )
 
-// ErrVoiceEnded signals that the voice surface is gone — the request timed out
-// with no client responding, or the voice pane was closed/unmounted mid-request.
+// ErrVoiceEnded signals that the voice surface is genuinely gone — the frontend
+// EXPLICITLY reported the voice pane was closed/moved mid-request (reply.Closed).
 // It means the agent should STOP calling voice tools gracefully: it is NOT a
 // retryable failure and NOT a real audio error. Callers test for it with
 // errors.Is(err, ErrVoiceEnded).
 var ErrVoiceEnded = errors.New("voice session ended")
+
+// ErrVoiceTimeout signals that no client responded within the timeout. Unlike
+// ErrVoiceEnded this is AMBIGUOUS and RECOVERABLE: the pane is usually still open
+// (the user was simply quiet past the deadline, or a single "voice:request" event
+// was missed during a re-subscription gap — issue #86). The agent should be told
+// it MAY keep going / retry, NOT that voice mode has permanently ended. Callers
+// test for it with errors.Is(err, ErrVoiceTimeout).
+var ErrVoiceTimeout = errors.New("voice request timed out")
 
 // Default timeouts for the two voice round-trip kinds. They are generous because
 // a "listen" turn waits for a human to finish speaking, and a "speak" turn waits
@@ -190,9 +198,12 @@ func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, reco
 			timer.Reset(timeout)
 		case <-timer.C:
 			b.remove(requestID)
-			// No client responded within the timeout: the voice surface is gone. Wrap
-			// as ErrVoiceEnded so the agent stops calling voice tools instead of looping.
-			return VoiceReply{}, fmt.Errorf("voice %s ended (timed out after %s waiting for the pane): %w", kind, timeout, ErrVoiceEnded)
+			// No client responded within the timeout. This is NOT proof the pane
+			// closed — the user may have simply stayed quiet past the deadline, or a
+			// single "voice:request" event was missed (issue #86). Wrap as the
+			// RECOVERABLE ErrVoiceTimeout so the agent is told it may keep going/retry,
+			// rather than the terminal ErrVoiceEnded ("stop calling voice tools").
+			return VoiceReply{}, fmt.Errorf("voice %s timed out after %s waiting for the pane: %w", kind, timeout, ErrVoiceTimeout)
 		case <-ctx.Done():
 			b.remove(requestID)
 			return VoiceReply{}, fmt.Errorf("voice %s cancelled: %w", kind, ctx.Err())

@@ -45,6 +45,17 @@ type ModelArtifact struct {
 	// Dir is the top-level directory the archive extracts to under the models
 	// dir. Must match the sherpaengine model dir consts.
 	Dir string `json:"dir"`
+	// Lang tags an artifact with the language it enables. Empty (or "base")
+	// means it is part of the always-installed base set (Kokoro TTS + English
+	// Whisper); a value like "pt-br" means it is installed on demand only when
+	// the user selects that voice language.
+	Lang string `json:"lang,omitempty"`
+}
+
+// isBase reports whether the artifact belongs to the always-installed base set
+// (English STT + Kokoro TTS) rather than an on-demand language pack.
+func (a ModelArtifact) isBase() bool {
+	return a.Lang == "" || a.Lang == "base"
 }
 
 // DownloadManifest is the small, version-pinned index of model archives.

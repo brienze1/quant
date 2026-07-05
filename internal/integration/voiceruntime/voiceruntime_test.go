@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -206,7 +207,121 @@ func realModelFixtures(t *testing.T) []ModelArtifact {
 
 	return []ModelArtifact{
 		{Name: "kokoro tts", URL: kokoroPath, SHA256: kokoroSum, Size: int64(len(kokoroData)), Dir: sherpaengine.KokoroDirName},
-		{Name: "whisper stt", URL: whisperPath, SHA256: whisperSum, Size: int64(len(whisperData)), Dir: sherpaengine.WhisperDirName},
+		{Name: "whisper stt", URL: whisperPath, SHA256: whisperSum, Size: int64(len(whisperData)), Dir: sherpaengine.WhisperEnDirName},
+	}
+}
+
+// ptModelFixture builds the on-demand pt-br multilingual whisper archive: every
+// int8 file the engine requires to serve pt-br, plus the fp32 pair the installer
+// must prune. Returned as a ModelArtifact tagged lang "pt-br".
+func ptModelFixture(t *testing.T) ModelArtifact {
+	t.Helper()
+	required := sherpaengine.RequiredFilesFor(sherpaengine.LangPTBR)
+	files := append([]string{}, required[sherpaengine.WhisperMultiDirName]...)
+	files = append(files, "small-encoder.onnx", "small-decoder.onnx") // fp32, must be pruned
+	data, sum := makeModelArchive(t, sherpaengine.WhisperMultiDirName, files, nil)
+
+	p := filepath.Join(t.TempDir(), "whisper-multi.tar.gz")
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return ModelArtifact{
+		Name:   "whisper stt (multilingual)",
+		URL:    p,
+		SHA256: sum,
+		Size:   int64(len(data)),
+		Dir:    sherpaengine.WhisperMultiDirName,
+		Lang:   sherpaengine.LangPTBR,
+	}
+}
+
+// TestBaseInstallSkipsLanguagePack verifies the base Install() installs only the
+// base artifacts (English STT + Kokoro), leaving the pt-br pack on disk-absent,
+// and that InstallLanguage("pt-br") then fetches + prunes it.
+func TestBaseInstallSkipsLanguagePack(t *testing.T) {
+	t.Setenv("QUANT_HOME", t.TempDir())
+	models := append(realModelFixtures(t), ptModelFixture(t))
+	writeLocalManifest(t, models)
+
+	store := &fakeStore{}
+	events := &eventCollector{}
+	m := NewManager(store, events.emit, nil)
+
+	// Base install: pt entry must be skipped.
+	if _, err := m.Install(); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	st := waitInstalled(t, m)
+	if st.Error != "" {
+		t.Fatalf("install error: %s", st.Error)
+	}
+	// Base-only install counts as "voice installed".
+	if !st.Installed {
+		t.Fatalf("expected base install to report Installed, got %+v", st)
+	}
+	if !isInstalled() {
+		t.Fatal("expected isInstalled() true after base install")
+	}
+	// The pt-br pack must NOT have been installed by the base flow.
+	if languageInstalled(sherpaengine.LangPTBR) {
+		t.Fatal("base install must not install the pt-br language pack")
+	}
+	ptDir := filepath.Join(modelsDir(), sherpaengine.WhisperMultiDirName)
+	if _, err := os.Stat(ptDir); !os.IsNotExist(err) {
+		t.Fatalf("pt-br model dir must not exist after base install: %v", err)
+	}
+	// The manifest-driven status lists all three models with the pt one not installed.
+	if len(st.Models) != 3 {
+		t.Fatalf("expected 3 models in status, got %d: %+v", len(st.Models), st.Models)
+	}
+	var ptStatus *ModelStatus
+	for i := range st.Models {
+		if strings.Contains(st.Models[i].Name, "multilingual") {
+			ptStatus = &st.Models[i]
+		}
+	}
+	if ptStatus == nil {
+		t.Fatal("expected a multilingual model entry in status")
+	}
+	if ptStatus.Installed {
+		t.Fatalf("multilingual model must be reported not installed: %+v", ptStatus)
+	}
+
+	// Install the pt-br language pack on demand.
+	if _, err := m.InstallLanguage(sherpaengine.LangPTBR); err != nil {
+		t.Fatalf("InstallLanguage: %v", err)
+	}
+	st = waitInstalled(t, m)
+	if st.Error != "" {
+		t.Fatalf("InstallLanguage error: %s", st.Error)
+	}
+	if !languageInstalled(sherpaengine.LangPTBR) {
+		t.Fatal("expected languageInstalled(pt-br) true after InstallLanguage")
+	}
+	// fp32 pt whisper files must be pruned; int8 must remain.
+	for _, gone := range []string{"small-encoder.onnx", "small-decoder.onnx"} {
+		if _, err := os.Stat(filepath.Join(ptDir, gone)); !os.IsNotExist(err) {
+			t.Fatalf("expected fp32 file %s to be pruned", gone)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(ptDir, "small-encoder.int8.onnx")); err != nil {
+		t.Fatalf("int8 pt whisper file missing after prune: %v", err)
+	}
+}
+
+// TestInstallLanguageNoOpForUnknown verifies InstallLanguage returns the current
+// status without error (and installs nothing) when no artifact matches.
+func TestInstallLanguageNoOpForUnknown(t *testing.T) {
+	t.Setenv("QUANT_HOME", t.TempDir())
+	writeLocalManifest(t, realModelFixtures(t)) // base only, no pt-br
+
+	m := NewManager(&fakeStore{}, (&eventCollector{}).emit, nil)
+	st, err := m.InstallLanguage(sherpaengine.LangPTBR)
+	if err != nil {
+		t.Fatalf("InstallLanguage(no match): %v", err)
+	}
+	if st.Installing {
+		t.Fatalf("expected no install to start for unknown language, got %+v", st)
 	}
 }
 
@@ -420,19 +535,34 @@ func TestEmbeddedManifestIsPinned(t *testing.T) {
 	if err := json.Unmarshal(defaultManifestJSON, &m); err != nil {
 		t.Fatalf("embedded manifest invalid: %v", err)
 	}
-	if m.Schema != 2 || len(m.Models) != 2 {
-		t.Fatalf("expected schema-2 manifest with 2 models, got %+v", m)
+	if m.Schema != 2 || len(m.Models) != 3 {
+		t.Fatalf("expected schema-2 manifest with 3 models, got %+v", m)
 	}
 	dirs := map[string]bool{}
+	hasPTBR := false
 	for _, model := range m.Models {
 		if model.URL == "" || len(model.SHA256) != 64 || model.Size <= 0 || model.Dir == "" || model.Name == "" {
 			t.Fatalf("model not fully pinned: %+v", model)
 		}
 		dirs[model.Dir] = true
+		if model.Lang == sherpaengine.LangPTBR {
+			hasPTBR = true
+			if model.Dir != sherpaengine.WhisperMultiDirName {
+				t.Fatalf("pt-br model must extract to the multilingual whisper dir, got %+v", model)
+			}
+			// The frontend matches the multilingual entry by name substring.
+			if !strings.Contains(model.Name, "multilingual") {
+				t.Fatalf("pt-br model name must contain \"multilingual\", got %q", model.Name)
+			}
+		}
 	}
-	// The manifest dirs must be exactly the dirs the embedded engine loads.
-	if !dirs[sherpaengine.KokoroDirName] || !dirs[sherpaengine.WhisperDirName] {
+	// The base manifest dirs must include the dirs the embedded engine loads for
+	// English, plus the on-demand pt-br multilingual whisper dir.
+	if !dirs[sherpaengine.KokoroDirName] || !dirs[sherpaengine.WhisperEnDirName] {
 		t.Fatalf("manifest dirs must match sherpaengine model dirs, got %+v", dirs)
+	}
+	if !hasPTBR {
+		t.Fatal("manifest must include a pt-br language artifact")
 	}
 }
 
