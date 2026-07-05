@@ -54,9 +54,10 @@ func TestBridgeRequestResolves(t *testing.T) {
 	}
 }
 
-// TestBridgeTimeout verifies that Request returns an ErrVoiceEnded error when no
-// Resolve arrives within the timeout, so the agent ends voice mode gracefully
-// instead of treating it as a retryable failure or looping.
+// TestBridgeTimeout verifies that Request returns an ErrVoiceTimeout error (NOT
+// the terminal ErrVoiceEnded) when no Resolve arrives within the timeout, so the
+// agent is told voice mode is still recoverable rather than ejected to text on a
+// mere silence/missed-event (issue #86).
 func TestBridgeTimeout(t *testing.T) {
 	b := NewBridge(func(_ context.Context, _ string, _ interface{}) {})
 
@@ -65,8 +66,11 @@ func TestBridgeTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a timeout error, got nil")
 	}
-	if !errors.Is(err, ErrVoiceEnded) {
-		t.Fatalf("timeout error should satisfy errors.Is(err, ErrVoiceEnded), got %v", err)
+	if !errors.Is(err, ErrVoiceTimeout) {
+		t.Fatalf("timeout error should satisfy errors.Is(err, ErrVoiceTimeout), got %v", err)
+	}
+	if errors.Is(err, ErrVoiceEnded) {
+		t.Fatalf("timeout must NOT be treated as a terminal close (ErrVoiceEnded), got %v", err)
 	}
 	if elapsed := time.Since(start); elapsed < 40*time.Millisecond {
 		t.Fatalf("returned too early (%v) — did not wait for the timeout", elapsed)
@@ -201,8 +205,8 @@ func TestBridgeExtendDoesNotOutliveResolveTimeout(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if !errors.Is(err, ErrVoiceEnded) {
-			t.Fatalf("expected ErrVoiceEnded after extends stop, got %v", err)
+		if !errors.Is(err, ErrVoiceTimeout) {
+			t.Fatalf("expected ErrVoiceTimeout after extends stop, got %v", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Request never timed out after extends stopped")

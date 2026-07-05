@@ -138,6 +138,29 @@ export function registerVoiceBridge(
   };
 }
 
+/**
+ * Serialize a thrown value into a human-readable string for reporting back to
+ * Go. The audio pipeline rejects with plain `VoiceError` objects ({kind, message})
+ * — NOT `Error` instances — so `String(err)` on them yields the useless
+ * "[object Object]" (see issue #86). Extract the real message (prefixed with the
+ * error kind for diagnosability), falling back to JSON, then String().
+ */
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    const o = err as { kind?: string; message?: string };
+    if (typeof o.message === "string" && o.message) {
+      return o.kind ? `${o.kind}: ${o.message}` : o.message;
+    }
+    try {
+      return JSON.stringify(err);
+    } catch {
+      /* circular/unserializable — fall through to String() */
+    }
+  }
+  return String(err);
+}
+
 /** Best-effort callback invocation that never breaks the pipeline. */
 function safeCb(fn: ((text: string) => void) | undefined, text: string) {
   if (!fn) return;
@@ -211,7 +234,7 @@ async function handleRequest(
       }
       return;
     }
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     // Best-effort: if even reporting the error fails, there is nothing more we
     // can do; the Go side will eventually time out.
     try {
