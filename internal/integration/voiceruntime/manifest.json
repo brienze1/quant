@@ -19,8 +19,8 @@
     {
       "name": "whisper stt (multilingual)",
       "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.tar.bz2",
-      "sha256": "0e9286f1cc63b968f52d86e4b70b03571278825b270614075ea5191d22441fbb",
-      "size": 374992896,
+      "sha256": "486a46afbb7ba798507190ffe02fea2dd726049af212e774537efac6afb210a6",
+      "size": 639387718,
       "dir": "sherpa-onnx-whisper-small",
       "lang": "pt-br"
     }
