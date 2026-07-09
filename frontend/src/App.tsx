@@ -25,6 +25,12 @@ import { SessionPanel } from "./components/SessionPanel";
 import { EmptyState } from "./components/EmptyState";
 import { FileTabPanel, clearFileDraftCache } from "./components/FileTabPanel";
 import { SessionDock } from "./components/SessionDock";
+import { TerminalPane } from "./components/TerminalPane";
+import { VoicePane } from "./components/VoicePane";
+import { CrewPane } from "./components/CrewPane";
+import { FilesPanel } from "./components/FilesPanel";
+import { MobileShell, useIsMobile } from "./mobile";
+import type { MobileAppBag } from "./mobile";
 import {
   fileBasename,
   isFileTabId,
@@ -150,8 +156,115 @@ function PaneToggle({
   );
 }
 
+// Mobile "Chat" tab body: the active session's live PTY. Wraps TerminalPane
+// with its own auto-scroll state so it can be rendered stand-alone (the desktop
+// keeps this state inside SessionPanel). Rendered only in the mobile shell.
+function MobileChatPane({
+  session,
+  termConfig,
+  onStart,
+  onResume,
+}: {
+  session: Session;
+  termConfig: Config | null;
+  onStart: (id: string, rows: number, cols: number) => void;
+  onResume: (id: string, rows: number, cols: number) => void;
+}) {
+  const [autoScroll, setAutoScroll] = useState(true);
+  return (
+    <TerminalPane
+      session={session}
+      isArchived={!!session.archivedAt}
+      onStart={onStart}
+      onResume={onResume}
+      termConfig={termConfig}
+      autoScroll={autoScroll}
+      onAutoScrollChange={setAutoScroll}
+    />
+  );
+}
+
+// Mobile "Terminal" tab body: a REAL embedded shell terminal for the active
+// session. Mirrors MobileChatPane but resolves the lazily-created embedded
+// terminal session first (via the same handleCreateEmbeddedTerminal +
+// embeddedTerminalMap flow the desktop dock uses), then renders TerminalPane
+// with the exact props the desktop embedded-terminal pane uses.
+function MobileTerminalPane({
+  parent,
+  embeddedTerminalMap,
+  sessionsByRepo,
+  sessionsByTask,
+  termConfig,
+  onStart,
+  onResume,
+  onCreateEmbeddedTerminal,
+}: {
+  parent: Session;
+  embeddedTerminalMap: Record<string, string>;
+  sessionsByRepo: Record<string, Session[]>;
+  sessionsByTask: Record<string, Session[]>;
+  termConfig: Config | null;
+  onStart: (id: string, rows: number, cols: number) => void;
+  onResume: (id: string, rows: number, cols: number) => void;
+  onCreateEmbeddedTerminal: (parent: Session) => Promise<Session>;
+}) {
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [created, setCreated] = useState<Session | null>(null);
+  // Guards double-create: holds the parent id we've already kicked off a
+  // create for. Reset when the active parent changes.
+  const creatingForRef = useRef<string | null>(null);
+
+  // Prefer the live session from App's stores (kept fresh via the map); fall
+  // back to the session returned by the create call for the first render.
+  const mappedId = embeddedTerminalMap[parent.id];
+  const embeddedSession =
+    findSession(mappedId ?? null, sessionsByRepo, sessionsByTask) ?? created;
+
+  // Reset per-parent create tracking when the active session changes.
+  useEffect(() => {
+    creatingForRef.current = null;
+    setCreated(null);
+  }, [parent.id]);
+
+  // Lazily create the embedded terminal session once, if none exists yet.
+  useEffect(() => {
+    if (embeddedSession) return;
+    if (creatingForRef.current === parent.id) return;
+    creatingForRef.current = parent.id;
+    onCreateEmbeddedTerminal(parent)
+      .then((s) => setCreated(s))
+      .catch(() => {
+        creatingForRef.current = null;
+      });
+  }, [parent, embeddedSession, onCreateEmbeddedTerminal]);
+
+  if (!embeddedSession) {
+    return (
+      <div
+        className="flex items-center justify-center h-full"
+        style={{ color: "var(--fg-dim)", fontSize: 13 }}
+      >
+        starting terminal…
+      </div>
+    );
+  }
+
+  return (
+    <TerminalPane
+      session={embeddedSession}
+      isArchived={false}
+      onStart={onStart}
+      onResume={onResume}
+      termConfig={termConfig}
+      autoScroll={autoScroll}
+      onAutoScrollChange={setAutoScroll}
+    />
+  );
+}
+
 function App() {
   const [view, setView] = useState<View>("dashboard");
+  const isMobile = useIsMobile();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [tasksByRepo, setTasksByRepo] = useState<Record<string, Task[]>>({});
   const [sessionsByRepo, setSessionsByRepo] = useState<Record<string, Session[]>>({});
@@ -2940,6 +3053,391 @@ function App() {
       )}
     </>
   );
+
+  // ---- Mobile shell (viewport ≤900px): render the touch-native MobileShell in
+  // place of the desktop layout. The desktop path below is untouched when
+  // !isMobile — this is a pure early-return branch. ----
+  if (isMobile) {
+    // Flatten the workspace-filtered session stores into one deduped list for
+    // the drawer tree (a session can live under both a repo and a task key).
+    const mobileSessions: Session[] = (() => {
+      const seen = new Set<string>();
+      const out: Session[] = [];
+      for (const list of [
+        ...Object.values(filteredSessionsByRepo),
+        ...Object.values(filteredSessionsByTask),
+      ]) {
+        for (const s of list) {
+          if (!seen.has(s.id)) {
+            seen.add(s.id);
+            out.push(s);
+          }
+        }
+      }
+      return out;
+    })();
+    const mobileTasks: Task[] = Object.values(tasksByRepo).flat();
+    const mobileCrewSupervisor: Session | null =
+      activeSession && activeSession.sessionType === "claude" ? activeSession : null;
+
+    const mobileBag: MobileAppBag = {
+      repos,
+      tasks: mobileTasks,
+      sessions: mobileSessions,
+      activeSessionId: activeSession?.id ?? null,
+      onAction: (action, payload) => {
+        switch (action) {
+          case "newRepo":
+            setModal({ type: "openRepo" });
+            break;
+          case "newSession": {
+            const repoId =
+              (payload?.repoId as string | undefined) ?? activeSession?.repoId ?? repos[0]?.id;
+            const taskId = payload?.taskId as string | undefined;
+            if (repoId) setModal({ type: "newSession", repoId, taskId });
+            else setModal({ type: "openRepo" });
+            break;
+          }
+          case "renameSession": {
+            const sessionId = payload?.sessionId as string | undefined;
+            const s = sessionId ? findSession(sessionId, sessionsByRepo, sessionsByTask) : null;
+            if (s) handleRenameSession(s.id, s.name);
+            break;
+          }
+          case "archiveSession": {
+            const sessionId = payload?.sessionId as string | undefined;
+            if (sessionId) handleArchiveSession(sessionId);
+            break;
+          }
+          case "deleteSession": {
+            const sessionId = payload?.sessionId as string | undefined;
+            if (sessionId) handleDelete(sessionId);
+            break;
+          }
+        }
+      },
+      openSession: handleOpenTab,
+      newSession: handleNewSessionFromTabBar,
+      openPalette: () => setCommandPaletteOpen(true),
+      openSettings: () => setView("settings"),
+      renderJobs: () => (
+        <JobsView
+          jobs={filteredJobs}
+          agents={filteredAgents}
+          jobGroups={jobGroups}
+          activeWorkspaceId={activeWorkspaceId}
+          onCreateJob={() => setModal({ type: "createJob" })}
+          onEditJob={(job) => setModal({ type: "editJob", job })}
+          onRefreshJobs={fetchJobs}
+          onRefreshJobGroups={fetchJobGroups}
+        />
+      ),
+      renderAgents: () => (
+        <AgentsView
+          agents={filteredAgents}
+          onCreateAgent={() => setModal({ type: "createAgent" })}
+          onEditAgent={(agent: Agent) => setModal({ type: "editAgent", agent })}
+          onDeleteAgent={async (id: string) => {
+            await api.deleteAgent(id);
+            fetchAgents();
+          }}
+          onRefreshAgents={fetchAgents}
+        />
+      ),
+      renderFiles: () => (
+        <FilesPanel
+          session={filesPanelSession}
+          activeFilePath={
+            activeFileTab && filesPanelSession && activeFileTab.sessionId === filesPanelSession.id
+              ? activeFileTab.relPath
+              : null
+          }
+          dirtyPaths={panelDirtyPaths}
+          onOpenFile={(path) => {
+            if (filesPanelSession) handleOpenFile(filesPanelSession.id, path);
+          }}
+          onPathDeleted={(path) => {
+            if (filesPanelSession) handleTreePathDeleted(filesPanelSession.id, path);
+          }}
+          onPathRenamed={(oldPath, newPath) => {
+            if (filesPanelSession) handleTreePathRenamed(filesPanelSession.id, oldPath, newPath);
+          }}
+          onClose={() => handleFilesPanelOpenChange(false)}
+          onError={(msg) => setError(msg)}
+        />
+      ),
+      // Pin the active session as the voice session (mirrors the desktop
+      // attach-voice handler: attachVoice via handleVoicePaneOpenChange(true)).
+      onStartVoice: () => {
+        if (activeSession) attachVoice(activeSession.id);
+      },
+      // Real voice sheet body: mount the SAME <VoicePane/> desktop uses, keyed to
+      // the pinned voice session (falling back to the active session). Return null
+      // when there's no valid session so the shell shows its scripted fallback.
+      renderVoice: () => {
+        const sid = voiceSessionId ?? activeSession?.id ?? "";
+        return sid ? <VoicePane sessionId={sid} /> : null;
+      },
+      // renderMindmap omitted — the shell defaults to <MindmapPane sessionId=…/>.
+      // renderTerminal is wired below when there's an active session (needs the
+      // lazy handleCreateEmbeddedTerminal + embeddedTerminalMap flow); when
+      // there's no active session it stays omitted so the shell shows its
+      // own terminal fallback.
+    };
+    if (activeSession) {
+      const chatSession = activeSession;
+      mobileBag.renderChat = () => (
+        <MobileChatPane
+          session={chatSession}
+          termConfig={dockTermConfig}
+          onStart={handleStart}
+          onResume={handleResume}
+        />
+      );
+      mobileBag.renderTerminal = () => (
+        <MobileTerminalPane
+          parent={chatSession}
+          embeddedTerminalMap={embeddedTerminalMap}
+          sessionsByRepo={sessionsByRepo}
+          sessionsByTask={sessionsByTask}
+          termConfig={dockTermConfig}
+          onStart={handleStart}
+          onResume={handleResume}
+          onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}
+        />
+      );
+    }
+    if (mobileCrewSupervisor) {
+      const sup = mobileCrewSupervisor;
+      mobileBag.renderCrew = () => (
+        <CrewPane
+          supervisor={sup}
+          workers={workersBySupervisor[sup.id] ?? []}
+          queuedCount={crewQueued[sup.id] ?? 0}
+          deliveryLocked={crewDeliveryLocks[sup.id] ?? false}
+          onToggleLock={(locked) => {
+            setCrewDeliveryLocks((prev) => ({ ...prev, [sup.id]: locked }));
+            api.setCrewDeliveryLock(sup.id, locked).catch((err) => setError(String(err)));
+          }}
+          onSelectSession={handleOpenTab}
+          onDetachWorker={handleDetachCrewWorker}
+          onError={(msg) => setError(msg)}
+        />
+      );
+    }
+
+    return (
+      <>
+        {renderQuantiOverlay()}
+        {view === "settings" ? (
+          <div className="flex flex-col h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
+            {renderTitleBar()}
+            <div className="flex-1 min-h-0 relative">
+              <Settings repos={repos} onBack={() => { fetchShortcuts(); api.getConfig().then(setDockTermConfig).catch(() => {}); setView("dashboard"); }} />
+            </div>
+          </div>
+        ) : (
+          <MobileShell app={mobileBag} />
+        )}
+
+        {/* Dashboard + job/agent modals. Lifted above the mobile sheets/drawer
+            (which sit at z-index 300+) via a high stacking context so a modal
+            triggered from an open sheet is never painted behind it. Mirrors the
+            desktop inline modal block. */}
+        <div style={{ position: "relative", zIndex: 100000 }}>
+          {modal.type === "openRepo" && (
+            <OpenRepoModal
+              onSubmit={handleOpenRepo}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "newTask" && (
+            <NewTaskModal
+              repoId={modal.repoId}
+              repoName={repos.find((r) => r.id === modal.repoId)?.name}
+              repos={repos}
+              onSubmit={handleCreateTask}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "newSession" && (
+            <NewSessionModal
+              repos={repos}
+              tasksByRepo={tasksByRepo}
+              defaultRepoId={modal.repoId}
+              defaultTaskId={modal.taskId}
+              onSubmit={handleCreateSession}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "moveSession" && (
+            <MoveSessionModal
+              sessionId={modal.sessionId}
+              currentTaskId={moveSessionTask}
+              tasks={tasksByRepo[modal.repoId] ?? []}
+              onSelect={handleMoveSessionSelect}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "renameSession" && (
+            <RenameModal
+              currentName={modal.currentName}
+              onSubmit={(newName) => handleRenameSessionSubmit(modal.sessionId, newName)}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "changeClaudeSession" && (() => {
+            const target = findSession(modal.sessionId, sessionsByRepo, sessionsByTask);
+            if (!target) return null;
+            return (
+              <ChangeSessionIdModal
+                session={target}
+                onDone={async () => {
+                  setModal({ type: "none" });
+                  await loadAll();
+                }}
+                onCancel={() => setModal({ type: "none" })}
+              />
+            );
+          })()}
+
+          {modal.type === "renameTask" && (
+            <RenameTaskModal
+              currentTag={modal.currentTag}
+              currentName={modal.currentName}
+              onSubmit={(newTag, newName) => handleRenameTaskSubmit(modal.taskId, newTag, newName)}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "confirm" && (
+            <ConfirmModal
+              message={modal.message}
+              confirmLabel={modal.confirmLabel ?? "delete"}
+              onConfirm={modal.onConfirm}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "gitCommit" && (
+            <GitCommitModal
+              sessionName={modal.sessionName}
+              commitMessagePrefix={commitMessagePrefix}
+              onSubmit={(message, pushAfter) => handleGitCommit(modal.sessionId, message, pushAfter)}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "gitPull" && (
+            <GitPullModal
+              sessionId={modal.sessionId}
+              currentBranch={modal.currentBranch}
+              onSubmit={(branch) => handleGitPull(modal.sessionId, branch)}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "gitPush" && (
+            <GitPushModal
+              sessionId={modal.sessionId}
+              currentBranch={modal.currentBranch}
+              onSubmit={() => handleGitPush(modal.sessionId)}
+              onCancel={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {modal.type === "changelog" && (
+            <ChangelogModal
+              entries={changelogEntries}
+              currentVersion={appVersion}
+              onClose={() => setModal({ type: "none" })}
+            />
+          )}
+
+          {renderModals()}
+        </div>
+
+        {commandPaletteOpen && (
+          <CommandPalette
+            commands={paletteCommands}
+            onClose={() => setCommandPaletteOpen(false)}
+          />
+        )}
+
+        {themePickerOpen && <ThemeQuickPicker onClose={() => setThemePickerOpen(false)} />}
+
+        {/* Toast notifications (mirrors the desktop toasts block) */}
+        {toasts.length > 0 && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: assistantOpen ? 608 : 20,
+              right: 20,
+              zIndex: 100001,
+              transition: "bottom 0.2s ease",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              fontFamily: "var(--mono)",
+            }}
+          >
+            {toasts.map((toast) => (
+              <div
+                key={toast.id}
+                onClick={() => {
+                  if (toast.sessionId) {
+                    handleOpenTab(toast.sessionId);
+                    setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+                  }
+                }}
+                style={{
+                  backgroundColor: "var(--hover)",
+                  border: "1px solid var(--accent)",
+                  color: "var(--fg)",
+                  fontSize: 12,
+                  padding: "10px 16px",
+                  borderRadius: 4,
+                  maxWidth: 320,
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+                  cursor: toast.sessionId ? "pointer" : "default",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                }}
+              >
+                <span style={{ flex: 1 }}>
+                  <span style={{ color: "var(--accent)", marginRight: 8 }}>~</span>
+                  {toast.message}
+                </span>
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+                  }}
+                  style={{
+                    cursor: "pointer",
+                    color: "var(--fg-3)",
+                    fontSize: 14,
+                    lineHeight: 1,
+                    padding: "0 2px",
+                    flexShrink: 0,
+                  }}
+                >
+                  ×
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    );
+  }
 
   // Settings and diff wrap QuantAssistant so it stays mounted across all views
   if (view === "settings") {

@@ -1,0 +1,65 @@
+/* ============================================================
+   Quant — mobile / PWA layer CSS.
+   A distinct touch layout that mounts below 900px. Ported from the
+   design handoff (theme.css mobile block ~L263-301). The design tokens
+   (--bg --panel --fg --accent …) already live in src/style.css and are
+   driven by data-theme / data-accent / data-density on <html>; this file
+   only adds the mobile-specific safe-area vars, media rules, and motion.
+   Do NOT merge this into style.css — it is imported by the mobile module.
+   ============================================================ */
+
+/* safe-area insets (notch / home indicator) */
+:root {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+@media (max-width: 900px) {
+  /* let the app own a real dynamic-viewport box; kill iOS rubber-band + tap flash */
+  html, body { height: 100%; overscroll-behavior: none; }
+  body { overflow: hidden; }
+  * { -webkit-tap-highlight-color: transparent; }
+  button, [role="button"], .mo-tap { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+
+  /* thinner, calmer scrollbars on touch; momentum scroll everywhere */
+  .mo-scroll { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .mo-scroll::-webkit-scrollbar { width: 0; height: 0; }
+  .mo-scroll { scrollbar-width: none; }
+}
+
+/* app-installed (standalone) — extend background under the notch/home bar */
+@media (display-mode: standalone) {
+  body { background: var(--bg); }
+}
+
+.mo-shell { height: 100vh; height: 100dvh; }
+
+/* pressed-state feedback for tappables */
+.mo-tap { transition: transform .08s ease, opacity .12s ease; }
+.mo-tap:active { transform: scale(.97); opacity: .85; }
+
+/* sheet + view motion */
+@keyframes moSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes moFadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes moPopIn   { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes moRing    { 0% { transform: scale(.55); opacity: .55; } 100% { transform: scale(1.7); opacity: 0; } }
+@keyframes moMsgIn   { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.mo-msg-in { animation: moMsgIn .26s cubic-bezier(.32,.72,0,1) both; }
+
+/* honor reduced-motion: drop the entrance/looping animations */
+@media (prefers-reduced-motion: reduce) {
+  .mo-shell *,
+  .mo-msg-in {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* --scrim / --shadow-pop / --top-hi fallbacks (defined in style.css for the
+   desktop chrome; declared here too so the mobile module is safe if mounted
+   before those cascade — they are cheap and overridden by the real tokens). */
+:root {
+  --scrim: var(--modal-backdrop, rgba(0,0,0,.5));
+}
