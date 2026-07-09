@@ -1,4 +1,4 @@
-.PHONY: release release-patch release-minor release-major dev build test
+.PHONY: release release-patch release-minor release-major dev dev-browser forward forward-stop mobile mobile-stop build test
 
 # Auto-bump: make release-patch | release-minor | release-major
 # Manual:    make release v=1.0.0
@@ -31,6 +31,58 @@ version:
 
 dev:
 	wails dev
+
+# Dev server reachable in a plain browser (no native window traffic needed
+# for backend calls, still spawns the native app as it's the same process).
+dev-browser:
+	wails dev -browser
+
+FORWARD_PORT := 8081
+PID_DIR := /tmp/quant-dev
+
+# Wails' dev asset server binds 127.0.0.1:34115 only, so LAN/mobile clients
+# can't reach it directly. socat re-exposes it on all interfaces.
+forward:
+	@mkdir -p $(PID_DIR)
+	@if [ -f $(PID_DIR)/socat.pid ] && kill -0 $$(cat $(PID_DIR)/socat.pid) 2>/dev/null; then \
+		echo "forward already running (pid $$(cat $(PID_DIR)/socat.pid))"; \
+	else \
+		nohup socat TCP-LISTEN:$(FORWARD_PORT),fork,reuseaddr TCP:127.0.0.1:34115 \
+			> $(PID_DIR)/socat.log 2>&1 & echo $$! > $(PID_DIR)/socat.pid; \
+		echo "forwarding :$(FORWARD_PORT) -> :34115 (pid $$(cat $(PID_DIR)/socat.pid))"; \
+	fi
+	@echo "phone/browser url: http://$$(ipconfig getifaddr en0):$(FORWARD_PORT)"
+
+forward-stop:
+	@if [ -f $(PID_DIR)/socat.pid ]; then \
+		kill $$(cat $(PID_DIR)/socat.pid) 2>/dev/null; \
+		rm -f $(PID_DIR)/socat.pid; \
+		echo "forward stopped"; \
+	else \
+		echo "forward not running"; \
+	fi
+
+# Starts dev server + LAN forward together, for accessing quant from an
+# iPhone/other device on the same network (see forward target above).
+mobile:
+	@mkdir -p $(PID_DIR)
+	@if [ -f $(PID_DIR)/wails.pid ] && kill -0 $$(cat $(PID_DIR)/wails.pid) 2>/dev/null; then \
+		echo "wails dev already running (pid $$(cat $(PID_DIR)/wails.pid))"; \
+	else \
+		nohup wails dev -browser > $(PID_DIR)/wails.log 2>&1 & echo $$! > $(PID_DIR)/wails.pid; \
+		echo "wails dev starting (pid $$(cat $(PID_DIR)/wails.pid)), see $(PID_DIR)/wails.log"; \
+	fi
+	@sleep 3
+	@$(MAKE) forward
+
+mobile-stop: forward-stop
+	@if [ -f $(PID_DIR)/wails.pid ]; then \
+		kill $$(cat $(PID_DIR)/wails.pid) 2>/dev/null; \
+		rm -f $(PID_DIR)/wails.pid; \
+		echo "wails dev stopped"; \
+	else \
+		echo "wails dev not running"; \
+	fi
 
 build:
 	wails build

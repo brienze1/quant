@@ -415,6 +415,10 @@ export function TerminalPane({
       if (fitAddonRef.current && termRef.current) {
         try {
           fitAddonRef.current.fit();
+          // Shrinking (e.g. the on-screen keyboard opening) keeps the scroll
+          // offset fixed from the top of the buffer, so the visible rows can
+          // end up showing old output instead of following the latest line.
+          termRef.current.scrollToBottom();
         } catch {
           // Ignore fit errors during disposal.
         }
