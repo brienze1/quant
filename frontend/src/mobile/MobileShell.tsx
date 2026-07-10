@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTheme } from "../theme";
 import type { Accent } from "../theme/store";
 import { MindmapPane } from "../components/MindmapPane";
@@ -9,7 +9,7 @@ import { MoTopBar, MoTabBar } from "./Chrome";
 import { MoSheet, MoWideWrap } from "./Sheet";
 import { MoSessionDrawer } from "./SessionDrawer";
 import { MoMoreSheet, type MorePanel } from "./MoreSheet";
-import { VoiceMini, VoiceSheet, type TranscriptLine } from "./Voice";
+import { VoiceMini, VoiceSheet } from "./Voice";
 import type { VoiceState } from "./VoiceOrb";
 import { MoChat, MoTerminal, MoCrew, MoEmpty } from "./scripted";
 
@@ -19,22 +19,6 @@ const ACCENT_HEX: Record<Accent, string> = {
   blue: "#3a8bff",
 };
 
-// Scripted voice turn lines — used by the fallback turn machine below.
-const MO_USER_LINES = [
-  "kick off the auth-refactor across the crew and keep me posted.",
-  "what's blocking web-frontend right now?",
-  "answer its UI question — use the inline banner.",
-  "give me a status on the researcher.",
-  "push the branch once tests are green.",
-];
-const MO_QUANT_LINES = [
-  "on it — dispatched api-backend and the researcher, watching for reports.",
-  "web-frontend is waiting on the login-error UI decision; everything else is running.",
-  "told web-frontend to use the inline banner and wire in the new guard.",
-  "researcher is 70% through the token-rotation docs — two endpoints still undocumented.",
-  "12 auth tests pass — pushed feat/auth-refactor and pinged the crew.",
-];
-
 /**
  * MobileShell — the touch-native shell that mounts below 900px. It hosts a top
  * bar, a five-tab bottom bar (Chat / Terminal / Crew / Jobs / More), a sessions
@@ -42,7 +26,7 @@ const MO_QUANT_LINES = [
  * full-screen orb.
  *
  * Real desktop views are injected through `app.render*` slots (see MobileAppBag);
- * when a slot is absent a self-contained scripted fallback renders instead.
+ * when a slot is absent an honest empty state renders instead — never mock data.
  */
 export function MobileShell({ app }: { app: MobileAppBag }) {
   const { accent } = useTheme();
@@ -55,58 +39,21 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
 
   // voice
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [transcript, setTranscript] = useState<TranscriptLine[]>([
-    { who: "you", text: "kick off the auth-refactor across the crew and keep me posted." },
-    { who: "quant", text: "on it — dispatched api-backend and the researcher, watching for their reports." },
-  ]);
-  const uIdx = useRef(1);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const voiceState: VoiceState = "idle";
 
   const activeName = app.sessions.find((s) => s.id === app.activeSessionId)?.name ?? null;
 
   // Real voice runtime: when the host provides `renderVoice` it returns the REAL
   // desktop <VoicePane/> (audio service + voice bridge + live orb/transcript) for
-  // the pinned session; the shell renders it full-bleed in the sheet and the
-  // scripted turn machine below is unused. The scripted machine + timers remain
-  // ONLY as the stand-alone fallback (renderVoice absent, e.g. tests / no session).
+  // the pinned session; the shell renders it full-bleed in the sheet. When it's
+  // absent (no session / tests) the sheet shows an honest empty state — no mock.
   const voiceBody: ReactNode = app.renderVoice ? app.renderVoice() : null;
 
-  // Scripted fallback turn machine (used only when there's no real voice body).
-  const micTap = () => {
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-    if (voiceState === "idle" || voiceState === "speaking") {
-      setVoiceState("listening");
-    } else if (voiceState === "listening") {
-      const u = MO_USER_LINES[uIdx.current % MO_USER_LINES.length];
-      const q = MO_QUANT_LINES[uIdx.current % MO_QUANT_LINES.length];
-      uIdx.current++;
-      setTranscript((tr) => [...tr, { who: "you", text: u }]);
-      setVoiceState("thinking");
-      timers.current.push(
-        setTimeout(() => {
-          setVoiceState("speaking");
-          setTranscript((tr) => [...tr, { who: "quant", text: q }]);
-          timers.current.push(setTimeout(() => setVoiceState("idle"), 3400));
-        }, 900),
-      );
-    }
-  };
-  // Open the full-screen voice sheet. Pin the active session as the voice session
-  // (so renderVoice's <VoicePane/> has a valid session to mount on); only advance
-  // the scripted state when there's no real voice body.
+  // Open the full-screen voice sheet, pinning the active session so renderVoice's
+  // <VoicePane/> has a valid session to mount on.
   const expandVoice = () => {
     app.onStartVoice?.();
     setVoiceOpen(true);
-    if (!voiceBody && voiceState === "idle") setVoiceState("listening");
-  };
-  // VoiceMini mic tap: with real voice, pin + open the sheet (VoicePane owns the
-  // mic); otherwise drive the scripted machine in place.
-  const miniMic = () => {
-    if (app.renderVoice) expandVoice();
-    else micTap();
   };
 
   const titleFor =
@@ -122,7 +69,7 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
   let body: ReactNode;
   if (tab === "chat") body = app.renderChat ? app.renderChat() : <MoChat />;
   else if (tab === "terminal") body = app.renderTerminal ? app.renderTerminal() : <MoTerminal />;
-  else if (tab === "crew") body = app.renderCrew ? app.renderCrew() : <MoCrew sessions={app.sessions} />;
+  else if (tab === "crew") body = app.renderCrew ? app.renderCrew() : <MoCrew />;
   else if (tab === "jobs")
     body = app.renderJobs ? (
       <MoWideWrap>{app.renderJobs()}</MoWideWrap>
@@ -162,7 +109,7 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
         {body}
       </div>
 
-      {!voiceOpen && <VoiceMini state={voiceState} accentHex={accentHex} onExpand={expandVoice} onMic={miniMic} />}
+      {!voiceOpen && <VoiceMini state={voiceState} accentHex={accentHex} onExpand={expandVoice} onMic={expandVoice} />}
       <MoTabBar
         tab={more ? "more" : tab}
         onTab={(k) => {
@@ -212,8 +159,6 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
         onClose={() => setVoiceOpen(false)}
         state={voiceState}
         accentHex={accentHex}
-        transcript={transcript}
-        onMic={micTap}
         subtitle={activeName ? `quant · ${activeName}` : "quant"}
         body={voiceBody}
       />

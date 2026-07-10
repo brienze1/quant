@@ -1,9 +1,7 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Icon } from "../components/Icon";
 import { VoiceOrb, type VoiceState } from "./VoiceOrb";
 import { moBuzz } from "./primitives";
-
-export type TranscriptLine = { who: "you" | "quant"; text: string };
 
 export const VOICE_STATE_META: Record<VoiceState, { label: string; dot: string }> = {
   idle: { label: "tap to speak", dot: "var(--fg-4)" },
@@ -97,17 +95,12 @@ export function VoiceMini({
 /**
  * Full-screen voice sheet. When `body` is provided (the REAL <VoicePane/>), it is
  * rendered full-bleed under the header — VoicePane brings its own orb, live
- * transcript and mic controls, so the scripted orb/transcript/controls below are
- * skipped. When `body` is absent, the self-contained scripted orb + transcript +
- * controls render as a stand-alone fallback.
+ * transcript and mic controls. When `body` is absent (no active session), an
+ * honest empty state renders instead — never mock content.
  */
 export function VoiceSheet({
   open,
   onClose,
-  state,
-  accentHex,
-  transcript,
-  onMic,
   subtitle,
   body,
 }: {
@@ -115,20 +108,10 @@ export function VoiceSheet({
   onClose: () => void;
   state: VoiceState;
   accentHex: string;
-  transcript: TranscriptLine[];
-  onMic: () => void;
   subtitle?: string;
   body?: ReactNode;
 }) {
-  const scRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = scRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [transcript, open]);
   if (!open) return null;
-  const meta = VOICE_STATE_META[state] || VOICE_STATE_META.idle;
-  const live = state === "listening" || state === "speaking";
-  const orbSize = Math.min(260, (typeof innerWidth !== "undefined" ? innerWidth : 360) * 0.62);
   return (
     <div
       style={{
@@ -180,149 +163,44 @@ export function VoiceSheet({
           <Icon name="chevronDown" size={20} />
         </button>
       </div>
-      {/* REAL voice pane (full-bleed): VoicePane owns its orb/transcript/controls */}
+      {/* REAL voice pane (full-bleed): VoicePane owns its orb/transcript/controls.
+          When absent (no active session), show an honest empty state — no mock. */}
       {body ? (
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>{body}</div>
       ) : (
-      <>
-      {/* orb */}
-      <div
-        style={{
-          flex: "2 1 0",
-          minHeight: 200,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 14,
-          position: "relative",
-        }}
-      >
-        <VoiceOrb state={state} accent={accentHex} size={orbSize} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: "24px",
+            textAlign: "center",
+          }}
+        >
           <span
             style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: meta.dot,
-              boxShadow: live ? `0 0 8px ${meta.dot}` : "none",
+              width: 52,
+              height: 52,
+              borderRadius: 14,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--panel-2)",
+              border: "1px solid var(--border)",
+              color: "var(--fg-3)",
             }}
-          />
-          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg)", textTransform: "capitalize" }}>
-            {meta.label}
+          >
+            <Icon name="mic" size={24} />
           </span>
-        </div>
-      </div>
-      {/* transcript */}
-      <div
-        ref={scRef}
-        className="mo-scroll"
-        style={{
-          flex: "3 1 0",
-          minHeight: 0,
-          overflowY: "auto",
-          padding: "8px 18px 6px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 13,
-        }}
-      >
-        {transcript.map((l, i) => (
-          <div key={i} className="mo-msg-in" style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <span
-              className="mono"
-              style={{
-                fontSize: 9.5,
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: l.who === "you" ? "var(--accent)" : "var(--info)",
-              }}
-            >
-              {l.who}
-            </span>
-            <span style={{ fontSize: 15, lineHeight: 1.5, color: l.who === "you" ? "var(--fg)" : "var(--fg-2)" }}>
-              {l.text}
-            </span>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--fg)" }}>No session for voice</div>
+          <div style={{ fontSize: 12.5, color: "var(--fg-4)", lineHeight: 1.5, maxWidth: 260 }}>
+            Open a session from ☰ first — voice attaches to the active session.
           </div>
-        ))}
-      </div>
-      {/* controls */}
-      <div
-        style={{
-          flex: "none",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 26,
-          padding: "12px 0 calc(20px + var(--safe-b))",
-        }}
-      >
-        <button
-          className="mo-tap"
-          aria-label="Keyboard"
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: 999,
-            border: "1px solid var(--border)",
-            cursor: "pointer",
-            background: "var(--panel-2)",
-            color: "var(--fg-2)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Icon name="keyboard" size={20} />
-        </button>
-        <button
-          onClick={() => {
-            moBuzz(12);
-            onMic();
-          }}
-          className="mo-tap"
-          aria-label="Talk"
-          style={{
-            width: 78,
-            height: 78,
-            borderRadius: 999,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: live ? "var(--accent)" : "var(--panel-2)",
-            color: live ? "var(--on-accent)" : "var(--fg)",
-            border: live ? "none" : "1px solid var(--border)",
-            boxShadow: live
-              ? "0 0 0 6px var(--accent-soft), 0 8px 24px -6px var(--accent)"
-              : "var(--shadow-panel)",
-          }}
-        >
-          <Icon name={live ? "stop" : "mic"} size={30} />
-        </button>
-        <button
-          className="mo-tap"
-          aria-label="End"
-          onClick={onClose}
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: 999,
-            border: "1px solid color-mix(in srgb, var(--danger) 40%, var(--border))",
-            cursor: "pointer",
-            background: "color-mix(in srgb, var(--danger) 12%, transparent)",
-            color: "var(--danger)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Icon name="x" size={20} />
-        </button>
-      </div>
-      </>
+        </div>
       )}
     </div>
   );
