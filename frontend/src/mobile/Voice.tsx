@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { Icon } from "../components/Icon";
 import { VoiceOrb, type VoiceState } from "./VoiceOrb";
+import RealVoiceOrb from "../components/VoiceOrb";
 import { moBuzz } from "./primitives";
 
 export const VOICE_STATE_META: Record<VoiceState, { label: string; dot: string }> = {
@@ -16,11 +17,14 @@ export function VoiceMini({
   accentHex,
   onExpand,
   onMic,
+  active,
 }: {
   state: VoiceState;
   accentHex: string;
   onExpand: () => void;
   onMic: () => void;
+  /** When true (a voice session is attached), show the real WebGL orb. */
+  active?: boolean;
 }) {
   const meta = VOICE_STATE_META[state] || VOICE_STATE_META.idle;
   const live = state === "listening" || state === "speaking";
@@ -44,7 +48,11 @@ export function VoiceMini({
       }}
     >
       <div style={{ width: 30, height: 30, flex: "none", position: "relative" }}>
-        <VoiceOrb state={state} accent={accentHex} size={30} />
+        {active ? (
+          <RealVoiceOrb state={state} size={30} />
+        ) : (
+          <VoiceOrb state={state} accent={accentHex} size={30} />
+        )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)", letterSpacing: "-0.01em" }}>Voice</div>
@@ -139,7 +147,7 @@ export function VoiceSheet({
               fontWeight: 600,
             }}
           >
-            voice · jarvis
+            voice
           </div>
           <div style={{ fontSize: 13, color: "var(--fg-2)" }}>{subtitle || "quant"}</div>
         </div>

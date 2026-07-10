@@ -8,6 +8,7 @@ import { isMac } from "../os";
 import { Icon, type IconName } from "./Icon";
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";
+import { useIsMobile } from "../mobile/useIsMobile";
 
 type SettingsTab = "general" | "git" | "sessions" | "storage" | "terminal" | "claude" | "voice" | "remote" | "themes" | "keybindings";
 
@@ -41,6 +42,7 @@ const isRemote = typeof window !== "undefined" && (window as { __quantRemote?: b
 const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((n) => !(isRemote && n.key === "remote"));
 
 export function Settings({ repos, onBack }: Props) {
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState<SettingsTab>("general");
   const [config, setConfig] = useState<Config | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +91,7 @@ export function Settings({ repos, onBack }: Props) {
   const activeLabel = NAV_ITEMS.find((n) => n.key === tab)?.label;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", background: "var(--bg)" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", background: "var(--bg)", ...(isMobile ? ({ flexDirection: "column" } as React.CSSProperties) : {}) }}>
       {/* Drop the trailing divider on the last row of every settings panel so it
           sits flush against the panel's rounded bottom edge (spec `last` prop). */}
       <style>{`.q-settings-panel > *:last-child { border-bottom: none !important; }`}</style>
@@ -102,6 +104,9 @@ export function Settings({ repos, onBack }: Props) {
           flexDirection: "column",
           borderRight: "1px solid var(--border)",
           background: "var(--panel)",
+          ...(isMobile
+            ? ({ width: "100%", borderRight: "none", borderBottom: "1px solid var(--border)" } as React.CSSProperties)
+            : {}),
         }}
       >
         {/* Header — this overlay covers the window's title bar, so on macOS pad
@@ -125,13 +130,34 @@ export function Settings({ repos, onBack }: Props) {
         </div>
 
         {/* Nav items */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: 10,
+            ...(isMobile
+              ? ({
+                  flex: "none",
+                  display: "flex",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  height: 52,
+                  padding: "6px 10px",
+                  overflowY: "hidden",
+                  overflowX: "auto",
+                  whiteSpace: "nowrap",
+                } as React.CSSProperties)
+              : {}),
+          }}
+        >
           {VISIBLE_NAV_ITEMS.map((item) => (
             <NavItem
               key={item.key}
               icon={item.icon}
               label={item.label}
               active={tab === item.key}
+              mobile={isMobile}
               onClick={() => setTab(item.key)}
             />
           ))}
@@ -139,7 +165,7 @@ export function Settings({ repos, onBack }: Props) {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", ...(isMobile ? ({ minHeight: 0 } as React.CSSProperties) : {}) }}>
         {/* Sticky header */}
         <div
           style={{
@@ -147,7 +173,7 @@ export function Settings({ repos, onBack }: Props) {
             alignItems: "center",
             gap: 12,
             height: 56,
-            padding: "0 32px",
+            padding: isMobile ? "0 16px" : "0 32px",
             borderBottom: "1px solid var(--border-2)",
             position: "sticky",
             top: 0,
@@ -181,7 +207,7 @@ export function Settings({ repos, onBack }: Props) {
         )}
 
         {/* Scroll content */}
-        <div style={{ maxWidth: 880, padding: "28px 32px 60px" }}>
+        <div style={{ maxWidth: 880, padding: "28px 32px 60px", ...(isMobile ? ({ maxWidth: "none", width: "100%", boxSizing: "border-box", padding: "16px 14px 60px" } as React.CSSProperties) : {}) }}>
           {tab === "general" && <GeneralTab config={config} update={update} />}
           {tab === "keybindings" && <KeybindingsTab />}
           {tab === "themes" && <ThemeSettings />}
@@ -198,7 +224,7 @@ export function Settings({ repos, onBack }: Props) {
   );
 }
 
-function NavItem({ icon, label, active, onClick }: { icon: IconName; label: string; active: boolean; onClick: () => void }) {
+function NavItem({ icon, label, active, onClick, mobile }: { icon: IconName; label: string; active: boolean; onClick: () => void; mobile?: boolean }) {
   const [hover, setHover] = useState(false);
   return (
     <button
@@ -220,6 +246,7 @@ function NavItem({ icon, label, active, onClick }: { icon: IconName; label: stri
         fontWeight: active ? 600 : 500,
         background: active ? "var(--accent-soft)" : hover ? "var(--hover)" : "transparent",
         color: active ? "var(--accent)" : "var(--fg-2)",
+        ...(mobile ? ({ width: "auto", flex: "none", gap: 7, whiteSpace: "nowrap" } as React.CSSProperties) : {}),
       }}
     >
       <Icon name={icon} size={15} color={active ? "var(--accent)" : "var(--fg-3)"} />
@@ -319,6 +346,7 @@ function UpdateChecker() {
 }
 
 function GeneralTab({ config, update }: TabProps) {
+  const isMobile = useIsMobile();
   const [newName, setNewName] = useState("");
   const [newCommand, setNewCommand] = useState("");
 
@@ -374,7 +402,7 @@ function GeneralTab({ config, update }: TabProps) {
             }
           />
         ))}
-        <div style={{ display: "flex", gap: 8, padding: 14 }}>
+        <div style={{ display: "flex", gap: 8, padding: 14, ...(isMobile ? ({ flexDirection: "column", alignItems: "stretch" } as React.CSSProperties) : {}) }}>
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -393,6 +421,7 @@ function GeneralTab({ config, update }: TabProps) {
               color: "var(--fg)",
               fontSize: 12,
               outline: "none",
+              ...(isMobile ? ({ width: "100%", maxWidth: "100%", fontSize: 16 } as React.CSSProperties) : {}),
             }}
           />
           <input
@@ -414,6 +443,7 @@ function GeneralTab({ config, update }: TabProps) {
               color: "var(--accent)",
               fontSize: 12,
               outline: "none",
+              ...(isMobile ? ({ width: "100%", maxWidth: "100%", fontSize: 16 } as React.CSSProperties) : {}),
             }}
           />
           <button
@@ -441,6 +471,7 @@ function GeneralTab({ config, update }: TabProps) {
 }
 
 function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
+  const isMobile = useIsMobile();
   const [newRepo, setNewRepo] = useState("");
   const [newBranch, setNewBranch] = useState("");
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
@@ -514,8 +545,8 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
         <div style={{ padding: 14 }}>
           <OverrideTableShell colA="repository" colB="pull branch" entries={Object.entries(config.branchOverrides)} onRemove={removeOverride} />
           {/* Add override row */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-            <div ref={repoDropdownRef} style={{ position: "relative", width: 200 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, ...(isMobile ? ({ flexDirection: "column", alignItems: "stretch" } as React.CSSProperties) : {}) }}>
+            <div ref={repoDropdownRef} style={{ position: "relative", width: 200, ...(isMobile ? ({ width: "100%" } as React.CSSProperties) : {}) }}>
               <button
                 onClick={() => setRepoDropdownOpen((prev) => !prev)}
                 className="mono"
@@ -531,6 +562,7 @@ function GitTab({ config, update, repos }: TabProps & { repos: Repo[] }) {
                   padding: "0 10px",
                   textAlign: "left",
                   cursor: "pointer",
+                  ...(isMobile ? ({ width: "100%", maxWidth: "100%", fontSize: 16 } as React.CSSProperties) : {}),
                 }}
               >
                 {newRepo || "select repo"}
@@ -578,6 +610,7 @@ function OverrideTableShell({
   entries: [string, string][];
   onRemove: (key: string) => void;
 }) {
+  const isMobile = useIsMobile();
   return (
     <div style={{ border: "1px solid var(--border-2)", borderRadius: 9, overflow: "hidden" }}>
       <div style={{ display: "flex", height: 32, background: "var(--panel-3)", borderBottom: "1px solid var(--border-2)" }}>
@@ -589,11 +622,11 @@ function OverrideTableShell({
         <div className="mono" style={{ padding: "10px 12px", fontSize: 11, color: "var(--fg-4)" }}>// none configured</div>
       )}
       {entries.map(([k, v]) => (
-        <div key={k} style={{ display: "flex", height: 36, borderBottom: "1px solid var(--border-2)" }}>
-          <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 12px", fontSize: 11, color: "var(--fg)" }}>{k}</div>
-          <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 12px", fontSize: 11, color: "var(--accent)" }}>{v}</div>
-          <div style={{ width: 60, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <button onClick={() => onRemove(k)} style={{ color: "var(--danger)", fontSize: 12, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }}>x</button>
+        <div key={k} style={{ display: "flex", height: 36, borderBottom: "1px solid var(--border-2)", ...(isMobile ? ({ flexDirection: "column", height: "auto", alignItems: "stretch", padding: "8px 0" } as React.CSSProperties) : {}) }}>
+          <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 12px", fontSize: 11, color: "var(--fg)", wordBreak: "break-all", ...(isMobile ? ({ flex: "none", width: "100%", boxSizing: "border-box", minHeight: 26 } as React.CSSProperties) : {}) }}>{k}</div>
+          <div className="mono" style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 12px", fontSize: 11, color: "var(--accent)", wordBreak: "break-all", ...(isMobile ? ({ flex: "none", width: "100%", boxSizing: "border-box", minHeight: 26 } as React.CSSProperties) : {}) }}>{v}</div>
+          <div style={{ width: 60, display: "flex", alignItems: "center", justifyContent: "center", ...(isMobile ? ({ width: "100%", justifyContent: "flex-start", padding: "0 12px" } as React.CSSProperties) : {}) }}>
+            <button onClick={() => onRemove(k)} style={{ color: "var(--danger)", fontSize: 12, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }}>{isMobile ? "x remove" : "x"}</button>
           </div>
         </div>
       ))}
@@ -856,6 +889,7 @@ function TerminalTab({ config, update }: TabProps) {
 }
 
 function ClaudeTab({ config, update }: TabProps) {
+  const isMobile = useIsMobile();
   const [newPath, setNewPath] = useState("");
   const [newCommand, setNewCommand] = useState("");
 
@@ -939,6 +973,7 @@ function ClaudeTab({ config, update }: TabProps) {
               color: "var(--fg)",
               fontSize: 12,
               lineHeight: 1.5,
+              ...(isMobile ? ({ fontSize: 16 } as React.CSSProperties) : {}),
             }}
             onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
@@ -968,7 +1003,7 @@ function ClaudeTab({ config, update }: TabProps) {
       <Section title="per-path command overrides" description="use a different claude command for sessions whose path contains the given substring">
         <div style={{ padding: 14 }}>
           <OverrideTableShell colA="path contains" colB="command" entries={Object.entries(commandOverrides)} onRemove={removeCommandOverride} />
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, ...(isMobile ? ({ flexDirection: "column", alignItems: "stretch" } as React.CSSProperties) : {}) }}>
             <TextInput value={newPath} onChange={setNewPath} width={200} placeholder="e.g. /work/projects/" />
             <TextInput value={newCommand} onChange={setNewCommand} width={160} placeholder="e.g. claude-bl" />
             <button
@@ -1244,13 +1279,14 @@ function DangerSection({ children }: { children: React.ReactNode }) {
 }
 
 function SettingRow({ label, description, right }: { label: string; description: string; right: React.ReactNode }) {
+  const isMobile = useIsMobile();
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "13px 16px", borderBottom: "1px solid var(--border-2)" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "13px 16px", borderBottom: "1px solid var(--border-2)", ...(isMobile ? ({ flexDirection: "column", alignItems: "stretch", gap: 10 } as React.CSSProperties) : {}) }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)", letterSpacing: "-0.01em" }}>{label}</div>
         <div style={{ fontSize: 11.5, color: "var(--fg-3)", marginTop: 2, lineHeight: 1.4 }}>{description}</div>
       </div>
-      <div style={{ flex: "none" }}>{right}</div>
+      <div style={{ flex: "none", ...(isMobile ? ({ width: "100%" } as React.CSSProperties) : {}) }}>{right}</div>
     </div>
   );
 }
@@ -1294,6 +1330,7 @@ function TextInput({
   width: number;
   placeholder?: string;
 }) {
+  const isMobile = useIsMobile();
   const [local, setLocal] = useState(value);
   useEffect(() => setLocal(value), [value]);
 
@@ -1318,6 +1355,7 @@ function TextInput({
         color: "var(--fg)",
         fontSize: 12,
         fontFamily: "var(--mono)",
+        ...(isMobile ? ({ width: "100%", maxWidth: "100%", fontSize: 16 } as React.CSSProperties) : {}),
       }}
       onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
       onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
@@ -1343,6 +1381,7 @@ function ComboInput({
   options: string[];
   listId: string;
 }) {
+  const isMobile = useIsMobile();
   const [local, setLocal] = useState(value);
   useEffect(() => setLocal(value), [value]);
 
@@ -1369,6 +1408,7 @@ function ComboInput({
           color: "var(--fg)",
           fontSize: 12,
           fontFamily: "var(--mono)",
+          ...(isMobile ? ({ width: "100%", maxWidth: "100%", fontSize: 16 } as React.CSSProperties) : {}),
         }}
         onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
         onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
@@ -1397,6 +1437,7 @@ function NumberInput({
   max?: number;
   disabled?: boolean;
 }) {
+  const isMobile = useIsMobile();
   const [local, setLocal] = useState(String(value));
   useEffect(() => setLocal(String(value)), [value]);
 
@@ -1432,6 +1473,7 @@ function NumberInput({
         fontSize: 12,
         fontFamily: "var(--mono)",
         opacity: disabled ? 0.5 : 1,
+        ...(isMobile ? ({ width: "100%", maxWidth: "100%", fontSize: 16 } as React.CSSProperties) : {}),
       }}
       onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
       onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
@@ -1448,6 +1490,7 @@ function FloatInput({
   onChange: (v: number) => void;
   width: number;
 }) {
+  const isMobile = useIsMobile();
   const [local, setLocal] = useState(String(value));
   useEffect(() => setLocal(String(value)), [value]);
 
@@ -1481,6 +1524,7 @@ function FloatInput({
         color: "var(--fg)",
         fontSize: 12,
         fontFamily: "var(--mono)",
+        ...(isMobile ? ({ width: "100%", maxWidth: "100%", fontSize: 16 } as React.CSSProperties) : {}),
       }}
       onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
       onBlurCapture={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}
@@ -1499,6 +1543,7 @@ function SelectInput({
   onChange: (v: string) => void;
   width: number;
 }) {
+  const isMobile = useIsMobile();
   return (
     <select
       value={value}
@@ -1513,6 +1558,7 @@ function SelectInput({
         borderRadius: 8,
         padding: "6px 9px",
         cursor: "pointer",
+        ...(isMobile ? ({ width: "100%", maxWidth: "100%", boxSizing: "border-box", fontSize: 16 } as React.CSSProperties) : {}),
       }}
     >
       {options.map((opt) => (
@@ -1805,6 +1851,7 @@ function formatBytes(n: number): string {
 }
 
 function VoiceTab({ config, update }: TabProps) {
+  const isMobile = useIsMobile();
   // Hydrate from config, falling back to defaults so the tab renders sensibly
   // for a brand-new / legacy config without a voice sub-object. Voice is
   // local-only, so the provider is pinned to "local" — this normalizes any
@@ -2110,6 +2157,7 @@ function VoiceTab({ config, update }: TabProps) {
               fontSize: 12,
               lineHeight: 1.5,
               outline: "none",
+              ...(isMobile ? ({ fontSize: 16 } as React.CSSProperties) : {}),
             }}
             onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-2)")}

@@ -153,6 +153,39 @@ export function TerminalPane({
       });
     }
 
+    // Touch scrolling: iOS never fires `wheel`, and xterm's scrollable
+    // `.xterm-viewport` is a *sibling* of the touched `.xterm-screen`, so native
+    // touch-panning finds no scrollable ancestor. Translate finger drags into
+    // `scrollLines` on the terminal directly. Attach to `term.element` (the
+    // `.xterm` div that contains `.xterm-screen`) so the listeners are torn down
+    // with the terminal on dispose, same as the wheel listener above.
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouch && term.element) {
+      const touchTarget = term.element;
+      let lastY = 0;
+      const onTouchStart = (e: TouchEvent) => {
+        lastY = e.touches[0].clientY;
+      };
+      const onTouchMove = (e: TouchEvent) => {
+        const y = e.touches[0].clientY;
+        const dy = y - lastY;
+        const rowPx = term.element ? term.element.clientHeight / term.rows : 18;
+        // Finger DOWN (dy > 0) reveals earlier scrollback (scroll up).
+        const rows = Math.trunc(-dy / rowPx);
+        if (rows !== 0) {
+          term.scrollLines(rows);
+          lastY = y;
+        }
+        e.preventDefault();
+      };
+      const onTouchEnd = () => {
+        lastY = 0;
+      };
+      touchTarget.addEventListener('touchstart', onTouchStart, { passive: true });
+      touchTarget.addEventListener('touchmove', onTouchMove, { passive: false });
+      touchTarget.addEventListener('touchend', onTouchEnd, { passive: true });
+    }
+
     return term;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isArchived, termConfig, tc]);

@@ -27,7 +27,10 @@ import type {
   VoiceTransport,
 } from "./types";
 
-const DEFAULT_VAD_ASSET_PATH = "/vad/";
+// Derive the VAD asset path from Vite's base URL so it resolves correctly under
+// a non-root base (the remote PWA is served from `/quant-remote/`, where a
+// root-absolute `/vad/` would 404). Desktop's base is `/`, so this stays `/vad/`.
+const DEFAULT_VAD_ASSET_PATH = `${import.meta.env.BASE_URL}vad/`;
 // Overall cap on a single listen() turn (no speech-end within this window →
 // timeout). Generous so a long, paused explanation isn't cut off by the ceiling;
 // the redemption window (above) handles normal turn-taking well before this.

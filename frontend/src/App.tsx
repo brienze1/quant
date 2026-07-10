@@ -31,6 +31,8 @@ import { CrewPane } from "./components/CrewPane";
 import { FilesPanel } from "./components/FilesPanel";
 import { MobileShell, useIsMobile } from "./mobile";
 import type { MobileAppBag } from "./mobile";
+import { MoJobs } from "./mobile/MoJobs";
+import { MoKeyBar } from "./mobile/MoKeyBar";
 import {
   fileBasename,
   isFileTabId,
@@ -172,15 +174,18 @@ function MobileChatPane({
 }) {
   const [autoScroll, setAutoScroll] = useState(true);
   return (
-    <TerminalPane
-      session={session}
-      isArchived={!!session.archivedAt}
-      onStart={onStart}
-      onResume={onResume}
-      termConfig={termConfig}
-      autoScroll={autoScroll}
-      onAutoScrollChange={setAutoScroll}
-    />
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <TerminalPane
+        session={session}
+        isArchived={!!session.archivedAt}
+        onStart={onStart}
+        onResume={onResume}
+        termConfig={termConfig}
+        autoScroll={autoScroll}
+        onAutoScrollChange={setAutoScroll}
+      />
+      <MoKeyBar sessionId={session.id} />
+    </div>
   );
 }
 
@@ -250,15 +255,18 @@ function MobileTerminalPane({
   }
 
   return (
-    <TerminalPane
-      session={embeddedSession}
-      isArchived={false}
-      onStart={onStart}
-      onResume={onResume}
-      termConfig={termConfig}
-      autoScroll={autoScroll}
-      onAutoScrollChange={setAutoScroll}
-    />
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <TerminalPane
+        session={embeddedSession}
+        isArchived={false}
+        onStart={onStart}
+        onResume={onResume}
+        termConfig={termConfig}
+        autoScroll={autoScroll}
+        onAutoScrollChange={setAutoScroll}
+      />
+      <MoKeyBar sessionId={embeddedSession.id} />
+    </div>
   );
 }
 
@@ -3085,6 +3093,13 @@ function App() {
       tasks: mobileTasks,
       sessions: mobileSessions,
       activeSessionId: activeSession?.id ?? null,
+      crewBadge: mobileCrewSupervisor
+        ? (workersBySupervisor[mobileCrewSupervisor.id]?.length ?? 0)
+        : 0,
+      workspaces,
+      activeWorkspaceId,
+      onSwitchWorkspace: setActiveWorkspaceId,
+      voiceActive: voiceSessionId != null,
       onAction: (action, payload) => {
         switch (action) {
           case "newRepo":
@@ -3121,15 +3136,12 @@ function App() {
       openPalette: () => setCommandPaletteOpen(true),
       openSettings: () => setView("settings"),
       renderJobs: () => (
-        <JobsView
+        <MoJobs
           jobs={filteredJobs}
-          agents={filteredAgents}
-          jobGroups={jobGroups}
-          activeWorkspaceId={activeWorkspaceId}
+          groups={jobGroups}
           onCreateJob={() => setModal({ type: "createJob" })}
           onEditJob={(job) => setModal({ type: "editJob", job })}
-          onRefreshJobs={fetchJobs}
-          onRefreshJobGroups={fetchJobGroups}
+          onRefresh={fetchJobs}
         />
       ),
       renderAgents: () => (

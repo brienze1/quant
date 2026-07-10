@@ -46,6 +46,7 @@
 @keyframes moPopIn   { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes moRing    { 0% { transform: scale(.55); opacity: .55; } 100% { transform: scale(1.7); opacity: 0; } }
 @keyframes moMsgIn   { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes moSpin    { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .mo-msg-in { animation: moMsgIn .26s cubic-bezier(.32,.72,0,1) both; }
 
 /* honor reduced-motion: drop the entrance/looping animations */

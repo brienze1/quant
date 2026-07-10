@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Repo, Task, Session } from "../types";
+import type { Repo, Task, Session, Workspace } from "../types";
 
 /** The five bottom-bar destinations. "more" opens a sheet, not a body view. */
 export type MobileTab = "chat" | "terminal" | "crew" | "jobs" | "more";
@@ -39,6 +39,17 @@ export interface MobileAppBag {
   sessions: Session[];
   /** id of the session currently focused in the host app, or null. */
   activeSessionId: string | null;
+
+  /** Real crew worker count for the active supervisor (0 = no badge). */
+  crewBadge?: number;
+  /** All workspaces, for the mobile workspace switcher in the More sheet. */
+  workspaces: Workspace[];
+  /** id of the currently active workspace. */
+  activeWorkspaceId: string;
+  /** Switch the active workspace (mirrors the desktop switcher). */
+  onSwitchWorkspace: (id: string) => void;
+  /** True once a voice session is attached — drives the real orb in the mini-player. */
+  voiceActive?: boolean;
 
   /** Host action dispatcher (new repo/session, rename/archive/delete session). */
   onAction: (action: MobileAction, payload?: Record<string, unknown>) => void;

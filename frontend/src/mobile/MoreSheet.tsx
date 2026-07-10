@@ -3,6 +3,8 @@ import { Icon, type IconName } from "../components/Icon";
 import { useTheme } from "../theme";
 import type { Accent } from "../theme/store";
 import { MoSheet } from "./Sheet";
+import { moBuzz } from "./primitives";
+import type { Workspace } from "../types";
 
 const ACCENT_HEX: Record<Accent, string> = {
   emerald: "#2ed3a0",
@@ -57,12 +59,18 @@ export function MoMoreSheet({
   onOpenPanel,
   onSettings,
   onPalette,
+  workspaces,
+  activeWorkspaceId,
+  onSwitchWorkspace,
 }: {
   open: boolean;
   onClose: () => void;
   onOpenPanel: (panel: MorePanel) => void;
   onSettings: () => void;
   onPalette: () => void;
+  workspaces: Workspace[];
+  activeWorkspaceId: string;
+  onSwitchWorkspace: (id: string) => void;
 }) {
   const { theme, accent, setAccent, density, setDensity, toggleThemeType } = useTheme();
   const isDark = theme.type !== "light";
@@ -110,6 +118,41 @@ export function MoMoreSheet({
           {divider}
           <MoreRow icon="users" label="Agents" sub="Definitions & roster" onClick={() => onOpenPanel("agents")} />
         </div>
+
+        {workspaces.length > 1 && (
+          <>
+            <div style={{ height: 12 }} />
+            <div style={{ padding: "0 4px 6px" }}>
+              <span className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--fg-3)", fontWeight: 600 }}>Workspace</span>
+            </div>
+            <div style={{ borderRadius: 14, overflow: "hidden", border: "1px solid var(--border-2)", background: "var(--panel-2)" }}>
+              {workspaces.map((ws, i) => {
+                const active = ws.id === activeWorkspaceId;
+                return (
+                  <div key={ws.id}>
+                    {i > 0 && divider}
+                    <button
+                      onClick={() => {
+                        moBuzz();
+                        if (!active) onSwitchWorkspace(ws.id);
+                        onClose();
+                      }}
+                      className="mo-tap"
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "13px 16px", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" }}
+                    >
+                      <span style={{ width: 34, height: 34, flex: "none", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", background: active ? "var(--accent-soft)" : "var(--panel-3)", color: active ? "var(--accent)" : "var(--fg-2)" }}>
+                        <Icon name="layout" size={17} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: "var(--fg)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{ws.name}</span>
+                      {active && <Icon name="check" size={18} color="var(--accent)" />}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
         <div style={{ height: 12 }} />
         <div style={{ borderRadius: 14, overflow: "hidden", border: "1px solid var(--border-2)", background: "var(--panel-2)" }}>
           <MoreRow icon="settings" label="Settings" onClick={() => { onClose(); onSettings(); }} />

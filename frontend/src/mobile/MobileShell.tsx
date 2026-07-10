@@ -63,7 +63,7 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
         ? "crew"
         : tab === "jobs"
           ? "jobs"
-          : activeName || "jarvis";
+          : activeName || "quant";
 
   // tab body (real injected view, else scripted fallback)
   let body: ReactNode;
@@ -72,7 +72,7 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
   else if (tab === "crew") body = app.renderCrew ? app.renderCrew() : <MoCrew />;
   else if (tab === "jobs")
     body = app.renderJobs ? (
-      <MoWideWrap>{app.renderJobs()}</MoWideWrap>
+      app.renderJobs()
     ) : (
       <MoEmpty icon="list" label="Jobs" sub="Connect the host JobsView via app.renderJobs to see scheduled jobs here." />
     );
@@ -109,7 +109,7 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
         {body}
       </div>
 
-      {!voiceOpen && <VoiceMini state={voiceState} accentHex={accentHex} onExpand={expandVoice} onMic={expandVoice} />}
+      {!voiceOpen && <VoiceMini state={voiceState} accentHex={accentHex} onExpand={expandVoice} onMic={expandVoice} active={app.voiceActive} />}
       <MoTabBar
         tab={more ? "more" : tab}
         onTab={(k) => {
@@ -119,7 +119,7 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
             setTab(k);
           }
         }}
-        crewBadge={2}
+        crewBadge={app.crewBadge ?? 0}
       />
 
       {/* overlays */}
@@ -141,6 +141,9 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
         }}
         onSettings={app.openSettings}
         onPalette={app.openPalette}
+        workspaces={app.workspaces}
+        activeWorkspaceId={app.activeWorkspaceId}
+        onSwitchWorkspace={app.onSwitchWorkspace}
       />
 
       {/* panel sheets from More */}
