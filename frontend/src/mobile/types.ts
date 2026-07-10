@@ -50,6 +50,14 @@ export interface MobileAppBag {
   onSwitchWorkspace: (id: string) => void;
   /** True once a voice session is attached — drives the real orb in the mini-player. */
   voiceActive?: boolean;
+  /** True while push-to-talk dictation is streaming into the active session's input. */
+  dictating?: boolean;
+  /**
+   * Toggle push-to-talk STT dictation for the active session (mirrors the desktop
+   * mic). Transcribed text streams into the session's input line (never
+   * auto-submits). Distinct from full voice-conversation mode (`onStartVoice`).
+   */
+  onToggleDictation?: () => void;
 
   /** Host action dispatcher (new repo/session, rename/archive/delete session). */
   onAction: (action: MobileAction, payload?: Record<string, unknown>) => void;

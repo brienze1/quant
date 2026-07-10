@@ -989,6 +989,36 @@ function App() {
     }, 5000);
   }, []);
 
+  // Mobile mini-player dictation: mirror the PTT service's live state so the mic
+  // affordance can show "listening", and expose a toggle the shell wires to the
+  // mic button. Reuses the same onPartialText → api.sendMessage plumbing the
+  // desktop hotkeys use (nothing new writes into the session PTY here).
+  const [dictating, setDictating] = useState(false);
+  useEffect(() => {
+    const off = pttService.onState((s) => setDictating(s === "recording" || s === "transcribing"));
+    return off;
+  }, []);
+  const handleToggleDictation = useCallback(async () => {
+    const sid = activeSession?.id;
+    if (!sid) return;
+    if (pttService.isCapturing()) {
+      void pttService.stop();
+      return;
+    }
+    if (pttService.getState() !== "idle") return;
+    let enabled = false;
+    try {
+      enabled = (await api.getConfig()).voice.enabled;
+    } catch {
+      /* treat as disabled */
+    }
+    if (!enabled) {
+      pttToast("push-to-talk: enable voice in Settings first");
+      return;
+    }
+    void pttService.start(sid, "toggle");
+  }, [activeSession, pttToast]);
+
   useEffect(() => {
     // Hotkey start path: same voice-enabled gate as the SessionPanel button —
     // refuse with a toast instead of recording into a failing transcribe.
@@ -3100,6 +3130,8 @@ function App() {
       activeWorkspaceId,
       onSwitchWorkspace: setActiveWorkspaceId,
       voiceActive: voiceSessionId != null,
+      dictating,
+      onToggleDictation: handleToggleDictation,
       onAction: (action, payload) => {
         switch (action) {
           case "newRepo":
@@ -3142,6 +3174,12 @@ function App() {
           onCreateJob={() => setModal({ type: "createJob" })}
           onEditJob={(job) => setModal({ type: "editJob", job })}
           onRefresh={fetchJobs}
+          onRunJob={(id) =>
+            api
+              .runJob(id)
+              .then(() => fetchJobs())
+              .catch((e) => setError(String(e)))
+          }
         />
       ),
       renderAgents: () => (
@@ -3221,10 +3259,20 @@ function App() {
     }
     if (mobileCrewSupervisor) {
       const sup = mobileCrewSupervisor;
+      const supWorkers = workersBySupervisor[sup.id] ?? [];
+      // Touch can't drag-drop, so the mobile CrewPane offers a tap "+ Add worker"
+      // picker instead. Candidates = other claude sessions not already on this
+      // crew (assignCrewWorker is an upsert, so being on another crew is fine).
+      const crewAssignCandidates = mobileSessions.filter(
+        (s) =>
+          s.sessionType === "claude" &&
+          s.id !== sup.id &&
+          !supWorkers.some((w) => w.id === s.id),
+      );
       mobileBag.renderCrew = () => (
         <CrewPane
           supervisor={sup}
-          workers={workersBySupervisor[sup.id] ?? []}
+          workers={supWorkers}
           queuedCount={crewQueued[sup.id] ?? 0}
           deliveryLocked={crewDeliveryLocks[sup.id] ?? false}
           onToggleLock={(locked) => {
@@ -3233,6 +3281,7 @@ function App() {
           }}
           onSelectSession={handleOpenTab}
           onDetachWorker={handleDetachCrewWorker}
+          assignCandidates={crewAssignCandidates}
           onError={(msg) => setError(msg)}
         />
       );

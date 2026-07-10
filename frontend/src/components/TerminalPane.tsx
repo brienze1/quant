@@ -163,23 +163,44 @@ export function TerminalPane({
     if (isTouch && term.element) {
       const touchTarget = term.element;
       let lastY = 0;
+      // Accumulate fractional finger travel so small/slow drags (less than one
+      // row of pixels) still scroll instead of being truncated to zero.
+      let accum = 0;
       const onTouchStart = (e: TouchEvent) => {
         lastY = e.touches[0].clientY;
+        accum = 0;
       };
       const onTouchMove = (e: TouchEvent) => {
         const y = e.touches[0].clientY;
-        const dy = y - lastY;
         const rowPx = term.element ? term.element.clientHeight / term.rows : 18;
-        // Finger DOWN (dy > 0) reveals earlier scrollback (scroll up).
-        const rows = Math.trunc(-dy / rowPx);
+        // Finger DOWN (y increases) reveals earlier scrollback (scroll up).
+        accum += -(y - lastY);
+        lastY = y;
+        const rows = Math.trunc(accum / rowPx);
         if (rows !== 0) {
           term.scrollLines(rows);
-          lastY = y;
+          // Retain the sub-row remainder for the next move.
+          accum -= rows * rowPx;
+          // iOS never fires `wheel`, so replicate the wheel handler's
+          // auto-scroll toggle here: pause the incoming-output snap-back while
+          // the user reads scrollback, and restore it when they drag back to
+          // the bottom. Read the terminal's CURRENT buffer position (post-scroll).
+          const buf = term.buffer.active;
+          const isAtBottom = buf.viewportY >= buf.baseY;
+          if (!isAtBottom && autoScrollRef.current) {
+            autoScrollRef.current = false;
+            onAutoScrollChange(false);
+          }
+          if (isAtBottom && !autoScrollRef.current) {
+            autoScrollRef.current = true;
+            onAutoScrollChange(true);
+          }
         }
         e.preventDefault();
       };
       const onTouchEnd = () => {
         lastY = 0;
+        accum = 0;
       };
       touchTarget.addEventListener('touchstart', onTouchStart, { passive: true });
       touchTarget.addEventListener('touchmove', onTouchMove, { passive: false });

@@ -19,7 +19,7 @@
 @media (max-width: 900px) {
   /* let the app own a real dynamic-viewport box; kill iOS rubber-band + tap flash */
   html, body { height: 100%; overscroll-behavior: none; }
-  body { overflow: hidden; }
+  body { overflow: hidden; background: var(--bg); }
   * { -webkit-tap-highlight-color: transparent; }
   button, [role="button"], .mo-tap { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
 

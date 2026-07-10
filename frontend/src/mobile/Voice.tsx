@@ -18,6 +18,7 @@ export function VoiceMini({
   onExpand,
   onMic,
   active,
+  dictating,
 }: {
   state: VoiceState;
   accentHex: string;
@@ -25,9 +26,14 @@ export function VoiceMini({
   onMic: () => void;
   /** When true (a voice session is attached), show the real WebGL orb. */
   active?: boolean;
+  /** When true, push-to-talk dictation is streaming into the session input. */
+  dictating?: boolean;
 }) {
   const meta = VOICE_STATE_META[state] || VOICE_STATE_META.idle;
   const live = state === "listening" || state === "speaking";
+  // The mic button drives dictation (STT into the chat input), separate from the
+  // full voice conversation the body tap opens.
+  const micActive = dictating || live;
   return (
     <div
       onClick={onExpand}
@@ -62,11 +68,13 @@ export function VoiceMini({
               width: 6,
               height: 6,
               borderRadius: "50%",
-              background: meta.dot,
-              boxShadow: live ? `0 0 6px ${meta.dot}` : "none",
+              background: dictating ? "var(--accent)" : meta.dot,
+              boxShadow: dictating || live ? `0 0 6px ${dictating ? "var(--accent)" : meta.dot}` : "none",
             }}
           />
-          <span style={{ fontSize: 11, color: "var(--fg-3)", textTransform: "capitalize" }}>{meta.label}</span>
+          <span style={{ fontSize: 11, color: "var(--fg-3)", textTransform: "capitalize" }}>
+            {dictating ? "dictating…" : meta.label}
+          </span>
         </div>
       </div>
       <button
@@ -76,7 +84,7 @@ export function VoiceMini({
           onMic();
         }}
         className="mo-tap"
-        aria-label="Toggle mic"
+        aria-label="Toggle dictation"
         style={{
           width: 40,
           height: 40,
@@ -87,11 +95,11 @@ export function VoiceMini({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: live ? "var(--accent)" : "var(--panel-3)",
-          color: live ? "var(--on-accent)" : "var(--fg-2)",
+          background: micActive ? "var(--accent)" : "var(--panel-3)",
+          color: micActive ? "var(--on-accent)" : "var(--fg-2)",
         }}
       >
-        <Icon name={live ? "stop" : "mic"} size={18} />
+        <Icon name={micActive ? "stop" : "mic"} size={18} />
       </button>
       <span style={{ display: "flex", color: "var(--fg-4)", paddingRight: 2 }}>
         <Icon name="chevronRight" size={16} style={{ transform: "rotate(-90deg)" }} />

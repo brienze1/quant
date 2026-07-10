@@ -1948,6 +1948,11 @@ function VoiceTab({ config, update }: TabProps) {
   }, []);
 
   useEffect(() => {
+    // The voice-runtime controller is desktop-only (deliberately not exposed
+    // over the remote/PWA bridge — model downloads write to disk). On the remote
+    // client these calls throw, so skip them entirely and let the UI show the
+    // "managed on desktop" note instead.
+    if (isRemote) return;
     void refreshRuntime();
     // Stream install/lifecycle events; refresh the snapshot (and re-probe
     // readiness + voices) whenever a phase settles.
@@ -2170,7 +2175,19 @@ function VoiceTab({ config, update }: TabProps) {
         description="quant downloads and runs the local speech models for you — no terminal, Docker, or setup. About 330 MB to download (~560 MB on disk); everything stays on your machine."
       >
         <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-          {installing ? (
+          {isRemote ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Icon name="monitor" size={14} color="var(--fg-2)" />
+                <span style={{ fontSize: 12, color: "var(--fg)" }}>
+                  Voice models are managed on the desktop app
+                </span>
+              </div>
+              <span style={{ fontSize: 11.5, color: "var(--fg-2)", lineHeight: 1.5 }}>
+                Install or update voice models in the Quant desktop app. Once installed there, voice conversation works here — just open Voice on a session.
+              </span>
+            </div>
+          ) : installing ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <span style={{ fontSize: 12, color: "var(--fg)" }}>{phaseLabel(progress)}</span>
               <div

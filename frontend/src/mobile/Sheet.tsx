@@ -13,6 +13,7 @@ export function MoSheet({
   title,
   headerRight,
   pad = true,
+  fill = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -21,6 +22,12 @@ export function MoSheet({
   title?: ReactNode;
   headerRight?: ReactNode;
   pad?: boolean;
+  /**
+   * Make the content region a definite-height flex column (no auto-scroll) so a
+   * `flex:1` child (e.g. React Flow's canvas) inherits a real height instead of
+   * collapsing to 0. Use for full-bleed panes that own their own scrolling.
+   */
+  fill?: boolean;
 }) {
   if (!open) return null;
   return (
@@ -97,11 +104,13 @@ export function MoSheet({
           </div>
         )}
         <div
-          className="mo-scroll"
+          className={fill ? undefined : "mo-scroll"}
           style={{
             flex: 1,
             minHeight: 0,
-            overflowY: "auto",
+            ...(fill
+              ? { display: "flex", flexDirection: "column", overflow: "hidden" }
+              : { overflowY: "auto" }),
             padding: pad ? "0 0 calc(16px + var(--safe-b))" : 0,
           }}
         >

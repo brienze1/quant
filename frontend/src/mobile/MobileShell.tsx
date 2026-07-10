@@ -109,7 +109,16 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
         {body}
       </div>
 
-      {!voiceOpen && <VoiceMini state={voiceState} accentHex={accentHex} onExpand={expandVoice} onMic={expandVoice} active={app.voiceActive} />}
+      {!voiceOpen && (
+        <VoiceMini
+          state={voiceState}
+          accentHex={accentHex}
+          onExpand={expandVoice}
+          onMic={app.onToggleDictation ?? expandVoice}
+          active={app.voiceActive}
+          dictating={app.dictating}
+        />
+      )}
       <MoTabBar
         tab={more ? "more" : tab}
         onTab={(k) => {
@@ -150,7 +159,7 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
       <MoSheet open={panel === "files"} onClose={() => setPanel(null)} full title="Files" pad={false}>
         <div style={{ flex: 1, minHeight: 0, display: "flex" }}>{filesBody}</div>
       </MoSheet>
-      <MoSheet open={panel === "mindmap"} onClose={() => setPanel(null)} full title="Mindmap" pad={false}>
+      <MoSheet open={panel === "mindmap"} onClose={() => setPanel(null)} full fill title="Mindmap" pad={false}>
         <div style={{ flex: 1, minHeight: 0, display: "flex" }}>{mindmapBody}</div>
       </MoSheet>
       <MoSheet open={panel === "agents"} onClose={() => setPanel(null)} full title="Agents" pad={false}>
