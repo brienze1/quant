@@ -606,7 +606,10 @@ function App() {
 
   // Close voice entirely (detach from whatever session holds it). Remounts the
   // pane away (null) which tears the bridge down and gracefully closes any
-  // in-flight request. Broadcasts open=false so all clients close.
+  // in-flight request. Broadcasts open=false so all clients close. USER-initiated
+  // close ONLY — never call this from a convergence/self-heal path, or one
+  // client's local cleanup would broadcast a global close that tears the pane
+  // down on every other client (the "voice closes immediately" multi-client race).
   function detachVoice() {
     if (voiceSessionId === null) return;
     setVoiceSessionId(null);
@@ -616,12 +619,22 @@ function App() {
     );
   }
 
+  // Drop THIS client's voice attachment without broadcasting a global close.
+  // Used by convergence/self-heal paths: a stale attachment on one client is a
+  // local problem, not a signal that the user closed voice everywhere.
+  function clearVoiceLocal() {
+    if (voiceSessionIdRef.current === null) return;
+    setVoiceSessionId(null);
+    persistVoiceSession(null);
+  }
+
   // Self-heal a "zombie" voice pane: if voice is pinned to a session that no
   // longer exists in the current store (a remote client archived/deleted it, it
-  // dropped on a loadAll() refresh, or a stale restored id), detach so we don't
-  // leave a VoicePane bound to a dead session. Gated on the store being
-  // non-empty so a transient empty list during initial hydration / refresh does
-  // NOT wrongly detach a just-restored attachment.
+  // dropped on a loadAll() refresh, or a stale restored id), clear it so we don't
+  // leave a VoicePane bound to a dead session. LOCAL-only (no broadcast) — a
+  // zombie here must not force-close voice on the client that legitimately owns
+  // it. Gated on the store being non-empty so a transient empty list during
+  // initial hydration / refresh does NOT wrongly clear a just-restored attachment.
   useEffect(() => {
     if (voiceSessionId === null) return;
     const sessionsLoaded =
@@ -629,7 +642,7 @@ function App() {
       Object.values(sessionsByTask).some((list) => list.length > 0);
     if (!sessionsLoaded) return;
     if (!findSession(voiceSessionId, sessionsByRepo, sessionsByTask)) {
-      detachVoice();
+      clearVoiceLocal();
     }
   }, [voiceSessionId, sessionsByRepo, sessionsByTask]); // eslint-disable-line react-hooks/exhaustive-deps
 
