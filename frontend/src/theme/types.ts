@@ -19,6 +19,8 @@ export interface ResolvedTheme {
   type: "dark" | "light" | "hc";
   colors: Required<ThemeColors>;
   isBuiltin: boolean;
+  /** Bundled read-only VS Code theme (pre-installed for every user). */
+  isPreset?: boolean;
 }
 
 export interface ThemeColors {
