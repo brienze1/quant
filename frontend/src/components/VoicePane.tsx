@@ -408,9 +408,12 @@ export function VoicePane({ sessionId, className, style }: Props) {
       // WKWebView (and browser autoplay policies) keep an AudioContext created
       // without a user gesture in the "suspended" state, which leaves the input
       // analyser flat → the live meter and the orb's listening level read zero.
-      // Resume on the first real interaction anywhere in the window.
+      // Resume on the first real interaction anywhere in the window. On iOS this
+      // also "blesses" the reusable TTS <audio> element (unlockPlayback) so the
+      // agent's spoken reply is audible through the device speaker — otherwise
+      // agent-initiated playback is blocked/silenced in the installed PWA.
       const unlock = () => {
-        void service.resumeContext();
+        void service.unlockPlayback();
       };
       window.addEventListener("pointerdown", unlock, { capture: true });
       window.addEventListener("keydown", unlock, { capture: true });
@@ -479,7 +482,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
     void (async () => {
       try {
         await svc.startInputPreview();
-        await svc.resumeContext();
+        await svc.unlockPlayback();
         const [list, labels] = await Promise.all([
           svc.listInputDevices(),
           svc.hasDeviceLabels(),
