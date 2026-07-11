@@ -18,7 +18,7 @@ import { Icon } from "./Icon";
 import * as api from "../api";
 import { useTheme } from "../theme";
 import { createAudioService } from "../voice/audioService";
-import { setVoicePaneMicBusy } from "../voice/pttService";
+import { setVoicePaneMicBusy, setVoicePaneState } from "../voice/pttService";
 import { playTransitionCue, playErrorCue, setVoiceCuesEnabled } from "../voice/voiceCues";
 import { registerVoiceBridge } from "../voice/voiceBridge";
 import { loadTranscript, saveTranscript, nextLineId } from "../voice/transcriptStore";
@@ -358,6 +358,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
         prevState = s;
         setState(s);
         setVoicePaneMicBusy(s !== "idle");
+        setVoicePaneState(s);
       });
       const offError = service.onError((e) => {
         playErrorCue();
@@ -431,6 +432,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
         offError();
         offRecTranscript();
         setVoicePaneMicBusy(false);
+        setVoicePaneState("idle");
         void service.dispose();
         serviceRef.current = null;
       });

@@ -100,4 +100,10 @@ export interface MobileAppBag {
    * sheet, so `renderVoice`'s <VoicePane/> mounts onto a valid session.
    */
   onStartVoice?: () => void;
+  /**
+   * Truly END the voice conversation: detach the voice session (broadcast
+   * close). Wired to the voice sheet's explicit End button — collapsing the
+   * sheet only minimizes it (the pane stays mounted and keeps talking).
+   */
+  onEndVoice?: () => void;
 }

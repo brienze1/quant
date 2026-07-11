@@ -3198,6 +3198,11 @@ function App() {
       onStartVoice: () => {
         if (activeSession) attachVoice(activeSession.id);
       },
+      // Explicit End from the voice sheet: user-initiated close (the only path
+      // allowed to broadcast open=false — see detachVoice).
+      onEndVoice: () => {
+        detachVoice();
+      },
       // Real voice sheet body: mount the SAME <VoicePane/> desktop uses, keyed to
       // the pinned voice session (falling back to the active session). Return null
       // when there's no valid session so the shell shows its scripted fallback.

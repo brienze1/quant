@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTheme } from "../theme";
+import { getVoicePaneState, subscribeVoicePaneState } from "../voice/pttService";
 import type { Accent } from "../theme/store";
 import { MindmapPane } from "../components/MindmapPane";
 import "./mobile.css";
@@ -37,9 +38,17 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
   const [more, setMore] = useState(false);
   const [panel, setPanel] = useState<MorePanel | null>(null);
 
-  // voice
+  // voice — the live pane state is mirrored through pttService so the
+  // mini-player reflects the conversation (speaking/listening/…) even while
+  // the sheet is minimized. "recording" renders as the listening visual.
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const voiceState: VoiceState = "idle";
+  const rawVoiceState = useSyncExternalStore(subscribeVoicePaneState, getVoicePaneState);
+  const voiceState: VoiceState =
+    rawVoiceState === "recording"
+      ? "listening"
+      : rawVoiceState === "listening" || rawVoiceState === "thinking" || rawVoiceState === "speaking"
+        ? rawVoiceState
+        : "idle";
 
   const activeName = app.sessions.find((s) => s.id === app.activeSessionId)?.name ?? null;
 
@@ -169,6 +178,11 @@ export function MobileShell({ app }: { app: MobileAppBag }) {
       <VoiceSheet
         open={voiceOpen}
         onClose={() => setVoiceOpen(false)}
+        onEnd={() => {
+          app.onEndVoice?.();
+          setVoiceOpen(false);
+        }}
+        keepMounted={!!app.voiceActive}
         state={voiceState}
         accentHex={accentHex}
         subtitle={activeName ? `quant · ${activeName}` : "quant"}

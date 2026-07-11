@@ -117,24 +117,35 @@ export function VoiceMini({
 export function VoiceSheet({
   open,
   onClose,
+  onEnd,
+  keepMounted,
   subtitle,
   body,
 }: {
   open: boolean;
   onClose: () => void;
+  /** Truly END the voice conversation (detach + close). Collapse (onClose) only hides the sheet. */
+  onEnd?: () => void;
+  /**
+   * Keep the sheet's body MOUNTED (hidden) while collapsed, so the live
+   * <VoicePane/> inside — audio service + voice bridge — survives a minimize
+   * and the conversation keeps going. Without this, collapsing unmounts the
+   * pane and tears the voice session down mid-conversation.
+   */
+  keepMounted?: boolean;
   state: VoiceState;
   accentHex: string;
   subtitle?: string;
   body?: ReactNode;
 }) {
-  if (!open) return null;
+  if (!open && !keepMounted) return null;
   return (
     <div
       style={{
         position: "fixed",
         inset: 0,
         zIndex: 320,
-        display: "flex",
+        display: open ? "flex" : "none",
         flexDirection: "column",
         background:
           "radial-gradient(120% 80% at 50% 8%, color-mix(in srgb, var(--accent) 10%, var(--bg)) 0%, var(--bg) 60%)",
@@ -159,6 +170,30 @@ export function VoiceSheet({
           </div>
           <div style={{ fontSize: 13, color: "var(--fg-2)" }}>{subtitle || "quant"}</div>
         </div>
+        {onEnd && body ? (
+          <button
+            onClick={onEnd}
+            className="mo-tap"
+            aria-label="End voice"
+            style={{
+              height: 36,
+              padding: "0 14px",
+              borderRadius: 999,
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12.5,
+              fontWeight: 600,
+              background: "color-mix(in srgb, #e5484d 18%, var(--panel-2))",
+              color: "#ff8589",
+            }}
+          >
+            <Icon name="stop" size={14} />
+            End
+          </button>
+        ) : null}
         <button
           onClick={onClose}
           className="mo-tap"

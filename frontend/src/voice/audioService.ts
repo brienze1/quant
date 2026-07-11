@@ -365,6 +365,8 @@ export class AudioService implements IAudioService {
   private readonly preferNativePlayback: boolean = prefersNativePlayback();
   // The single reusable, gesture-blessed element for the native playback path.
   private ttsEl: HTMLAudioElement | null = null;
+  // True once a user gesture has "blessed" ttsEl (played a silent clip on it).
+  private ttsElBlessed = false;
   // Removes the current native playback listeners; called before re-arming the
   // reused element and on teardown so stale listeners never accumulate.
   private ttsElListeners: (() => void) | null = null;
@@ -836,6 +838,12 @@ export class AudioService implements IAudioService {
     // Always resume the context (drives the input meter + desktop playback).
     await this.resumeContext();
     if (!this.preferNativePlayback) return;
+    // Never touch the element while a speak() owns it, and only bless it ONCE:
+    // this handler fires on EVERY window tap (including scroll touches), and
+    // re-pointing the reusable element's src mid-playback aborts the agent's
+    // reply a word or two in ("Playback error"). A blessed element stays
+    // blessed for its lifetime, so once is enough.
+    if (this.pendingSpeak || this.ttsElBlessed) return;
     // iOS: play a short silent clip on the reusable element WITHIN this user
     // gesture. That grants the element "user-initiated audio", so the later
     // agent-driven speak() reusing this same element is allowed to play.
@@ -851,6 +859,7 @@ export class AudioService implements IAudioService {
       } catch {
         /* ignore */
       }
+      this.ttsElBlessed = true;
     } catch {
       /* best-effort — real speak() will still try to play */
     }
@@ -1593,8 +1602,11 @@ export class AudioService implements IAudioService {
     this.teardownPlayback();
     if (this.state === "speaking" || this.state === "thinking") this.setState("idle");
     const p = this.pendingSpeak;
-    this.emitError(err);
+    // No live speak = a stale event on the reused element (e.g. an "error"
+    // fired by clearing src after an explicit stop) — nothing failed for the
+    // user, so don't surface an error banner for it.
     if (!p || p.settled) return;
+    this.emitError(err);
     p.settled = true;
     this.pendingSpeak = null;
     p.reject(err);
@@ -1689,6 +1701,7 @@ export class AudioService implements IAudioService {
       this.ttsElListeners();
       this.ttsElListeners = null;
     }
+    this.ttsElBlessed = false;
     if (this.ttsEl) {
       try {
         this.ttsEl.pause();
