@@ -61,6 +61,7 @@ import { Icon } from "./components/Icon";
 import { CountBadge } from "./components/CountBadge";
 import { Kbd } from "./components/Kbd";
 import { getActiveKeybindings, findMatchingAction, formatKeyCombo } from "./keybindings";
+import { getLiveFontSize, setLiveFontSize, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_DEFAULT } from "./terminal/fontSize";
 import { isMac } from "./os";
 import { pttService } from "./voice/pttService";
 import type { ChangelogEntry } from "./types";
@@ -856,6 +857,8 @@ function App() {
   commandPaletteOpenRef.current = commandPaletteOpen;
   const themePickerOpenRef = useRef(themePickerOpen);
   themePickerOpenRef.current = themePickerOpen;
+  const dockTermConfigRef = useRef(dockTermConfig);
+  dockTermConfigRef.current = dockTermConfig;
   // Main key of an active hold-to-talk press (lowercased e.key); null when no
   // hold capture is in flight. Lets keyup/blur pair with the registry's keydown.
   const pttHoldKeyRef = useRef<string | null>(null);
@@ -921,6 +924,9 @@ function App() {
           // PTT must work while typing in the terminal — that's the primary
           // use case (dictating into the session's input line).
           "pttHold", "pttToggle",
+          // Font-size shortcuts must work while the terminal has focus —
+          // that's the common case they're used from.
+          "fontIncrease", "fontDecrease", "fontReset",
         ]);
         if (!allowedInTerminal.has(matched.id)) return;
       }
@@ -1027,6 +1033,22 @@ function App() {
               pttToast("push-to-talk: open a session first");
             }
           }
+          break;
+        }
+        case "fontIncrease": case "fontDecrease": case "fontReset": {
+          const current = getLiveFontSize() ?? dockTermConfigRef.current?.fontSize ?? FONT_SIZE_DEFAULT;
+          const next =
+            matched.id === "fontReset"
+              ? FONT_SIZE_DEFAULT
+              : Math.min(
+                  FONT_SIZE_MAX,
+                  Math.max(FONT_SIZE_MIN, current + (matched.id === "fontIncrease" ? 1 : -1))
+                );
+          setLiveFontSize(next);
+          api
+            .getConfig()
+            .then((cfg) => api.saveConfig({ ...cfg, fontSize: next }))
+            .catch((err) => console.error("failed to persist terminal font size:", err));
           break;
         }
       }

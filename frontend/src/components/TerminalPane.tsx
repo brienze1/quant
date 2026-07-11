@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { Session, Config } from "../types";
 import * as api from "../api";
 import { terminalIO } from "../terminal/terminalInput";
+import { getLiveFontSize } from "../terminal/fontSize";
 import { useTheme } from "../theme";
 
 interface TerminalPaneProps {
@@ -60,7 +61,7 @@ export function TerminalPane({
       cursorStyle: (cfg?.cursorStyle as "block" | "underline" | "bar") ?? "block",
       disableStdin: isArchived,
       fontFamily: cfg?.fontFamily ? `'${cfg.fontFamily}', 'Menlo', 'Monaco', monospace` : "'JetBrains Mono', 'Menlo', 'Monaco', monospace",
-      fontSize: cfg?.fontSize ?? 13,
+      fontSize: getLiveFontSize() ?? cfg?.fontSize ?? 13,
       lineHeight: cfg?.lineHeight ?? 1.2,
       scrollback: cfg?.scrollbackLines ?? 10000,
       theme: {
@@ -441,6 +442,28 @@ export function TerminalPane({
     window.addEventListener("terminal:refit", handleRefit);
     return () => window.removeEventListener("terminal:refit", handleRefit);
   }, []);
+
+  // Live font-size updates (Cmd+=/Cmd+-/Cmd+0): mutate the existing terminal's
+  // options in place rather than recreating it, then re-fit and let the PTY
+  // know about the resulting row/col change.
+  useEffect(() => {
+    const handleFontSize = (e: Event) => {
+      const size = (e as CustomEvent<number>).detail;
+      const term = termRef.current;
+      if (!term || typeof size !== "number") return;
+      term.options.fontSize = size;
+      try {
+        fitAddonRef.current?.fit();
+        if (!isArchived) {
+          terminalIO.sendResize(sessionIdRef.current, term.rows, term.cols);
+        }
+      } catch {
+        // Ignore fit errors during disposal.
+      }
+    };
+    window.addEventListener("terminal:fontsize", handleFontSize);
+    return () => window.removeEventListener("terminal:fontsize", handleFontSize);
+  }, [isArchived]);
 
   return (
     <div ref={wrapperRef} className="flex-1 min-h-0 min-w-0" style={{ position: "relative" }}>
