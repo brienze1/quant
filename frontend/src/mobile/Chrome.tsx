@@ -114,22 +114,16 @@ export function MoTabBar({
   onTab: (key: MobileTab) => void;
   crewBadge?: number;
 }) {
-  // Installed (standalone) PWA: the full home-indicator inset reads as a dead
-  // band under the icons — keep only a small guard instead of the whole inset.
-  const standalone =
-    typeof window !== "undefined" &&
-    !!window.matchMedia &&
-    window.matchMedia("(display-mode: standalone)").matches;
-
   return (
     <div
       style={{
         flex: "none",
         display: "flex",
         alignItems: "stretch",
-        padding: standalone
-          ? "6px 6px max(calc(var(--safe-b) - 14px), 6px)"
-          : "6px 6px calc(6px + var(--safe-b))",
+        // The home-indicator inset (--safe-b, ~34px when installed) reads as a
+        // dead band under the icons — keep only a small guard instead of the
+        // whole inset. In a browser tab --safe-b is 0, so this stays 6px.
+        padding: "6px 6px max(calc(var(--safe-b) - 22px), 6px)",
         background: "color-mix(in srgb, var(--bg) 82%, transparent)",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
