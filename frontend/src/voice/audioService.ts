@@ -419,6 +419,10 @@ export class AudioService implements IAudioService {
     reject: (err: unknown) => void;
     settled: boolean;
   } | null = null;
+  // Hard ceiling on a speak() turn: blocked playback on iOS can neither fire
+  // "ended" nor "error", which would otherwise ride the Go bridge's 60s voice
+  // timeout. See armSpeakCap().
+  private speakCapTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: AudioServiceOptions = {}) {
     this.transport = opts.transport ?? defaultTransport;
@@ -799,7 +803,15 @@ export class AudioService implements IAudioService {
     // the loop dead after a turn or two.
     if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
       try {
-        await ctx.resume();
+        // iOS WebKit: resume() outside a user gesture can stay pending FOREVER
+        // (it neither resolves nor rejects). Awaiting it unguarded hangs the
+        // whole speak/listen turn until the Go bridge's opaque voice timeout.
+        // Race a short deadline — if it can't resume quickly, it won't resume
+        // at all, and the caller must proceed (or fail fast) without it.
+        await Promise.race([
+          ctx.resume(),
+          new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+        ]);
       } catch {
         /* best-effort */
       }
@@ -1338,8 +1350,14 @@ export class AudioService implements IAudioService {
     this.stopSpeaking();
 
     // Keep the shared context alive across turns (see the note in listen()): a
-    // suspended context would play the reply silently / not at all.
-    await this.resumeContext();
+    // suspended context would play the reply silently / not at all. The native
+    // iOS path plays outside Web Audio entirely, so it must not block on a
+    // context that may refuse to resume without a user gesture.
+    if (this.preferNativePlayback) {
+      void this.resumeContext();
+    } else {
+      await this.resumeContext();
+    }
 
     let audioB64: string;
     let contentType: string;
@@ -1366,6 +1384,7 @@ export class AudioService implements IAudioService {
 
     return new Promise<void>((resolve, reject) => {
       this.pendingSpeak = { resolve, reject, settled: false };
+      this.armSpeakCap();
 
       const el = new Audio();
       el.src = `data:${contentType};base64,${audioB64}`;
@@ -1429,6 +1448,7 @@ export class AudioService implements IAudioService {
   private speakNative(audioB64: string, contentType: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.pendingSpeak = { resolve, reject, settled: false };
+      this.armSpeakCap();
       const el = this.ensureTtsEl();
       // Native route: not wired through Web Audio (would re-mute it on iOS).
       this.outputAnalyser = null;
@@ -1529,7 +1549,33 @@ export class AudioService implements IAudioService {
     this.finishSpeak();
   }
 
+  /**
+   * Bound a single speak() turn: if playback hasn't settled in time (iOS
+   * autoplay gating can leave the element neither playing to "ended" nor
+   * erroring), fail with an actionable message NOW so the agent gets a real
+   * error instead of the Go bridge's opaque 60s "did not respond in time".
+   * 45s stays under the Go SpeakTimeout (60s, which also covers synthesis).
+   */
+  private armSpeakCap(): void {
+    if (this.speakCapTimer) clearTimeout(this.speakCapTimer);
+    this.speakCapTimer = setTimeout(() => {
+      this.failSpeak({
+        kind: "playback",
+        message:
+          "Playback did not complete within 45s — audio output is likely blocked by the browser; tap the voice pane once and retry.",
+      });
+    }, 45_000);
+  }
+
+  private clearSpeakCap(): void {
+    if (this.speakCapTimer) {
+      clearTimeout(this.speakCapTimer);
+      this.speakCapTimer = null;
+    }
+  }
+
   private finishSpeak() {
+    this.clearSpeakCap();
     this.teardownPlayback();
     const p = this.pendingSpeak;
     // Reset from speaking OR thinking: a speak() can be abandoned (stopSpeaking)
@@ -1543,6 +1589,7 @@ export class AudioService implements IAudioService {
   }
 
   private failSpeak(err: VoiceError) {
+    this.clearSpeakCap();
     this.teardownPlayback();
     if (this.state === "speaking" || this.state === "thinking") this.setState("idle");
     const p = this.pendingSpeak;
