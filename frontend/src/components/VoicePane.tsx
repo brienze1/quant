@@ -204,6 +204,33 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // lands (onUserTranscript) so there's never a duplicate.
   const [draft, setDraft] = useState("");
 
+  // Manual persona priming: opening the pane NO LONGER injects the voice persona
+  // into the session (that used to fire on every open and interrupt the agent).
+  // The user primes it explicitly with the button below. `primed` is per pane
+  // instance — the pane is keyed by the voice session in App, so it resets when
+  // voice moves to another session.
+  const [primed, setPrimed] = useState(false);
+  const [priming, setPriming] = useState(false);
+  const [primeErr, setPrimeErr] = useState<string | null>(null);
+  const primePersona = async () => {
+    if (priming) return;
+    setPriming(true);
+    setPrimeErr(null);
+    try {
+      await api.startVoiceSession(sessionId);
+      setPrimed(true);
+    } catch (e) {
+      const msg = String((e as { message?: string })?.message || e || "");
+      setPrimeErr(
+        msg.includes("no process running")
+          ? "start the session's agent first"
+          : msg || "couldn't prime voice",
+      );
+    } finally {
+      setPriming(false);
+    }
+  };
+
   const serviceRef = useRef<IAudioService | null>(null);
   // Live mirror of `state` for the orb's per-frame level callback (avoids stale
   // closures without re-creating the callback).
@@ -1020,25 +1047,60 @@ export function VoicePane({ sessionId, className, style }: Props) {
           )}
         </div>
 
-        {error ? (
-          <span
-            title={error.message}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          {/* Manual persona prime: opening voice no longer auto-sends the persona.
+              Tap to type + submit the voice persona into the session when you
+              actually want to prime the agent for a voice conversation. */}
+          <button
+            onClick={primePersona}
+            disabled={priming}
+            title={
+              primeErr
+                ? primeErr
+                : primed
+                  ? "voice persona sent to the session — tap to send again"
+                  : "type + submit the voice persona into the session (agent starts replying in voice style). Opening voice never sends this on its own."
+            }
             style={{
-              fontSize: 10,
-              color: "var(--danger)",
-              maxWidth: "70%",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              flex: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontFamily: "var(--sans)",
+              fontSize: 10.5,
+              color: primeErr ? "var(--danger)" : primed ? "var(--ok)" : "var(--accent)",
+              backgroundColor: "var(--panel-3)",
+              border: `1px solid ${primeErr ? "var(--danger)" : primed ? "var(--ok)" : "var(--border-2)"}`,
+              borderRadius: 7,
+              padding: "1px 7px",
+              cursor: priming ? "default" : "pointer",
+              opacity: priming ? 0.6 : 1,
               whiteSpace: "nowrap",
             }}
           >
-            {errorCopy(error).title}
-          </span>
-        ) : notConfigured ? (
-          <span style={{ fontSize: 10, color: "var(--warn)" }}>not configured</span>
-        ) : (
-          <span style={{ fontSize: 10, color: "var(--fg-4)" }}>mic ready</span>
-        )}
+            {priming ? "priming…" : primeErr ? "prime failed" : primed ? "persona sent ✓" : "prime persona"}
+          </button>
+
+          {error ? (
+            <span
+              title={error.message}
+              style={{
+                fontSize: 10,
+                color: "var(--danger)",
+                maxWidth: "50%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {errorCopy(error).title}
+            </span>
+          ) : notConfigured ? (
+            <span style={{ fontSize: 10, color: "var(--warn)" }}>not configured</span>
+          ) : (
+            <span style={{ fontSize: 10, color: "var(--fg-4)" }}>mic ready</span>
+          )}
+        </div>
       </div>
     </div>
   );

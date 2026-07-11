@@ -568,11 +568,6 @@ function App() {
     return out;
   })();
 
-  // Tracks which session currently holds a LIVE voice attachment (kicked off),
-  // so we inject the persona exactly once per attachment and never re-kick just
-  // because the active tab changed. Holds at most one session at a time (voice
-  // is pinned to a single session). Cleared when voice closes or moves away.
-  const voiceStartedRef = useRef<string | null>(null);
   // Live mirror of voiceSessionId for handlers/effects that must read the
   // current attachment without re-subscribing.
   const voiceSessionIdRef = useRef(voiceSessionId);
@@ -590,45 +585,23 @@ function App() {
     }
   }
 
-  // Fire the one-time persona kickoff for a freshly-attached (or moved) voice
-  // session. Idempotent per attachment via voiceStartedRef. Surfaces a non-fatal
-  // error (and clears the guard so re-opening retries) if the session has no
-  // live agent process.
-  function kickoffVoice(sessionId: string) {
-    if (voiceStartedRef.current === sessionId) return;
-    voiceStartedRef.current = sessionId;
-    api.startVoiceSession(sessionId).catch((err) => {
-      if (voiceStartedRef.current === sessionId) voiceStartedRef.current = null;
-      console.error("failed to start voice session:", err);
-      const msg = String((err && err.message) || err || "");
-      setError(
-        msg.includes("no process running")
-          ? "Start the session's agent before enabling voice."
-          : `Couldn't start voice mode: ${msg || "unknown error"}`
-      );
-    });
-  }
-
   // PIN voice to `sessionId`: attach (open), or MOVE from another session
   // (winding the old one down happens automatically — the VoicePane is keyed by
   // voiceSessionId, so changing it remounts the pane onto the new session and
-  // tears the old bridge down, gracefully closing any in-flight request). Kicks
-  // off the persona exactly once for this attachment. Broadcasts open=true so
-  // other tabs/remote clients show the pane (which session is carried via the
-  // localStorage companion + the active-tab fallback).
+  // tears the old bridge down, gracefully closing any in-flight request).
+  // Broadcasts open=true so other tabs/remote clients show the pane (which
+  // session is carried via the localStorage companion + the active-tab fallback).
+  //
+  // NOTE: attaching does NOT inject the voice persona. That used to fire on every
+  // open and interrupt the agent (typing + submitting the persona prompt). The
+  // persona is now primed explicitly from a button in the VoicePane.
   function attachVoice(sessionId: string) {
     if (voiceSessionId === sessionId) return;
-    // Moving to a different session — drop the old attachment's kickoff guard so
-    // the new session gets its own kickoff.
-    if (voiceSessionId && voiceSessionId !== sessionId) {
-      voiceStartedRef.current = null;
-    }
     setVoiceSessionId(sessionId);
     persistVoiceSession(sessionId);
     api.setVoicePaneOpen(true).catch((err) =>
       console.error("failed to persist voice pane state:", err)
     );
-    kickoffVoice(sessionId);
   }
 
   // Close voice entirely (detach from whatever session holds it). Remounts the
@@ -637,7 +610,6 @@ function App() {
   function detachVoice() {
     if (voiceSessionId === null) return;
     setVoiceSessionId(null);
-    voiceStartedRef.current = null;
     persistVoiceSession(null);
     api.setVoicePaneOpen(false).catch((err) =>
       console.error("failed to persist voice pane state:", err)
@@ -847,9 +819,6 @@ function App() {
           if (restored) {
             setVoiceSessionId(restored);
             persistVoiceSession(restored);
-            // Treat the restored attachment as already-kicked so the first user
-            // interaction doesn't re-inject; the agent loop survives reloads.
-            voiceStartedRef.current = restored;
           }
         }
         voicePaneHydratedRef.current = true;
@@ -1385,8 +1354,7 @@ function App() {
   // Go event carries only the open/closed BOOL, so on open we resolve WHICH
   // session from the localStorage companion (same-browser tabs), falling back to
   // the active tab (remote clients). Idempotent: SETS state, never toggles. This
-  // is a remote/cross-tab convergence path — it never re-kicks the persona (the
-  // originating client already did), so we mark the attachment as already-kicked.
+  // is a remote/cross-tab convergence path.
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
@@ -1395,7 +1363,6 @@ function App() {
       const open = !!(d && d.open);
       if (!open) {
         setVoiceSessionId(null);
-        voiceStartedRef.current = null;
         persistVoiceSession(null);
         return;
       }
@@ -1416,7 +1383,6 @@ function App() {
       if (target) {
         setVoiceSessionId(target);
         persistVoiceSession(target);
-        voiceStartedRef.current = target;
       }
     });
     return () => cancel && cancel();
@@ -1432,12 +1398,10 @@ function App() {
       const next = e.newValue;
       if (next === voiceSessionIdRef.current) return;
       if (next) {
-        // Converge onto the sibling's attachment without re-kicking.
+        // Converge onto the sibling's attachment.
         setVoiceSessionId(next);
-        voiceStartedRef.current = next;
       } else {
         setVoiceSessionId(null);
-        voiceStartedRef.current = null;
       }
     }
     window.addEventListener("storage", onStorage);
