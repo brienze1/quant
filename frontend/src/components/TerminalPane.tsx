@@ -197,24 +197,46 @@ export function TerminalPane({
         accum += dyPx;
         const rowPx = term.element ? term.element.clientHeight / term.rows : 18;
         const rows = Math.trunc(accum / rowPx);
-        if (rows !== 0) {
-          term.scrollLines(rows);
-          // Retain the sub-row remainder for the next move.
-          accum -= rows * rowPx;
-          // iOS never fires `wheel`, so replicate the wheel handler's
-          // auto-scroll toggle here: pause the incoming-output snap-back while
-          // the user reads scrollback, and restore it when they drag back to
-          // the bottom. Read the terminal's CURRENT buffer position (post-scroll).
-          const buf = term.buffer.active;
-          const isAtBottom = buf.viewportY >= buf.baseY;
-          if (!isAtBottom && autoScrollRef.current) {
-            autoScrollRef.current = false;
-            onAutoScrollChange(false);
+        if (rows === 0) return;
+        // Retain the sub-row remainder for the next move.
+        accum -= rows * rowPx;
+        // TUI apps that own scrolling never move xterm's viewport, so scrollLines
+        // is a silent no-op for them: claude code enables mouse tracking (wheel
+        // becomes SGR mouse reports) and alt-screen apps have no scrollback (wheel
+        // becomes arrow keys). Re-emit the finger travel as wheel events so
+        // xterm's own wheel pipeline routes it exactly as it does on desktop.
+        const appOwnsScroll =
+          term.modes.mouseTrackingMode !== 'none' || term.buffer.active.type === 'alternate';
+        if (appOwnsScroll) {
+          const screenEl = term.element?.querySelector('.xterm-screen');
+          if (screenEl) {
+            for (let i = 0; i < Math.abs(rows); i++) {
+              screenEl.dispatchEvent(
+                new WheelEvent('wheel', {
+                  deltaY: Math.sign(rows) * rowPx,
+                  deltaMode: 0,
+                  bubbles: true,
+                  cancelable: true,
+                })
+              );
+            }
           }
-          if (isAtBottom && !autoScrollRef.current) {
-            autoScrollRef.current = true;
-            onAutoScrollChange(true);
-          }
+          return;
+        }
+        term.scrollLines(rows);
+        // iOS never fires `wheel`, so replicate the wheel handler's
+        // auto-scroll toggle here: pause the incoming-output snap-back while
+        // the user reads scrollback, and restore it when they drag back to
+        // the bottom. Read the terminal's CURRENT buffer position (post-scroll).
+        const buf = term.buffer.active;
+        const isAtBottom = buf.viewportY >= buf.baseY;
+        if (!isAtBottom && autoScrollRef.current) {
+          autoScrollRef.current = false;
+          onAutoScrollChange(false);
+        }
+        if (isAtBottom && !autoScrollRef.current) {
+          autoScrollRef.current = true;
+          onAutoScrollChange(true);
         }
       };
 
