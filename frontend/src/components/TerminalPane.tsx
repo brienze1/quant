@@ -39,6 +39,10 @@ export function TerminalPane({
   const sessionIdRef = useRef(session.id);
   const autoScrollRef = useRef(autoScroll);
   const isWritingRef = useRef(false);
+  // Cancels any in-flight touch-scroll momentum loop. Reassigned inside the
+  // touch-scrolling setup below; must be called before every
+  // `termRef.current.dispose()` so a live rAF never drives a disposed terminal.
+  const cancelMomentumRef = useRef<() => void>(() => {});
 
   sessionIdRef.current = session.id;
   autoScrollRef.current = autoScroll;
@@ -47,6 +51,7 @@ export function TerminalPane({
     if (!termContainerRef.current) return;
 
     if (termRef.current) {
+      cancelMomentumRef.current();
       termRef.current.dispose();
       termRef.current = null;
     }
@@ -177,16 +182,20 @@ export function TerminalPane({
       // Accumulate fractional finger travel so small/slow drags (less than one
       // row of pixels) still scroll instead of being truncated to zero.
       let accum = 0;
-      const onTouchStart = (e: TouchEvent) => {
-        lastY = e.touches[0].clientY;
-        accum = 0;
-      };
-      const onTouchMove = (e: TouchEvent) => {
-        const y = e.touches[0].clientY;
+      // Recent touchmove samples (position + timestamp), used at touchend to
+      // derive a flick velocity for momentum scrolling. Pruned to the last
+      // 100ms of travel so a long, slow drag doesn't skew the flick estimate.
+      let samples: { t: number; y: number }[] = [];
+      let momentumFrame: number | null = null;
+
+      // Applies a raw pixel delta (already in "scroll" sign convention — see
+      // onTouchMove) to the terminal: accumulates fractional row travel,
+      // scrolls whole rows, and replicates the wheel handler's auto-scroll
+      // toggle. Shared by plain dragging (onTouchMove) and the momentum loop
+      // so both scroll identically.
+      const applyDelta = (dyPx: number) => {
+        accum += dyPx;
         const rowPx = term.element ? term.element.clientHeight / term.rows : 18;
-        // Finger DOWN (y increases) reveals earlier scrollback (scroll up).
-        accum += -(y - lastY);
-        lastY = y;
         const rows = Math.trunc(accum / rowPx);
         if (rows !== 0) {
           term.scrollLines(rows);
@@ -207,15 +216,98 @@ export function TerminalPane({
             onAutoScrollChange(true);
           }
         }
+      };
+
+      const cancelMomentum = () => {
+        if (momentumFrame !== null) {
+          cancelAnimationFrame(momentumFrame);
+          momentumFrame = null;
+        }
+      };
+      cancelMomentumRef.current = cancelMomentum;
+
+      // Kicks off an iOS-like momentum loop after a flick. `v` is in px/ms,
+      // already in the same sign convention as applyDelta's input. Decay is
+      // time-normalized (per-16.7ms frame) so it feels the same on 120Hz and
+      // 60Hz displays; the loop self-terminates once the terminal backing it
+      // is disposed/replaced or the velocity decays below the stop threshold.
+      const startMomentum = (initialV: number) => {
+        let v = initialV;
+        let lastFrameTime = performance.now();
+        const step = (now: number) => {
+          // Belt-and-braces: the terminal was disposed/replaced out from under
+          // us (cancelMomentumRef should normally catch this first).
+          if (termRef.current !== term) {
+            momentumFrame = null;
+            return;
+          }
+          const dt = now - lastFrameTime;
+          lastFrameTime = now;
+          applyDelta(v * dt);
+          v *= Math.pow(0.95, dt / 16.7);
+          if (Math.abs(v) < 0.05) {
+            momentumFrame = null;
+            return;
+          }
+          momentumFrame = requestAnimationFrame(step);
+        };
+        momentumFrame = requestAnimationFrame(step);
+      };
+
+      const onTouchStart = (e: TouchEvent) => {
+        // Finger down = grab: kill any in-flight momentum immediately.
+        cancelMomentum();
+        lastY = e.touches[0].clientY;
+        accum = 0;
+        samples = [];
+      };
+      const onTouchMove = (e: TouchEvent) => {
+        const y = e.touches[0].clientY;
+        // Finger DOWN (y increases) reveals earlier scrollback (scroll up).
+        const dy = -(y - lastY);
+        lastY = y;
+        applyDelta(dy);
+        const now = performance.now();
+        samples.push({ t: now, y });
+        while (samples.length > 0 && now - samples[0].t > 100) {
+          samples.shift();
+        }
         e.preventDefault();
       };
       const onTouchEnd = () => {
+        const now = performance.now();
+        while (samples.length > 0 && now - samples[0].t > 100) {
+          samples.shift();
+        }
         lastY = 0;
         accum = 0;
+        const collected = samples;
+        samples = [];
+        if (collected.length < 2 || now - collected[collected.length - 1].t > 80) {
+          // Too few samples, or the finger paused before lifting off — no flick.
+          return;
+        }
+        const first = collected[0];
+        const last = collected[collected.length - 1];
+        const dt = last.t - first.t;
+        if (dt <= 0) return;
+        // Same sign convention as onTouchMove's dy: negate finger movement.
+        let v = -((last.y - first.y) / dt);
+        v = Math.max(-5, Math.min(5, v));
+        if (Math.abs(v) > 0.3) {
+          startMomentum(v);
+        }
+      };
+      const onTouchCancel = () => {
+        cancelMomentum();
+        lastY = 0;
+        accum = 0;
+        samples = [];
       };
       touchTarget.addEventListener('touchstart', onTouchStart, { passive: true });
       touchTarget.addEventListener('touchmove', onTouchMove, { passive: false });
       touchTarget.addEventListener('touchend', onTouchEnd, { passive: true });
+      touchTarget.addEventListener('touchcancel', onTouchCancel, { passive: true });
     }
 
     return term;
@@ -302,6 +394,7 @@ export function TerminalPane({
       return () => {
         alive.current = false;
         if (termRef.current) {
+          cancelMomentumRef.current();
           termRef.current.dispose();
           termRef.current = null;
         }
@@ -422,6 +515,7 @@ export function TerminalPane({
         if (cancelResync) cancelResync();
         terminalIO.dispose(session.id);
         if (termRef.current) {
+          cancelMomentumRef.current();
           termRef.current.dispose();
           termRef.current = null;
         }
@@ -435,6 +529,7 @@ export function TerminalPane({
       if (cancelResync) cancelResync();
       terminalIO.dispose(session.id);
       if (termRef.current) {
+        cancelMomentumRef.current();
         termRef.current.dispose();
         termRef.current = null;
       }

@@ -15,6 +15,7 @@ type KeySpec = { label: string; seq: string } | { label: string; ctrl: true };
 const KEYS: KeySpec[] = [
   { label: "esc", seq: "\x1b" },
   { label: "tab", seq: "\t" },
+  { label: "enter", seq: "\r" },
   { label: "ctrl", ctrl: true },
   { label: "↑", seq: "\x1b[A" },
   { label: "↓", seq: "\x1b[B" },

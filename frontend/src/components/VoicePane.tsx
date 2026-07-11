@@ -17,6 +17,8 @@ import VoiceOrb from "./VoiceOrb";
 import { Icon } from "./Icon";
 import * as api from "../api";
 import { useTheme } from "../theme";
+import { useIsMobile } from "../mobile/useIsMobile";
+import { moBuzz } from "../mobile/primitives";
 import { createAudioService } from "../voice/audioService";
 import { setVoicePaneMicBusy, setVoicePaneState } from "../voice/pttService";
 import { playTransitionCue, playErrorCue, setVoiceCuesEnabled } from "../voice/voiceCues";
@@ -171,6 +173,7 @@ const NOT_CONFIGURED: BannerCopy = {
 
 export function VoicePane({ sessionId, className, style }: Props) {
   const { theme } = useTheme();
+  const isMobile = useIsMobile();
   const [state, setState] = useState<VoiceServiceState>("idle");
   const [error, setError] = useState<VoiceError | null>(null);
   // Transcript is persisted per session (localStorage) so it survives pane
@@ -637,6 +640,60 @@ export function VoicePane({ sessionId, className, style }: Props) {
           themeKey={theme.id}
           style={{ position: "absolute", inset: 0 }}
         />
+
+        {/* Mobile record pill: the desktop status-row "● rec" toggle (below) is
+            far too small to tap reliably on a phone, so on mobile we mirror its
+            exact semantics (same handler, same elapsed timer) in a touch-sized
+            pill docked to the bottom of the orb stage instead. */}
+        {isMobile && (state === "listening" || state === "recording") && (
+          <button
+            onClick={() => {
+              moBuzz(10);
+              handleToggleRecording();
+            }}
+            aria-label={state === "recording" ? "Stop recording" : "Start recording"}
+            style={{
+              position: "absolute",
+              bottom: 14,
+              left: "50%",
+              transform: "translateX(-50%)",
+              height: 46,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontFamily: "var(--sans)",
+              fontSize: 14,
+              fontWeight: 600,
+              borderRadius: 999,
+              padding: "0 20px",
+              cursor: "pointer",
+              ...(state === "recording"
+                ? {
+                    background: "color-mix(in srgb, var(--danger) 18%, var(--panel-2))",
+                    border: "1px solid var(--danger)",
+                    color: "var(--danger)",
+                  }
+                : {
+                    background: "var(--panel-2)",
+                    border: "1px solid var(--border)",
+                    color: "var(--fg-2)",
+                  }),
+            }}
+          >
+            {state === "recording" ? (
+              <>
+                <span style={{ fontSize: 12, lineHeight: 1 }}>■</span>
+                stop
+                <span style={{ color: "var(--fg-2)" }}>{formatElapsed(recordSecs)}</span>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 12, lineHeight: 1 }}>●</span>
+                rec
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Transcript: paired you/quant lines, scrollable, newest at bottom. */}
@@ -1007,7 +1064,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
           {/* Record toggle: visible while a listen turn is active. Pressing it
               pins the turn open (recording: speak as long as you want, across
               pauses); pressing again stops + finalizes the full transcript. */}
-          {(state === "listening" || state === "recording") && (
+          {!isMobile && (state === "listening" || state === "recording") && (
             <button
               onClick={handleToggleRecording}
               title={
