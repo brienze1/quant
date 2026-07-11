@@ -162,6 +162,17 @@ export function TerminalPane({
     const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     if (isTouch && term.element) {
       const touchTarget = term.element;
+      // iOS WebKit will claim a vertical drag as a native scroll of xterm's
+      // `.xterm-viewport` (it has `overflow-y: scroll`) and then deliver
+      // non-cancelable touchmoves — so our handler nudges the buffer but WebKit
+      // fights it and it reads as "doesn't scroll". Declaring `touch-action:none`
+      // on the touch surface (the `.xterm` div + its viewport/screen children)
+      // tells WebKit we own the gesture, so every touchmove reaches us cancelable
+      // and `scrollLines` is the sole scroll mechanism (no native fight).
+      touchTarget.style.touchAction = 'none';
+      touchTarget.querySelectorAll<HTMLElement>('.xterm-viewport, .xterm-screen').forEach((el) => {
+        el.style.touchAction = 'none';
+      });
       let lastY = 0;
       // Accumulate fractional finger travel so small/slow drags (less than one
       // row of pixels) still scroll instead of being truncated to zero.
