@@ -147,8 +147,30 @@ export function ThemeSettings() {
         />
       </div>
 
+      {/* Bundled VS Code themes (pre-installed, read-only) */}
+      {themes.some((t) => t.isPreset) && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>bundled themes</span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>// pre-installed VS Code palettes</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+            {themes
+              .filter((t) => t.isPreset)
+              .map((t) => (
+                <VSCodeCard
+                  key={t.id}
+                  theme={t}
+                  isActive={t.id === theme.id}
+                  onSelect={() => setTheme(t.id)}
+                />
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Imported VS Code themes (terminal / editor palettes) */}
-      {themes.some((t) => !t.isBuiltin) && (
+      {themes.some((t) => !t.isBuiltin && !t.isPreset) && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>imported palettes</span>
@@ -156,7 +178,7 @@ export function ThemeSettings() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
             {themes
-              .filter((t) => !t.isBuiltin)
+              .filter((t) => !t.isBuiltin && !t.isPreset)
               .map((t) => (
                 <VSCodeCard
                   key={t.id}
@@ -252,7 +274,7 @@ function VSCodeCard({
   theme: ResolvedTheme;
   isActive: boolean;
   onSelect: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   const c = theme.colors;
   return (
@@ -292,17 +314,19 @@ function VSCodeCard({
           </span>
           <span className="mono" style={{ fontSize: 9, color: "var(--fg-4)" }}>{theme.type}</span>
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          style={{ background: "none", border: "none", color: "var(--fg-4)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", padding: "2px 4px" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--danger)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-4)")}
-        >
-          x
-        </button>
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            style={{ background: "none", border: "none", color: "var(--fg-4)", cursor: "pointer", fontSize: 11, fontFamily: "var(--mono)", padding: "2px 4px" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--danger)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-4)")}
+          >
+            x
+          </button>
+        )}
       </div>
     </div>
   );

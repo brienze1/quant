@@ -1,6 +1,7 @@
 import type { ResolvedTheme, VSCodeTheme } from "./types";
 import { mapVSCodeTheme } from "./mapper";
 import { BUILTIN_THEMES } from "./defaults";
+import { PRESET_THEMES } from "./presets";
 
 const STORAGE_KEY = "quant:theme-id";
 const CUSTOM_THEMES_KEY = "quant:custom-themes";
@@ -51,7 +52,7 @@ export function saveCustomThemes(themes: ResolvedTheme[]): void {
 }
 
 export function getAllThemes(): ResolvedTheme[] {
-  return [...BUILTIN_THEMES, ...getCustomThemes()];
+  return [...BUILTIN_THEMES, ...PRESET_THEMES, ...getCustomThemes()];
 }
 
 export function importVSCodeTheme(json: VSCodeTheme): ResolvedTheme {
