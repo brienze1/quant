@@ -279,7 +279,7 @@ func NewDefaultConfig() Config {
 		CommitMessagePrefix: "",
 
 		// Sessions
-		UseWorktreeDefault:    true,
+		UseWorktreeDefault:    false,
 		SkipPermissions:       false,
 		MaxConcurrentSessions: 5,
 		AutoResumeOnStart:     true,
