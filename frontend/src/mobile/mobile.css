@@ -38,23 +38,21 @@
 
 /* Installed PWA (data-standalone is set from JS via navigator.standalone OR the
    display-mode media query — some iOS installs never match the media query, so
-   CSS can't rely on it alone). Measured on-device: iOS standalone subtracts
-   the status-bar inset from the LAYOUT viewport while still rendering the
-   page full-screen (screen 852, layout 793, inset-top 59) — so every
-   dvh/fixed-inset layer ends 59px above the physical screen bottom, leaving
-   a dead band below the tab bar that no in-layout padding can remove.
-   --standalone-h is set from JS (client.tsx) to layout-height + top-inset,
-   i.e. the real paintable screen height; 100vh is the fallback when the
-   platform reports geometry correctly. */
+   CSS can't rely on it alone). Verified on-device: with the legacy
+   black-translucent status-bar meta + manifest display:standalone, iOS
+   letterboxes the webview — layout viewport = screen minus the status-bar
+   inset (852 → 793), top-anchored, and page elements are hard-clipped at the
+   layout bottom (an element extended past it simply disappears; only the
+   page CANVAS colors the strip below). The strip is therefore unfixable from
+   CSS — the real fix is the install-time status-bar mode in client.html.
+   Here: keep the shell pinned to the layout viewport so nothing clips, and
+   paint the canvas app-colored so the strip blends until the app is
+   re-added with the corrected meta. */
 :root[data-standalone] .mo-shell {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--standalone-h, 100vh);
+  inset: 0;
+  height: auto;
 }
-/* Anything that still paints below the layout viewport (overlays sized with
-   inset:0) shows the page background there — make it the app background. */
 :root[data-standalone],
 :root[data-standalone] body { background: var(--bg); }
 
