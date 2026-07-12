@@ -284,6 +284,17 @@ export interface IAudioService {
    */
   resumeContext(): Promise<void>;
 
+  /**
+   * Prepare TTS playback from a user gesture. On iOS/standalone PWA, agent-
+   * initiated `speak()` is otherwise blocked (autoplay) and/or silenced (Web
+   * Audio is muted by the ring/silent switch and by a suspended context). This
+   * resumes the context AND "blesses" a reusable <audio> element by playing a
+   * short silent clip within the gesture, so the later agent-driven reply is
+   * audible through the device speaker. Call from the same gesture handlers as
+   * resumeContext() (pane open, prime, enable-mic). Best-effort no-op off iOS.
+   */
+  unlockPlayback(): Promise<void>;
+
   /** Release the mic + audio resources. */
   dispose(): Promise<void>;
 }

@@ -130,6 +130,15 @@ func (a *authenticator) issueCookie(secure bool) *http.Cookie {
 	}
 }
 
+// issueToken returns a fresh signed token (the same value the session cookie
+// carries) for the cross-origin standalone client, which stores it as a bearer.
+func (a *authenticator) issueToken() string {
+	a.mu.Lock()
+	key := a.key
+	a.mu.Unlock()
+	return signToken(key, time.Now().Add(sessionTTL).Unix())
+}
+
 func signToken(key []byte, exp int64) string {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, uint64(exp))
@@ -163,13 +172,34 @@ func (a *authenticator) validToken(token string) bool {
 	return time.Now().Unix() < int64(binary.BigEndian.Uint64(buf))
 }
 
-// authedRequest reports whether the request carries a valid session cookie.
+// authedRequest reports whether the request carries a valid session token.
+// It accepts three carriers, in priority order, so both the legacy same-origin
+// browser flow and the cross-origin standalone PWA client authenticate against
+// the same HMAC token:
+//   - Authorization: Bearer <token>  (standalone client RPC — cross-origin, no cookie)
+//   - ?token=<token>                 (WebSocket handshake — cannot set custom headers)
+//   - quant_remote_session cookie    (legacy tunnel-served browser flow)
 func (a *authenticator) authedRequest(r *http.Request) bool {
+	if tok := bearerToken(r); tok != "" && a.validToken(tok) {
+		return true
+	}
+	if tok := r.URL.Query().Get("token"); tok != "" && a.validToken(tok) {
+		return true
+	}
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return false
 	}
 	return a.validToken(c.Value)
+}
+
+// bearerToken extracts the token from an "Authorization: Bearer <token>" header.
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if len(h) > 7 && strings.EqualFold(h[:7], "Bearer ") {
+		return strings.TrimSpace(h[7:])
+	}
+	return ""
 }
 
 // generatePasscode returns a strong, human-readable passcode: 4 groups of 4

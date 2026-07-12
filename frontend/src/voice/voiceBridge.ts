@@ -82,9 +82,21 @@ export function registerVoiceBridge(
   // without this the orphaned voice_listen on the Go side blocks ~120s.
   const inFlight = { requestId: null as string | null };
 
+  // requestIds this handler has already accepted. The Go bridge RE-EMITS an
+  // unresolved request every few seconds (dropped-WS-frame / late-pane
+  // recovery, issue #86), so the same requestId can arrive more than once —
+  // handle each exactly once. Bounded so it can't grow unbounded in a long
+  // session.
+  const handled = new Set<string>();
   const cancel = w.runtime.EventsOn("voice:request", (req: VoiceRequest) => {
     // Ignore events for other sessions (each pane handles only its own).
     if (!req || req.sessionId !== sessionId) return;
+    if (handled.has(req.requestId)) return;
+    handled.add(req.requestId);
+    if (handled.size > 64) {
+      const oldest = handled.values().next().value;
+      if (oldest) handled.delete(oldest);
+    }
     void handleRequest(req, service, callbacks, inFlight, {
       start: startExtend,
       stop: stopExtend,

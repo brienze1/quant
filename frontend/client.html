@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-accent="emerald" data-density="compact">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0"/>
+    <meta name="theme-color" content="#0b0c0e"/>
+    <meta name="mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+    <!-- NOT black-translucent: combined with the manifest's display:standalone,
+         iOS letterboxes the webview (layout viewport = screen minus status bar,
+         top-anchored, elements hard-clipped at the bottom edge) leaving a dead
+         band under the app that no in-page CSS can remove — verified on-device
+         (screen 852 / layout 793 / inset-top 59). "black" keeps a dark system
+         status bar and lets iOS anchor the view below it, reaching the true
+         screen bottom. This is baked into the webclip at install time — a
+         change here requires deleting and re-adding the home-screen app. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+    <meta name="apple-mobile-web-app-title" content="Quant"/>
+    <link rel="apple-touch-icon" href="/quant-remote/icons/icon-180.png"/>
+    <title>Quant — remote</title>
+</head>
+<body>
+<div id="root"></div>
+<script src="/src/client.tsx" type="module"></script>
+</body>
+</html>

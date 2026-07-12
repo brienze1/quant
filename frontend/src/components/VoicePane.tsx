@@ -17,8 +17,10 @@ import VoiceOrb from "./VoiceOrb";
 import { Icon } from "./Icon";
 import * as api from "../api";
 import { useTheme } from "../theme";
+import { useIsMobile } from "../mobile/useIsMobile";
+import { moBuzz } from "../mobile/primitives";
 import { createAudioService } from "../voice/audioService";
-import { setVoicePaneMicBusy } from "../voice/pttService";
+import { setVoicePaneMicBusy, setVoicePaneState } from "../voice/pttService";
 import { playTransitionCue, playErrorCue, setVoiceCuesEnabled } from "../voice/voiceCues";
 import { registerVoiceBridge } from "../voice/voiceBridge";
 import { loadTranscript, saveTranscript, nextLineId } from "../voice/transcriptStore";
@@ -171,6 +173,7 @@ const NOT_CONFIGURED: BannerCopy = {
 
 export function VoicePane({ sessionId, className, style }: Props) {
   const { theme } = useTheme();
+  const isMobile = useIsMobile();
   const [state, setState] = useState<VoiceServiceState>("idle");
   const [error, setError] = useState<VoiceError | null>(null);
   // Transcript is persisted per session (localStorage) so it survives pane
@@ -203,6 +206,33 @@ export function VoicePane({ sessionId, className, style }: Props) {
   // as an in-progress `you ▸` line; removed when the final transcript line
   // lands (onUserTranscript) so there's never a duplicate.
   const [draft, setDraft] = useState("");
+
+  // Manual persona priming: opening the pane NO LONGER injects the voice persona
+  // into the session (that used to fire on every open and interrupt the agent).
+  // The user primes it explicitly with the button below. `primed` is per pane
+  // instance — the pane is keyed by the voice session in App, so it resets when
+  // voice moves to another session.
+  const [primed, setPrimed] = useState(false);
+  const [priming, setPriming] = useState(false);
+  const [primeErr, setPrimeErr] = useState<string | null>(null);
+  const primePersona = async () => {
+    if (priming) return;
+    setPriming(true);
+    setPrimeErr(null);
+    try {
+      await api.startVoiceSession(sessionId);
+      setPrimed(true);
+    } catch (e) {
+      const msg = String((e as { message?: string })?.message || e || "");
+      setPrimeErr(
+        msg.includes("no process running")
+          ? "start the session's agent first"
+          : msg || "couldn't prime voice",
+      );
+    } finally {
+      setPriming(false);
+    }
+  };
 
   const serviceRef = useRef<IAudioService | null>(null);
   // Live mirror of `state` for the orb's per-frame level callback (avoids stale
@@ -331,6 +361,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
         prevState = s;
         setState(s);
         setVoicePaneMicBusy(s !== "idle");
+        setVoicePaneState(s);
       });
       const offError = service.onError((e) => {
         playErrorCue();
@@ -381,9 +412,12 @@ export function VoicePane({ sessionId, className, style }: Props) {
       // WKWebView (and browser autoplay policies) keep an AudioContext created
       // without a user gesture in the "suspended" state, which leaves the input
       // analyser flat → the live meter and the orb's listening level read zero.
-      // Resume on the first real interaction anywhere in the window.
+      // Resume on the first real interaction anywhere in the window. On iOS this
+      // also "blesses" the reusable TTS <audio> element (unlockPlayback) so the
+      // agent's spoken reply is audible through the device speaker — otherwise
+      // agent-initiated playback is blocked/silenced in the installed PWA.
       const unlock = () => {
-        void service.resumeContext();
+        void service.unlockPlayback();
       };
       window.addEventListener("pointerdown", unlock, { capture: true });
       window.addEventListener("keydown", unlock, { capture: true });
@@ -401,6 +435,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
         offError();
         offRecTranscript();
         setVoicePaneMicBusy(false);
+        setVoicePaneState("idle");
         void service.dispose();
         serviceRef.current = null;
       });
@@ -452,7 +487,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
     void (async () => {
       try {
         await svc.startInputPreview();
-        await svc.resumeContext();
+        await svc.unlockPlayback();
         const [list, labels] = await Promise.all([
           svc.listInputDevices(),
           svc.hasDeviceLabels(),
@@ -605,6 +640,60 @@ export function VoicePane({ sessionId, className, style }: Props) {
           themeKey={theme.id}
           style={{ position: "absolute", inset: 0 }}
         />
+
+        {/* Mobile record pill: the desktop status-row "● rec" toggle (below) is
+            far too small to tap reliably on a phone, so on mobile we mirror its
+            exact semantics (same handler, same elapsed timer) in a touch-sized
+            pill docked to the bottom of the orb stage instead. */}
+        {isMobile && (state === "listening" || state === "recording") && (
+          <button
+            onClick={() => {
+              moBuzz(10);
+              handleToggleRecording();
+            }}
+            aria-label={state === "recording" ? "Stop recording" : "Start recording"}
+            style={{
+              position: "absolute",
+              bottom: 14,
+              left: "50%",
+              transform: "translateX(-50%)",
+              height: 46,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontFamily: "var(--sans)",
+              fontSize: 14,
+              fontWeight: 600,
+              borderRadius: 999,
+              padding: "0 20px",
+              cursor: "pointer",
+              ...(state === "recording"
+                ? {
+                    background: "color-mix(in srgb, var(--danger) 18%, var(--panel-2))",
+                    border: "1px solid var(--danger)",
+                    color: "var(--danger)",
+                  }
+                : {
+                    background: "var(--panel-2)",
+                    border: "1px solid var(--border)",
+                    color: "var(--fg-2)",
+                  }),
+            }}
+          >
+            {state === "recording" ? (
+              <>
+                <span style={{ fontSize: 12, lineHeight: 1 }}>■</span>
+                stop
+                <span style={{ color: "var(--fg-2)" }}>{formatElapsed(recordSecs)}</span>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 12, lineHeight: 1 }}>●</span>
+                rec
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Transcript: paired you/quant lines, scrollable, newest at bottom. */}
@@ -975,7 +1064,7 @@ export function VoicePane({ sessionId, className, style }: Props) {
           {/* Record toggle: visible while a listen turn is active. Pressing it
               pins the turn open (recording: speak as long as you want, across
               pauses); pressing again stops + finalizes the full transcript. */}
-          {(state === "listening" || state === "recording") && (
+          {!isMobile && (state === "listening" || state === "recording") && (
             <button
               onClick={handleToggleRecording}
               title={
@@ -1020,25 +1109,60 @@ export function VoicePane({ sessionId, className, style }: Props) {
           )}
         </div>
 
-        {error ? (
-          <span
-            title={error.message}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          {/* Manual persona prime: opening voice no longer auto-sends the persona.
+              Tap to type + submit the voice persona into the session when you
+              actually want to prime the agent for a voice conversation. */}
+          <button
+            onClick={primePersona}
+            disabled={priming}
+            title={
+              primeErr
+                ? primeErr
+                : primed
+                  ? "voice persona sent to the session — tap to send again"
+                  : "type + submit the voice persona into the session (agent starts replying in voice style). Opening voice never sends this on its own."
+            }
             style={{
-              fontSize: 10,
-              color: "var(--danger)",
-              maxWidth: "70%",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              flex: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontFamily: "var(--sans)",
+              fontSize: 10.5,
+              color: primeErr ? "var(--danger)" : primed ? "var(--ok)" : "var(--accent)",
+              backgroundColor: "var(--panel-3)",
+              border: `1px solid ${primeErr ? "var(--danger)" : primed ? "var(--ok)" : "var(--border-2)"}`,
+              borderRadius: 7,
+              padding: "1px 7px",
+              cursor: priming ? "default" : "pointer",
+              opacity: priming ? 0.6 : 1,
               whiteSpace: "nowrap",
             }}
           >
-            {errorCopy(error).title}
-          </span>
-        ) : notConfigured ? (
-          <span style={{ fontSize: 10, color: "var(--warn)" }}>not configured</span>
-        ) : (
-          <span style={{ fontSize: 10, color: "var(--fg-4)" }}>mic ready</span>
-        )}
+            {priming ? "priming…" : primeErr ? "prime failed" : primed ? "persona sent ✓" : "prime persona"}
+          </button>
+
+          {error ? (
+            <span
+              title={error.message}
+              style={{
+                fontSize: 10,
+                color: "var(--danger)",
+                maxWidth: "50%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {errorCopy(error).title}
+            </span>
+          ) : notConfigured ? (
+            <span style={{ fontSize: 10, color: "var(--warn)" }}>not configured</span>
+          ) : (
+            <span style={{ fontSize: 10, color: "var(--fg-4)" }}>mic ready</span>
+          )}
+        </div>
       </div>
     </div>
   );
