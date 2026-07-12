@@ -5,6 +5,7 @@ import { StatusDot } from "./StatusDot";
 import type { DisplayStatus } from "./StatusBadge";
 import { IconButton } from "./IconButton";
 import { Icon } from "./Icon";
+import { useIsMobile } from "../mobile/useIsMobile";
 
 /* ============================================================
    CrewPane — the supervisor's crew dock pane.
@@ -45,6 +46,8 @@ export interface CrewPaneProps {
   onSelectSession: (id: string) => void;
   /** Detach a worker into its own dock panel (CrewSessionPanel). */
   onDetachWorker: (id: string) => void;
+  /** Eligible sessions the mobile tap-assign picker can add (desktop uses drag-drop). */
+  assignCandidates?: Session[];
   onError: (msg: string) => void;
 }
 
@@ -371,6 +374,181 @@ function AssignDropZone({
   );
 }
 
+/** Assign affordance: the desktop drag target, or a touch-friendly tap picker on
+ *  mobile. Desktop path is byte-identical to the standalone AssignDropZone. */
+function AssignFooter({
+  supervisor,
+  workers,
+  candidates,
+  onError,
+}: {
+  supervisor: Session;
+  workers: Session[];
+  candidates: Session[];
+  onError: (msg: string) => void;
+}) {
+  const isMobile = useIsMobile();
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const assign = useCallback(
+    (candidate: Session) => {
+      api
+        .assignCrewWorker(candidate.id, supervisor.id)
+        .then(() => setPickerOpen(false))
+        .catch((err) => onError(String(err)));
+    },
+    [supervisor.id, onError]
+  );
+
+  if (!isMobile) {
+    return <AssignDropZone supervisor={supervisor} workers={workers} onError={onError} />;
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="mo-tap"
+        onClick={() => setPickerOpen(true)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 7,
+          width: "100%",
+          height: 40,
+          borderRadius: 10,
+          border: "1.5px solid var(--border)",
+          background: "transparent",
+          color: "var(--accent)",
+          fontSize: 12.5,
+          fontWeight: 600,
+          fontFamily: "var(--sans)",
+          cursor: "pointer",
+          minWidth: 0,
+        }}
+      >
+        <Icon name="plus" size={14} color="var(--accent)" />
+        Add worker
+      </button>
+      {pickerOpen && (
+        <div
+          onClick={() => setPickerOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "flex-end",
+            background: "rgba(0,0,0,.5)",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxHeight: "70vh",
+              display: "flex",
+              flexDirection: "column",
+              background: "var(--panel)",
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              borderTop: "1px solid var(--border-2)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "14px 16px",
+                borderBottom: "1px solid var(--border-2)",
+                flex: "none",
+              }}
+            >
+              <span
+                className="mono"
+                style={{
+                  fontSize: 9.5,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "var(--fg-3)",
+                  fontWeight: 600,
+                  flex: 1,
+                }}
+              >
+                Add worker
+              </span>
+              <IconButton
+                name="x"
+                size={15}
+                label="Close"
+                onClick={() => setPickerOpen(false)}
+              />
+            </div>
+            <div style={{ overflowY: "auto", padding: 8 }}>
+              {candidates.length === 0 ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--fg-4)",
+                    padding: "18px 10px",
+                    textAlign: "center",
+                  }}
+                >
+                  No eligible sessions to add
+                </div>
+              ) : (
+                candidates.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="mo-tap"
+                    onClick={() => assign(c)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      minHeight: 44,
+                      padding: "8px 12px",
+                      borderRadius: 9,
+                      border: "1px solid var(--border-2)",
+                      background: "var(--panel-2)",
+                      color: "var(--fg)",
+                      fontFamily: "var(--sans)",
+                      cursor: "pointer",
+                      marginBottom: 6,
+                      textAlign: "left",
+                    }}
+                  >
+                    <StatusDot status={c.status as DisplayStatus} size={8} glow />
+                    <span
+                      className="mono"
+                      style={{
+                        flex: 1,
+                        fontSize: 13,
+                        fontWeight: 500,
+                        overflow: "hidden",
+                        whiteSpace: "nowrap",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {c.name}
+                    </span>
+                    <Icon name="plus" size={14} color="var(--accent)" />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function CrewPane({
   supervisor,
   workers,
@@ -379,6 +557,7 @@ export function CrewPane({
   onToggleLock,
   onSelectSession,
   onDetachWorker,
+  assignCandidates,
   onError,
 }: CrewPaneProps) {
   const [envelopes, setEnvelopes] = useState<CrewEnvelope[]>([]);
@@ -457,7 +636,12 @@ export function CrewPane({
             and their reports queue here, injecting into its terminal when idle.
           </div>
         </div>
-        <AssignDropZone supervisor={supervisor} workers={workers} onError={onError} />
+        <AssignFooter
+          supervisor={supervisor}
+          workers={workers}
+          candidates={assignCandidates ?? []}
+          onError={onError}
+        />
         <div
           className="mono"
           style={{ fontSize: 10, color: "var(--fg-4)", textAlign: "center", lineHeight: 1.6 }}
@@ -585,7 +769,12 @@ export function CrewPane({
 
       {/* drag-assign footer */}
       <div style={{ flex: "none", padding: "0 12px 12px" }}>
-        <AssignDropZone supervisor={supervisor} workers={workers} onError={onError} />
+        <AssignFooter
+          supervisor={supervisor}
+          workers={workers}
+          candidates={assignCandidates ?? []}
+          onError={onError}
+        />
       </div>
     </div>
   );

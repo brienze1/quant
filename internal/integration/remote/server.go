@@ -18,12 +18,13 @@ import (
 var shimFS embed.FS
 
 const (
-	basePath = "/__quant_remote"
-	shimPath = basePath + "/shim.js"
-	authPath = basePath + "/auth"
-	rpcPath  = basePath + "/rpc"
-	wsPath   = basePath + "/ws"
-	shimTag  = `<script src="` + shimPath + `"></script>`
+	basePath   = "/__quant_remote"
+	shimPath   = basePath + "/shim.js"
+	authPath   = basePath + "/auth"
+	rpcPath    = basePath + "/rpc"
+	wsPath     = basePath + "/ws"
+	healthPath = basePath + "/health"
+	shimTag    = `<script src="` + shimPath + `"></script>`
 )
 
 // server is the localhost HTTP/WebSocket server that serves the embedded UI
@@ -67,11 +68,39 @@ func newServer(port int, assets fs.FS, controllers map[string]interface{}, hub *
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(shimPath, s.handleShim)
-	mux.HandleFunc(authPath, s.handleAuth)
-	mux.HandleFunc(rpcPath, s.requireAuth(s.handleRPC))
+	// auth/rpc/health are reached cross-origin by the standalone PWA client, so
+	// they carry CORS headers and answer OPTIONS preflight. Bearer tokens (not
+	// cookies) mean no credentialed CORS is needed. The WS handshake isn't
+	// preflighted by browsers and already accepts any origin (CheckOrigin).
+	mux.HandleFunc(authPath, withCORS(s.handleAuth))
+	mux.HandleFunc(rpcPath, withCORS(s.requireAuth(s.handleRPC)))
+	mux.HandleFunc(healthPath, withCORS(s.handleHealth))
 	mux.HandleFunc(wsPath, s.handleWS)
 	mux.HandleFunc("/", s.handleAssets)
 	return mux
+}
+
+// withCORS reflects the request Origin (no credentials, so this is safe and
+// lets the client be hosted at any stable origin — GitHub Pages, local dev,
+// etc.) and short-circuits the OPTIONS preflight before any auth check.
+func withCORS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		h := w.Header()
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Add("Vary", "Origin")
+		h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		h.Set("Access-Control-Max-Age", "600")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *server) start() { go s.httpServer.Serve(s.listener) }
@@ -149,15 +178,57 @@ func (s *server) handleAuth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_ = r.ParseForm()
-	ok, msg := s.auth.checkPasscode(r, r.FormValue("passcode"))
+	passcode, wantsJSON := parseAuthRequest(r)
+	ok, msg := s.auth.checkPasscode(r, passcode)
 	if !ok {
+		if wantsJSON {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+			return
+		}
 		s.serveLogin(w, msg, http.StatusUnauthorized)
+		return
+	}
+	// Standalone cross-origin client: hand back the bearer token as JSON. No
+	// cookie is set (cross-site cookies are blocked by mobile Safari's ITP).
+	if wantsJSON {
+		writeJSON(w, map[string]string{"token": s.auth.issueToken()})
 		return
 	}
 	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 	http.SetCookie(w, s.auth.issueCookie(secure))
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// parseAuthRequest pulls the passcode from either a JSON body (standalone
+// client) or a form POST (legacy browser login), and reports whether the caller
+// expects a JSON token response rather than a cookie + redirect.
+func parseAuthRequest(r *http.Request) (passcode string, wantsJSON bool) {
+	wantsJSON = strings.Contains(r.Header.Get("Accept"), "application/json") ||
+		r.URL.Query().Get("json") == "1"
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		var body struct {
+			Passcode string `json:"passcode"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) == nil {
+			return body.Passcode, true
+		}
+	}
+	_ = r.ParseForm()
+	return r.FormValue("passcode"), wantsJSON
+}
+
+// handleHealth is an unauthenticated liveness probe the standalone client hits
+// on launch to decide "reachable → enter app" vs "unreachable → reconnect
+// screen". It also reports whether the caller's token is still valid, so the
+// client can tell an expired token from a dead tunnel without a full RPC.
+func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]interface{}{
+		"ok":      true,
+		"service": "quant",
+		"authed":  s.auth.authedRequest(r),
+	})
 }
 
 func (s *server) handleRPC(w http.ResponseWriter, r *http.Request) {

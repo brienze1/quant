@@ -164,20 +164,33 @@ func (b *Bridge) Request(ctx context.Context, sessionID, kind, text string, reco
 	emitCtx := b.appCtx // Wails lifecycle ctx — NOT the request ctx
 	b.mu.Unlock()
 
+	evt := VoiceRequestEvent{
+		SessionID: sessionID,
+		RequestID: requestID,
+		Kind:      kind,
+		Text:      text,
+		Record:    record,
+	}
 	if emit != nil {
-		emit(emitCtx, "voice:request", VoiceRequestEvent{
-			SessionID: sessionID,
-			RequestID: requestID,
-			Kind:      kind,
-			Text:      text,
-			Record:    record,
-		})
+		emit(emitCtx, "voice:request", evt)
 	}
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+	// Re-emit the unresolved request periodically: a remote client whose
+	// WebSocket dropped the frame (slow/backgrounded phone — hub drops slow
+	// clients and voice: events have no replay), or a pane that opened just
+	// after the tool fired, would otherwise strand the request until the
+	// timeout (issue #86). The frontend bridge dedupes by requestId, and
+	// Resolve ignores duplicates, so re-delivery is safe.
+	reemit := time.NewTicker(5 * time.Second)
+	defer reemit.Stop()
 	for {
 		select {
+		case <-reemit.C:
+			if emit != nil {
+				emit(emitCtx, "voice:request", evt)
+			}
 		case reply := <-p.ch:
 			// The channel is buffered and only written once, but delete the entry so
 			// the map does not grow unbounded.

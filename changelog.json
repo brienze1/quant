@@ -1,6 +1,89 @@
 {
   "entries": [
     {
+      "version": "v3.1.52",
+      "date": "2026-07-12",
+      "changes": {
+        "features": [
+          "Mobile PWA remote client — install Quant to your phone's home screen and connect to your machine over a secure tunnel + passcode; the full session UI, terminal, crew, jobs and voice all work from your phone",
+          "The installed PWA now shows an in-app Update button when a new version is available, so you never have to delete and re-add the home-screen app to get the latest"
+        ],
+        "improvements": [
+          "Mobile voice can be minimized to keep talking while you use the rest of the app, with an explicit End button to hang up; a large record button and an Enter key were added to the mobile controls",
+          "Mobile scrolling now has iOS-style flick momentum, and the Claude chat view scrolls by touch"
+        ],
+        "fixes": [
+          "Voice over the remote client no longer times out or cuts out after a word or two on iOS",
+          "Fixed the empty band below the tab bar on installed iPhone home-screen apps so the app fills the whole screen"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.51",
+      "date": "2026-07-12",
+      "changes": {
+        "features": [
+          "19 VS Code themes now ship built-in — Monokai, Solarized Dark/Light, Abyss, Dark/Light Modern, Quiet Light, Kimbie Dark, Tomorrow Night Blue and more show up pre-installed in the theme picker and re-skin the whole app, no import needed",
+          "Change the terminal font size on the fly with ⌘+ and ⌘- (⌘0 resets) — applied live to every open terminal, and rebindable under Settings → keybindings"
+        ],
+        "improvements": [
+          "New sessions no longer default to a git worktree: the 'use worktree' toggle starts off on a fresh install (if you've already set a preference, it's kept)"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.50",
+      "date": "2026-07-06",
+      "changes": {
+        "fixes": [
+          "correct pt-br STT model checksum so download verifies"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.49",
+      "date": "2026-07-06",
+      "changes": {
+        "features": [
+          "per-language voice config + in-session language switch + sound cues",
+          "English / Português-BR language toggle"
+        ],
+        "fixes": [
+          "stop falsely ending voice mode on silence or a missed event (#86)",
+          "test voice speaks Portuguese when PT-BR selected"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.48",
+      "date": "2026-07-06",
+      "changes": {
+        "fixes": [
+          "accept 32-bit float WAV so embedded speech-to-text works"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.47",
+      "date": "2026-07-06",
+      "changes": {
+        "features": [
+          "one-click voice mode via embedded sherpa-onnx (no Python required)",
+          "request microphone access from Settings",
+          "af_heart default voice + config refresh when leaving Settings"
+        ]
+      }
+    },
+    {
+      "version": "v3.1.46",
+      "date": "2026-07-06",
+      "changes": {
+        "fixes": [
+          "serialize terminal input and add output resync"
+        ]
+      }
+    },
+    {
       "version": "v3.1.45",
       "date": "2026-07-03",
       "changes": {

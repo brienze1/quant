@@ -45,6 +45,37 @@ export function isVoicePaneMicBusy(): boolean {
   return voicePaneMicBusy;
 }
 
+// Live voice-pane state mirror (idle/listening/recording/thinking/speaking),
+// set by VoicePane alongside the mic-busy flag. Lets shells reflect the
+// conversation while the pane itself is hidden — e.g. the mobile mini-player
+// showing "speaking" while the voice sheet is minimized. Subscribe/get pair is
+// useSyncExternalStore-compatible.
+let voicePaneState = "idle";
+const voicePaneStateSubs = new Set<() => void>();
+
+export function setVoicePaneState(state: string): void {
+  if (voicePaneState === state) return;
+  voicePaneState = state;
+  voicePaneStateSubs.forEach((fn) => {
+    try {
+      fn();
+    } catch {
+      /* never let a subscriber break the voice loop */
+    }
+  });
+}
+
+export function getVoicePaneState(): string {
+  return voicePaneState;
+}
+
+export function subscribeVoicePaneState(fn: () => void): () => void {
+  voicePaneStateSubs.add(fn);
+  return () => {
+    voicePaneStateSubs.delete(fn);
+  };
+}
+
 function downsample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
   if (fromRate === toRate) return input;
   const ratio = fromRate / toRate;

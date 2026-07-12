@@ -16,8 +16,12 @@ type rpcRequest struct {
 }
 
 // rpcResponse mirrors a Wails method return: a result value and/or an error.
+// Result has no omitempty so zero values ("", false, 0, empty slices) serialize
+// faithfully over the bridge instead of collapsing to `undefined` — e.g. an empty
+// terminal backlog must arrive as "" so the client renders an empty terminal, not
+// a broken one.
 type rpcResponse struct {
-	Result interface{} `json:"result,omitempty"`
+	Result interface{} `json:"result"`
 	Error  string      `json:"error,omitempty"`
 }
 
