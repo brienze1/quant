@@ -48,6 +48,29 @@ if (
   window.matchMedia?.("(display-mode: standalone)").matches
 ) {
   document.documentElement.setAttribute("data-standalone", "1");
+
+  // Measured on-device: iOS standalone subtracts the status-bar inset from the
+  // layout viewport while rendering full-screen (screen 852 / layout 793 /
+  // inset-top 59) — every dvh/fixed layer ends 59px above the real screen
+  // bottom. When that signature is present, publish the true paintable height
+  // (layout + top inset) as --standalone-h for mobile.css to size the shell.
+  const fixStandaloneHeight = () => {
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:fixed;top:0;padding-top:env(safe-area-inset-top,0px);visibility:hidden";
+    document.body.appendChild(probe);
+    const sat = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+    probe.remove();
+    const real = window.innerHeight + sat;
+    if (sat > 0 && real <= window.screen.height + 2) {
+      document.documentElement.style.setProperty("--standalone-h", `${real}px`);
+    } else {
+      document.documentElement.style.removeProperty("--standalone-h");
+    }
+  };
+  fixStandaloneHeight();
+  window.addEventListener("resize", fixStandaloneHeight);
+  window.addEventListener("orientationchange", fixStandaloneHeight);
 }
 
 // ---- Service-worker update flow -------------------------------------------
