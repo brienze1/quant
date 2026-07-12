@@ -22,7 +22,10 @@ export type KeyActionId =
   | "themePicker"
   | "commandPalette"
   | "pttHold"
-  | "pttToggle";
+  | "pttToggle"
+  | "fontIncrease"
+  | "fontDecrease"
+  | "fontReset";
 
 export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   // Session tabs
@@ -60,6 +63,11 @@ export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   // Voice / push-to-talk
   { id: "pttHold", label: "Push-to-talk (hold)", category: "voice", keys: "Meta+Shift+Space" },
   { id: "pttToggle", label: "Push-to-talk (toggle)", category: "voice", keys: "Meta+Shift+v" },
+
+  // Terminal font size
+  { id: "fontIncrease", label: "Increase font size", category: "session", keys: "Meta+=" },
+  { id: "fontDecrease", label: "Decrease font size", category: "session", keys: "Meta+-" },
+  { id: "fontReset", label: "Reset font size", category: "session", keys: "Meta+0" },
 ];
 
 const STORAGE_KEY = "quant:keybindings";

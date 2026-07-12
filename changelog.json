@@ -1,6 +1,19 @@
 {
   "entries": [
     {
+      "version": "v3.1.50",
+      "date": "2026-07-11",
+      "changes": {
+        "features": [
+          "19 VS Code themes now ship built-in — Monokai, Solarized Dark/Light, Abyss, Dark/Light Modern, Quiet Light, Kimbie Dark, Tomorrow Night Blue and more show up pre-installed in the theme picker and re-skin the whole app, no import needed",
+          "Change the terminal font size on the fly with ⌘+ and ⌘- (⌘0 resets) — applied live to every open terminal, and rebindable under Settings → keybindings"
+        ],
+        "improvements": [
+          "New sessions no longer default to a git worktree: the 'use worktree' toggle starts off on a fresh install (if you've already set a preference, it's kept)"
+        ]
+      }
+    },
+    {
       "version": "v3.1.45",
       "date": "2026-07-03",
       "changes": {
