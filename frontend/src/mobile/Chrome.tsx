@@ -116,6 +116,7 @@ export function MoTabBar({
 }) {
   return (
     <div
+      className="mo-tabbar"
       style={{
         flex: "none",
         display: "flex",

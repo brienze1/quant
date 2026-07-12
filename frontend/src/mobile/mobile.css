@@ -63,6 +63,9 @@
   bottom: var(--kb-inset, 0px);
   height: auto;
 }
+/* While typing, the tab bar is dead weight riding on top of the keyboard —
+   hide it and give the reclaimed rows to the terminal. */
+:root[data-kb] .mo-tabbar { display: none; }
 
 /* pressed-state feedback for tappables */
 .mo-tap { transition: transform .08s ease, opacity .12s ease; }
