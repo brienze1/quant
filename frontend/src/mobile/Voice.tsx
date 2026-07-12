@@ -40,7 +40,9 @@ export function VoiceMini({
       className="mo-tap"
       style={{
         flex: "none",
-        margin: "0 10px 8px",
+        // 8px top gap mirrors the one below — otherwise the card sits glued to
+        // the key bar at the bottom of the tab body.
+        margin: "8px 10px 8px",
         display: "flex",
         alignItems: "center",
         gap: 11,
