@@ -63,9 +63,11 @@
   bottom: var(--kb-inset, 0px);
   height: auto;
 }
-/* While typing, the tab bar is dead weight riding on top of the keyboard —
-   hide it and give the reclaimed rows to the terminal. */
-:root[data-kb] .mo-tabbar { display: none; }
+/* While typing, the tab bar and the voice mini-player are dead weight riding
+   on top of the keyboard — hide both and give the reclaimed rows to the
+   terminal. !important: both elements carry inline display styles. */
+:root[data-kb] .mo-tabbar { display: none !important; }
+:root[data-kb] .mo-voicemini { display: none !important; }
 
 /* pressed-state feedback for tappables */
 .mo-tap { transition: transform .08s ease, opacity .12s ease; }

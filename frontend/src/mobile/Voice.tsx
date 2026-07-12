@@ -37,7 +37,7 @@ export function VoiceMini({
   return (
     <div
       onClick={onExpand}
-      className="mo-tap"
+      className="mo-tap mo-voicemini"
       style={{
         flex: "none",
         // 8px top gap mirrors the one below — otherwise the card sits glued to
