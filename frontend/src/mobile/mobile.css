@@ -38,16 +38,13 @@
 
 /* Installed PWA (data-standalone is set from JS via navigator.standalone OR the
    display-mode media query — some iOS installs never match the media query, so
-   CSS can't rely on it alone). Verified on-device: with the legacy
-   black-translucent status-bar meta + manifest display:standalone, iOS
-   letterboxes the webview — layout viewport = screen minus the status-bar
-   inset (852 → 793), top-anchored, and page elements are hard-clipped at the
-   layout bottom (an element extended past it simply disappears; only the
-   page CANVAS colors the strip below). The strip is therefore unfixable from
-   CSS — the real fix is the install-time status-bar mode in client.html.
-   Here: keep the shell pinned to the layout viewport so nothing clips, and
-   paint the canvas app-colored so the strip blends until the app is
-   re-added with the corrected meta. */
+   CSS can't rely on it alone). Verified on-device: iOS letterboxes standalone
+   webclips — layout viewport = screen minus the status-bar inset (852 → 793),
+   top-anchored, page elements hard-clipped at the layout bottom, only the page
+   CANVAS paints the strip below. Unfixable from CSS; client.tsx fixes it at
+   runtime by setting an explicit pixel height on the viewport meta
+   (fixLetterbox). Here: keep the shell pinned to the layout viewport so
+   nothing clips, and paint the canvas app-colored as a fallback. */
 :root[data-standalone] .mo-shell {
   position: fixed;
   inset: 0;
@@ -55,6 +52,17 @@
 }
 :root[data-standalone],
 :root[data-standalone] body { background: var(--bg); }
+
+/* On-screen keyboard open (data-kb + --kb-inset set from client.tsx via the
+   visualViewport API): iOS overlays the keyboard without resizing the layout
+   viewport, so shrink the shell by the occluded height — the terminal refits
+   and the focused input line stays visible above the keyboard. */
+:root[data-kb] .mo-shell {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  bottom: var(--kb-inset, 0px);
+  height: auto;
+}
 
 /* pressed-state feedback for tappables */
 .mo-tap { transition: transform .08s ease, opacity .12s ease; }

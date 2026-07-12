@@ -48,11 +48,65 @@ if (
   window.matchMedia?.("(display-mode: standalone)").matches
 ) {
   document.documentElement.setAttribute("data-standalone", "1");
-  // NOTE: do NOT try to extend layout below the reported viewport here —
-  // verified on-device that iOS hard-clips page elements at the layout-viewport
-  // bottom in the letterboxed black-translucent state (an extended shell just
-  // pushes the tab bar into invisibility). The letterbox itself is an
-  // install-time iOS decision; see the status-bar meta in client.html.
+
+  // iOS letterboxes standalone webclips: the layout viewport is sized
+  // screen-minus-status-bar (e.g. 793 on an 852pt screen) but top-anchored, so
+  // page elements hard-clip 59px above the physical bottom — a dead band under
+  // the tab bar that no in-layout CSS can reach. Verified on-device that the
+  // viewport META (read at runtime, unlike the webclip's baked-in status-bar
+  // mode) fixes it: `height=device-height` is ignored, but an EXPLICIT pixel
+  // height grows the layout viewport to the full screen
+  // (ihBefore=793 → ihExplicit852=852). Apply it while portrait; restore the
+  // base meta otherwise (screen.height is the portrait long side on iOS).
+  const VIEWPORT_BASE =
+    document.querySelector('meta[name="viewport"]')?.getAttribute("content") ||
+    "width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0";
+  const fixLetterbox = () => {
+    const vp = document.querySelector('meta[name="viewport"]');
+    if (!vp) return;
+    const portrait = window.matchMedia("(orientation: portrait)").matches;
+    // The letterbox only exists when the view sits UNDER the status bar
+    // (top inset > 0). Keying on the inset — not innerHeight — keeps this
+    // idempotent: after the fix applies, innerHeight grows but the inset is
+    // unchanged, so re-runs keep the same value instead of undoing it.
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:fixed;top:0;padding-top:env(safe-area-inset-top,0px);visibility:hidden";
+    document.body.appendChild(probe);
+    const sat = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+    probe.remove();
+    const desired =
+      portrait && sat > 0 ? `${VIEWPORT_BASE}, height=${window.screen.height}` : VIEWPORT_BASE;
+    if (vp.getAttribute("content") !== desired) vp.setAttribute("content", desired);
+  };
+  fixLetterbox();
+  window.addEventListener("orientationchange", () => setTimeout(fixLetterbox, 300));
+}
+
+// On-screen keyboard avoidance. iOS never resizes the layout viewport when the
+// keyboard opens — it overlays the bottom of the page (the visual viewport
+// shrinks, e.g. 852 → 476) — so the terminal's input line and the tab bar end
+// up hidden behind it. Mirror the occluded height into a root CSS var +
+// `data-kb` flag; mobile.css shrinks the shell by that amount so everything
+// (including xterm, which refits via its ResizeObserver) stays above the
+// keyboard. `offsetTop` is included in case iOS scrolls the visual viewport.
+{
+  const vv = window.visualViewport;
+  if (vv) {
+    const onViewport = () => {
+      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      const root = document.documentElement;
+      if (kb > 50) {
+        root.style.setProperty("--kb-inset", `${Math.round(kb)}px`);
+        root.setAttribute("data-kb", "1");
+      } else {
+        root.style.removeProperty("--kb-inset");
+        root.removeAttribute("data-kb");
+      }
+    };
+    vv.addEventListener("resize", onViewport);
+    vv.addEventListener("scroll", onViewport);
+  }
 }
 
 // ---- Service-worker update flow -------------------------------------------
