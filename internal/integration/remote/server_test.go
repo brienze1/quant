@@ -402,6 +402,140 @@ func TestResyncEmittedAfterDrain(t *testing.T) {
 	}
 }
 
+// jsonAuthToken performs the standalone-client auth flow (JSON body → JSON
+// token) and returns the bearer token.
+func jsonAuthToken(t *testing.T, base, passcode string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"passcode": passcode})
+	req, _ := http.NewRequest(http.MethodPost, base+authPath, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Origin", "https://owner.github.io")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("json auth: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for json auth, got %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "https://owner.github.io" {
+		t.Fatalf("expected reflected CORS origin, got %q", got)
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode token: %v", err)
+	}
+	if out.Token == "" {
+		t.Fatal("expected a non-empty token")
+	}
+	return out.Token
+}
+
+func TestCrossOriginBearerFlow(t *testing.T) {
+	srv, _ := newTestServer(t)
+	base := baseURL(srv)
+
+	// Wrong passcode over JSON → 401 JSON error, no token.
+	badBody, _ := json.Marshal(map[string]string{"passcode": "WRONG"})
+	badReq, _ := http.NewRequest(http.MethodPost, base+authPath, bytes.NewReader(badBody))
+	badReq.Header.Set("Content-Type", "application/json")
+	badResp, err := http.DefaultClient.Do(badReq)
+	if err != nil {
+		t.Fatalf("bad auth: %v", err)
+	}
+	badResp.Body.Close()
+	if badResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for wrong passcode, got %d", badResp.StatusCode)
+	}
+
+	token := jsonAuthToken(t, base, "TEST-PASS-CODE")
+
+	// RPC with the bearer token (no cookie) succeeds.
+	rpcBody, _ := json.Marshal(rpcRequest{Struct: "fakeController", Method: "Echo", Args: []json.RawMessage{arg(t, "yo")}})
+	rpcReq, _ := http.NewRequest(http.MethodPost, base+rpcPath, bytes.NewReader(rpcBody))
+	rpcReq.Header.Set("Content-Type", "application/json")
+	rpcReq.Header.Set("Authorization", "Bearer "+token)
+	rpcResp, err := http.DefaultClient.Do(rpcReq)
+	if err != nil {
+		t.Fatalf("bearer rpc: %v", err)
+	}
+	var out rpcResponse
+	_ = json.NewDecoder(rpcResp.Body).Decode(&out)
+	rpcResp.Body.Close()
+	if out.Result != "yo" || out.Error != "" {
+		t.Fatalf("bearer rpc: got result=%v err=%q", out.Result, out.Error)
+	}
+
+	// RPC without any credential is still rejected.
+	noAuthReq, _ := http.NewRequest(http.MethodPost, base+rpcPath, bytes.NewReader(rpcBody))
+	noAuthReq.Header.Set("Content-Type", "application/json")
+	noAuthResp, _ := http.DefaultClient.Do(noAuthReq)
+	if noAuthResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without bearer, got %d", noAuthResp.StatusCode)
+	}
+	noAuthResp.Body.Close()
+
+	// WS with ?token= (no cookie) upgrades successfully.
+	wsURL := "ws://127.0.0.1:" + fmt.Sprint(srv.port) + wsPath + "?token=" + url.QueryEscape(token)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("ws dial with ?token=: %v", err)
+	}
+	_ = conn.Close()
+}
+
+func TestPreflightAndHealth(t *testing.T) {
+	srv, _ := newTestServer(t)
+	base := baseURL(srv)
+
+	// OPTIONS preflight on /rpc returns 204 with CORS headers and no auth.
+	preReq, _ := http.NewRequest(http.MethodOptions, base+rpcPath, nil)
+	preReq.Header.Set("Origin", "https://owner.github.io")
+	preResp, err := http.DefaultClient.Do(preReq)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	preResp.Body.Close()
+	if preResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204 for preflight, got %d", preResp.StatusCode)
+	}
+	if !strings.Contains(preResp.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
+		t.Fatal("preflight missing Authorization in Allow-Headers")
+	}
+
+	// Health is reachable without auth and reports authed=false.
+	hResp, err := http.Get(base + healthPath)
+	if err != nil {
+		t.Fatalf("health: %v", err)
+	}
+	var h struct {
+		OK     bool `json:"ok"`
+		Authed bool `json:"authed"`
+	}
+	_ = json.NewDecoder(hResp.Body).Decode(&h)
+	hResp.Body.Close()
+	if !h.OK || h.Authed {
+		t.Fatalf("expected ok=true authed=false, got ok=%v authed=%v", h.OK, h.Authed)
+	}
+
+	// With a valid bearer, health reports authed=true.
+	token := jsonAuthToken(t, base, "TEST-PASS-CODE")
+	hReq, _ := http.NewRequest(http.MethodGet, base+healthPath, nil)
+	hReq.Header.Set("Authorization", "Bearer "+token)
+	hResp2, _ := http.DefaultClient.Do(hReq)
+	var h2 struct {
+		Authed bool `json:"authed"`
+	}
+	_ = json.NewDecoder(hResp2.Body).Decode(&h2)
+	hResp2.Body.Close()
+	if !h2.Authed {
+		t.Fatal("expected authed=true with valid bearer")
+	}
+}
+
 func TestGeneratePasscodeFormat(t *testing.T) {
 	p := generatePasscode()
 	if len(p) != 19 { // 16 chars + 3 dashes

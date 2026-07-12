@@ -27,7 +27,71 @@ import type {
   VoiceTransport,
 } from "./types";
 
-const DEFAULT_VAD_ASSET_PATH = "/vad/";
+// Derive the VAD asset path from Vite's base URL so it resolves correctly under
+// a non-root base (the remote PWA is served from `/quant-remote/`, where a
+// root-absolute `/vad/` would 404). Desktop's base is `/`, so this stays `/vad/`.
+const DEFAULT_VAD_ASSET_PATH = `${import.meta.env.BASE_URL}vad/`;
+
+// iOS/WebKit and installed PWAs need TTS played through a BARE <audio> element
+// rather than routed through Web Audio: Web Audio output is muted by the iPhone
+// ring/silent switch and is silent while the AudioContext is suspended (which it
+// is for agent-initiated playback that has no user gesture in its call stack).
+// A native media element plays through the silent switch and doesn't depend on a
+// running context. Desktop keeps the Web Audio route (orb output reactivity, no
+// silent switch). Best-effort — any detection failure falls back to desktop.
+function prefersNativePlayback(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nav = navigator as any;
+    const ua: string = nav.userAgent || "";
+    const iOS =
+      /iP(hone|ad|od)/.test(ua) ||
+      // iPadOS 13+ reports as MacIntel but is touch-capable.
+      (nav.platform === "MacIntel" && (nav.maxTouchPoints || 0) > 1);
+    const standalone =
+      (typeof window !== "undefined" &&
+        (window.matchMedia?.("(display-mode: standalone)").matches ||
+          nav.standalone === true)) ||
+      false;
+    return Boolean(iOS || standalone);
+  } catch {
+    return false;
+  }
+}
+
+// A ~0.1s silent 8-bit mono WAV, built once. Played (unmuted, inaudible) inside a
+// user gesture to satisfy iOS's per-element autoplay unlock so a later agent-
+// initiated `.play()` on the SAME reused element is allowed.
+let SILENT_WAV_CACHE: string | null = null;
+function silentWavDataUri(): string {
+  if (SILENT_WAV_CACHE) return SILENT_WAV_CACHE;
+  const sampleRate = 8000;
+  const samples = 800; // 0.1s
+  const buf = new ArrayBuffer(44 + samples);
+  const v = new DataView(buf);
+  const w = (o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+  };
+  w(0, "RIFF");
+  v.setUint32(4, 36 + samples, true);
+  w(8, "WAVE");
+  w(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate, true); // byte rate (8-bit mono)
+  v.setUint16(32, 1, true); // block align
+  v.setUint16(34, 8, true); // bits/sample
+  w(36, "data");
+  v.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) v.setUint8(44 + i, 128); // 8-bit silence
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  SILENT_WAV_CACHE = "data:audio/wav;base64," + btoa(bin);
+  return SILENT_WAV_CACHE;
+}
 // Overall cap on a single listen() turn (no speech-end within this window →
 // timeout). Generous so a long, paused explanation isn't cut off by the ceiling;
 // the redemption window (above) handles normal turn-taking well before this.
@@ -296,6 +360,17 @@ export class AudioService implements IAudioService {
   };
   private deviceChangeBound = false;
 
+  // On iOS/standalone, play TTS through a bare reused <audio> element (see
+  // prefersNativePlayback) instead of the Web Audio route.
+  private readonly preferNativePlayback: boolean = prefersNativePlayback();
+  // The single reusable, gesture-blessed element for the native playback path.
+  private ttsEl: HTMLAudioElement | null = null;
+  // True once a user gesture has "blessed" ttsEl (played a silent clip on it).
+  private ttsElBlessed = false;
+  // Removes the current native playback listeners; called before re-arming the
+  // reused element and on teardown so stale listeners never accumulate.
+  private ttsElListeners: (() => void) | null = null;
+
   // Playback graph (TTS).
   private audioEl: HTMLAudioElement | null = null;
   private outputAnalyser: AnalyserNode | null = null;
@@ -346,6 +421,10 @@ export class AudioService implements IAudioService {
     reject: (err: unknown) => void;
     settled: boolean;
   } | null = null;
+  // Hard ceiling on a speak() turn: blocked playback on iOS can neither fire
+  // "ended" nor "error", which would otherwise ride the Go bridge's 60s voice
+  // timeout. See armSpeakCap().
+  private speakCapTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: AudioServiceOptions = {}) {
     this.transport = opts.transport ?? defaultTransport;
@@ -726,12 +805,64 @@ export class AudioService implements IAudioService {
     // the loop dead after a turn or two.
     if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
       try {
-        await ctx.resume();
+        // iOS WebKit: resume() outside a user gesture can stay pending FOREVER
+        // (it neither resolves nor rejects). Awaiting it unguarded hangs the
+        // whole speak/listen turn until the Go bridge's opaque voice timeout.
+        // Race a short deadline — if it can't resume quickly, it won't resume
+        // at all, and the caller must proceed (or fail fast) without it.
+        await Promise.race([
+          ctx.resume(),
+          new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+        ]);
       } catch {
         /* best-effort */
       }
     }
     if (ctx) this.startKeepAlive(ctx);
+  }
+
+  /** Lazily create the reusable native-playback element (iOS path). */
+  private ensureTtsEl(): HTMLAudioElement {
+    if (this.ttsEl) return this.ttsEl;
+    const el = new Audio();
+    el.preload = "auto";
+    // Keep audio inline (never hand off to the fullscreen player) on iOS.
+    el.setAttribute("playsinline", "");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (el as any).playsInline = true;
+    this.ttsEl = el;
+    return el;
+  }
+
+  async unlockPlayback(): Promise<void> {
+    // Always resume the context (drives the input meter + desktop playback).
+    await this.resumeContext();
+    if (!this.preferNativePlayback) return;
+    // Never touch the element while a speak() owns it, and only bless it ONCE:
+    // this handler fires on EVERY window tap (including scroll touches), and
+    // re-pointing the reusable element's src mid-playback aborts the agent's
+    // reply a word or two in ("Playback error"). A blessed element stays
+    // blessed for its lifetime, so once is enough.
+    if (this.pendingSpeak || this.ttsElBlessed) return;
+    // iOS: play a short silent clip on the reusable element WITHIN this user
+    // gesture. That grants the element "user-initiated audio", so the later
+    // agent-driven speak() reusing this same element is allowed to play.
+    try {
+      const el = this.ensureTtsEl();
+      el.muted = false;
+      el.volume = 1;
+      el.src = silentWavDataUri();
+      await el.play().catch(() => {});
+      try {
+        el.pause();
+        el.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+      this.ttsElBlessed = true;
+    } catch {
+      /* best-effort — real speak() will still try to play */
+    }
   }
 
   /**
@@ -1228,8 +1359,14 @@ export class AudioService implements IAudioService {
     this.stopSpeaking();
 
     // Keep the shared context alive across turns (see the note in listen()): a
-    // suspended context would play the reply silently / not at all.
-    await this.resumeContext();
+    // suspended context would play the reply silently / not at all. The native
+    // iOS path plays outside Web Audio entirely, so it must not block on a
+    // context that may refuse to resume without a user gesture.
+    if (this.preferNativePlayback) {
+      void this.resumeContext();
+    } else {
+      await this.resumeContext();
+    }
 
     let audioB64: string;
     let contentType: string;
@@ -1247,8 +1384,16 @@ export class AudioService implements IAudioService {
       throw err;
     }
 
+    // iOS/standalone: play through the bare, gesture-blessed element so the
+    // reply is audible through the ring/silent switch and isn't trapped by a
+    // suspended AudioContext.
+    if (this.preferNativePlayback) {
+      return this.speakNative(audioB64, contentType);
+    }
+
     return new Promise<void>((resolve, reject) => {
       this.pendingSpeak = { resolve, reject, settled: false };
+      this.armSpeakCap();
 
       const el = new Audio();
       el.src = `data:${contentType};base64,${audioB64}`;
@@ -1302,6 +1447,78 @@ export class AudioService implements IAudioService {
     });
   }
 
+  /**
+   * iOS/standalone playback: reuse the single gesture-blessed <audio> element
+   * and play the reply NATIVELY (no Web Audio routing). This survives the
+   * ring/silent switch and a suspended AudioContext — the two reasons agent-
+   * initiated TTS was inaudible in the installed PWA. The orb's output level has
+   * no analyser here, so it falls back to its simulated speaking envelope.
+   */
+  private speakNative(audioB64: string, contentType: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.pendingSpeak = { resolve, reject, settled: false };
+      this.armSpeakCap();
+      const el = this.ensureTtsEl();
+      // Native route: not wired through Web Audio (would re-mute it on iOS).
+      this.outputAnalyser = null;
+      this.playbackSource = null;
+      this.audioEl = el;
+
+      // Drop any listeners still attached from a prior turn on this reused el.
+      if (this.ttsElListeners) {
+        this.ttsElListeners();
+        this.ttsElListeners = null;
+      }
+
+      const onPlaying = () => {
+        this.speakStartedAt = performance.now();
+        this.setState("speaking");
+      };
+      const onEnded = () => {
+        cleanup();
+        this.finishSpeak();
+      };
+      const onError = () => {
+        cleanup();
+        this.failSpeak({ kind: "playback", message: "Audio playback failed." });
+      };
+      const cleanup = () => {
+        el.removeEventListener("play", onPlaying);
+        el.removeEventListener("playing", onPlaying);
+        el.removeEventListener("ended", onEnded);
+        el.removeEventListener("error", onError);
+        this.ttsElListeners = null;
+      };
+      this.ttsElListeners = cleanup;
+      el.addEventListener("play", onPlaying);
+      el.addEventListener("playing", onPlaying);
+      el.addEventListener("ended", onEnded);
+      el.addEventListener("error", onError);
+
+      // Barge-in parity with the Web Audio path (see speak()).
+      if (this.bargeIn && this.vad) {
+        try {
+          this.vad.start();
+        } catch {
+          /* ignore */
+        }
+      }
+
+      el.muted = false;
+      el.volume = 1;
+      el.src = `data:${contentType};base64,${audioB64}`;
+      try {
+        el.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+      el.play().catch((e) => {
+        cleanup();
+        this.failSpeak({ kind: "playback", message: "Audio playback was blocked.", cause: e });
+      });
+    });
+  }
+
   private wirePlaybackAnalyser(el: HTMLAudioElement) {
     try {
       const AC: typeof AudioContext =
@@ -1341,7 +1558,33 @@ export class AudioService implements IAudioService {
     this.finishSpeak();
   }
 
+  /**
+   * Bound a single speak() turn: if playback hasn't settled in time (iOS
+   * autoplay gating can leave the element neither playing to "ended" nor
+   * erroring), fail with an actionable message NOW so the agent gets a real
+   * error instead of the Go bridge's opaque 60s "did not respond in time".
+   * 45s stays under the Go SpeakTimeout (60s, which also covers synthesis).
+   */
+  private armSpeakCap(): void {
+    if (this.speakCapTimer) clearTimeout(this.speakCapTimer);
+    this.speakCapTimer = setTimeout(() => {
+      this.failSpeak({
+        kind: "playback",
+        message:
+          "Playback did not complete within 45s — audio output is likely blocked by the browser; tap the voice pane once and retry.",
+      });
+    }, 45_000);
+  }
+
+  private clearSpeakCap(): void {
+    if (this.speakCapTimer) {
+      clearTimeout(this.speakCapTimer);
+      this.speakCapTimer = null;
+    }
+  }
+
   private finishSpeak() {
+    this.clearSpeakCap();
     this.teardownPlayback();
     const p = this.pendingSpeak;
     // Reset from speaking OR thinking: a speak() can be abandoned (stopSpeaking)
@@ -1355,11 +1598,15 @@ export class AudioService implements IAudioService {
   }
 
   private failSpeak(err: VoiceError) {
+    this.clearSpeakCap();
     this.teardownPlayback();
     if (this.state === "speaking" || this.state === "thinking") this.setState("idle");
     const p = this.pendingSpeak;
-    this.emitError(err);
+    // No live speak = a stale event on the reused element (e.g. an "error"
+    // fired by clearing src after an explicit stop) — nothing failed for the
+    // user, so don't surface an error banner for it.
     if (!p || p.settled) return;
+    this.emitError(err);
     p.settled = true;
     this.pendingSpeak = null;
     p.reject(err);
@@ -1450,6 +1697,20 @@ export class AudioService implements IAudioService {
     this.previewActive = false;
     this.unbindDeviceChange();
     this.devicesChangedCbs.clear();
+    if (this.ttsElListeners) {
+      this.ttsElListeners();
+      this.ttsElListeners = null;
+    }
+    this.ttsElBlessed = false;
+    if (this.ttsEl) {
+      try {
+        this.ttsEl.pause();
+        this.ttsEl.src = "";
+      } catch {
+        /* ignore */
+      }
+      this.ttsEl = null;
+    }
     await this.teardownCapture();
     try {
       await this.audioCtx?.close();
