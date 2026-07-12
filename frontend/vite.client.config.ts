@@ -39,8 +39,12 @@ export default defineConfig({
     tailwindcss(),
     renameClientHtml(),
     VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto', // injects the SW registration into the HTML entry
+      // "prompt": new deploys wait until the user confirms via the in-app
+      // Update popup (client.tsx registerSW) instead of activating silently —
+      // on iOS "autoUpdate" only lands on the second cold launch, which made
+      // updates look like they never arrived.
+      registerType: 'prompt',
+      injectRegister: false, // client.tsx registers the SW manually
       filename: 'sw.js',
       includeAssets: ['icons/*.png'],
       manifest: {
@@ -73,6 +77,12 @@ export default defineConfig({
         navigateFallback: BASE + 'index.html',
         navigateFallbackDenylist: [/^\/__quant_remote\//],
         cleanupOutdatedCaches: true,
+        // Prompt-update flow: the new SW must NOT activate on its own
+        // (skipWaiting false — the Update button sends SKIP_WAITING), but once
+        // it activates it must claim open pages so controllerchange fires and
+        // the updateSW(true) reload actually happens.
+        skipWaiting: false,
+        clientsClaim: true,
         // The app bundle is large (xterm, mermaid, three, react-flow); raise the
         // precache size ceiling so the shell precaches in full.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,

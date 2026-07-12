@@ -36,6 +36,18 @@
 
 .mo-shell { height: 100vh; height: 100dvh; }
 
+/* Installed PWA (data-standalone is set from JS via navigator.standalone OR the
+   display-mode media query — some iOS installs never match the media query, so
+   CSS can't rely on it alone): iOS standalone under-reports dvh/vh, which left
+   the shell ending above the real screen bottom — a dead strip below the tab
+   bar that no amount of tab-bar padding could remove. Pin the shell to the
+   actual viewport edges instead of trusting viewport units. */
+:root[data-standalone] .mo-shell {
+  position: fixed;
+  inset: 0;
+  height: auto;
+}
+
 /* pressed-state feedback for tappables */
 .mo-tap { transition: transform .08s ease, opacity .12s ease; }
 .mo-tap:active { transform: scale(.97); opacity: .85; }

@@ -11,8 +11,10 @@
  * Rotating the tunnel URL is just pasting the new URL on the Connect screen — no
  * reinstall, because the PWA lives at this stable origin, not the tunnel.
  */
+/// <reference types="vite-plugin-pwa/client" />
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { registerSW } from "virtual:pwa-register";
 import "./style.css";
 import App from "./App";
 import { ThemeProvider } from "./theme";
@@ -36,6 +38,138 @@ import {
   `;
   document.head.appendChild(s);
 })();
+
+// Installed-PWA detection. iOS home-screen apps don't reliably match the
+// `display-mode: standalone` media query, but Safari always sets the
+// proprietary `navigator.standalone` there — check both and stamp the root so
+// CSS (mobile.css) can key layout fixes off a signal that actually fires.
+if (
+  (navigator as unknown as { standalone?: boolean }).standalone === true ||
+  window.matchMedia?.("(display-mode: standalone)").matches
+) {
+  document.documentElement.setAttribute("data-standalone", "1");
+}
+
+// ---- Service-worker update flow -------------------------------------------
+// registerType is "prompt": a new deploy is downloaded by the waiting SW but
+// NOT activated until the user confirms — we surface that as an in-app
+// "Update" popup so nobody has to delete/re-add the home-screen app (or know
+// the double-relaunch trick) to get new versions.
+let swUpdateReady = false;
+const swUpdateSubs = new Set<() => void>();
+const updateSW = registerSW({
+  onNeedRefresh() {
+    swUpdateReady = true;
+    swUpdateSubs.forEach((fn) => fn());
+  },
+  onRegisteredSW(_url, reg) {
+    if (!reg) return;
+    const check = () => reg.update().catch(() => {});
+    // iOS PWAs only check for a new SW on cold launch by default — also check
+    // whenever the app returns to the foreground, and periodically while open.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") check();
+    });
+    setInterval(check, 15 * 60 * 1000);
+  },
+});
+
+function UpdateToast() {
+  const ready = React.useSyncExternalStore(
+    (fn) => {
+      swUpdateSubs.add(fn);
+      return () => swUpdateSubs.delete(fn);
+    },
+    () => swUpdateReady
+  );
+  const [dismissed, setDismissed] = React.useState(false);
+  const [applying, setApplying] = React.useState(false);
+  if (!ready || dismissed) return null;
+  return (
+    <div
+      role="alertdialog"
+      aria-label="Update available"
+      style={{
+        position: "fixed",
+        left: 12,
+        right: 12,
+        bottom: "calc(84px + env(safe-area-inset-bottom, 0px))",
+        zIndex: 500,
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 14px",
+        borderRadius: 14,
+        background: "var(--panel-2, #1a1b1e)",
+        border: "1px solid var(--border, rgba(255,255,255,0.12))",
+        boxShadow: "0 8px 30px rgba(0,0,0,.45)",
+        maxWidth: 420,
+        margin: "0 auto",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg, #eee)" }}>
+          Update available
+        </div>
+        <div style={{ fontSize: 12, color: "var(--fg-3, #9a9a9a)", marginTop: 2 }}>
+          A new version of Quant is ready.
+        </div>
+      </div>
+      <button
+        onClick={() => setDismissed(true)}
+        aria-label="Not now"
+        style={{
+          height: 40,
+          padding: "0 12px",
+          borderRadius: 10,
+          border: "none",
+          cursor: "pointer",
+          background: "transparent",
+          color: "var(--fg-3, #9a9a9a)",
+          fontSize: 12.5,
+        }}
+      >
+        Later
+      </button>
+      <button
+        onClick={() => {
+          setApplying(true);
+          // Activate the waiting SW, then reload ourselves: updateSW(true)'s
+          // built-in reload waits on a 'controlling' event that doesn't fire
+          // reliably (observed: the new SW activates but the page never
+          // reloads), so listen for controllerchange directly and keep a hard
+          // fallback — by the time this toast shows the new version is fully
+          // precached, so reloading always lands on it.
+          let reloaded = false;
+          const reload = () => {
+            if (reloaded) return;
+            reloaded = true;
+            window.location.reload();
+          };
+          navigator.serviceWorker?.addEventListener("controllerchange", reload, { once: true });
+          setTimeout(reload, 2500);
+          void updateSW(true);
+        }}
+        disabled={applying}
+        aria-label="Update now"
+        style={{
+          height: 40,
+          padding: "0 16px",
+          borderRadius: 10,
+          border: "none",
+          cursor: "pointer",
+          background: "var(--accent, #2ed3a0)",
+          color: "var(--on-accent, #08110d)",
+          fontSize: 13,
+          fontWeight: 700,
+          opacity: applying ? 0.6 : 1,
+        }}
+      >
+        {applying ? "Updating…" : "Update"}
+      </button>
+    </div>
+  );
+}
 
 type Phase =
   | { kind: "checking" }
@@ -146,5 +280,6 @@ const root = createRoot(container!);
 root.render(
   <ThemeProvider>
     <Client />
+    <UpdateToast />
   </ThemeProvider>
 );
