@@ -1,11 +1,20 @@
 {
   "entries": [
     {
+      "version": "v3.1.53",
+      "date": "2026-07-13",
+      "changes": {
+        "fixes": [
+          "stop sound cues from ducking TTS and killing playback (#97)"
+        ]
+      }
+    },
+    {
       "version": "v3.1.52",
       "date": "2026-07-12",
       "changes": {
         "features": [
-          "Mobile PWA remote client — install Quant to your phone's home screen and connect to your machine over a secure tunnel + passcode; the full session UI, terminal, crew, jobs and voice all work from your phone",
+          "Mobile PWA remote client \u2014 install Quant to your phone's home screen and connect to your machine over a secure tunnel + passcode; the full session UI, terminal, crew, jobs and voice all work from your phone",
           "The installed PWA now shows an in-app Update button when a new version is available, so you never have to delete and re-add the home-screen app to get the latest"
         ],
         "improvements": [
@@ -23,8 +32,8 @@
       "date": "2026-07-12",
       "changes": {
         "features": [
-          "19 VS Code themes now ship built-in — Monokai, Solarized Dark/Light, Abyss, Dark/Light Modern, Quiet Light, Kimbie Dark, Tomorrow Night Blue and more show up pre-installed in the theme picker and re-skin the whole app, no import needed",
-          "Change the terminal font size on the fly with ⌘+ and ⌘- (⌘0 resets) — applied live to every open terminal, and rebindable under Settings → keybindings"
+          "19 VS Code themes now ship built-in \u2014 Monokai, Solarized Dark/Light, Abyss, Dark/Light Modern, Quiet Light, Kimbie Dark, Tomorrow Night Blue and more show up pre-installed in the theme picker and re-skin the whole app, no import needed",
+          "Change the terminal font size on the fly with \u2318+ and \u2318- (\u23180 resets) \u2014 applied live to every open terminal, and rebindable under Settings \u2192 keybindings"
         ],
         "improvements": [
           "New sessions no longer default to a git worktree: the 'use worktree' toggle starts off on a fresh install (if you've already set a preference, it's kept)"
@@ -46,7 +55,7 @@
       "changes": {
         "features": [
           "per-language voice config + in-session language switch + sound cues",
-          "English / Português-BR language toggle"
+          "English / Portugu\u00eas-BR language toggle"
         ],
         "fixes": [
           "stop falsely ending voice mode on silence or a missed event (#86)",
@@ -88,13 +97,13 @@
       "date": "2026-07-03",
       "changes": {
         "features": [
-          "Crew mode — turn any session into a JARVIS-style orchestrator: assign worker sessions to it, dispatch long-running work with crew_dispatch, and let workers report back on their own instead of you polling them",
+          "Crew mode \u2014 turn any session into a JARVIS-style orchestrator: assign worker sessions to it, dispatch long-running work with crew_dispatch, and let workers report back on their own instead of you polling them",
           "Worker reports queue in the orchestrator's inbox and inject into its terminal when it's idle; a per-orchestrator 'always deliver' lock injects them immediately, and Deliver-now flushes on demand",
           "Crew pane with a typed report inbox, drag-and-drop to assign or unassign workers (in and out of a crew), a detachable live worker panel with a steer input, and crew/supervisor badges in the sidebar",
           "A 'crew (auto)' mindmap board mirrors each orchestrator's supervision tree, and watchdogs nudge the orchestrator when a worker goes quiet past its expected report time"
         ],
         "improvements": [
-          "Sessions created through the MCP tools are now filed under a task instead of appearing loose — create_session takes a task, and new list_tasks / create_task tools let an agent pick or make one",
+          "Sessions created through the MCP tools are now filed under a task instead of appearing loose \u2014 create_session takes a task, and new list_tasks / create_task tools let an agent pick or make one",
           "assign_session and list_sessions can resolve a session by name, not just by id"
         ]
       }
@@ -113,7 +122,7 @@
       "date": "2026-06-30",
       "changes": {
         "features": [
-          "check for updates from Settings → general: see when a new version is available, update with one click, and restart to apply it"
+          "check for updates from Settings \u2192 general: see when a new version is available, update with one click, and restart to apply it"
         ]
       }
     },
@@ -131,7 +140,7 @@
       "date": "2026-06-24",
       "changes": {
         "fixes": [
-          "the tab bar no longer scrolls vertically — it now only scrolls sideways, so tabs can't drift up or down out of view"
+          "the tab bar no longer scrolls vertically \u2014 it now only scrolls sideways, so tabs can't drift up or down out of view"
         ]
       }
     },
@@ -140,7 +149,7 @@
       "date": "2026-06-24",
       "changes": {
         "fixes": [
-          "imported VS Code themes now re-skin the whole app — picking or importing a theme (e.g. a red one) recolors the entire interface (sidebar, buttons, empty state, panels), not just the terminal and code editor. Choosing the Quant Dark or Quant Light preset now also reliably switches back from an imported theme"
+          "imported VS Code themes now re-skin the whole app \u2014 picking or importing a theme (e.g. a red one) recolors the entire interface (sidebar, buttons, empty state, panels), not just the terminal and code editor. Choosing the Quant Dark or Quant Light preset now also reliably switches back from an imported theme"
         ]
       }
     },
@@ -149,7 +158,7 @@
       "date": "2026-06-23",
       "changes": {
         "fixes": [
-          "consistent light/dark theme switching across the whole IDE — switching themes now re-skins everything together instead of leaving the terminal, code editor, and diff viewer on a mismatched palette. Light mode is a clean, neutral Quant Light that matches the rest of the app (the old Solarized-tinted panes are gone), and your chosen accent color (emerald / iris / ocean) now also drives the editor cursor and text selection, not just the chrome"
+          "consistent light/dark theme switching across the whole IDE \u2014 switching themes now re-skins everything together instead of leaving the terminal, code editor, and diff viewer on a mismatched palette. Light mode is a clean, neutral Quant Light that matches the rest of the app (the old Solarized-tinted panes are gone), and your chosen accent color (emerald / iris / ocean) now also drives the editor cursor and text selection, not just the chrome"
         ]
       }
     },
@@ -158,10 +167,10 @@
       "date": "2026-06-23",
       "changes": {
         "features": [
-          "a brand-new look — Quant has been re-skinned top to bottom with the new Quant Design System: refreshed colors, typography, and iconography across every screen, and panels that now float with soft shadows and rounded corners for a lighter, more focused, Apple-like feel",
-          "a unified title bar on macOS — the window's traffic-light buttons are now inset into Quant's own top toolbar instead of sitting in a separate grey strip, so the whole top of the window is one clean bar you can still drag to move the window",
-          "session controls moved where you'd expect them — the Files / Terminal / Mindmap / Voice pane toggles now live in the session's own header next to its name and mic, instead of a separate row, and the duplicate top-bar icons were cleaned up",
-          "detach a file into its own panel — open a file and click the new detach button on its tab to pop it out into the right-hand dock as a floating, resizable, re-tileable panel beside your terminal and mindmap; reattach it to a tab anytime, and your unsaved edits come along either way"
+          "a brand-new look \u2014 Quant has been re-skinned top to bottom with the new Quant Design System: refreshed colors, typography, and iconography across every screen, and panels that now float with soft shadows and rounded corners for a lighter, more focused, Apple-like feel",
+          "a unified title bar on macOS \u2014 the window's traffic-light buttons are now inset into Quant's own top toolbar instead of sitting in a separate grey strip, so the whole top of the window is one clean bar you can still drag to move the window",
+          "session controls moved where you'd expect them \u2014 the Files / Terminal / Mindmap / Voice pane toggles now live in the session's own header next to its name and mic, instead of a separate row, and the duplicate top-bar icons were cleaned up",
+          "detach a file into its own panel \u2014 open a file and click the new detach button on its tab to pop it out into the right-hand dock as a floating, resizable, re-tileable panel beside your terminal and mindmap; reattach it to a tab anytime, and your unsaved edits come along either way"
         ]
       }
     },
@@ -170,9 +179,9 @@
       "date": "2026-06-18",
       "changes": {
         "features": [
-          "push-to-talk dictation — hold the mic button (next to the voice button) or press Cmd+Shift+Space and speak; your words are transcribed by the local Whisper backend and streamed into the session's input line as you talk. It never submits for you — review the text and press Enter yourself",
-          "two ways to talk — press and hold for as long as you speak, or tap Cmd+Shift+V to toggle recording on and off for longer dictation; both shortcuts are rebindable under Settings → Keybindings → Voice",
-          "live streaming with no garbled text — partial transcripts are committed word-by-word only once they're stable, so what lands in the input reads cleanly and is never retracted or duplicated mid-sentence"
+          "push-to-talk dictation \u2014 hold the mic button (next to the voice button) or press Cmd+Shift+Space and speak; your words are transcribed by the local Whisper backend and streamed into the session's input line as you talk. It never submits for you \u2014 review the text and press Enter yourself",
+          "two ways to talk \u2014 press and hold for as long as you speak, or tap Cmd+Shift+V to toggle recording on and off for longer dictation; both shortcuts are rebindable under Settings \u2192 Keybindings \u2192 Voice",
+          "live streaming with no garbled text \u2014 partial transcripts are committed word-by-word only once they're stable, so what lands in the input reads cleanly and is never retracted or duplicated mid-sentence"
         ]
       }
     },
@@ -181,10 +190,10 @@
       "date": "2026-06-11",
       "changes": {
         "features": [
-          "adopt claude sessions born outside quant — \"new session\" gains a \"resume an existing session\" option: pick from the untracked claude conversations found for the repo's directory (with first message and age) or paste a session id, and quant resumes that conversation instead of starting fresh",
-          "re-point or detach a session's conversation — right-click a stopped session and \"change claude session id\" to attach a different claude conversation, or detach it so the next start begins a fresh one",
-          "agents can adopt sessions too — create_session accepts a claudeSessionId, plus new list_adoptable_sessions and set_session_claude_id MCP tools",
-          "renaming a session now renames the claude conversation too — quant runs /rename inside the running session so claude's own session title stays in sync"
+          "adopt claude sessions born outside quant \u2014 \"new session\" gains a \"resume an existing session\" option: pick from the untracked claude conversations found for the repo's directory (with first message and age) or paste a session id, and quant resumes that conversation instead of starting fresh",
+          "re-point or detach a session's conversation \u2014 right-click a stopped session and \"change claude session id\" to attach a different claude conversation, or detach it so the next start begins a fresh one",
+          "agents can adopt sessions too \u2014 create_session accepts a claudeSessionId, plus new list_adoptable_sessions and set_session_claude_id MCP tools",
+          "renaming a session now renames the claude conversation too \u2014 quant runs /rename inside the running session so claude's own session title stays in sync"
         ]
       }
     },
@@ -193,15 +202,15 @@
       "date": "2026-06-10",
       "changes": {
         "features": [
-          "a built-in file explorer, VSCode-style — a new files panel on the right (toggle it from the icon strip) shows the active session's working directory as a tree: browse folders, create files and folders, rename inline, and delete with a confirmation; the panel is per-session and resizable, just like the sessions sidebar on the left",
-          "files open as real tabs — click a file in the tree and it opens in the center tab bar right next to your sessions, with its own unsaved-changes dot; switch tabs freely (drafts are kept), save with Cmd/Ctrl+S, and closing a tab with unsaved edits asks before discarding",
-          "edit code with syntax highlighting — a CodeMirror editor that follows your theme (including imported VS Code themes) and loads language support on demand for over a hundred languages",
-          "markdown opens rendered — tables, task lists, highlighted code fences, and live mermaid diagrams, with a rendered/source toggle so you can edit and watch the preview update as you type",
-          "view images and html too — images get a zoomable viewer with dimensions and file size; html files preview live in a sandboxed frame (scripts run isolated from the app) with the same preview/source toggle; svg works as both image and editable source",
-          "agents can show you a file — a new files_open tool lets a session's agent open any file from its working directory as a tab and reveal it in the files panel tree, so 'take a look at this file' actually opens it for you"
+          "a built-in file explorer, VSCode-style \u2014 a new files panel on the right (toggle it from the icon strip) shows the active session's working directory as a tree: browse folders, create files and folders, rename inline, and delete with a confirmation; the panel is per-session and resizable, just like the sessions sidebar on the left",
+          "files open as real tabs \u2014 click a file in the tree and it opens in the center tab bar right next to your sessions, with its own unsaved-changes dot; switch tabs freely (drafts are kept), save with Cmd/Ctrl+S, and closing a tab with unsaved edits asks before discarding",
+          "edit code with syntax highlighting \u2014 a CodeMirror editor that follows your theme (including imported VS Code themes) and loads language support on demand for over a hundred languages",
+          "markdown opens rendered \u2014 tables, task lists, highlighted code fences, and live mermaid diagrams, with a rendered/source toggle so you can edit and watch the preview update as you type",
+          "view images and html too \u2014 images get a zoomable viewer with dimensions and file size; html files preview live in a sandboxed frame (scripts run isolated from the app) with the same preview/source toggle; svg works as both image and editable source",
+          "agents can show you a file \u2014 a new files_open tool lets a session's agent open any file from its working directory as a tab and reveal it in the files panel tree, so 'take a look at this file' actually opens it for you"
         ],
         "fixes": [
-          "file access from the new explorer is locked to each session's working directory — path traversal and symlink escapes are rejected, and the existing diff file read/write endpoints got the same hardening"
+          "file access from the new explorer is locked to each session's working directory \u2014 path traversal and symlink escapes are rejected, and the existing diff file read/write endpoints got the same hardening"
         ]
       }
     },
@@ -210,10 +219,10 @@
       "date": "2026-06-10",
       "changes": {
         "features": [
-          "voice recording mode — for long, thought-out answers that don't fit in one breath: while a session is listening, tap 'rec' (or just tell it 'I'm going to give a long answer, start recording') and the mic stays open across your pauses instead of cutting you off after a moment of silence; tap stop or say 'stop recording' when you're done and the whole thing is sent as one message",
-          "see your words as you speak — the voice pane now shows a live transcript that fills in while you're recording, so you can watch what's being captured before you send it",
-          "agents can start recording for you: ask a session to record and it opens the mic in recording mode itself, then ends when you say 'stop recording' (or 'finish recording' / 'end recording') — handy for dictating a long instruction hands-free",
-          "the mindmap pane is now per-session — open it on the session you're working in without it popping open on every other tab and client; each session remembers its own open/closed state while you work, and everything starts closed on a fresh launch (board contents are unaffected and stay saved per session)"
+          "voice recording mode \u2014 for long, thought-out answers that don't fit in one breath: while a session is listening, tap 'rec' (or just tell it 'I'm going to give a long answer, start recording') and the mic stays open across your pauses instead of cutting you off after a moment of silence; tap stop or say 'stop recording' when you're done and the whole thing is sent as one message",
+          "see your words as you speak \u2014 the voice pane now shows a live transcript that fills in while you're recording, so you can watch what's being captured before you send it",
+          "agents can start recording for you: ask a session to record and it opens the mic in recording mode itself, then ends when you say 'stop recording' (or 'finish recording' / 'end recording') \u2014 handy for dictating a long instruction hands-free",
+          "the mindmap pane is now per-session \u2014 open it on the session you're working in without it popping open on every other tab and client; each session remembers its own open/closed state while you work, and everything starts closed on a fresh launch (board contents are unaffected and stay saved per session)"
         ]
       }
     },
@@ -222,7 +231,7 @@
       "date": "2026-06-08",
       "changes": {
         "features": [
-          "the agent persona is now editable in Settings → Claude → 'agent persona': customize the base system prompt every session gets (how it should behave, what to emphasize, how it uses the mindmap and Quant tools), with 'load default to edit' and 'reset to default' buttons; leave it empty to keep the built-in default, which still updates with new releases"
+          "the agent persona is now editable in Settings \u2192 Claude \u2192 'agent persona': customize the base system prompt every session gets (how it should behave, what to emphasize, how it uses the mindmap and Quant tools), with 'load default to edit' and 'reset to default' buttons; leave it empty to keep the built-in default, which still updates with new releases"
         ]
       }
     },
@@ -231,11 +240,11 @@
       "date": "2026-06-08",
       "changes": {
         "features": [
-          "voice mode — talk to a session hands-free and hear it talk back: open the new voice pane on a session (the 'voice' toggle in the header) and an audio-reactive orb visualizes the conversation while you speak naturally; silence detection handles turn-taking, and you can talk over a reply to interrupt it (barge-in)",
-          "voice runs fully local and private — your own Whisper (speech-to-text) and Kokoro (text-to-speech) engines, no cloud and no API key; Settings → Voice walks a new user through install with copy-paste cards per OS (native or Docker for Kokoro) and a 'Test connection' button for each engine",
-          "Settings → Voice: pick the voice, model and speaking speed from auto-discovered dropdowns (no guessing valid names), tune how long it waits for you to finish talking with a silence/pause slider, and edit the assistant's spoken persona/instructions; optional copy-paste scripts set the engines to auto-start on login (macOS/Linux/Windows)",
+          "voice mode \u2014 talk to a session hands-free and hear it talk back: open the new voice pane on a session (the 'voice' toggle in the header) and an audio-reactive orb visualizes the conversation while you speak naturally; silence detection handles turn-taking, and you can talk over a reply to interrupt it (barge-in)",
+          "voice runs fully local and private \u2014 your own Whisper (speech-to-text) and Kokoro (text-to-speech) engines, no cloud and no API key; Settings \u2192 Voice walks a new user through install with copy-paste cards per OS (native or Docker for Kokoro) and a 'Test connection' button for each engine",
+          "Settings \u2192 Voice: pick the voice, model and speaking speed from auto-discovered dropdowns (no guessing valid names), tune how long it waits for you to finish talking with a silence/pause slider, and edit the assistant's spoken persona/instructions; optional copy-paste scripts set the engines to auto-start on login (macOS/Linux/Windows)",
           "agents can drive a spoken conversation through new MCP tools voice_listen, voice_speak and voice_converse, scoped to their own session",
-          "every session's agent now knows it's running inside Quant: a built-in persona teaches it what Quant is, how to draw its plan and progress on the live mindmap, and how to use the Quant tools — so it keeps you in the loop visually instead of just scrolling text (set QUANT_SKIP_PERSONA=1 to turn it off)"
+          "every session's agent now knows it's running inside Quant: a built-in persona teaches it what Quant is, how to draw its plan and progress on the live mindmap, and how to use the Quant tools \u2014 so it keeps you in the loop visually instead of just scrolling text (set QUANT_SKIP_PERSONA=1 to turn it off)"
         ]
       }
     },
@@ -244,7 +253,7 @@
       "date": "2026-06-06",
       "changes": {
         "features": [
-          "messages sent to another session over MCP (send_message) now submit on their own — an orchestrator agent can prompt a worker session and it runs immediately instead of waiting for you to press Enter; pass submit=false to only type the text"
+          "messages sent to another session over MCP (send_message) now submit on their own \u2014 an orchestrator agent can prompt a worker session and it runs immediately instead of waiting for you to press Enter; pass submit=false to only type the text"
         ]
       }
     },
@@ -253,7 +262,7 @@
       "date": "2026-06-06",
       "changes": {
         "fixes": [
-          "voice tools now work in the integrated terminal on macOS — the app declares microphone access so the system prompts for permission (previously you could hear audio play back but speech was never captured)"
+          "voice tools now work in the integrated terminal on macOS \u2014 the app declares microphone access so the system prompts for permission (previously you could hear audio play back but speech was never captured)"
         ]
       }
     },
@@ -271,7 +280,7 @@
       "date": "2026-06-02",
       "changes": {
         "features": [
-          "open the mindmap full screen — a maximize button in the toolbar expands it to fill the window, Esc to exit",
+          "open the mindmap full screen \u2014 a maximize button in the toolbar expands it to fill the window, Esc to exit",
           "the mindmap pane now opens and closes everywhere at once: toggle it in one session and every tab (and any connected browser) follows, while the terminal pane stays per-session",
           "agents can read another session's mindmap over MCP: mindmap_get takes an optional sessionId, and a new mindmap_list_boards tool lists which sessions have boards"
         ]
@@ -282,7 +291,7 @@
       "date": "2026-06-01",
       "changes": {
         "features": [
-          "remote access: reach quant from any browser, anywhere, via a Cloudflare quick tunnel guarded by a generated passcode — toggle it in Settings → remote access (off by default)",
+          "remote access: reach quant from any browser, anywhere, via a Cloudflare quick tunnel guarded by a generated passcode \u2014 toggle it in Settings \u2192 remote access (off by default)",
           "stop a running session straight from its right-click menu in the sidebar (also covers the Cmd+Shift+W action, which a browser can't intercept)"
         ]
       }
@@ -292,7 +301,7 @@
       "date": "2026-05-31",
       "changes": {
         "features": [
-          "live per-session mindmap pane the agent and user can draw on — nodes with status/notes/progress plus sticky notes, beside the terminal",
+          "live per-session mindmap pane the agent and user can draw on \u2014 nodes with status/notes/progress plus sticky notes, beside the terminal",
           "named mindmap boards listed under each session in the sidebar; click to open, drag a board onto another session to move it",
           "rename a mindmap board and pick per-node colors"
         ]
