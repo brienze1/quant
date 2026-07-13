@@ -220,6 +220,11 @@ async function handleRequest(
       // Surface the agent's line before playback so the transcript updates as
       // soon as quant starts speaking.
       safeCb(callbacks.onAgentSpeak, req.text);
+      // A long reply can take longer to synthesize + play than the Go
+      // SpeakTimeout (60s). Keep the request alive (same extend mechanism as a
+      // record-mode listen) so a legitimately long spoken reply plays to the end
+      // instead of the Go side timing out and cutting it off mid-sentence.
+      keepalive.start();
       await service.speak(req.text);
       settle();
       await api.voiceResult(req.requestId, "", "");

@@ -1409,6 +1409,9 @@ export class AudioService implements IAudioService {
         this.speakStartedAt = performance.now();
         this.setState("speaking");
       };
+      // As long as playback advances, push the stall watchdog out so a long reply
+      // plays to completion instead of being cut off at a fixed ceiling.
+      const onProgress = () => this.armSpeakCap();
       const onEnded = () => {
         cleanup();
         this.finishSpeak();
@@ -1420,12 +1423,14 @@ export class AudioService implements IAudioService {
       const cleanup = () => {
         el.removeEventListener("playing", onPlaying);
         el.removeEventListener("play", onPlaying);
+        el.removeEventListener("timeupdate", onProgress);
         el.removeEventListener("ended", onEnded);
         el.removeEventListener("error", onError);
       };
 
       el.addEventListener("play", onPlaying);
       el.addEventListener("playing", onPlaying);
+      el.addEventListener("timeupdate", onProgress);
       el.addEventListener("ended", onEnded);
       el.addEventListener("error", onError);
 
@@ -1475,6 +1480,8 @@ export class AudioService implements IAudioService {
         this.speakStartedAt = performance.now();
         this.setState("speaking");
       };
+      // Push the stall watchdog out while playback advances (see speak()).
+      const onProgress = () => this.armSpeakCap();
       const onEnded = () => {
         cleanup();
         this.finishSpeak();
@@ -1486,6 +1493,7 @@ export class AudioService implements IAudioService {
       const cleanup = () => {
         el.removeEventListener("play", onPlaying);
         el.removeEventListener("playing", onPlaying);
+        el.removeEventListener("timeupdate", onProgress);
         el.removeEventListener("ended", onEnded);
         el.removeEventListener("error", onError);
         this.ttsElListeners = null;
@@ -1493,6 +1501,7 @@ export class AudioService implements IAudioService {
       this.ttsElListeners = cleanup;
       el.addEventListener("play", onPlaying);
       el.addEventListener("playing", onPlaying);
+      el.addEventListener("timeupdate", onProgress);
       el.addEventListener("ended", onEnded);
       el.addEventListener("error", onError);
 
@@ -1588,11 +1597,14 @@ export class AudioService implements IAudioService {
   }
 
   /**
-   * Bound a single speak() turn: if playback hasn't settled in time (iOS
-   * autoplay gating can leave the element neither playing to "ended" nor
-   * erroring), fail with an actionable message NOW so the agent gets a real
-   * error instead of the Go bridge's opaque 60s "did not respond in time".
-   * 45s stays under the Go SpeakTimeout (60s, which also covers synthesis).
+   * Watchdog for a single speak() turn: fail with an actionable message if
+   * playback makes no progress for the window, covering the two ways an element
+   * can hang without firing "ended"/"error" — iOS autoplay gating (never starts)
+   * and a mid-clip stall. It is (re)armed on every "timeupdate", so a long reply
+   * that keeps playing pushes the deadline out and is NEVER cut off mid-sentence
+   * — only a genuine lack of progress trips it. (The Go SpeakTimeout is held off
+   * for long replies by the bridge keepalive, so this no longer needs to stay
+   * under 60s.)
    */
   private armSpeakCap(): void {
     if (this.speakCapTimer) clearTimeout(this.speakCapTimer);
@@ -1600,7 +1612,7 @@ export class AudioService implements IAudioService {
       this.failSpeak({
         kind: "playback",
         message:
-          "Playback did not complete within 45s — audio output is likely blocked by the browser; tap the voice pane once and retry.",
+          "Playback stalled — audio output may be blocked; tap the voice pane once and retry.",
       });
     }, 45_000);
   }
