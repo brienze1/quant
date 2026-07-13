@@ -21,7 +21,7 @@ import { useIsMobile } from "../mobile/useIsMobile";
 import { moBuzz } from "../mobile/primitives";
 import { createAudioService } from "../voice/audioService";
 import { setVoicePaneMicBusy, setVoicePaneState } from "../voice/pttService";
-import { playTransitionCue, playErrorCue, setVoiceCuesEnabled } from "../voice/voiceCues";
+import { setVoiceCuesEnabled } from "../voice/voiceCues";
 import { registerVoiceBridge } from "../voice/voiceBridge";
 import { loadTranscript, saveTranscript, nextLineId } from "../voice/transcriptStore";
 import type {
@@ -357,14 +357,14 @@ export function VoicePane({ sessionId, className, style }: Props) {
       // (e.g. only chime "ended" when an active turn returns to idle).
       let prevState: VoiceServiceState = "idle";
       const offState = service.onState((s) => {
-        playTransitionCue(s, prevState);
+        service.playCue(s, prevState);
         prevState = s;
         setState(s);
         setVoicePaneMicBusy(s !== "idle");
         setVoicePaneState(s);
       });
       const offError = service.onError((e) => {
-        playErrorCue();
+        service.playCueError();
         setError(e);
       });
       // Live recording draft: the service emits the accumulated transcript as

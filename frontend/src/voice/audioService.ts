@@ -26,6 +26,7 @@ import type {
   VoiceStateCb,
   VoiceTransport,
 } from "./types";
+import { playTransitionCue, playErrorCue } from "./voiceCues";
 
 // Derive the VAD asset path from Vite's base URL so it resolves correctly under
 // a non-root base (the remote PWA is served from `/quant-remote/`, where a
@@ -1556,6 +1557,34 @@ export class AudioService implements IAudioService {
     }
     // Resolve (not reject) an in-flight speak when explicitly stopped.
     this.finishSpeak();
+  }
+
+  // Cue dispatch lives here (not in voiceCues.ts) because the service owns the
+  // three facts a correct routing decision needs: the single shared
+  // AudioContext, the platform flag, and speak state. voiceCues is a pure tone
+  // synthesizer that takes the context to play into.
+  //
+  // On the iOS native-playback path we return BEFORE touching the context: a
+  // Web Audio context opened here would arbitrate the one WebKit audio session
+  // against the native <audio> TTS and duck it. Cues are silent on that path by
+  // design (conversation-only on mobile). On desktop we reuse the same context
+  // as TTS so cues share its session instead of competing with it.
+  playCue(next: VoiceServiceState, prev: VoiceServiceState): void {
+    if (this.preferNativePlayback) return;
+    try {
+      playTransitionCue(this.ensureContext(), next, prev);
+    } catch {
+      /* cues are best-effort */
+    }
+  }
+
+  playCueError(): void {
+    if (this.preferNativePlayback) return;
+    try {
+      playErrorCue(this.ensureContext());
+    } catch {
+      /* cues are best-effort */
+    }
   }
 
   /**

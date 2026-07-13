@@ -224,6 +224,19 @@ export interface IAudioService {
   /** Stop any current playback immediately (resolves the in-flight speak()). */
   stopSpeaking(): void;
 
+  /**
+   * Play the transition earcon for a state change. The service owns the routing
+   * decision: it reuses its single shared AudioContext (so cues share the one
+   * WebKit audio session as TTS instead of competing with it) and no-ops on the
+   * iOS native-playback path (where a Web Audio context would duck native TTS).
+   * Best-effort — never throws. The "speaking" transition is intentionally
+   * silent. Wired from VoicePane's onState subscriber.
+   */
+  playCue(next: VoiceServiceState, prev: VoiceServiceState): void;
+
+  /** Play the error earcon (same routing rules as playCue). Best-effort. */
+  playCueError(): void;
+
   /** Enable/disable barge-in at runtime. */
   setBargeIn(enabled: boolean): void;
 
