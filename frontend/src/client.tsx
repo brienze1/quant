@@ -80,7 +80,20 @@ if (
     if (vp.getAttribute("content") !== desired) vp.setAttribute("content", desired);
   };
   fixLetterbox();
+  // Re-apply aggressively: iOS often reports the safe-area inset LATE (0 on the
+  // first paint, real value a few frames later), and a home-screen webclip can
+  // reload from the service-worker cache with the base meta, both of which
+  // leave the letterbox un-fixed until something re-runs it. Fire on every
+  // signal that the viewport may have (re)settled, plus a few delayed retries.
+  [80, 300, 800, 2000].forEach((ms) => setTimeout(fixLetterbox, ms));
   window.addEventListener("orientationchange", () => setTimeout(fixLetterbox, 300));
+  window.addEventListener("load", () => setTimeout(fixLetterbox, 100));
+  window.addEventListener("pageshow", fixLetterbox);
+  window.addEventListener("resize", fixLetterbox);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") fixLetterbox();
+  });
+  window.visualViewport?.addEventListener("resize", fixLetterbox);
 }
 
 // On-screen keyboard avoidance. iOS never resizes the layout viewport when the
