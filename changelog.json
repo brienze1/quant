@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "v3.1.53",
+      "date": "2026-07-13",
+      "changes": {
+        "fixes": [
+          "Fixed a 'Couldn't play the audio reply. Check your output device.' error during voice conversations on desktop — the per-turn sound cues no longer compete with speech playback, so replies play reliably every turn"
+        ]
+      }
+    },
+    {
       "version": "v3.1.52",
       "date": "2026-07-12",
       "changes": {
@@ -36,7 +45,7 @@
       "date": "2026-07-06",
       "changes": {
         "fixes": [
-          "correct pt-br STT model checksum so download verifies"
+          "Fixed the Português-BR speech-recognition model failing to download with a checksum-mismatch error on every machine"
         ]
       }
     },
@@ -45,12 +54,11 @@
       "date": "2026-07-06",
       "changes": {
         "features": [
-          "per-language voice config + in-session language switch + sound cues",
-          "English / Português-BR language toggle"
+          "Voice now speaks both English and Português-BR — pick a distinct voice and speaking speed per language in Settings, and switch between EN and PT-BR live from the voice pane in the middle of a conversation (the Settings voice preview speaks the selected language too)",
+          "Voice conversations play subtle audio cues as each turn changes, so you get non-visual feedback about what's happening; mute them anytime in Settings"
         ],
         "fixes": [
-          "stop falsely ending voice mode on silence or a missed event (#86)",
-          "test voice speaks Portuguese when PT-BR selected"
+          "Voice mode no longer falsely ends when you stay quiet or a single event is missed — being silent is allowed, and voice errors now surface a real message instead of '[object Object]' (#86)"
         ]
       }
     },
