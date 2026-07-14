@@ -2997,16 +2997,33 @@ func (s *QuantMCPServer) handleVoiceSpeak(ctx context.Context, request mcp.CallT
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, false, voice.SpeakTimeout); err != nil {
-		if errors.Is(err, voice.ErrVoiceTimeout) {
-			return voiceTimeoutResult(), nil
-		}
-		if errors.Is(err, voice.ErrVoiceEnded) {
-			return voiceEndedResult(), nil
-		}
-		return mcp.NewToolResultError(err.Error()), nil
+	if res := s.speakChunked(ctx, sessionID, text); res != nil {
+		return res, nil
 	}
 	return mcp.NewToolResultText("spoken"), nil
+}
+
+// speakChunked speaks text as one or more sentence-sized requests, each within a
+// fresh SpeakTimeout budget (see splitForSpeech), so an arbitrarily long reply
+// plays in full instead of a single request outrunning its 60s deadline — which
+// on an unreliable surface (mobile) would hang the tool. The requests are
+// sequential: the Go bridge blocks until each chunk finishes playing before the
+// next is emitted, so playback never overlaps. Returns a non-nil result only
+// when speaking should stop early (timeout / pane closed / error) — the caller
+// returns it directly; nil means every chunk spoke successfully.
+func (s *QuantMCPServer) speakChunked(ctx context.Context, sessionID, text string) *mcp.CallToolResult {
+	for _, chunk := range splitForSpeech(text, speechChunkChars) {
+		if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", chunk, false, voice.SpeakTimeout); err != nil {
+			if errors.Is(err, voice.ErrVoiceTimeout) {
+				return voiceTimeoutResult()
+			}
+			if errors.Is(err, voice.ErrVoiceEnded) {
+				return voiceEndedResult()
+			}
+			return mcp.NewToolResultError(err.Error())
+		}
+	}
+	return nil
 }
 
 func (s *QuantMCPServer) handleVoiceConverse(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -3023,15 +3040,9 @@ func (s *QuantMCPServer) handleVoiceConverse(ctx context.Context, request mcp.Ca
 	}
 	record := boolArg(request.GetArguments(), "record")
 
-	// Speak first, then listen for the reply — one combined turn.
-	if _, err := s.voiceBridge.Request(ctx, sessionID, "speak", text, false, voice.SpeakTimeout); err != nil {
-		if errors.Is(err, voice.ErrVoiceTimeout) {
-			return voiceTimeoutResult(), nil
-		}
-		if errors.Is(err, voice.ErrVoiceEnded) {
-			return voiceEndedResult(), nil
-		}
-		return mcp.NewToolResultError(err.Error()), nil
+	// Speak first (chunked so a long reply plays fully), then listen — one turn.
+	if res := s.speakChunked(ctx, sessionID, text); res != nil {
+		return res, nil
 	}
 	reply, err := s.voiceBridge.Request(ctx, sessionID, "listen", "", record, voice.ListenTimeout)
 	if err != nil {
