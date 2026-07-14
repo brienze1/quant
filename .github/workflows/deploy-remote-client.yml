@@ -48,7 +48,13 @@ jobs:
         working-directory: frontend
 
       - name: Setup Pages
+        # enablement: true makes the action create the Pages site (build_type
+        # "workflow") using the job's `pages: write` token, so the deploy no
+        # longer fails with "Get Pages site failed" when Pages was never turned
+        # on in repo settings (and no repo-admin access is needed to bootstrap).
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
