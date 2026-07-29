@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Config, Repo, Shortcut, RemoteStatus, UpdateInfo } from "../types";
 import * as api from "../api";
 import type { VoiceConfig, VoiceRuntimeStatus, VoiceRuntimeEvent } from "../types";
@@ -1600,6 +1601,38 @@ function DropdownMenu({
   items: { label: string; onClick: () => void }[];
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  // The settings panels clip their content (overflow: hidden), so the menu is
+  // rendered in a portal and positioned against the anchor in viewport space.
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+
+  useLayoutEffect(() => {
+    function place() {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const r = anchor.getBoundingClientRect();
+      const gap = 6;
+      const margin = 8;
+      const below = window.innerHeight - r.bottom - gap - margin;
+      const above = r.top - gap - margin;
+      const flip = below < 140 && above > below;
+      const maxHeight = Math.max(80, flip ? above : below);
+      const desired = menuRef.current?.offsetHeight ?? 0;
+      const height = desired ? Math.min(desired, maxHeight) : maxHeight;
+      setPos({
+        top: flip ? Math.max(margin, r.top - gap - height) : r.bottom + gap,
+        left: Math.min(r.left, Math.max(margin, window.innerWidth - r.width - margin)),
+        width: r.width,
+        maxHeight,
+      });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchorRef, items.length]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -1621,22 +1654,25 @@ function DropdownMenu({
     };
   }, [onClose, anchorRef]);
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       style={{
-        position: "absolute",
-        top: 38,
-        left: 0,
-        zIndex: 50,
+        position: "fixed",
+        top: pos?.top ?? -9999,
+        left: pos?.left ?? -9999,
+        visibility: pos ? "visible" : "hidden",
+        zIndex: 1000,
         background: "var(--panel)",
         border: "1px solid var(--border)",
         borderRadius: 9,
         boxShadow: "var(--shadow-pop)",
         minWidth: 180,
-        width: "100%",
-        overflow: "hidden",
+        width: pos?.width,
+        maxHeight: pos?.maxHeight,
+        overflowY: "auto",
         padding: 4,
+        boxSizing: "border-box",
       }}
     >
       {items.length === 0 && (
@@ -1671,7 +1707,8 @@ function DropdownMenu({
           <span>{item.label}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
