@@ -60,6 +60,48 @@ func NewSessionManagerService(
 	}
 }
 
+// resolvePull decides whether to auto-pull before creating a session and which
+// branch to pull from.
+//
+// Session options win over config defaults, with two exceptions:
+//   - a nil AutoPull means "not specified" (MCP/crew callers), so the config
+//     default decides;
+//   - a per-repo branch override beats the config-wide default branch, since a
+//     session that merely carried that default forward never asked for it.
+//
+// An explicit branch typed into the create-session modal still wins over the
+// override.
+func (s *sessionManagerService) resolvePull(repo *entity.Repo, opts entity.SessionOptions) (bool, string) {
+	cfg, err := s.loadConfig.LoadConfig()
+	if err != nil {
+		log.Printf("auto-pull: failed to load config: %s", err)
+		cfg = nil
+	}
+
+	autoPull := opts.AutoPull != nil && *opts.AutoPull
+	if opts.AutoPull == nil && cfg != nil {
+		autoPull = cfg.AutoPull
+	}
+	if !autoPull {
+		return false, ""
+	}
+
+	branch := strings.TrimSpace(opts.PullBranch)
+	if cfg != nil {
+		if override := strings.TrimSpace(cfg.BranchOverrides[repo.Name]); override != "" &&
+			(branch == "" || branch == strings.TrimSpace(cfg.DefaultPullBranch)) {
+			branch = override
+		}
+		if branch == "" {
+			branch = strings.TrimSpace(cfg.DefaultPullBranch)
+		}
+	}
+	if branch == "" {
+		branch = "main"
+	}
+	return true, branch
+}
+
 // CreateSession creates a new session with the given parameters.
 // The directory is resolved from the repo's path.
 // Per-session options override config defaults (set via advanced options in the create session modal).
@@ -75,12 +117,14 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 			return nil, fmt.Errorf("repo not found: %s", repoID)
 		}
 
-		// Auto-pull latest changes before creating the session.
-		if opts.AutoPull {
-			pullBranch := opts.PullBranch
+		// Auto-pull latest changes before creating the session (and before the
+		// worktree is cut, so it branches off the freshly pulled state).
+		if autoPull, pullBranch := s.resolvePull(repo, opts); autoPull {
 			cmd := exec.Command("git", "pull", "origin", pullBranch)
 			cmd.Dir = repo.Path
 			if output, pullErr := cmd.CombinedOutput(); pullErr != nil {
+				// A failed pull never blocks session creation — we just keep the
+				// repo as-is.
 				log.Printf("auto-pull failed for repo %s (branch %s): %s: %s", repo.Name, pullBranch, pullErr, string(output))
 			}
 		}

@@ -6,7 +6,9 @@ package entity
 type SessionOptions struct {
 	UseWorktree       bool
 	SkipPermissions   bool
-	AutoPull          bool
+	// AutoPull is nil when the caller did not specify it (MCP / crew), in which
+	// case the config default applies.
+	AutoPull          *bool
 	PullBranch        string
 	BranchNamePattern string
 	Model             string
