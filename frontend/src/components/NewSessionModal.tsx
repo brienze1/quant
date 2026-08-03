@@ -54,6 +54,10 @@ export function NewSessionModal({
   const [skipPermissions, setSkipPermissions] = useState(false);
   const [autoPull, setAutoPull] = useState(true);
   const [pullBranch, setPullBranch] = useState("main");
+  // Once the branch is typed by hand it stops following the per-repo override.
+  const [pullBranchTouched, setPullBranchTouched] = useState(false);
+  const [branchOverrides, setBranchOverrides] = useState<Record<string, string>>({});
+  const [defaultPullBranch, setDefaultPullBranch] = useState("main");
   const [branchNamePattern, setBranchNamePattern] = useState("quant/{session}");
   const [model, setModel] = useState("claude-sonnet-4-6");
   const [extraCliArgs, setExtraCliArgs] = useState("");
@@ -64,6 +68,8 @@ export function NewSessionModal({
       setUseWorktree(cfg.useWorktreeDefault);
       setSkipPermissions(cfg.skipPermissions);
       setAutoPull(cfg.autoPull);
+      setDefaultPullBranch(cfg.defaultPullBranch);
+      setBranchOverrides(cfg.branchOverrides ?? {});
       setPullBranch(cfg.defaultPullBranch);
       setBranchNamePattern(cfg.branchNamePattern);
       setModel(cfg.defaultModel);
@@ -79,6 +85,12 @@ export function NewSessionModal({
 
   const tasks = tasksByRepo[repoId] ?? [];
   const selectedRepo = repos.find((r) => r.id === repoId);
+
+  // Follow the per-repo pull branch override for the selected repo.
+  useEffect(() => {
+    if (pullBranchTouched || !selectedRepo) return;
+    setPullBranch(branchOverrides[selectedRepo.name] ?? defaultPullBranch);
+  }, [selectedRepo?.name, branchOverrides, defaultPullBranch, pullBranchTouched]);
 
   // A pasted valid UUID takes precedence over the list selection.
   const pastedClaude = pastedClaudeId.trim();
@@ -317,7 +329,14 @@ export function NewSessionModal({
               </SectionRow>
               <SectionRow>
                 <RowLabel title="pull branch" sub="branch to pull from remote" />
-                <ModalInput value={pullBranch} onChange={(e) => setPullBranch(e.target.value)} style={{ width: 150, height: 32 }} />
+                <ModalInput
+                  value={pullBranch}
+                  onChange={(e) => {
+                    setPullBranchTouched(true);
+                    setPullBranch(e.target.value);
+                  }}
+                  style={{ width: 150, height: 32 }}
+                />
               </SectionRow>
             </div>
 

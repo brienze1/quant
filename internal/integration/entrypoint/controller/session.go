@@ -49,7 +49,7 @@ func (c *sessionController) CreateSession(request dto.CreateSessionRequest) (*dt
 	opts := entity.SessionOptions{
 		UseWorktree:       request.UseWorktree,
 		SkipPermissions:   request.SkipPermissions,
-		AutoPull:          request.AutoPull,
+		AutoPull:          &request.AutoPull,
 		PullBranch:        request.PullBranch,
 		BranchNamePattern: request.BranchNamePattern,
 		Model:             request.Model,
