@@ -10,6 +10,7 @@ import (
 type TaskManager interface {
 	CreateTask(repoID string, tag string, name string) (*entity.Task, error)
 	ListTasksByRepo(repoID string) ([]entity.Task, error)
+	ReorderTasks(repoID string, orderedTaskIDs []string) error
 	GetTask(id string) (*entity.Task, error)
 	DeleteTask(id string) error
 	ArchiveTask(id string) error

@@ -14,6 +14,7 @@ type TaskRow struct {
 	RepoID     string
 	Tag        string
 	Name       string
+	SortOrder  int
 	CreatedAt  string
 	UpdatedAt  string
 	ArchivedAt sql.NullString
@@ -35,6 +36,7 @@ func (r TaskRow) ToEntity() entity.Task {
 		RepoID:     r.RepoID,
 		Tag:        r.Tag,
 		Name:       r.Name,
+		SortOrder:  r.SortOrder,
 		CreatedAt:  createdAt,
 		UpdatedAt:  updatedAt,
 		ArchivedAt: archivedAt,
@@ -53,6 +55,7 @@ func TaskRowFromEntity(task entity.Task) TaskRow {
 		RepoID:     task.RepoID,
 		Tag:        task.Tag,
 		Name:       task.Name,
+		SortOrder:  task.SortOrder,
 		CreatedAt:  task.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:  task.UpdatedAt.Format(time.RFC3339),
 		ArchivedAt: archivedAt,

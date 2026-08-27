@@ -106,6 +106,10 @@ export function listTasksByRepo(repoId: string): Promise<Task[]> {
   return callGo(PKG, TASK_CTRL, "ListTasksByRepo", repoId);
 }
 
+export function reorderTasks(repoId: string, orderedTaskIds: string[]): Promise<void> {
+  return callGo(PKG, TASK_CTRL, "ReorderTasks", { repoId, orderedTaskIds });
+}
+
 export function getTask(id: string): Promise<Task> {
   return callGo(PKG, TASK_CTRL, "GetTask", id);
 }

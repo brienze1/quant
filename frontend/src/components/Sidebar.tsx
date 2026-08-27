@@ -67,6 +67,8 @@ interface SidebarProps {
   onMoveSession?: (sessionId: string, repoId: string) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
+  /** persists a repo's task order after a drag-reorder (top to bottom) */
+  onReorderTasks?: (repoId: string, orderedTaskIds: string[]) => void;
   boardsBySession?: Record<string, string[]>;
   activeBoardBySession?: Record<string, string>;
   onSelectBoard?: (sessionId: string, board: string) => void;
@@ -201,6 +203,69 @@ function RenameInput({
   );
 }
 
+/* ---------- session name search ---------- */
+function SessionSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [focused, setFocused] = useState(false);
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 8,
+        padding: "0 8px",
+        height: 26,
+        borderRadius: 7,
+        background: "var(--panel-3)",
+        border: `1px solid ${focused ? "var(--accent)" : "var(--border-2)"}`,
+      }}
+    >
+      <Icon name="search" size={12} color={focused ? "var(--accent)" : "var(--fg-4)"} />
+      <input
+        ref={ref}
+        value={value}
+        spellCheck={false}
+        placeholder="search sessions"
+        aria-label="search sessions by name"
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onChange("");
+            ref.current?.blur();
+          }
+        }}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          height: "100%",
+          background: "transparent",
+          border: "none",
+          outline: "none",
+          color: "var(--fg)",
+          fontFamily: "var(--sans)",
+          fontSize: 11.5,
+        }}
+      />
+      {value && (
+        <button
+          onClick={() => {
+            onChange("");
+            ref.current?.focus();
+          }}
+          aria-label="clear search"
+          style={{ display: "flex", background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--fg-4)" }}
+        >
+          <Icon name="x" size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ---------- generic tree row ---------- */
 function TreeRow({
   depth = 0,
@@ -315,6 +380,7 @@ export function Sidebar({
   onMoveSession,
   onDoubleClickSession,
   onDropSession,
+  onReorderTasks,
   boardsBySession,
   activeBoardBySession,
   onSelectBoard,
@@ -345,6 +411,7 @@ export function Sidebar({
   } | null>(null);
 
   const [showArchived, setShowArchived] = useState(false);
+  const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [recentReposAnchor, setRecentReposAnchor] = useState<DOMRect | null>(null);
@@ -524,15 +591,28 @@ export function Sidebar({
     openMenu(e, items);
   }
 
-  // Filter sessions based on archive state; terminal sessions are never shown in the sidebar
+  // Session name search. Empty query means "no filtering at all".
+  const query = search.trim().toLowerCase();
+  const searching = query.length > 0;
+
+  function matchesSearch(session: Session): boolean {
+    return !searching || session.name.toLowerCase().includes(query);
+  }
+
+  // Filter sessions based on archive state and the search query; terminal
+  // sessions are never shown in the sidebar
   function filterSessions(sessions: Session[]): Session[] {
-    return sessions.filter((s) => s.sessionType !== "terminal" && (showArchived ? !!s.archivedAt : !s.archivedAt));
+    return sessions.filter(
+      (s) => s.sessionType !== "terminal" && (showArchived ? !!s.archivedAt : !s.archivedAt) && matchesSearch(s)
+    );
   }
 
   // Filter tasks: in active view, show non-archived tasks.
   // In archived view, show archived tasks OR tasks that have archived sessions.
+  // While searching, tasks with no matching session are hidden.
   function filterTasks(tasks: Task[]): Task[] {
     return tasks.filter((t) => {
+      if (searching && filterSessions(sessionsByTask[t.id] ?? []).length === 0) return false;
       if (!showArchived) return !t.archivedAt;
       if (t.archivedAt) return true;
       const taskSessions = sessionsByTask[t.id] ?? [];
@@ -625,6 +705,11 @@ export function Sidebar({
     );
   }
 
+  // While searching, repos with no matching session drop out of the tree.
+  const visibleRepos = searching
+    ? repos.filter((repo) => filterTasks(tasksByRepo[repo.id] ?? []).length > 0)
+    : repos;
+
   // Expanded sidebar view
   return (
     <div className="flex h-full">
@@ -673,6 +758,7 @@ export function Sidebar({
               { value: "archived", label: "Archived" },
             ]}
           />
+          <SessionSearch value={search} onChange={setSearch} />
         </div>
 
         {/* tree nav with custom scrollbar */}
@@ -682,12 +768,21 @@ export function Sidebar({
               repos={repos}
               tasksByRepo={tasksByRepo}
               sessionsByTask={sessionsByTask}
+              query={query}
               onUnarchiveTask={onUnarchiveTask}
               onUnarchiveSession={onUnarchiveSession}
             />
           ) : (
             <>
-          {repos.map((repo) => (
+          {visibleRepos.length === 0 && searching && (
+            <div
+              className="mono"
+              style={{ padding: "24px 16px", textAlign: "center", fontSize: 11, color: "var(--fg-4)", lineHeight: 1.7 }}
+            >
+              no sessions match "{search.trim()}".
+            </div>
+          )}
+          {visibleRepos.map((repo) => (
             <RepoNode
               key={repo.id}
               repo={repo}
@@ -708,6 +803,7 @@ export function Sidebar({
               onSessionContextMenu={openSessionContextMenu}
               onDoubleClickSession={onDoubleClickSession}
               onDropSession={onDropSession}
+              onReorderTasks={onReorderTasks}
               boardsBySession={boardsBySession}
               activeBoardBySession={activeBoardBySession}
               onSelectBoard={onSelectBoard}
@@ -871,20 +967,25 @@ function ArchivedList({
   repos,
   tasksByRepo,
   sessionsByTask,
+  query,
   onUnarchiveTask,
   onUnarchiveSession,
 }: {
   repos: Repo[];
   tasksByRepo: Record<string, Task[]>;
   sessionsByTask: Record<string, Session[]>;
+  /** lowercased session-name search; empty means no filtering */
+  query: string;
   onUnarchiveTask: (taskId: string) => void;
   onUnarchiveSession: (sessionId: string) => void;
 }) {
+  // Searching targets session names, so task rows drop out of the list.
+  const searching = query.length > 0;
   const items: ArchItem[] = [];
   for (const repo of repos) {
     const tasks = tasksByRepo[repo.id] ?? [];
     for (const task of tasks) {
-      if (task.archivedAt) {
+      if (task.archivedAt && !searching) {
         const labelTag = task.name ? `${task.tag} ${task.name}` : task.tag;
         items.push({
           kind: "task",
@@ -897,7 +998,11 @@ function ArchivedList({
       }
       const sessions = sessionsByTask[task.id] ?? [];
       for (const session of sessions) {
-        if (session.archivedAt && session.sessionType !== "terminal") {
+        if (
+          session.archivedAt &&
+          session.sessionType !== "terminal" &&
+          (!searching || session.name.toLowerCase().includes(query))
+        ) {
           items.push({
             kind: "session",
             id: `s:${session.id}`,
@@ -917,7 +1022,11 @@ function ArchivedList({
         className="mono"
         style={{ padding: "26px 18px", fontSize: 11.5, color: "var(--fg-4)", textAlign: "center", lineHeight: 1.6 }}
       >
-        no archived items.<br />archive a session or task to stash it here.
+        {searching ? (
+          <>no archived sessions match this search.</>
+        ) : (
+          <>no archived items.<br />archive a session or task to stash it here.</>
+        )}
       </div>
     );
   }
@@ -950,6 +1059,7 @@ function RepoNode({
   onSessionContextMenu,
   onDoubleClickSession,
   onDropSession,
+  onReorderTasks,
   boardsBySession,
   activeBoardBySession,
   onSelectBoard,
@@ -983,6 +1093,8 @@ function RepoNode({
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
+  /** persists a repo's task order after a drag-reorder (top to bottom) */
+  onReorderTasks?: (repoId: string, orderedTaskIds: string[]) => void;
   boardsBySession?: Record<string, string[]>;
   activeBoardBySession?: Record<string, string>;
   onSelectBoard?: (sessionId: string, board: string) => void;
@@ -999,7 +1111,33 @@ function RepoNode({
   onRemoveRepo: (repoId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  // Position of the insertion line while a task is dragged over the ladder.
+  const [dropHint, setDropHint] = useState<{ taskId: string; before: boolean } | null>(null);
   const id = "r:" + repo.id;
+
+  // Tasks are locked to their repo: only the active view reorders, and a task
+  // dragged in from another repo is rejected rather than moved.
+  const canReorder = !showArchived && !!onReorderTasks && tasks.length > 1;
+
+  function commitReorder(draggedTaskId: string, sourceRepoId: string, targetTaskId: string, before: boolean) {
+    setDropHint(null);
+    if (!onReorderTasks) return;
+    if (sourceRepoId !== repo.id) {
+      if (onError) onError("cannot move tasks across repos");
+      return;
+    }
+    if (draggedTaskId === targetTaskId) return;
+
+    const ids = tasks.map((t) => t.id);
+    if (!ids.includes(draggedTaskId) || !ids.includes(targetTaskId)) return;
+
+    const without = ids.filter((tid) => tid !== draggedTaskId);
+    const at = without.indexOf(targetTaskId) + (before ? 0 : 1);
+    const next = [...without.slice(0, at), draggedTaskId, ...without.slice(at)];
+    if (next.every((tid, i) => tid === ids[i])) return; // unchanged
+
+    onReorderTasks(repo.id, next);
+  }
 
   return (
     <div style={{ marginBottom: 4 }}>
@@ -1032,7 +1170,7 @@ function RepoNode({
       </TreeRow>
 
       {expanded && (
-        <div>
+        <div onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropHint(null); }}>
           {tasks.map((task) => (
             <TaskNode
               key={task.id}
@@ -1051,6 +1189,15 @@ function RepoNode({
               onSessionContextMenu={onSessionContextMenu}
               onDoubleClickSession={onDoubleClickSession}
               onDropSession={onDropSession}
+              canReorder={canReorder}
+              onTaskDragStart={() => setDropHint(null)}
+              onTaskDragHover={(taskId, before) =>
+                setDropHint((prev) =>
+                  prev && prev.taskId === taskId && prev.before === before ? prev : { taskId, before }
+                )
+              }
+              onTaskReorderDrop={commitReorder}
+              reorderIndicator={dropHint?.taskId === task.id ? (dropHint.before ? "before" : "after") : null}
               boardsBySession={boardsBySession}
               activeBoardBySession={activeBoardBySession}
               onSelectBoard={onSelectBoard}
@@ -1092,6 +1239,11 @@ function TaskNode({
   onSessionContextMenu,
   onDoubleClickSession,
   onDropSession,
+  onTaskDragStart,
+  onTaskDragHover,
+  onTaskReorderDrop,
+  reorderIndicator,
+  canReorder,
   boardsBySession,
   activeBoardBySession,
   onSelectBoard,
@@ -1119,6 +1271,16 @@ function TaskNode({
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
+  /** the row started a reorder drag */
+  onTaskDragStart?: (taskId: string) => void;
+  /** a reorder drag is hovering this row, above or below it */
+  onTaskDragHover?: (targetTaskId: string, before: boolean) => void;
+  /** a reorder drag was dropped on this row */
+  onTaskReorderDrop?: (draggedTaskId: string, sourceRepoId: string, targetTaskId: string, before: boolean) => void;
+  /** "before" / "after" when a reorder drag hovers this row, null otherwise */
+  reorderIndicator?: "before" | "after" | null;
+  /** reordering is only offered in the active (non-archived) view */
+  canReorder?: boolean;
   boardsBySession?: Record<string, string[]>;
   activeBoardBySession?: Record<string, string>;
   onSelectBoard?: (sessionId: string, board: string) => void;
@@ -1133,6 +1295,44 @@ function TaskNode({
 }) {
   const [expanded, setExpanded] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  // A reorder drag drops above the row when the pointer is in its top half.
+  function dropsBefore(e: React.DragEvent): boolean {
+    const rect = rowRef.current?.getBoundingClientRect();
+    if (!rect) return true;
+    return e.clientY < rect.top + rect.height / 2;
+  }
+
+  function handleTaskDragStart(e: React.DragEvent) {
+    e.stopPropagation();
+    e.dataTransfer.setData("taskReorderId", task.id);
+    e.dataTransfer.setData("taskRepoId", repoId);
+    e.dataTransfer.effectAllowed = "move";
+    if (onTaskDragStart) onTaskDragStart(task.id);
+  }
+
+  // Reorder drags are tracked on the task row itself, not on the whole node,
+  // so the before/after split is measured against the row and not the block of
+  // sessions nested under it.
+  function handleRowDragOver(e: React.DragEvent) {
+    if (!canReorder) return;
+    if (!e.dataTransfer.types.includes("taskreorderid")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    if (onTaskDragHover) onTaskDragHover(task.id, dropsBefore(e));
+  }
+
+  function handleRowDrop(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes("taskreorderid")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = e.dataTransfer.getData("taskReorderId");
+    const sourceRepoId = e.dataTransfer.getData("taskRepoId");
+    if (!draggedId) return;
+    if (onTaskReorderDrop) onTaskReorderDrop(draggedId, sourceRepoId, task.id, dropsBefore(e));
+  }
 
   function handleDragOver(e: React.DragEvent) {
     if (!e.dataTransfer.types.includes("sessionid")) return;
@@ -1147,6 +1347,7 @@ function TaskNode({
   }
 
   function handleDrop(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes("taskreorderid")) return; // handled on the row
     e.preventDefault();
     setIsDragOver(false);
     const sessionId = e.dataTransfer.getData("sessionId");
@@ -1167,14 +1368,19 @@ function TaskNode({
 
   return (
     <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+      <div ref={rowRef} onDragOver={handleRowDragOver} onDrop={handleRowDrop}>
       <TreeRow
         depth={1}
         py="4px"
+        draggable={canReorder && !isArchived}
+        onDragStart={handleTaskDragStart}
         onClick={() => setExpanded(!expanded)}
         onContextMenu={(e) => onTaskContextMenu(e, task)}
         style={{
           background: isDragOver ? "var(--hover)" : undefined,
           borderLeft: isDragOver ? "2px solid var(--accent)" : "2px solid transparent",
+          borderTop: reorderIndicator === "before" ? "2px solid var(--accent)" : "2px solid transparent",
+          borderBottom: reorderIndicator === "after" ? "2px solid var(--accent)" : "2px solid transparent",
           opacity: isArchived ? 0.6 : 1,
         }}
       >
@@ -1188,6 +1394,7 @@ function TaskNode({
           {task.name ? <span style={{ color: "var(--fg-4)" }}> {task.name}</span> : null}
         </span>
       </TreeRow>
+      </div>
 
       {expanded && (
         <div>

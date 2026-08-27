@@ -12,12 +12,20 @@ type CreateTaskRequest struct {
 	Name   string `json:"name"`
 }
 
+// ReorderTasksRequest represents the request payload for reordering the tasks
+// of a repository. OrderedTaskIDs lists the task IDs from top to bottom.
+type ReorderTasksRequest struct {
+	RepoID         string   `json:"repoId"`
+	OrderedTaskIDs []string `json:"orderedTaskIds"`
+}
+
 // TaskResponse represents the response payload for task data.
 type TaskResponse struct {
 	ID         string `json:"id"`
 	RepoID     string `json:"repoId"`
 	Tag        string `json:"tag"`
 	Name       string `json:"name"`
+	SortOrder  int    `json:"sortOrder"`
 	CreatedAt  string `json:"createdAt"`
 	UpdatedAt  string `json:"updatedAt"`
 	ArchivedAt string `json:"archivedAt"`
@@ -35,6 +43,7 @@ func TaskResponseFromEntity(task entity.Task) TaskResponse {
 		RepoID:     task.RepoID,
 		Tag:        task.Tag,
 		Name:       task.Name,
+		SortOrder:  task.SortOrder,
 		CreatedAt:  task.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:  task.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		ArchivedAt: archivedAt,

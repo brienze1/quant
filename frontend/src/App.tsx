@@ -2046,6 +2046,24 @@ function App() {
     }
   }
 
+  // Drag-reorder of a repo's task ladder. The new order is applied optimistically
+  // so the row lands where it was dropped, then re-fetched from the backend.
+  async function handleReorderTasks(repoId: string, orderedTaskIds: string[]) {
+    const previous = tasksByRepoRef.current[repoId] ?? [];
+    const byId = new Map(previous.map((t) => [t.id, t]));
+    const reordered = orderedTaskIds.map((id) => byId.get(id)).filter((t): t is Task => !!t);
+    const rest = previous.filter((t) => !orderedTaskIds.includes(t.id));
+    setTasksByRepo((prev) => ({ ...prev, [repoId]: [...reordered, ...rest] }));
+
+    try {
+      setError(null);
+      await api.reorderTasks(repoId, orderedTaskIds);
+    } catch (err) {
+      setError(String(err));
+    }
+    await fetchTasksForRepo(repoId);
+  }
+
   async function handleUnarchiveTask(taskId: string) {
     try {
       setError(null);
@@ -3618,6 +3636,7 @@ function App() {
         onRenameSession={handleRenameSession}
         onChangeClaudeSession={handleChangeClaudeSession}
         onDropSession={(sessionId, targetTaskId) => handleMoveSessionSelect(sessionId, targetTaskId)}
+        onReorderTasks={handleReorderTasks}
         boardsBySession={boardsBySession}
         activeBoardBySession={activeBoardBySession}
         onSelectBoard={handleSelectBoard}
