@@ -13,6 +13,7 @@ export interface Task {
   repoId: string;
   tag: string;
   name: string;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
   archivedAt: string;

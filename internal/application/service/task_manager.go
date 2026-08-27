@@ -58,12 +58,27 @@ func (s *taskManagerService) CreateTask(repoID string, tag string, name string) 
 		return nil, fmt.Errorf("repo not found: %s", repoID)
 	}
 
+	// New tasks land at the top of the repo's ladder, matching the
+	// newest-first ordering used before manual sorting existed.
+	existing, err := s.findTask.FindTasksByRepoID(repoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tasks: %w", err)
+	}
+
+	sortOrder := 0
+	for _, t := range existing {
+		if t.SortOrder <= sortOrder {
+			sortOrder = t.SortOrder - 1
+		}
+	}
+
 	now := time.Now()
 	task := entity.Task{
 		ID:        uuid.New().String(),
 		RepoID:    repoID,
 		Tag:       tag,
 		Name:      name,
+		SortOrder: sortOrder,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -84,6 +99,58 @@ func (s *taskManagerService) ListTasksByRepo(repoID string) ([]entity.Task, erro
 	}
 
 	return tasks, nil
+}
+
+// ReorderTasks rewrites the manual ordering of a repository's tasks.
+// orderedTaskIDs lists task IDs top to bottom; every ID must belong to repoID,
+// which keeps drag-and-drop reordering locked to a single repository. Tasks of
+// the repo missing from the list keep their relative order below the listed ones.
+func (s *taskManagerService) ReorderTasks(repoID string, orderedTaskIDs []string) error {
+	tasks, err := s.findTask.FindTasksByRepoID(repoID)
+	if err != nil {
+		return fmt.Errorf("failed to list tasks: %w", err)
+	}
+
+	byID := make(map[string]entity.Task, len(tasks))
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+
+	ordered := make([]entity.Task, 0, len(tasks))
+	seen := make(map[string]bool, len(orderedTaskIDs))
+	for _, id := range orderedTaskIDs {
+		task, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("task does not belong to repo %s: %s", repoID, id)
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate task in order: %s", id)
+		}
+		seen[id] = true
+		ordered = append(ordered, task)
+	}
+
+	// FindTasksByRepoID already returns tasks in display order, so appending
+	// the unlisted ones preserves their relative positions.
+	for _, task := range tasks {
+		if !seen[task.ID] {
+			ordered = append(ordered, task)
+		}
+	}
+
+	now := time.Now()
+	for i, task := range ordered {
+		if task.SortOrder == i {
+			continue
+		}
+		task.SortOrder = i
+		task.UpdatedAt = now
+		if err := s.updateTask.UpdateTask(task); err != nil {
+			return fmt.Errorf("failed to reorder task %s: %w", task.ID, err)
+		}
+	}
+
+	return nil
 }
 
 // GetTask returns a task by ID.

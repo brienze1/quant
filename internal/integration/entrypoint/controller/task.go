@@ -54,6 +54,11 @@ func (c *taskController) ListTasksByRepo(repoID string) ([]dto.TaskResponse, err
 	return dto.TaskResponseListFromEntities(tasks), nil
 }
 
+// ReorderTasks rewrites the manual ordering of a repository's tasks.
+func (c *taskController) ReorderTasks(request dto.ReorderTasksRequest) error {
+	return c.taskManager.ReorderTasks(request.RepoID, request.OrderedTaskIDs)
+}
+
 // GetTask returns a single task by ID as a response DTO.
 func (c *taskController) GetTask(id string) (*dto.TaskResponse, error) {
 	task, err := c.taskManager.GetTask(id)
