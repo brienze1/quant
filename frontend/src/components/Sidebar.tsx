@@ -69,6 +69,10 @@ interface SidebarProps {
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   /** persists a repo's task order after a drag-reorder (top to bottom) */
   onReorderTasks?: (repoId: string, orderedTaskIds: string[]) => void;
+  /** persists the workspace's repo order after a drag-reorder (top to bottom) */
+  onReorderRepos?: (orderedRepoIds: string[]) => void;
+  /** persists a task's session order after a drag-reorder (top to bottom) */
+  onReorderSessions?: (taskId: string, orderedSessionIds: string[]) => void;
   boardsBySession?: Record<string, string[]>;
   activeBoardBySession?: Record<string, string>;
   onSelectBoard?: (sessionId: string, board: string) => void;
@@ -381,6 +385,8 @@ export function Sidebar({
   onDoubleClickSession,
   onDropSession,
   onReorderTasks,
+  onReorderRepos,
+  onReorderSessions,
   boardsBySession,
   activeBoardBySession,
   onSelectBoard,
@@ -412,6 +418,8 @@ export function Sidebar({
 
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
+  // Position of the insertion line while a repo is dragged over the ladder.
+  const [repoDropHint, setRepoDropHint] = useState<{ repoId: string; before: boolean } | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [recentReposAnchor, setRecentReposAnchor] = useState<DOMRect | null>(null);
@@ -710,6 +718,26 @@ export function Sidebar({
     ? repos.filter((repo) => filterTasks(tasksByRepo[repo.id] ?? []).length > 0)
     : repos;
 
+  // Repo ladder drag-reorder. Disabled while searching, since the list on
+  // screen is then only a subset of the workspace.
+  const canReorderRepos = !searching && !!onReorderRepos && repos.length > 1;
+
+  function commitRepoReorder(draggedRepoId: string, targetRepoId: string, before: boolean) {
+    setRepoDropHint(null);
+    if (!onReorderRepos) return;
+    if (draggedRepoId === targetRepoId) return;
+
+    const ids = repos.map((r) => r.id);
+    if (!ids.includes(draggedRepoId) || !ids.includes(targetRepoId)) return;
+
+    const without = ids.filter((id) => id !== draggedRepoId);
+    const at = without.indexOf(targetRepoId) + (before ? 0 : 1);
+    const next = [...without.slice(0, at), draggedRepoId, ...without.slice(at)];
+    if (next.every((id, i) => id === ids[i])) return; // unchanged
+
+    onReorderRepos(next);
+  }
+
   // Expanded sidebar view
   return (
     <div className="flex h-full">
@@ -762,6 +790,13 @@ export function Sidebar({
         </div>
 
         {/* tree nav with custom scrollbar */}
+        <div
+          style={{ display: "contents" }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setRepoDropHint(null);
+          }}
+          onDrop={() => setRepoDropHint(null)}
+        >
         <SidebarScrollArea>
           {showArchived ? (
             <ArchivedList
@@ -786,6 +821,17 @@ export function Sidebar({
             <RepoNode
               key={repo.id}
               repo={repo}
+              canReorderRepos={canReorderRepos}
+              onRepoDragStart={() => setRepoDropHint(null)}
+              onRepoDragHover={(repoId, before) =>
+                setRepoDropHint((prev) =>
+                  prev && prev.repoId === repoId && prev.before === before ? prev : { repoId, before }
+                )
+              }
+              onRepoReorderDrop={commitRepoReorder}
+              repoReorderIndicator={
+                repoDropHint?.repoId === repo.id ? (repoDropHint.before ? "before" : "after") : null
+              }
               tasks={filterTasks(tasksByRepo[repo.id] ?? [])}
               sessionsByTask={sessionsByTask}
               actionsBySession={actionsBySession}
@@ -803,7 +849,9 @@ export function Sidebar({
               onSessionContextMenu={openSessionContextMenu}
               onDoubleClickSession={onDoubleClickSession}
               onDropSession={onDropSession}
-              onReorderTasks={onReorderTasks}
+              /* while searching the tree shows a subset, so reordering is off */
+              onReorderTasks={searching ? undefined : onReorderTasks}
+              onReorderSessions={searching ? undefined : onReorderSessions}
               boardsBySession={boardsBySession}
               activeBoardBySession={activeBoardBySession}
               onSelectBoard={onSelectBoard}
@@ -826,6 +874,7 @@ export function Sidebar({
             </>
           )}
         </SidebarScrollArea>
+        </div>
 
         {/* bottom bar */}
         <div className="flex flex-col gap-0" style={{ borderTop: "1px solid var(--border-2)" }}>
@@ -1042,6 +1091,11 @@ function ArchivedList({
 
 function RepoNode({
   repo,
+  canReorderRepos,
+  onRepoDragStart,
+  onRepoDragHover,
+  onRepoReorderDrop,
+  repoReorderIndicator,
   tasks,
   sessionsByTask,
   actionsBySession,
@@ -1060,6 +1114,7 @@ function RepoNode({
   onDoubleClickSession,
   onDropSession,
   onReorderTasks,
+  onReorderSessions,
   boardsBySession,
   activeBoardBySession,
   onSelectBoard,
@@ -1076,6 +1131,16 @@ function RepoNode({
   onRemoveRepo,
 }: {
   repo: Repo;
+  /** repo rows are only draggable when the whole ladder is on screen */
+  canReorderRepos?: boolean;
+  /** the row started a reorder drag */
+  onRepoDragStart?: (repoId: string) => void;
+  /** a reorder drag is hovering this row, above or below it */
+  onRepoDragHover?: (targetRepoId: string, before: boolean) => void;
+  /** a reorder drag was dropped on this row */
+  onRepoReorderDrop?: (draggedRepoId: string, targetRepoId: string, before: boolean) => void;
+  /** "before" / "after" when a reorder drag hovers this row, null otherwise */
+  repoReorderIndicator?: "before" | "after" | null;
   tasks: Task[];
   sessionsByTask: Record<string, Session[]>;
   actionsBySession: Record<string, Action[]>;
@@ -1095,6 +1160,7 @@ function RepoNode({
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
   /** persists a repo's task order after a drag-reorder (top to bottom) */
   onReorderTasks?: (repoId: string, orderedTaskIds: string[]) => void;
+  onReorderSessions?: (taskId: string, orderedSessionIds: string[]) => void;
   boardsBySession?: Record<string, string[]>;
   activeBoardBySession?: Record<string, string>;
   onSelectBoard?: (sessionId: string, board: string) => void;
@@ -1113,7 +1179,39 @@ function RepoNode({
   const [expanded, setExpanded] = useState(true);
   // Position of the insertion line while a task is dragged over the ladder.
   const [dropHint, setDropHint] = useState<{ taskId: string; before: boolean } | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const id = "r:" + repo.id;
+
+  // A reorder drag drops above the row when the pointer is in its top half.
+  function repoDropsBefore(e: React.DragEvent): boolean {
+    const rect = headerRef.current?.getBoundingClientRect();
+    if (!rect) return true;
+    return e.clientY < rect.top + rect.height / 2;
+  }
+
+  function handleRepoDragStart(e: React.DragEvent) {
+    e.dataTransfer.setData("repoReorderId", repo.id);
+    e.dataTransfer.effectAllowed = "move";
+    if (onRepoDragStart) onRepoDragStart(repo.id);
+  }
+
+  function handleRepoDragOver(e: React.DragEvent) {
+    if (!canReorderRepos) return;
+    if (!e.dataTransfer.types.includes("reporeorderid")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    if (onRepoDragHover) onRepoDragHover(repo.id, repoDropsBefore(e));
+  }
+
+  function handleRepoDrop(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes("reporeorderid")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = e.dataTransfer.getData("repoReorderId");
+    if (!draggedId) return;
+    if (onRepoReorderDrop) onRepoReorderDrop(draggedId, repo.id, repoDropsBefore(e));
+  }
 
   // Tasks are locked to their repo: only the active view reorders, and a task
   // dragged in from another repo is rejected rather than moved.
@@ -1142,7 +1240,17 @@ function RepoNode({
   return (
     <div style={{ marginBottom: 4 }}>
       {/* repo header */}
-      <TreeRow onClick={() => setExpanded(!expanded)} onContextMenu={(e) => onRepoContextMenu(e, repo)}>
+      <div ref={headerRef} onDragOver={handleRepoDragOver} onDrop={handleRepoDrop}>
+      <TreeRow
+        draggable={canReorderRepos && editing !== id}
+        onDragStart={handleRepoDragStart}
+        onClick={() => setExpanded(!expanded)}
+        onContextMenu={(e) => onRepoContextMenu(e, repo)}
+        style={{
+          borderTop: repoReorderIndicator === "before" ? "2px solid var(--accent)" : "2px solid transparent",
+          borderBottom: repoReorderIndicator === "after" ? "2px solid var(--accent)" : "2px solid transparent",
+        }}
+      >
         <Twisty open={expanded} />
         <Icon name="folder" size={14} color="var(--fg-3)" />
         {editing === id ? (
@@ -1168,6 +1276,7 @@ function RepoNode({
           {repo.path}
         </span>
       </TreeRow>
+      </div>
 
       {expanded && (
         <div onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropHint(null); }}>
@@ -1189,6 +1298,7 @@ function RepoNode({
               onSessionContextMenu={onSessionContextMenu}
               onDoubleClickSession={onDoubleClickSession}
               onDropSession={onDropSession}
+              onReorderSessions={onReorderSessions}
               canReorder={canReorder}
               onTaskDragStart={() => setDropHint(null)}
               onTaskDragHover={(taskId, before) =>
@@ -1239,6 +1349,7 @@ function TaskNode({
   onSessionContextMenu,
   onDoubleClickSession,
   onDropSession,
+  onReorderSessions,
   onTaskDragStart,
   onTaskDragHover,
   onTaskReorderDrop,
@@ -1271,6 +1382,8 @@ function TaskNode({
   onSessionContextMenu: (e: React.MouseEvent, session: Session) => void;
   onDoubleClickSession?: (id: string) => void;
   onDropSession?: (sessionId: string, targetTaskId: string) => void;
+  /** persists this task's session order after a drag-reorder (top to bottom) */
+  onReorderSessions?: (taskId: string, orderedSessionIds: string[]) => void;
   /** the row started a reorder drag */
   onTaskDragStart?: (taskId: string) => void;
   /** a reorder drag is hovering this row, above or below it */
@@ -1295,7 +1408,33 @@ function TaskNode({
 }) {
   const [expanded, setExpanded] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
+  // Position of the insertion line while a session is dragged within this task.
+  const [sessionDropHint, setSessionDropHint] = useState<{ sessionId: string; before: boolean } | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+
+  // Manually placed sessions (sortOrder >= 1) hold their position; the rest
+  // stay in the default alphabetical order.
+  const orderedSessions = [...sessions].sort(
+    (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.name.localeCompare(b.name)
+  );
+
+  const canReorderSessions = !showArchived && !!onReorderSessions && orderedSessions.length > 1;
+
+  function commitSessionReorder(draggedSessionId: string, targetSessionId: string, before: boolean) {
+    setSessionDropHint(null);
+    if (!onReorderSessions) return;
+    if (draggedSessionId === targetSessionId) return;
+
+    const ids = orderedSessions.map((s) => s.id);
+    if (!ids.includes(draggedSessionId) || !ids.includes(targetSessionId)) return;
+
+    const without = ids.filter((id) => id !== draggedSessionId);
+    const at = without.indexOf(targetSessionId) + (before ? 0 : 1);
+    const next = [...without.slice(0, at), draggedSessionId, ...without.slice(at)];
+    if (next.every((id, i) => id === ids[i])) return; // unchanged
+
+    onReorderSessions(task.id, next);
+  }
 
   // A reorder drag drops above the row when the pointer is in its top half.
   function dropsBefore(e: React.DragEvent): boolean {
@@ -1397,12 +1536,22 @@ function TaskNode({
       </div>
 
       {expanded && (
-        <div>
-          {[...sessions]
-            .sort((a, b) => a.name.localeCompare(b.name))
+        <div onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSessionDropHint(null); }}>
+          {orderedSessions
             .map((session) => (
               <SessionNode
                 key={session.id}
+                canReorder={canReorderSessions}
+                onSessionDragStart={() => setSessionDropHint(null)}
+                onSessionDragHover={(sessionId, before) =>
+                  setSessionDropHint((prev) =>
+                    prev && prev.sessionId === sessionId && prev.before === before ? prev : { sessionId, before }
+                  )
+                }
+                onSessionReorderDrop={commitSessionReorder}
+                reorderIndicator={
+                  sessionDropHint?.sessionId === session.id ? (sessionDropHint.before ? "before" : "after") : null
+                }
                 session={session}
                 actions={actionsBySession[session.id] ?? []}
                 displayStatus={getDisplayStatus(session.id, session.status)}
@@ -1456,6 +1605,11 @@ function SessionNode({
   supervisor,
   workerCount,
   queuedCount,
+  canReorder,
+  onSessionDragStart,
+  onSessionDragHover,
+  onSessionReorderDrop,
+  reorderIndicator,
   depth,
 }: {
   session: Session;
@@ -1480,6 +1634,16 @@ function SessionNode({
   workerCount?: number;
   /** queued (undelivered) crew reports addressed to this session */
   queuedCount?: number;
+  /** session rows only reorder inside their own task */
+  canReorder?: boolean;
+  /** the row started a drag */
+  onSessionDragStart?: (sessionId: string) => void;
+  /** a same-task session drag is hovering this row, above or below it */
+  onSessionDragHover?: (targetSessionId: string, before: boolean) => void;
+  /** a same-task session drag was dropped on this row */
+  onSessionReorderDrop?: (draggedSessionId: string, targetSessionId: string, before: boolean) => void;
+  /** "before" / "after" when a reorder drag hovers this row, null otherwise */
+  reorderIndicator?: "before" | "after" | null;
   depth: number;
 }) {
   const isActive = activeSessionId === session.id;
@@ -1487,6 +1651,38 @@ function SessionNode({
   const hasWorktree = !!session.worktreePath;
   const isArchived = !!session.archivedAt;
   const [isBoardDragOver, setIsBoardDragOver] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  // Sessions dragged within their own task reorder; dragged elsewhere they fall
+  // through to the task row's handler, which moves them between tasks. The task
+  // id rides along as a dataTransfer *type* because values are unreadable
+  // during dragover.
+  const sameTaskType = "sessiontask:" + session.taskId;
+
+  function reorderDropsBefore(e: React.DragEvent): boolean {
+    const rect = rowRef.current?.getBoundingClientRect();
+    if (!rect) return true;
+    return e.clientY < rect.top + rect.height / 2;
+  }
+
+  function handleReorderDragOver(e: React.DragEvent) {
+    if (!canReorder || isArchived) return;
+    if (!e.dataTransfer.types.includes(sameTaskType)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    if (onSessionDragHover) onSessionDragHover(session.id, reorderDropsBefore(e));
+  }
+
+  function handleReorderDrop(e: React.DragEvent) {
+    if (!canReorder || isArchived) return;
+    if (!e.dataTransfer.types.includes(sameTaskType)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = e.dataTransfer.getData("sessionId");
+    if (!draggedId) return;
+    if (onSessionReorderDrop) onSessionReorderDrop(draggedId, session.id, reorderDropsBefore(e));
+  }
 
   function handleBoardDragOver(e: React.DragEvent) {
     if (isArchived || session.sessionType === "terminal") return;
@@ -1557,7 +1753,9 @@ function SessionNode({
     e.dataTransfer.setData("sessionId", session.id);
     e.dataTransfer.setData("repoId", session.repoId);
     e.dataTransfer.setData("taskId", session.taskId);
+    e.dataTransfer.setData(sameTaskType, "1");
     e.dataTransfer.effectAllowed = "move";
+    if (onSessionDragStart) onSessionDragStart(session.id);
   }
 
   const hot = isActive;
@@ -1565,6 +1763,7 @@ function SessionNode({
 
   return (
     <div onDragOver={handleBoardDragOver} onDragLeave={handleBoardDragLeave} onDrop={handleBoardDrop}>
+      <div ref={rowRef} onDragOver={handleReorderDragOver} onDrop={handleReorderDrop}>
       <TreeRow
         depth={depth}
         active={hot || isBoardDragOver}
@@ -1576,6 +1775,8 @@ function SessionNode({
         style={{
           opacity: isArchived ? 0.6 : displayStatus === "paused" ? 0.55 : 1,
           borderLeft: isBoardDragOver ? "2px solid var(--accent)" : "2px solid transparent",
+          borderTop: reorderIndicator === "before" ? "2px solid var(--accent)" : "2px solid transparent",
+          borderBottom: reorderIndicator === "after" ? "2px solid var(--accent)" : "2px solid transparent",
         }}
       >
         <StatusDot status={displayStatus} size={8} glow={hot} />
@@ -1609,6 +1810,7 @@ function SessionNode({
           <Pill tone={statusPill.tone}>{statusPill.label}</Pill>
         ) : null}
       </TreeRow>
+      </div>
 
       {isExpanded && actions.length > 0 && <ActionLog actions={actions} maxVisible={8} />}
 

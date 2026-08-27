@@ -78,6 +78,10 @@ export function listClosedReposByWorkspace(
   return callGo(PKG, REPO_CTRL, "ListClosedReposByWorkspace", workspaceId, limit, offset);
 }
 
+export function reorderRepos(workspaceId: string, orderedRepoIds: string[]): Promise<void> {
+  return callGo(PKG, REPO_CTRL, "ReorderRepos", { workspaceId, orderedRepoIds });
+}
+
 export function getRepo(id: string): Promise<Repo> {
   return callGo(PKG, REPO_CTRL, "GetRepo", id);
 }
@@ -192,6 +196,10 @@ export function resizeTerminal(id: string, rows: number, cols: number): Promise<
 
 export function getSessionOutput(id: string): Promise<string> {
   return callGo(PKG, SESSION_CTRL, "GetSessionOutput", id);
+}
+
+export function reorderSessions(taskId: string, orderedSessionIds: string[]): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "ReorderSessions", { taskId, orderedSessionIds });
 }
 
 export function moveSessionToTask(sessionId: string, newTaskId: string): Promise<void> {

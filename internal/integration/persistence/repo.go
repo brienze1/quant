@@ -22,12 +22,12 @@ func NewRepoPersistence(db *sql.DB) adapter.RepoPersistence {
 	return &repoPersistence{db: db}
 }
 
-const repoColumns = `id, name, path, workspace_id, created_at, updated_at, closed_at`
+const repoColumns = `id, name, path, workspace_id, sort_order, created_at, updated_at, closed_at`
 
 func scanRepoRow(scanner interface{ Scan(...any) error }) (pdto.RepoRow, error) {
 	var row pdto.RepoRow
 	err := scanner.Scan(
-		&row.ID, &row.Name, &row.Path, &row.WorkspaceID,
+		&row.ID, &row.Name, &row.Path, &row.WorkspaceID, &row.SortOrder,
 		&row.CreatedAt, &row.UpdatedAt, &row.ClosedAt,
 	)
 	return row, err
@@ -69,7 +69,7 @@ func (p *repoPersistence) FindRepoByPathAndWorkspace(path string, workspaceID st
 
 // FindAllRepos retrieves all open (non-closed) repos.
 func (p *repoPersistence) FindAllRepos() ([]entity.Repo, error) {
-	query := `SELECT ` + repoColumns + ` FROM repos WHERE closed_at IS NULL ORDER BY created_at DESC`
+	query := `SELECT ` + repoColumns + ` FROM repos WHERE closed_at IS NULL ORDER BY sort_order ASC, created_at DESC`
 
 	rows, err := p.db.Query(query)
 	if err != nil {
@@ -122,7 +122,7 @@ func (p *repoPersistence) FindClosedReposByWorkspace(workspaceID string, limit i
 
 // FindReposByWorkspace retrieves all open repos for a specific workspace.
 func (p *repoPersistence) FindReposByWorkspace(workspaceID string) ([]entity.Repo, error) {
-	query := `SELECT ` + repoColumns + ` FROM repos WHERE closed_at IS NULL AND workspace_id = ? ORDER BY created_at DESC`
+	query := `SELECT ` + repoColumns + ` FROM repos WHERE closed_at IS NULL AND workspace_id = ? ORDER BY sort_order ASC, created_at DESC`
 
 	rows, err := p.db.Query(query, workspaceID)
 	if err != nil {
@@ -150,9 +150,9 @@ func (p *repoPersistence) FindReposByWorkspace(workspaceID string) ([]entity.Rep
 func (p *repoPersistence) SaveRepo(repo entity.Repo) error {
 	row := pdto.RepoRowFromEntity(repo)
 
-	query := `INSERT INTO repos (id, name, path, workspace_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO repos (id, name, path, workspace_id, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := p.db.Exec(query, row.ID, row.Name, row.Path, row.WorkspaceID, row.CreatedAt, row.UpdatedAt)
+	_, err := p.db.Exec(query, row.ID, row.Name, row.Path, row.WorkspaceID, row.SortOrder, row.CreatedAt, row.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to save repo: %w", err)
 	}
@@ -183,11 +183,13 @@ func (p *repoPersistence) DeleteRepo(id string) error {
 }
 
 // ReopenRepo clears the closed_at timestamp to reopen a previously closed repo.
-func (p *repoPersistence) ReopenRepo(id string, name string) error {
-	query := `UPDATE repos SET closed_at = NULL, name = ?, updated_at = ? WHERE id = ?`
+// The repo is lifted back to the top of the workspace ladder, since it shows up
+// in the sidebar as if newly opened.
+func (p *repoPersistence) ReopenRepo(id string, name string, sortOrder int) error {
+	query := `UPDATE repos SET closed_at = NULL, name = ?, sort_order = ?, updated_at = ? WHERE id = ?`
 
 	now := time.Now().Format(time.RFC3339)
-	_, err := p.db.Exec(query, name, now, id)
+	_, err := p.db.Exec(query, name, sortOrder, now, id)
 	if err != nil {
 		return fmt.Errorf("failed to reopen repo: %w", err)
 	}
@@ -199,9 +201,9 @@ func (p *repoPersistence) ReopenRepo(id string, name string) error {
 func (p *repoPersistence) UpdateRepo(repo entity.Repo) error {
 	row := pdto.RepoRowFromEntity(repo)
 
-	query := `UPDATE repos SET name = ?, path = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE repos SET name = ?, path = ?, sort_order = ?, updated_at = ? WHERE id = ?`
 
-	result, err := p.db.Exec(query, row.Name, row.Path, row.UpdatedAt, row.ID)
+	result, err := p.db.Exec(query, row.Name, row.Path, row.SortOrder, row.UpdatedAt, row.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update repo: %w", err)
 	}

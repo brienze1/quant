@@ -25,6 +25,7 @@ type SessionManager interface {
 	ResizeTerminal(id string, rows int, cols int) error
 	GetSessionOutput(id string) (string, error)
 	UpdateSessionTask(sessionID string, newTaskID string) error
+	ReorderSessions(taskID string, orderedSessionIDs []string) error
 	RenameSession(id string, newName string) error
 	SetClaudeSessionID(sessionID string, claudeID string) error
 	ListAdoptableSessions(directory string) ([]entity.ExternalClaudeSession, error)

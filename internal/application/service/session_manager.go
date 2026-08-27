@@ -666,6 +666,47 @@ func (s *sessionManagerService) UpdateSessionTask(sessionID string, newTaskID st
 	return s.updateSession.Update(*session)
 }
 
+// ReorderSessions rewrites the manual ordering of a task's sessions.
+// orderedSessionIDs lists session IDs top to bottom; every ID must belong to
+// taskID, so reordering stays inside one task (moving a session to another task
+// goes through UpdateSessionTask). Positions start at 1 so a session created
+// later keeps the default 0 and stays on top until it is placed by hand.
+func (s *sessionManagerService) ReorderSessions(taskID string, orderedSessionIDs []string) error {
+	sessions, err := s.findSession.FindByTaskID(taskID)
+	if err != nil {
+		return fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	byID := make(map[string]entity.Session, len(sessions))
+	for _, session := range sessions {
+		byID[session.ID] = session
+	}
+
+	now := time.Now()
+	seen := make(map[string]bool, len(orderedSessionIDs))
+	for i, id := range orderedSessionIDs {
+		session, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("session does not belong to task %s: %s", taskID, id)
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate session in order: %s", id)
+		}
+		seen[id] = true
+
+		if session.SortOrder == i+1 {
+			continue
+		}
+		session.SortOrder = i + 1
+		session.UpdatedAt = now
+		if err := s.updateSession.Update(session); err != nil {
+			return fmt.Errorf("failed to reorder session %s: %w", session.ID, err)
+		}
+	}
+
+	return nil
+}
+
 // UpdateSessionWorkspace moves a session to a different workspace.
 func (s *sessionManagerService) UpdateSessionWorkspace(id string, workspaceID string) error {
 	session, err := s.findSession.FindByID(id)

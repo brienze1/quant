@@ -49,6 +49,7 @@ func runMigrations(db *sql.DB) error {
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
 		path TEXT NOT NULL,
+		sort_order INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`
@@ -377,6 +378,8 @@ func runMigrations(db *sql.DB) error {
 		`ALTER TABLE sessions ADD COLUMN archived_at TEXT`,
 		`ALTER TABLE tasks ADD COLUMN archived_at TEXT`,
 		`ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE repos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sessions ADD COLUMN session_type TEXT NOT NULL DEFAULT 'claude'`,
 		`ALTER TABLE sessions ADD COLUMN model TEXT`,
 		`ALTER TABLE sessions ADD COLUMN extra_cli_args TEXT`,

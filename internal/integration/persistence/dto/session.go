@@ -27,6 +27,7 @@ type SessionRow struct {
 	ExtraCliArgs    sql.NullString
 	WorkspaceID     string
 	NoFlicker       int
+	SortOrder       int
 	CreatedAt       string
 	UpdatedAt       string
 	LastActiveAt    string
@@ -63,6 +64,7 @@ func (r SessionRow) ToEntity() entity.Session {
 		ExtraCliArgs:    r.ExtraCliArgs.String,
 		WorkspaceID:     r.WorkspaceID,
 		NoFlicker:       r.NoFlicker == 1,
+		SortOrder:       r.SortOrder,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 		LastActiveAt:    lastActiveAt,
@@ -95,6 +97,7 @@ func SessionRowFromEntity(session entity.Session) SessionRow {
 		ExtraCliArgs:    toNullString(session.ExtraCliArgs),
 		WorkspaceID:     session.WorkspaceID,
 		NoFlicker:       boolToInt(session.NoFlicker),
+		SortOrder:       session.SortOrder,
 		CreatedAt:       session.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:       session.UpdatedAt.Format(time.RFC3339),
 		LastActiveAt:    session.LastActiveAt.Format(time.RFC3339),

@@ -3,6 +3,7 @@ export interface Repo {
   name: string;
   path: string;
   workspaceId: string;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
   closedAt?: string;
@@ -32,6 +33,7 @@ export interface Session {
   branchName: string;
   claudeConvId: string;
   pid: number;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
