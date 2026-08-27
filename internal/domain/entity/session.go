@@ -24,8 +24,12 @@ type Session struct {
 	ExtraCliArgs    string
 	WorkspaceID     string
 	NoFlicker       bool
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	LastActiveAt    time.Time
-	ArchivedAt      *time.Time
+	// SortOrder is the manual position of the session within its task. Lower
+	// values sort first; 0 means "not manually placed" and leaves the session
+	// in the default alphabetical order.
+	SortOrder    int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	LastActiveAt time.Time
+	ArchivedAt   *time.Time
 }

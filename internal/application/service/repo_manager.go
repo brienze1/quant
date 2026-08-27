@@ -44,14 +44,22 @@ func (s *repoManagerService) OpenRepo(name string, path string, workspaceID stri
 		return nil, fmt.Errorf("failed to check existing repo: %w", err)
 	}
 
+	// Newly opened repos land on top of the workspace ladder, matching the
+	// newest-first ordering used before manual sorting existed.
+	sortOrder, err := s.topSortOrder(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
 	if existing != nil {
-		// Reopen it (clears closed_at, updates name).
-		err = s.updateRepo.ReopenRepo(existing.ID, name)
+		// Reopen it (clears closed_at, updates name, lifts it back to the top).
+		err = s.updateRepo.ReopenRepo(existing.ID, name, sortOrder)
 		if err != nil {
 			return nil, fmt.Errorf("failed to reopen repo: %w", err)
 		}
 		existing.Name = name
 		existing.ClosedAt = nil
+		existing.SortOrder = sortOrder
 		now := time.Now()
 		existing.UpdatedAt = now
 		return existing, nil
@@ -63,6 +71,7 @@ func (s *repoManagerService) OpenRepo(name string, path string, workspaceID stri
 		Name:        name,
 		Path:        path,
 		WorkspaceID: workspaceID,
+		SortOrder:   sortOrder,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -73,6 +82,77 @@ func (s *repoManagerService) OpenRepo(name string, path string, workspaceID stri
 	}
 
 	return &repo, nil
+}
+
+// topSortOrder returns a sort order that places a repo above every open repo
+// currently in the workspace.
+func (s *repoManagerService) topSortOrder(workspaceID string) (int, error) {
+	repos, err := s.findRepo.FindReposByWorkspace(workspaceID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list repos: %w", err)
+	}
+
+	sortOrder := 0
+	for _, repo := range repos {
+		if repo.SortOrder <= sortOrder {
+			sortOrder = repo.SortOrder - 1
+		}
+	}
+
+	return sortOrder, nil
+}
+
+// ReorderRepos rewrites the manual ordering of a workspace's open repos.
+// orderedRepoIDs lists repo IDs top to bottom; every ID must belong to
+// workspaceID, which keeps drag-and-drop reordering scoped to one workspace.
+// Repos of the workspace missing from the list keep their relative order below
+// the listed ones.
+func (s *repoManagerService) ReorderRepos(workspaceID string, orderedRepoIDs []string) error {
+	repos, err := s.findRepo.FindReposByWorkspace(workspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to list repos: %w", err)
+	}
+
+	byID := make(map[string]entity.Repo, len(repos))
+	for _, repo := range repos {
+		byID[repo.ID] = repo
+	}
+
+	ordered := make([]entity.Repo, 0, len(repos))
+	seen := make(map[string]bool, len(orderedRepoIDs))
+	for _, id := range orderedRepoIDs {
+		repo, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("repo does not belong to workspace %s: %s", workspaceID, id)
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate repo in order: %s", id)
+		}
+		seen[id] = true
+		ordered = append(ordered, repo)
+	}
+
+	// FindReposByWorkspace already returns repos in display order, so appending
+	// the unlisted ones preserves their relative positions.
+	for _, repo := range repos {
+		if !seen[repo.ID] {
+			ordered = append(ordered, repo)
+		}
+	}
+
+	now := time.Now()
+	for i, repo := range ordered {
+		if repo.SortOrder == i {
+			continue
+		}
+		repo.SortOrder = i
+		repo.UpdatedAt = now
+		if err := s.updateRepo.UpdateRepo(repo); err != nil {
+			return fmt.Errorf("failed to reorder repo %s: %w", repo.ID, err)
+		}
+	}
+
+	return nil
 }
 
 // ListReposByWorkspace returns all open (non-closed) repositories for a specific workspace.

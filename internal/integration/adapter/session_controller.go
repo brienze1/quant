@@ -28,6 +28,7 @@ type SessionController interface {
 	ResizeTerminal(id string, rows int, cols int) error
 	GetSessionOutput(id string) (string, error)
 	MoveSessionToTask(sessionID string, newTaskID string) error
+	ReorderSessions(request dto.ReorderSessionsRequest) error
 	RenameSession(id string, newName string) error
 	SetClaudeSessionID(sessionID string, claudeID string) error
 	ListAdoptableSessions(directory string) ([]dto.ExternalSessionResponse, error)

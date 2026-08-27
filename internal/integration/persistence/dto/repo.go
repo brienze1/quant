@@ -13,6 +13,7 @@ type RepoRow struct {
 	Name        string
 	Path        string
 	WorkspaceID string
+	SortOrder   int
 	CreatedAt   string
 	UpdatedAt   string
 	ClosedAt    *string
@@ -28,6 +29,7 @@ func (r RepoRow) ToEntity() entity.Repo {
 		Name:        r.Name,
 		Path:        r.Path,
 		WorkspaceID: r.WorkspaceID,
+		SortOrder:   r.SortOrder,
 		CreatedAt:   createdAt,
 		UpdatedAt:   updatedAt,
 	}
@@ -47,6 +49,7 @@ func RepoRowFromEntity(repo entity.Repo) RepoRow {
 		Name:        repo.Name,
 		Path:        repo.Path,
 		WorkspaceID: repo.WorkspaceID,
+		SortOrder:   repo.SortOrder,
 		CreatedAt:   repo.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:   repo.UpdatedAt.Format(time.RFC3339),
 	}

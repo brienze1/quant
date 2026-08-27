@@ -2046,6 +2046,44 @@ function App() {
     }
   }
 
+  // Drag-reorder of the workspace's repo ladder. Applied optimistically so the
+  // row lands where it was dropped, then re-fetched from the backend.
+  async function handleReorderRepos(orderedRepoIds: string[]) {
+    const previous = reposRef.current;
+    const byId = new Map(previous.map((r) => [r.id, r]));
+    const reordered = orderedRepoIds.map((id) => byId.get(id)).filter((r): r is Repo => !!r);
+    const rest = previous.filter((r) => !orderedRepoIds.includes(r.id));
+    setRepos([...reordered, ...rest]);
+
+    try {
+      setError(null);
+      await api.reorderRepos(activeWorkspaceId, orderedRepoIds);
+    } catch (err) {
+      setError(String(err));
+    }
+    await fetchRepos();
+  }
+
+  // Drag-reorder of a task's sessions.
+  async function handleReorderSessions(taskId: string, orderedSessionIds: string[]) {
+    const previous = sessionsByTaskRef.current[taskId] ?? [];
+    const byId = new Map(previous.map((s) => [s.id, s]));
+    const reordered = orderedSessionIds
+      .map((id) => byId.get(id))
+      .filter((s): s is Session => !!s)
+      .map((s, i) => ({ ...s, sortOrder: i + 1 }));
+    const rest = previous.filter((s) => !orderedSessionIds.includes(s.id));
+    setSessionsByTask((prev) => ({ ...prev, [taskId]: [...reordered, ...rest] }));
+
+    try {
+      setError(null);
+      await api.reorderSessions(taskId, orderedSessionIds);
+    } catch (err) {
+      setError(String(err));
+    }
+    await fetchSessionsForTask(taskId);
+  }
+
   // Drag-reorder of a repo's task ladder. The new order is applied optimistically
   // so the row lands where it was dropped, then re-fetched from the backend.
   async function handleReorderTasks(repoId: string, orderedTaskIds: string[]) {
@@ -3637,6 +3675,8 @@ function App() {
         onChangeClaudeSession={handleChangeClaudeSession}
         onDropSession={(sessionId, targetTaskId) => handleMoveSessionSelect(sessionId, targetTaskId)}
         onReorderTasks={handleReorderTasks}
+        onReorderRepos={handleReorderRepos}
+        onReorderSessions={handleReorderSessions}
         boardsBySession={boardsBySession}
         activeBoardBySession={activeBoardBySession}
         onSelectBoard={handleSelectBoard}

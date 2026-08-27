@@ -58,6 +58,11 @@ func (c *repoController) OpenRepo(request dto.CreateRepoRequest) (*dto.RepoRespo
 	return dto.RepoResponseFromEntityPtr(repo), nil
 }
 
+// ReorderRepos rewrites the manual ordering of a workspace's repos.
+func (c *repoController) ReorderRepos(request dto.ReorderReposRequest) error {
+	return c.repoManager.ReorderRepos(request.WorkspaceID, request.OrderedRepoIDs)
+}
+
 // ListReposByWorkspace returns all registered repositories for a workspace as response DTOs.
 func (c *repoController) ListReposByWorkspace(workspaceID string) ([]dto.RepoResponse, error) {
 	repos, err := c.repoManager.ListReposByWorkspace(workspaceID)

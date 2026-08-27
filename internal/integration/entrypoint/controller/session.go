@@ -161,6 +161,11 @@ func (c *sessionController) MoveSessionToTask(sessionID string, newTaskID string
 	return c.sessionManager.UpdateSessionTask(sessionID, newTaskID)
 }
 
+// ReorderSessions rewrites the manual ordering of a task's sessions.
+func (c *sessionController) ReorderSessions(request dto.ReorderSessionsRequest) error {
+	return c.sessionManager.ReorderSessions(request.TaskID, request.OrderedSessionIDs)
+}
+
 // RenameSession updates the name of a session.
 func (c *sessionController) RenameSession(id string, newName string) error {
 	return c.sessionManager.RenameSession(id, newName)

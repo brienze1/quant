@@ -56,6 +56,13 @@ func ExternalSessionResponseListFromEntities(sessions []entity.ExternalClaudeSes
 	return responses
 }
 
+// ReorderSessionsRequest represents the request payload for reordering the
+// sessions of a task. OrderedSessionIDs lists the session IDs from top to bottom.
+type ReorderSessionsRequest struct {
+	TaskID            string   `json:"taskId"`
+	OrderedSessionIDs []string `json:"orderedSessionIds"`
+}
+
 // SessionResponse represents the response payload for session data.
 type SessionResponse struct {
 	ID           string `json:"id"`
@@ -73,6 +80,7 @@ type SessionResponse struct {
 	WorkspaceID  string `json:"workspaceId"`
 	CreatedAt    string `json:"createdAt"`
 	UpdatedAt    string `json:"updatedAt"`
+	SortOrder    int    `json:"sortOrder"`
 	LastActiveAt string `json:"lastActiveAt"`
 	ArchivedAt   string `json:"archivedAt"`
 }
@@ -100,6 +108,7 @@ func SessionResponseFromEntity(session entity.Session) SessionResponse {
 		WorkspaceID:  session.WorkspaceID,
 		CreatedAt:    session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:    session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		SortOrder:    session.SortOrder,
 		LastActiveAt: session.LastActiveAt.Format("2006-01-02T15:04:05Z07:00"),
 		ArchivedAt:   archivedAt,
 	}

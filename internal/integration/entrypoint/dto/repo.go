@@ -12,12 +12,20 @@ type CreateRepoRequest struct {
 	WorkspaceID string `json:"workspaceId"`
 }
 
+// ReorderReposRequest represents the request payload for reordering the open
+// repos of a workspace. OrderedRepoIDs lists the repo IDs from top to bottom.
+type ReorderReposRequest struct {
+	WorkspaceID    string   `json:"workspaceId"`
+	OrderedRepoIDs []string `json:"orderedRepoIds"`
+}
+
 // RepoResponse represents the response payload for repository data.
 type RepoResponse struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Path        string `json:"path"`
 	WorkspaceID string `json:"workspaceId"`
+	SortOrder   int    `json:"sortOrder"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt"`
 	ClosedAt    string `json:"closedAt,omitempty"`
@@ -30,6 +38,7 @@ func RepoResponseFromEntity(repo entity.Repo) RepoResponse {
 		Name:        repo.Name,
 		Path:        repo.Path,
 		WorkspaceID: repo.WorkspaceID,
+		SortOrder:   repo.SortOrder,
 		CreatedAt:   repo.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   repo.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
