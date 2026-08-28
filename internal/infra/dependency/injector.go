@@ -474,6 +474,7 @@ func (i *Injector) CrewManager() appAdapter.CrewManager {
 			i.MindmapManager(),     // MindmapManager
 			i.ProcessManager(),     // SessionActivity
 			i.EventEmitter(),       // EventEmitter
+			i.ConfigPersistence(),  // LoadConfig
 		)
 	}
 	return i.crewManager

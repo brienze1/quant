@@ -201,9 +201,13 @@ type Config struct {
 	// SystemNotifications enables the native desktop notification that
 	// accompanies the toast. It is independent of Notifications, so the toast
 	// can stay on while the OS stays quiet.
-	SystemNotifications bool       `json:"systemNotifications"`
-	AutoUpdate          bool       `json:"autoUpdate"`
-	Shortcuts           []Shortcut `json:"shortcuts"`
+	SystemNotifications bool `json:"systemNotifications"`
+	// Crew enables crew orchestration: sessions recruiting, dispatching to and
+	// reporting to other sessions. Off means a session cannot spawn or drive
+	// another session on its own.
+	Crew       bool       `json:"crew"`
+	AutoUpdate bool       `json:"autoUpdate"`
+	Shortcuts  []Shortcut `json:"shortcuts"`
 
 	// Git & Branches
 	AutoPull            bool              `json:"autoPull"`
@@ -273,6 +277,7 @@ func NewDefaultConfig() Config {
 		StartOnLogin:        false,
 		Notifications:       true,
 		SystemNotifications: true,
+		Crew:                true,
 		AutoUpdate:          true,
 		Shortcuts:           []Shortcut{},
 

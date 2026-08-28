@@ -388,6 +388,11 @@ function GeneralTab({ config, update }: TabProps) {
           }
         />
         <SettingRow
+          label="crew"
+          description="let sessions recruit, dispatch to and report to other sessions. off means a session cannot spawn or drive another one on its own"
+          right={<Toggle checked={config.crew} onChange={(v) => update("crew", v)} />}
+        />
+        <SettingRow
           label="auto update"
           description="check for updates and upgrade quant automatically on startup"
           right={<Toggle checked={config.autoUpdate} onChange={(v) => update("autoUpdate", v)} />}
