@@ -10,6 +10,7 @@ import { Icon } from "./Icon";
 import * as api from "../api";
 import { pttService, type PttState } from "../voice/pttService";
 import { getActiveKeybindings, formatKeyCombo } from "../keybindings";
+import { SessionMessagingModal } from "./SessionMessagingModal";
 
 interface Props {
   session: Session;
@@ -34,6 +35,12 @@ interface Props {
   // Pane-toggle pills (Files / Terminal / Mindmap / Voice) rendered in this
   // header's right group, owned and built by App (it holds the pane state).
   paneToggles?: ReactNode;
+  /** every session in the workspace, for the messaging link picker */
+  allSessions?: Session[];
+  /** "repo · task" label per session id, shown next to each link */
+  sessionContext?: Record<string, string>;
+  /** persist this session's messaging policy */
+  onUpdateMessaging?: (sessionId: string, mode: "both" | "out", peers: string[]) => void;
 }
 
 export function SessionPanel({
@@ -53,10 +60,14 @@ export function SessionPanel({
   onVoicePaneOpenChange,
   onCreateEmbeddedTerminal,
   paneToggles,
+  allSessions,
+  sessionContext,
+  onUpdateMessaging,
 }: Props) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [termConfig, setTermConfig] = useState<Config | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [messagingOpen, setMessagingOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isArchived = displayStatus === "archived";
@@ -147,6 +158,18 @@ export function SessionPanel({
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: "var(--panel)" }}>
+      {messagingOpen && onUpdateMessaging && (
+        <SessionMessagingModal
+          session={session}
+          sessions={allSessions ?? []}
+          contextBySession={sessionContext}
+          onSave={(mode, peers) => {
+            onUpdateMessaging(session.id, mode, peers);
+            setMessagingOpen(false);
+          }}
+          onClose={() => setMessagingOpen(false)}
+        />
+      )}
       {/* Action bar */}
       <div
         className="flex items-center justify-between shrink-0"
@@ -179,6 +202,34 @@ export function SessionPanel({
               {session.branchName}
             </Pill>
           )}
+          {/* Who this session talks to. Always visible so a human can see the
+              links, including any the session added itself from the MCP. */}
+          {!isArchived && onUpdateMessaging && (() => {
+            const linked = session.messagingPeers?.length ?? 0;
+            const sendOnly = session.messagingMode === "out";
+            const label = linked > 0 ? `links ${linked}` : "links any";
+            const names = (session.messagingPeers ?? [])
+              .map((id) => allSessions?.find((s) => s.id === id)?.name ?? id)
+              .join(", ");
+            const title = linked > 0
+              ? `messages: ${names}${sendOnly ? " · send-only (does not accept incoming)" : ""}`
+              : `may message any session${sendOnly ? " · send-only (does not accept incoming)" : ""}`;
+            return (
+              <button
+                type="button"
+                onClick={() => setMessagingOpen(true)}
+                title={title}
+                aria-label={title}
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "inline-flex" }}
+              >
+                <Pill tone={linked > 0 ? "accent" : "muted"} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  <Icon name="merge" size={9} style={{ display: "inline", verticalAlign: "-1px" }} />
+                  {label}
+                  {sendOnly ? " \u2191" : ""}
+                </Pill>
+              </button>
+            );
+          })()}
         </div>
 
         {/* Right: pane toggles + mic + hamburger */}

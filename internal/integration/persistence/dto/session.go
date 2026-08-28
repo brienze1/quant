@@ -3,6 +3,7 @@ package dto
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"quant/internal/domain/entity"
@@ -29,6 +30,8 @@ type SessionRow struct {
 	NoFlicker       int
 	SortOrder       int
 	CliCommand      string
+	MessagingMode   string
+	MessagingPeers  string
 	CreatedAt       string
 	UpdatedAt       string
 	LastActiveAt    string
@@ -66,6 +69,8 @@ func (r SessionRow) ToEntity() entity.Session {
 		WorkspaceID:     r.WorkspaceID,
 		NoFlicker:       r.NoFlicker == 1,
 		CliCommand:      r.CliCommand,
+		MessagingMode:   r.MessagingMode,
+		MessagingPeers:  splitPeers(r.MessagingPeers),
 		SortOrder:       r.SortOrder,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
@@ -100,6 +105,8 @@ func SessionRowFromEntity(session entity.Session) SessionRow {
 		WorkspaceID:     session.WorkspaceID,
 		NoFlicker:       boolToInt(session.NoFlicker),
 		CliCommand:      session.CliCommand,
+		MessagingMode:   session.MessagingMode,
+		MessagingPeers:  joinPeers(session.MessagingPeers),
 		SortOrder:       session.SortOrder,
 		CreatedAt:       session.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:       session.UpdatedAt.Format(time.RFC3339),
@@ -122,4 +129,32 @@ func toNullString(s string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: s, Valid: true}
+}
+
+// splitPeers parses the stored messaging allowlist. Session IDs never contain a
+// comma, so a comma-separated list keeps the column readable in the DB.
+func splitPeers(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	peers := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if id := strings.TrimSpace(part); id != "" {
+			peers = append(peers, id)
+		}
+	}
+	return peers
+}
+
+// joinPeers renders the messaging allowlist for storage.
+func joinPeers(peers []string) string {
+	cleaned := make([]string, 0, len(peers))
+	for _, id := range peers {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	return strings.Join(cleaned, ",")
 }

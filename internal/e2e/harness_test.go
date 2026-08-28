@@ -72,6 +72,7 @@ func newHarness(t *testing.T) *harness {
 		injector.FileManager(),
 		injector.CrewManager(),
 		injector.TaskManager(),
+		injector.ConfigPersistence(),
 		nil, // voice bridge — voice tools aren't exercised by these tests
 	)
 	if err := server.Start(); err != nil {
@@ -220,9 +221,9 @@ func isTerminal(status any) bool {
 //   - TASK mode (args contain "stream-json"): increments a per-job counter
 //     file, appends the prompt (stdin) to attempt-<n>.prompt, then emits
 //     stream-json. The emitted <quant-output> block depends on `mode`:
-//       "selfcorrect" -> attempt 1 violates the contract (missing prUrl),
-//                        attempt 2 satisfies it.
-//       "alwaysbad"   -> every attempt violates the contract.
+//     "selfcorrect" -> attempt 1 violates the contract (missing prUrl),
+//     attempt 2 satisfies it.
+//     "alwaysbad"   -> every attempt violates the contract.
 //   - EVAL mode (no "stream-json"): prints {"result":"success","metadata":{}}.
 //
 // stateDir is where the counter + prompt files live (pass a unique dir per job

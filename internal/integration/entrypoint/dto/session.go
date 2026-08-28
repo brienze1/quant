@@ -56,6 +56,14 @@ func ExternalSessionResponseListFromEntities(sessions []entity.ExternalClaudeSes
 	return responses
 }
 
+// SetSessionMessagingRequest represents the request payload for updating a
+// session's messaging policy.
+type SetSessionMessagingRequest struct {
+	SessionID string   `json:"sessionId"`
+	Mode      string   `json:"mode"`
+	Peers     []string `json:"peers"`
+}
+
 // ReorderSessionsRequest represents the request payload for reordering the
 // sessions of a task. OrderedSessionIDs lists the session IDs from top to bottom.
 type ReorderSessionsRequest struct {
@@ -65,24 +73,26 @@ type ReorderSessionsRequest struct {
 
 // SessionResponse represents the response payload for session data.
 type SessionResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	SessionType  string `json:"sessionType"`
-	Status       string `json:"status"`
-	Directory    string `json:"directory"`
-	WorktreePath string `json:"worktreePath"`
-	BranchName   string `json:"branchName"`
-	ClaudeConvID string `json:"claudeConvId"`
-	PID          int    `json:"pid"`
-	RepoID       string `json:"repoId"`
-	TaskID       string `json:"taskId"`
-	WorkspaceID  string `json:"workspaceId"`
-	CreatedAt    string `json:"createdAt"`
-	UpdatedAt    string `json:"updatedAt"`
-	SortOrder    int    `json:"sortOrder"`
-	LastActiveAt string `json:"lastActiveAt"`
-	ArchivedAt   string `json:"archivedAt"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	SessionType    string   `json:"sessionType"`
+	Status         string   `json:"status"`
+	Directory      string   `json:"directory"`
+	WorktreePath   string   `json:"worktreePath"`
+	BranchName     string   `json:"branchName"`
+	ClaudeConvID   string   `json:"claudeConvId"`
+	PID            int      `json:"pid"`
+	RepoID         string   `json:"repoId"`
+	TaskID         string   `json:"taskId"`
+	WorkspaceID    string   `json:"workspaceId"`
+	CreatedAt      string   `json:"createdAt"`
+	UpdatedAt      string   `json:"updatedAt"`
+	SortOrder      int      `json:"sortOrder"`
+	MessagingMode  string   `json:"messagingMode"`
+	MessagingPeers []string `json:"messagingPeers"`
+	LastActiveAt   string   `json:"lastActiveAt"`
+	ArchivedAt     string   `json:"archivedAt"`
 }
 
 // SessionResponseFromEntity converts a domain entity to a SessionResponse DTO.
@@ -92,25 +102,38 @@ func SessionResponseFromEntity(session entity.Session) SessionResponse {
 		archivedAt = session.ArchivedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 
+	// The stored mode is empty until it is set; the UI always sees a concrete
+	// value, and an unset allowlist is an empty array rather than null.
+	messagingMode := session.MessagingMode
+	if messagingMode == "" {
+		messagingMode = entity.MessagingBoth
+	}
+	peers := session.MessagingPeers
+	if peers == nil {
+		peers = []string{}
+	}
+
 	return SessionResponse{
-		ID:           session.ID,
-		Name:         session.Name,
-		Description:  session.Description,
-		SessionType:  session.SessionType,
-		Status:       session.Status,
-		Directory:    session.Directory,
-		WorktreePath: session.WorktreePath,
-		BranchName:   session.BranchName,
-		ClaudeConvID: session.ClaudeConvID,
-		PID:          session.PID,
-		RepoID:       session.RepoID,
-		TaskID:       session.TaskID,
-		WorkspaceID:  session.WorkspaceID,
-		CreatedAt:    session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:    session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		SortOrder:    session.SortOrder,
-		LastActiveAt: session.LastActiveAt.Format("2006-01-02T15:04:05Z07:00"),
-		ArchivedAt:   archivedAt,
+		ID:             session.ID,
+		Name:           session.Name,
+		Description:    session.Description,
+		SessionType:    session.SessionType,
+		Status:         session.Status,
+		Directory:      session.Directory,
+		WorktreePath:   session.WorktreePath,
+		BranchName:     session.BranchName,
+		ClaudeConvID:   session.ClaudeConvID,
+		PID:            session.PID,
+		RepoID:         session.RepoID,
+		TaskID:         session.TaskID,
+		WorkspaceID:    session.WorkspaceID,
+		CreatedAt:      session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:      session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		SortOrder:      session.SortOrder,
+		MessagingMode:  messagingMode,
+		MessagingPeers: peers,
+		LastActiveAt:   session.LastActiveAt.Format("2006-01-02T15:04:05Z07:00"),
+		ArchivedAt:     archivedAt,
 	}
 }
 

@@ -202,6 +202,14 @@ export function reorderSessions(taskId: string, orderedSessionIds: string[]): Pr
   return callGo(PKG, SESSION_CTRL, "ReorderSessions", { taskId, orderedSessionIds });
 }
 
+export function setSessionMessaging(
+  sessionId: string,
+  mode: "both" | "out",
+  peers: string[]
+): Promise<void> {
+  return callGo(PKG, SESSION_CTRL, "SetSessionMessaging", { sessionId, mode, peers });
+}
+
 export function moveSessionToTask(sessionId: string, newTaskId: string): Promise<void> {
   return callGo(PKG, SESSION_CTRL, "MoveSessionToTask", sessionId, newTaskId);
 }

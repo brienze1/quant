@@ -262,7 +262,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
-	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager(), injector.FileManager(), crewManager, injector.TaskManager(), voiceBridge)
+	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager(), injector.FileManager(), crewManager, injector.TaskManager(), injector.ConfigPersistence(), voiceBridge)
 	mcpPort := mcpServer.Port()
 	fmt.Printf("[quant] MCP server on port %d → http://localhost:%d/mcp\n", mcpPort, mcpPort)
 	if mcpPort != quantmcp.DefaultPort {
