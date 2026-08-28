@@ -18,6 +18,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	appAdapter "quant/internal/application/adapter"
+	"quant/internal/application/usecase"
 	"quant/internal/domain/entity"
 	"quant/internal/integration/voice"
 )
@@ -43,6 +44,7 @@ type QuantMCPServer struct {
 	fileManager      appAdapter.FileManager
 	crewManager      appAdapter.CrewManager
 	taskManager      appAdapter.TaskManager
+	loadConfig       usecase.LoadConfig
 	voiceBridge      *voice.Bridge
 	httpServer       *http.Server
 	listener         net.Listener
@@ -51,7 +53,7 @@ type QuantMCPServer struct {
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
 // It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, crewManager appAdapter.CrewManager, taskManager appAdapter.TaskManager, voiceBridge *voice.Bridge) *QuantMCPServer {
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, crewManager appAdapter.CrewManager, taskManager appAdapter.TaskManager, loadConfig usecase.LoadConfig, voiceBridge *voice.Bridge) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
 	s := &QuantMCPServer{
@@ -65,6 +67,7 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 		fileManager:      fileManager,
 		crewManager:      crewManager,
 		taskManager:      taskManager,
+		loadConfig:       loadConfig,
 		voiceBridge:      voiceBridge,
 	}
 
@@ -648,9 +651,10 @@ Returns the full system prompt text, or a message indicating the prompt is empty
 
 	mcpServer.AddTool(
 		mcp.NewTool("list_sessions",
-			mcp.WithDescription(`List sessions (lightweight summary: id, name, status, sessionType, workspaceId, repoId). Optionally filter by workspace and/or by name (case-insensitive substring). Use get_session(id) for full details.`),
+			mcp.WithDescription(`List the active (non-archived) sessions, with the repo and task each one sits in: id, name, status, sessionType, workspaceId, repoId, repoName, repoPath, taskId, taskTag, taskName, acceptsMessages, and isSelf for the calling session. Optionally filter by workspace and/or name (case-insensitive substring). Pass includeArchived:true to also list archived sessions; they cannot be messaged. Use get_session(id) for full details.`),
 			mcp.WithString("workspaceId", mcp.Description("Filter by workspace ID (optional — omit to list all)")),
 			mcp.WithString("name", mcp.Description("Filter by name (optional — case-insensitive substring match)")),
+			mcp.WithBoolean("includeArchived", mcp.Description("Include archived sessions. Default: false — only active sessions are listed.")),
 		),
 		s.handleListSessions,
 	)
@@ -740,13 +744,29 @@ Returns the created session object with generated ID. The session starts in 'idl
 
 	mcpServer.AddTool(
 		mcp.NewTool("send_message",
-			mcp.WithDescription(`Send a message to a running session. The message is written to the session's terminal stdin. For claude sessions, this sends text to the Claude CLI and, by default, presses Enter to submit it (delivered as a separate keystroke so the TUI treats it as a submit, not a multi-line paste). Set submit=false to leave the text in the input box without submitting.`),
+			mcp.WithDescription(`Send a message to a running session, addressed by an id from list_sessions. Use this only when the user asks you to contact another session — it is not a reason to start talking to other sessions on your own. The message is written to the session's terminal stdin. For claude sessions, this sends text to the Claude CLI and, by default, presses Enter to submit it (delivered as a separate keystroke so the TUI treats it as a submit, not a multi-line paste). Set submit=false to leave the text in the input box without submitting. Called from inside a quant session, the message arrives tagged with your session name and id so the recipient can see who sent it.`),
 			mcp.WithString("id", mcp.Required(), mcp.Description("Session ID (must be running)")),
 			mcp.WithString("message", mcp.Required(), mcp.Description("Message text to send to the session")),
 			mcp.WithBoolean("submit", mcp.Description("Press Enter after the message to submit it. Default: true. Set false to only type the text without submitting.")),
 			mcp.WithBoolean("outsideCrew", mcp.Description("Bypass crew scoping. Once your session has crew workers, send_message is limited to yourself, your supervisor and your worker subtree; set true to message a session outside your crew. Default: false.")),
 		),
 		s.handleSendMessage,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("link_session",
+			mcp.WithDescription(`Link another session to THIS session, so it is kept as one of the sessions you can message. While a session has no links it may message any session; once it links one, it may message only its linked sessions. The links are shown on the session page, so the user can see who this session talks to. Requires calling from within a quant session.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Session ID to link (get from list_sessions)")),
+		),
+		s.handleLinkSession,
+	)
+
+	mcpServer.AddTool(
+		mcp.NewTool("unlink_session",
+			mcp.WithDescription(`Remove a session from THIS session's links. Removing the last link restores the default, where any session may be messaged. Requires calling from within a quant session.`),
+			mcp.WithString("sessionId", mcp.Required(), mcp.Description("Session ID to unlink")),
+		),
+		s.handleUnlinkSession,
 	)
 
 	mcpServer.AddTool(
@@ -2258,33 +2278,83 @@ func (s *QuantMCPServer) handleGetAgentSystemPrompt(_ context.Context, request m
 // Session handlers
 // ---------------------------------------------------------------------------
 
-func (s *QuantMCPServer) handleListSessions(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleListSessions(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	sessions, err := s.sessionManager.ListSessions()
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	wsFilter := stringArg(request.GetArguments(), "workspaceId")
-	nameFilter := strings.ToLower(stringArg(request.GetArguments(), "name"))
+	args := request.GetArguments()
+	wsFilter := stringArg(args, "workspaceId")
+	nameFilter := strings.ToLower(stringArg(args, "name"))
+	includeArchived := boolArg(args, "includeArchived")
+	caller := sessionFromCtx(ctx)
+
+	var callerSession *entity.Session
+	if caller != "" {
+		callerSession, _ = s.sessionManager.GetSession(caller)
+	}
+
+	// Repos and tasks are looked up once per id — a workspace has few of each,
+	// and the alternative is a query per session row.
+	repos := map[string]*entity.Repo{}
+	tasks := map[string]*entity.Task{}
 
 	// Return lightweight summaries — use get_session(id) for full details
 	result := make([]map[string]any, 0, len(sessions))
 	for i := range sessions {
 		sess := &sessions[i]
+		if !includeArchived && sess.ArchivedAt != nil {
+			continue
+		}
 		if wsFilter != "" && sess.WorkspaceID != wsFilter {
 			continue
 		}
 		if nameFilter != "" && !strings.Contains(strings.ToLower(sess.Name), nameFilter) {
 			continue
 		}
-		result = append(result, map[string]any{
+
+		row := map[string]any{
 			"id":          sess.ID,
 			"name":        sess.Name,
 			"status":      sess.Status,
 			"sessionType": sess.SessionType,
 			"workspaceId": sess.WorkspaceID,
 			"repoId":      sess.RepoID,
-		})
+			"taskId":      sess.TaskID,
+			"archived":    sess.ArchivedAt != nil,
+			"isSelf":      caller != "" && caller == sess.ID,
+			// Whether this session accepts incoming messages at all, and
+			// whether the calling session has linked it.
+			"acceptsMessages": sess.AcceptsMessages(),
+			"linked":          callerSession != nil && callerSession.MayMessage(sess.ID),
+		}
+
+		if sess.RepoID != "" {
+			repo, ok := repos[sess.RepoID]
+			if !ok {
+				repo, _ = s.repoManager.GetRepo(sess.RepoID)
+				repos[sess.RepoID] = repo
+			}
+			if repo != nil {
+				row["repoName"] = repo.Name
+				row["repoPath"] = repo.Path
+			}
+		}
+
+		if sess.TaskID != "" {
+			task, ok := tasks[sess.TaskID]
+			if !ok {
+				task, _ = s.taskManager.GetTask(sess.TaskID)
+				tasks[sess.TaskID] = task
+			}
+			if task != nil {
+				row["taskTag"] = task.Tag
+				row["taskName"] = task.Name
+			}
+		}
+
+		result = append(result, row)
 	}
 
 	return marshalResult(result)
@@ -2488,6 +2558,68 @@ func (s *QuantMCPServer) handleDeleteSession(_ context.Context, request mcp.Call
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s deleted successfully", id)), nil
 }
 
+// sessionMessagingEnabled reports whether sessions may send input to each
+// other. A config that cannot be read is treated as enabled, so a transient
+// read failure never silently breaks a handoff mid-flight.
+func (s *QuantMCPServer) sessionMessagingEnabled() bool {
+	if s.loadConfig == nil {
+		return true
+	}
+	cfg, err := s.loadConfig.LoadConfig()
+	if err != nil || cfg == nil {
+		return true
+	}
+	return cfg.SessionMessaging
+}
+
+// attributeMessage prefixes a peer message with the sender's name and id so the
+// recipient knows who to reply to. It mirrors the "[crew · ...]" envelope
+// format used for crew reports.
+func (s *QuantMCPServer) attributeMessage(callerID, message string) string {
+	name := callerID
+	if sender, err := s.sessionManager.GetSession(callerID); err == nil && sender != nil && sender.Name != "" {
+		name = sender.Name
+	}
+
+	return fmt.Sprintf("[session · %s] %s\n\n(reply with send_message to session id %s)", name, message, callerID)
+}
+
+func (s *QuantMCPServer) handleLinkSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	peerID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	caller := sessionFromCtx(ctx)
+	if caller == "" {
+		return mcp.NewToolResultError("link_session requires the calling session context (X-Quant-Session header) — call it from within a quant session"), nil
+	}
+
+	if err := s.sessionManager.LinkSessionPeer(caller, peerID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Linked session %s — this session can now message it (and only its linked sessions)", peerID)), nil
+}
+
+func (s *QuantMCPServer) handleUnlinkSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	peerID, err := requiredString(request, "sessionId")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	caller := sessionFromCtx(ctx)
+	if caller == "" {
+		return mcp.NewToolResultError("unlink_session requires the calling session context (X-Quant-Session header) — call it from within a quant session"), nil
+	}
+
+	if err := s.sessionManager.UnlinkSessionPeer(caller, peerID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Unlinked session %s", peerID)), nil
+}
+
 func (s *QuantMCPServer) handleSendMessage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
@@ -2499,14 +2631,42 @@ func (s *QuantMCPServer) handleSendMessage(ctx context.Context, request mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	// Session-to-session messaging can be switched off in settings. This is
+	// only about existing sessions typing into each other, so it is checked for
+	// callers that ARE a quant session; headerless clients (the user's own
+	// tooling driving quant from outside) stay unrestricted, as with crew
+	// scoping below.
+	caller := sessionFromCtx(ctx)
+	if caller != "" && caller != id && !s.sessionMessagingEnabled() {
+		return mcp.NewToolResultError("session-to-session messaging is turned off in quant settings (settings → application → session messaging), so sessions cannot send input to each other"), nil
+	}
+
+	// Per-session policy: the sender's allowlist (empty = everyone) and the
+	// recipient's direction mode. Both are set on the session page, or with
+	// link_session / unlink_session.
+	if caller != "" && caller != id {
+		if sender, err := s.sessionManager.GetSession(caller); err == nil && sender != nil && !sender.MayMessage(id) {
+			return mcp.NewToolResultError(fmt.Sprintf("session %s is not linked to this session — link it first with link_session, or clear this session's links to allow messaging any session", id)), nil
+		}
+		if target, err := s.sessionManager.GetSession(id); err == nil && target != nil && !target.AcceptsMessages() {
+			return mcp.NewToolResultError(fmt.Sprintf("session %s is set to send-only and does not accept incoming messages", id)), nil
+		}
+	}
+
 	// Crew scoping: once the calling session has workers, messaging outside
 	// its crew (itself, its own supervisor, its worker subtree) is blocked
 	// unless explicitly bypassed. Headerless callers are unrestricted.
-	caller := sessionFromCtx(ctx)
 	if caller != "" && !boolArg(request.GetArguments(), "outsideCrew") {
 		if hasWorkers, allowed := s.crewManager.InCrewScope(caller, id); hasWorkers && !allowed {
 			return mcp.NewToolResultError(fmt.Sprintf("session %s is outside your crew (not you, your supervisor, or one of your workers). Use report_to_supervisor for upward reports, or pass outsideCrew:true to bypass crew scoping.", id)), nil
 		}
+	}
+
+	// A message from one session to another is tagged with the sender, so the
+	// recipient can see who asked and reply to the right id. Messages a session
+	// sends to itself, and those from headerless clients, are left verbatim.
+	if caller != "" && caller != id {
+		message = s.attributeMessage(caller, message)
 	}
 
 	// submit defaults to true: the orchestration use case is to deliver a

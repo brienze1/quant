@@ -25,6 +25,9 @@ type SessionManager interface {
 	ResizeTerminal(id string, rows int, cols int) error
 	GetSessionOutput(id string) (string, error)
 	UpdateSessionTask(sessionID string, newTaskID string) error
+	SetSessionMessaging(sessionID string, mode string, peers []string) error
+	LinkSessionPeer(sessionID string, peerID string) error
+	UnlinkSessionPeer(sessionID string, peerID string) error
 	ReorderSessions(taskID string, orderedSessionIDs []string) error
 	RenameSession(id string, newName string) error
 	SetClaudeSessionID(sessionID string, claudeID string) error

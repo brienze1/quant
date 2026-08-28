@@ -708,6 +708,107 @@ func (s *sessionManagerService) ReorderSessions(taskID string, orderedSessionIDs
 	return nil
 }
 
+// SetSessionMessaging updates a session's messaging policy: the direction mode
+// and the allowlist of sessions it may message. An empty allowlist means every
+// session is allowed, which is the default.
+func (s *sessionManagerService) SetSessionMessaging(sessionID string, mode string, peers []string) error {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	switch mode {
+	case "", entity.MessagingBoth:
+		session.MessagingMode = entity.MessagingBoth
+	case entity.MessagingOut:
+		session.MessagingMode = entity.MessagingOut
+	default:
+		return fmt.Errorf("invalid messaging mode %q: must be %q or %q", mode, entity.MessagingBoth, entity.MessagingOut)
+	}
+
+	// Drop blanks, duplicates and self-links so the stored list is exactly what
+	// the UI and the MCP tools read back.
+	cleaned := make([]string, 0, len(peers))
+	seen := map[string]bool{sessionID: true}
+	for _, id := range peers {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		cleaned = append(cleaned, id)
+	}
+	session.MessagingPeers = cleaned
+	session.UpdatedAt = time.Now()
+
+	return s.updateSession.Update(*session)
+}
+
+// LinkSessionPeer adds a session to another session's messaging allowlist.
+// Linking the first peer narrows the session from "may message anyone" to
+// "may message its linked sessions only".
+func (s *sessionManagerService) LinkSessionPeer(sessionID string, peerID string) error {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+	if peerID == sessionID {
+		return fmt.Errorf("a session cannot link to itself: %s", sessionID)
+	}
+
+	peer, err := s.findSession.FindByID(peerID)
+	if err != nil {
+		return fmt.Errorf("failed to find peer session: %w", err)
+	}
+	if peer == nil {
+		return fmt.Errorf("session not found: %s", peerID)
+	}
+
+	for _, id := range session.MessagingPeers {
+		if id == peerID {
+			return nil // already linked
+		}
+	}
+
+	session.MessagingPeers = append(session.MessagingPeers, peerID)
+	session.UpdatedAt = time.Now()
+
+	return s.updateSession.Update(*session)
+}
+
+// UnlinkSessionPeer removes a session from another session's allowlist.
+// Removing the last link restores "may message anyone".
+func (s *sessionManagerService) UnlinkSessionPeer(sessionID string, peerID string) error {
+	session, err := s.findSession.FindByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to find session: %w", err)
+	}
+	if session == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	remaining := make([]string, 0, len(session.MessagingPeers))
+	for _, id := range session.MessagingPeers {
+		if id != peerID {
+			remaining = append(remaining, id)
+		}
+	}
+	if len(remaining) == len(session.MessagingPeers) {
+		return nil // nothing linked
+	}
+
+	session.MessagingPeers = remaining
+	session.UpdatedAt = time.Now()
+
+	return s.updateSession.Update(*session)
+}
+
 // UpdateSessionWorkspace moves a session to a different workspace.
 func (s *sessionManagerService) UpdateSessionWorkspace(id string, workspaceID string) error {
 	session, err := s.findSession.FindByID(id)

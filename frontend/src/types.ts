@@ -34,6 +34,10 @@ export interface Session {
   claudeConvId: string;
   pid: number;
   sortOrder: number;
+  /** "both" = sends and receives, "out" = send-only (rejects incoming) */
+  messagingMode: "both" | "out";
+  /** sessions this one may message; empty means any session */
+  messagingPeers: string[];
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
@@ -246,6 +250,7 @@ export interface Config {
   notifications: boolean;
   systemNotifications: boolean;
   crew: boolean;
+  sessionMessaging: boolean;
   autoUpdate: boolean;
   shortcuts: Shortcut[];
 

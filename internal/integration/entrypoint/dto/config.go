@@ -46,6 +46,7 @@ type SaveConfigRequest struct {
 	Notifications       bool          `json:"notifications"`
 	SystemNotifications bool          `json:"systemNotifications"`
 	Crew                bool          `json:"crew"`
+	SessionMessaging    bool          `json:"sessionMessaging"`
 	AutoUpdate          bool          `json:"autoUpdate"`
 	Shortcuts           []ShortcutDTO `json:"shortcuts"`
 
@@ -107,6 +108,7 @@ type ConfigResponse struct {
 	Notifications       bool          `json:"notifications"`
 	SystemNotifications bool          `json:"systemNotifications"`
 	Crew                bool          `json:"crew"`
+	SessionMessaging    bool          `json:"sessionMessaging"`
 	AutoUpdate          bool          `json:"autoUpdate"`
 	Shortcuts           []ShortcutDTO `json:"shortcuts"`
 
@@ -181,6 +183,7 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 		Notifications:         cfg.Notifications,
 		SystemNotifications:   cfg.SystemNotifications,
 		Crew:                  cfg.Crew,
+		SessionMessaging:      cfg.SessionMessaging,
 		AutoUpdate:            cfg.AutoUpdate,
 		Shortcuts:             shortcuts,
 		AutoPull:              cfg.AutoPull,
@@ -271,6 +274,7 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 		Notifications:         r.Notifications,
 		SystemNotifications:   r.SystemNotifications,
 		Crew:                  r.Crew,
+		SessionMessaging:      r.SessionMessaging,
 		AutoUpdate:            r.AutoUpdate,
 		Shortcuts:             shortcuts,
 		AutoPull:              r.AutoPull,

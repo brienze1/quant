@@ -166,6 +166,11 @@ func (c *sessionController) ReorderSessions(request dto.ReorderSessionsRequest) 
 	return c.sessionManager.ReorderSessions(request.TaskID, request.OrderedSessionIDs)
 }
 
+// SetSessionMessaging updates a session's messaging policy.
+func (c *sessionController) SetSessionMessaging(request dto.SetSessionMessagingRequest) error {
+	return c.sessionManager.SetSessionMessaging(request.SessionID, request.Mode, request.Peers)
+}
+
 // RenameSession updates the name of a session.
 func (c *sessionController) RenameSession(id string, newName string) error {
 	return c.sessionManager.RenameSession(id, newName)

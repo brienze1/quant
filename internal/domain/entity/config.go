@@ -205,9 +205,12 @@ type Config struct {
 	// Crew enables crew orchestration: sessions recruiting, dispatching to and
 	// reporting to other sessions. Off means a session cannot spawn or drive
 	// another session on its own.
-	Crew       bool       `json:"crew"`
-	AutoUpdate bool       `json:"autoUpdate"`
-	Shortcuts  []Shortcut `json:"shortcuts"`
+	Crew bool `json:"crew"`
+	// SessionMessaging lets a session send input to another session through the
+	// quant MCP (send_message). Off means sessions cannot type into each other.
+	SessionMessaging bool       `json:"sessionMessaging"`
+	AutoUpdate       bool       `json:"autoUpdate"`
+	Shortcuts        []Shortcut `json:"shortcuts"`
 
 	// Git & Branches
 	AutoPull            bool              `json:"autoPull"`
@@ -278,6 +281,7 @@ func NewDefaultConfig() Config {
 		Notifications:       true,
 		SystemNotifications: true,
 		Crew:                true,
+		SessionMessaging:    true,
 		AutoUpdate:          true,
 		Shortcuts:           []Shortcut{},
 

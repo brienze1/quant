@@ -393,6 +393,11 @@ function GeneralTab({ config, update }: TabProps) {
           right={<Toggle checked={config.crew} onChange={(v) => update("crew", v)} />}
         />
         <SettingRow
+          label="session messaging"
+          description="let sessions send input to each other through the quant mcp. per-session links and direction are set on the session page"
+          right={<Toggle checked={config.sessionMessaging} onChange={(v) => update("sessionMessaging", v)} />}
+        />
+        <SettingRow
           label="auto update"
           description="check for updates and upgrade quant automatically on startup"
           right={<Toggle checked={config.autoUpdate} onChange={(v) => update("autoUpdate", v)} />}

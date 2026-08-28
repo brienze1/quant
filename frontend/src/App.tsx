@@ -2067,6 +2067,31 @@ function App() {
     await fetchRepos();
   }
 
+  // Every non-archived claude session in the workspace, plus a "repo · task"
+  // label for each, so the session page can show and edit who a session talks to.
+  const allWorkspaceSessions = Object.values(sessionsByTask)
+    .flat()
+    .filter((s) => s.sessionType !== "terminal" && !s.archivedAt);
+
+  const sessionContextLabels: Record<string, string> = {};
+  for (const repo of repos) {
+    for (const task of tasksByRepo[repo.id] ?? []) {
+      for (const s of sessionsByTask[task.id] ?? []) {
+        sessionContextLabels[s.id] = `${repo.name} · ${task.tag}`;
+      }
+    }
+  }
+
+  async function handleUpdateSessionMessaging(sessionId: string, mode: "both" | "out", peers: string[]) {
+    try {
+      setError(null);
+      await api.setSessionMessaging(sessionId, mode, peers);
+      await loadAll();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   // Drag-reorder of a task's sessions.
   async function handleReorderSessions(taskId: string, orderedSessionIds: string[]) {
     const previous = sessionsByTaskRef.current[taskId] ?? [];
@@ -3778,6 +3803,9 @@ function App() {
                 onVoicePaneOpenChange={handleVoicePaneOpenChange}
                 onCreateEmbeddedTerminal={handleCreateEmbeddedTerminal}
                 paneToggles={renderPaneToggles()}
+                allSessions={allWorkspaceSessions}
+                sessionContext={sessionContextLabels}
+                onUpdateMessaging={handleUpdateSessionMessaging}
               />
             ) : (
               !activeFileTab && <EmptyState />
