@@ -768,13 +768,18 @@ func (s *sessionManagerService) SetSessionMessaging(sessionID string, mode strin
 	}
 
 	// Drop blanks, duplicates and self-links so the stored list is exactly what
-	// the UI and the MCP tools read back.
+	// the UI and the MCP tools read back. A peer in another workspace is a hard
+	// error rather than a silent drop: sessions never reach across workspaces,
+	// and a link that looked saved but was not would be worse than a refusal.
 	cleaned := make([]string, 0, len(peers))
 	seen := map[string]bool{sessionID: true}
 	for _, id := range peers {
 		id = strings.TrimSpace(id)
 		if id == "" || seen[id] {
 			continue
+		}
+		if err := s.requireSameWorkspace(session, id); err != nil {
+			return err
 		}
 		seen[id] = true
 		cleaned = append(cleaned, id)
@@ -783,6 +788,24 @@ func (s *sessionManagerService) SetSessionMessaging(sessionID string, mode strin
 	session.UpdatedAt = time.Now()
 
 	return s.updateSession.Update(*session)
+}
+
+// requireSameWorkspace rejects a peer that lives in another workspace. The
+// workspace boundary is not configurable, so it is enforced here as well as in
+// the MCP layer — the session page writes through this path, not that one.
+func (s *sessionManagerService) requireSameWorkspace(session *entity.Session, peerID string) error {
+	peer, err := s.findSession.FindByID(peerID)
+	if err != nil {
+		return fmt.Errorf("failed to find peer session: %w", err)
+	}
+	if peer == nil {
+		return fmt.Errorf("session not found: %s", peerID)
+	}
+	if peer.WorkspaceID != session.WorkspaceID {
+		return fmt.Errorf("session %s is in another workspace — sessions can only be linked within one workspace", peer.Name)
+	}
+
+	return nil
 }
 
 // LinkSessionPeer adds a session to another session's messaging allowlist.
@@ -800,12 +823,8 @@ func (s *sessionManagerService) LinkSessionPeer(sessionID string, peerID string)
 		return fmt.Errorf("a session cannot link to itself: %s", sessionID)
 	}
 
-	peer, err := s.findSession.FindByID(peerID)
-	if err != nil {
-		return fmt.Errorf("failed to find peer session: %w", err)
-	}
-	if peer == nil {
-		return fmt.Errorf("session not found: %s", peerID)
+	if err := s.requireSameWorkspace(session, peerID); err != nil {
+		return err
 	}
 
 	for _, id := range session.MessagingPeers {
