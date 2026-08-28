@@ -32,12 +32,12 @@ type VoiceConfig struct {
 	// whenever the embedded engine's models are not installed. BaseURL is the
 	// legacy single endpoint used for BOTH STT and TTS when the specific one is
 	// empty.
-	BaseURL    string  `json:"baseUrl"`
-	STTBaseURL string  `json:"sttBaseUrl"`
-	TTSBaseURL string  `json:"ttsBaseUrl"`
-	APIKey     string  `json:"apiKey"`
-	STTModel   string  `json:"sttModel"`
-	TTSModel   string  `json:"ttsModel"`
+	BaseURL    string `json:"baseUrl"`
+	STTBaseURL string `json:"sttBaseUrl"`
+	TTSBaseURL string `json:"ttsBaseUrl"`
+	APIKey     string `json:"apiKey"`
+	STTModel   string `json:"sttModel"`
+	TTSModel   string `json:"ttsModel"`
 	// Voice / Speed are the CURRENTLY-selected language's voice + playback speed,
 	// mirrored from LangVoices[Language] by WithDefaults. They are kept as
 	// top-level fields for backward compatibility (older configs, the Synthesize
@@ -195,10 +195,15 @@ func (v VoiceConfig) SpeedForLang(lang string) float64 {
 // Config represents the application configuration settings.
 type Config struct {
 	// General
-	StartOnLogin  bool       `json:"startOnLogin"`
-	Notifications bool       `json:"notifications"`
-	AutoUpdate    bool       `json:"autoUpdate"`
-	Shortcuts     []Shortcut `json:"shortcuts"`
+	StartOnLogin bool `json:"startOnLogin"`
+	// Notifications enables the in-app toast shown when a session finishes.
+	Notifications bool `json:"notifications"`
+	// SystemNotifications enables the native desktop notification that
+	// accompanies the toast. It is independent of Notifications, so the toast
+	// can stay on while the OS stays quiet.
+	SystemNotifications bool       `json:"systemNotifications"`
+	AutoUpdate          bool       `json:"autoUpdate"`
+	Shortcuts           []Shortcut `json:"shortcuts"`
 
 	// Git & Branches
 	AutoPull            bool              `json:"autoPull"`
@@ -265,10 +270,11 @@ type Config struct {
 func NewDefaultConfig() Config {
 	return Config{
 		// General
-		StartOnLogin:  false,
-		Notifications: true,
-		AutoUpdate:    true,
-		Shortcuts:     []Shortcut{},
+		StartOnLogin:        false,
+		Notifications:       true,
+		SystemNotifications: true,
+		AutoUpdate:          true,
+		Shortcuts:           []Shortcut{},
 
 		// Git & Branches
 		AutoPull:            true,

@@ -1539,8 +1539,11 @@ function App() {
               setToasts((prev) => prev.filter((t) => t.id !== toastId));
             }, 5000);
 
-            // Also try native macOS notification via backend
-            api.sendNotification("quant", `session "${name}" has finished`).catch(() => {});
+            // Also try native macOS notification via backend, unless the user
+            // asked quant to keep the OS quiet.
+            if (cfg.systemNotifications) {
+              api.sendNotification("quant", `session "${name}" has finished`).catch(() => {});
+            }
           } catch {
             // notification is best-effort
           }

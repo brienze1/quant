@@ -374,8 +374,18 @@ function GeneralTab({ config, update }: TabProps) {
         />
         <SettingRow
           label="notifications"
-          description="show system notifications when sessions complete or error"
+          description="show an in-app toast when sessions complete or error"
           right={<Toggle checked={config.notifications} onChange={(v) => update("notifications", v)} />}
+        />
+        <SettingRow
+          label="system notifications"
+          description="also send a desktop notification to your computer"
+          right={
+            <Toggle
+              checked={config.systemNotifications}
+              onChange={(v) => update("systemNotifications", v)}
+            />
+          }
         />
         <SettingRow
           label="auto update"

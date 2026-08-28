@@ -107,7 +107,17 @@ func (s *configManagerService) GetDatabasePath() string {
 	return s.getDatabasePath.GetDatabasePath()
 }
 
-// SendNotification sends a system notification with the given title and message.
+// SendNotification sends a desktop notification with the given title and
+// message. It is a no-op when system notifications are turned off in settings,
+// so the switch holds regardless of which caller asks for the notification.
 func (s *configManagerService) SendNotification(title, message string) error {
+	cfg, err := s.loadConfig.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if !cfg.SystemNotifications {
+		return nil
+	}
+
 	return s.sendNotification.SendNotification(title, message)
 }

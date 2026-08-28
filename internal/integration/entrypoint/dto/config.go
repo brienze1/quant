@@ -19,10 +19,10 @@ type ShortcutDTO struct {
 // user's hand-edited custom endpoints are never wiped by the Settings UI (see
 // controller SaveConfig).
 type VoiceConfigDTO struct {
-	Enabled  bool   `json:"enabled"`
-	Provider string `json:"provider"`
-	Voice    string `json:"voice"`
-	Language string `json:"language"` // default/last-used voice language: "en" or "pt-br"
+	Enabled  bool    `json:"enabled"`
+	Provider string  `json:"provider"`
+	Voice    string  `json:"voice"`
+	Language string  `json:"language"` // default/last-used voice language: "en" or "pt-br"
 	Speed    float64 `json:"speed"`
 	// LangVoices holds the per-language voice + speed, keyed by language code
 	// ("en", "pt-br"). Source of truth for each language's configured voice.
@@ -42,10 +42,11 @@ type LangVoiceConfigDTO struct {
 // SaveConfigRequest represents the request payload for saving configuration.
 type SaveConfigRequest struct {
 	// General
-	StartOnLogin  bool          `json:"startOnLogin"`
-	Notifications bool          `json:"notifications"`
-	AutoUpdate    bool          `json:"autoUpdate"`
-	Shortcuts     []ShortcutDTO `json:"shortcuts"`
+	StartOnLogin        bool          `json:"startOnLogin"`
+	Notifications       bool          `json:"notifications"`
+	SystemNotifications bool          `json:"systemNotifications"`
+	AutoUpdate          bool          `json:"autoUpdate"`
+	Shortcuts           []ShortcutDTO `json:"shortcuts"`
 
 	// Git & Branches
 	AutoPull            bool              `json:"autoPull"`
@@ -101,10 +102,11 @@ type SaveConfigRequest struct {
 // ConfigResponse represents the response payload for configuration data.
 type ConfigResponse struct {
 	// General
-	StartOnLogin  bool          `json:"startOnLogin"`
-	Notifications bool          `json:"notifications"`
-	AutoUpdate    bool          `json:"autoUpdate"`
-	Shortcuts     []ShortcutDTO `json:"shortcuts"`
+	StartOnLogin        bool          `json:"startOnLogin"`
+	Notifications       bool          `json:"notifications"`
+	SystemNotifications bool          `json:"systemNotifications"`
+	AutoUpdate          bool          `json:"autoUpdate"`
+	Shortcuts           []ShortcutDTO `json:"shortcuts"`
 
 	// Git & Branches
 	AutoPull            bool              `json:"autoPull"`
@@ -175,6 +177,7 @@ func ConfigResponseFromEntity(cfg entity.Config) ConfigResponse {
 	return ConfigResponse{
 		StartOnLogin:          cfg.StartOnLogin,
 		Notifications:         cfg.Notifications,
+		SystemNotifications:   cfg.SystemNotifications,
 		AutoUpdate:            cfg.AutoUpdate,
 		Shortcuts:             shortcuts,
 		AutoPull:              cfg.AutoPull,
@@ -263,6 +266,7 @@ func (r SaveConfigRequest) ToEntity() entity.Config {
 	return entity.Config{
 		StartOnLogin:          r.StartOnLogin,
 		Notifications:         r.Notifications,
+		SystemNotifications:   r.SystemNotifications,
 		AutoUpdate:            r.AutoUpdate,
 		Shortcuts:             shortcuts,
 		AutoPull:              r.AutoPull,
