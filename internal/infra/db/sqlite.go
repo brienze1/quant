@@ -215,6 +215,7 @@ func runMigrations(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS workspaces (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
+		crew_cli_command TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`
@@ -396,6 +397,8 @@ func runMigrations(db *sql.DB) error {
 		`ALTER TABLE repos ADD COLUMN workspace_id TEXT DEFAULT 'default'`,
 		`ALTER TABLE workspaces ADD COLUMN claude_config_path TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN mcp_config_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE workspaces ADD COLUMN crew_cli_command TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN cli_command TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE jobs ADD COLUMN triage_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE job_runs ADD COLUMN correlation_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE job_runs ADD COLUMN injected_context TEXT NOT NULL DEFAULT ''`,

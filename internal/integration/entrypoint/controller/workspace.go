@@ -39,6 +39,7 @@ func (c *workspaceController) CreateWorkspace(request dto.CreateWorkspaceRequest
 		Name:             request.Name,
 		ClaudeConfigPath: request.ClaudeConfigPath,
 		McpConfigPath:    request.McpConfigPath,
+		CrewCliCommand:   request.CrewCliCommand,
 	}
 
 	created, err := c.workspaceManager.CreateWorkspace(workspace)
@@ -56,6 +57,7 @@ func (c *workspaceController) UpdateWorkspace(request dto.UpdateWorkspaceRequest
 		Name:             request.Name,
 		ClaudeConfigPath: request.ClaudeConfigPath,
 		McpConfigPath:    request.McpConfigPath,
+		CrewCliCommand:   request.CrewCliCommand,
 	}
 
 	updated, err := c.workspaceManager.UpdateWorkspace(workspace)

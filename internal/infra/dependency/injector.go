@@ -466,15 +466,16 @@ func (i *Injector) CrewManager() appAdapter.CrewManager {
 	if i.crewManager == nil {
 		cp := i.CrewPersistence()
 		i.crewManager = service.NewCrewManagerService(
-			cp,                     // FindCrew
-			cp,                     // SaveCrew
-			cp,                     // DeleteCrew
-			i.SessionPersistence(), // FindSession
-			i.SessionManager(),     // SessionManager
-			i.MindmapManager(),     // MindmapManager
-			i.ProcessManager(),     // SessionActivity
-			i.EventEmitter(),       // EventEmitter
-			i.ConfigPersistence(),  // LoadConfig
+			cp,                       // FindCrew
+			cp,                       // SaveCrew
+			cp,                       // DeleteCrew
+			i.SessionPersistence(),   // FindSession
+			i.SessionManager(),       // SessionManager
+			i.MindmapManager(),       // MindmapManager
+			i.ProcessManager(),       // SessionActivity
+			i.EventEmitter(),         // EventEmitter
+			i.ConfigPersistence(),    // LoadConfig
+			i.WorkspacePersistence(), // FindWorkspace
 		)
 	}
 	return i.crewManager

@@ -4,8 +4,8 @@ package entity
 // SessionOptions represents per-session overrides for config defaults.
 // These are set via the "advanced options" in the create session modal.
 type SessionOptions struct {
-	UseWorktree       bool
-	SkipPermissions   bool
+	UseWorktree     bool
+	SkipPermissions bool
 	// AutoPull is nil when the caller did not specify it (MCP / crew), in which
 	// case the config default applies.
 	AutoPull          *bool
@@ -17,4 +17,5 @@ type SessionOptions struct {
 	WorkspaceID       string // Workspace to assign the session to
 	NoFlicker         bool   // Enable NO_FLICKER terminal mode
 	ClaudeSessionID   string // If set, adopt this existing claude CLI session (resume its conversation)
+	CliCommand        string // If set, launch the CLI with this command instead of the configured default
 }

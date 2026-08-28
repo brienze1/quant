@@ -201,6 +201,7 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 		ExtraCliArgs:    opts.ExtraCliArgs,
 		WorkspaceID:     opts.WorkspaceID,
 		NoFlicker:       opts.NoFlicker,
+		CliCommand:      opts.CliCommand,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		LastActiveAt:    now,
@@ -404,7 +405,7 @@ func (s *sessionManagerService) StartSession(id string, rows int, cols int) erro
 	}
 
 	repoPath := s.repoPathForSession(session)
-	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols), session.NoFlicker)
+	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols), session.NoFlicker, session.CliCommand)
 	if err != nil {
 		_ = s.updateSession.UpdateStatus(id, sessionstatus.Error)
 		return fmt.Errorf("failed to spawn process: %w", err)
@@ -441,7 +442,7 @@ func (s *sessionManagerService) ResumeSession(id string, rows int, cols int) err
 	}
 
 	repoPath := s.repoPathForSession(session)
-	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols), session.NoFlicker)
+	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols), session.NoFlicker, session.CliCommand)
 	if err != nil {
 		_ = s.updateSession.UpdateStatus(id, sessionstatus.Error)
 		return fmt.Errorf("failed to resume process: %w", err)

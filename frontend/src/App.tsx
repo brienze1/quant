@@ -366,7 +366,7 @@ function App() {
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
-  const [editWorkspaceForm, setEditWorkspaceForm] = useState({ name: "", claudeConfigPath: "", mcpConfigPath: "" });
+  const [editWorkspaceForm, setEditWorkspaceForm] = useState({ name: "", claudeConfigPath: "", mcpConfigPath: "", crewCliCommand: "" });
   const [pathErrors, setPathErrors] = useState({ claude: "", mcp: "" });
   const [diffSession, setDiffSession] = useState<{ id: string; name: string } | null>(null);
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
@@ -2573,6 +2573,7 @@ function App() {
                           name: editWorkspaceForm.name.trim(),
                           claudeConfigPath: editWorkspaceForm.claudeConfigPath.trim() || undefined,
                           mcpConfigPath: editWorkspaceForm.mcpConfigPath.trim() || undefined,
+                          crewCliCommand: editWorkspaceForm.crewCliCommand.trim() || undefined,
                         });
                         await fetchWorkspaces();
                         setEditingWorkspaceId(null);
@@ -2641,6 +2642,15 @@ function App() {
                       >...</button>
                     </div>
                     {pathErrors.mcp && <div style={{ color: "var(--danger)", fontSize: 10, marginTop: 2, fontFamily: "var(--mono)" }}>{pathErrors.mcp}</div>}
+                    <input
+                      value={editWorkspaceForm.crewCliCommand}
+                      onChange={(e) => setEditWorkspaceForm((f) => ({ ...f, crewCliCommand: e.target.value }))}
+                      placeholder="crew claude command"
+                      title="Command crew uses to launch worker sessions in this workspace — an alias or wrapper script. Empty uses the global CLI command from settings."
+                      style={inputStyle}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
+                    />
                     <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                       <button
                         type="submit"
@@ -2704,6 +2714,7 @@ function App() {
                         name: ws.name,
                         claudeConfigPath: ws.claudeConfigPath ?? "",
                         mcpConfigPath: ws.mcpConfigPath ?? "",
+                        crewCliCommand: ws.crewCliCommand ?? "",
                       });
                     }}
                     style={{

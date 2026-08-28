@@ -466,6 +466,8 @@ export interface Workspace {
   name: string;
   claudeConfigPath?: string;
   mcpConfigPath?: string;
+  /** shell command used to launch crew worker sessions in this workspace */
+  crewCliCommand?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -498,6 +500,7 @@ export interface CreateWorkspaceRequest {
   name: string;
   claudeConfigPath?: string;
   mcpConfigPath?: string;
+  crewCliCommand?: string;
 }
 
 export interface UpdateWorkspaceRequest {
@@ -505,6 +508,7 @@ export interface UpdateWorkspaceRequest {
   name: string;
   claudeConfigPath?: string;
   mcpConfigPath?: string;
+  crewCliCommand?: string;
 }
 
 export interface PathValidationResult {

@@ -24,6 +24,10 @@ type Session struct {
 	ExtraCliArgs    string
 	WorkspaceID     string
 	NoFlicker       bool
+	// CliCommand overrides the shell command used to launch this session's CLI.
+	// Empty means resolve it the usual way (path overrides, then the global
+	// setting). Crew workers record the command they were created with here.
+	CliCommand string
 	// SortOrder is the manual position of the session within its task. Lower
 	// values sort first; 0 means "not manually placed" and leaves the session
 	// in the default alphabetical order.

@@ -92,6 +92,7 @@ type crewManagerService struct {
 	sessionActivity usecase.SessionActivity
 	emitter         adapter.EventEmitter
 	loadConfig      usecase.LoadConfig
+	findWorkspace   usecase.FindWorkspace
 
 	drainMu    sync.Mutex
 	drainState map[string]*crewDrainState
@@ -114,6 +115,7 @@ func NewCrewManagerService(
 	sessionActivity usecase.SessionActivity,
 	emitter adapter.EventEmitter,
 	loadConfig usecase.LoadConfig,
+	findWorkspace usecase.FindWorkspace,
 ) adapter.CrewManager {
 	return &crewManagerService{
 		findCrew:        find,
@@ -125,6 +127,7 @@ func NewCrewManagerService(
 		sessionActivity: sessionActivity,
 		emitter:         emitter,
 		loadConfig:      loadConfig,
+		findWorkspace:   findWorkspace,
 		drainState:      make(map[string]*crewDrainState),
 
 		dispatchReadyTimeout: crewDispatchReadyTimeout,
@@ -448,12 +451,33 @@ func (s *crewManagerService) resolveDispatchWorker(result *adapter.CrewDispatchR
 		Model:           opts.Model,
 		WorkspaceID:     workspaceID,
 		NoFlicker:       true,
+		CliCommand:      s.crewCliCommand(workspaceID),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create worker session: %w", err)
 	}
 	result.Created = true
 	return worker, nil
+}
+
+// crewCliCommand returns the CLI command configured for crew workers in a
+// workspace — an alias or wrapper script rather than plain "claude". Empty
+// means the worker resolves its command the usual way, so a workspace that
+// never set one behaves exactly as before.
+func (s *crewManagerService) crewCliCommand(workspaceID string) string {
+	if s.findWorkspace == nil || workspaceID == "" {
+		return ""
+	}
+
+	workspace, err := s.findWorkspace.FindWorkspaceByID(workspaceID)
+	if err != nil || workspace == nil {
+		if err != nil {
+			log.Printf("crew: failed to read workspace %s, falling back to the default CLI command: %v", workspaceID, err)
+		}
+		return ""
+	}
+
+	return strings.TrimSpace(workspace.CrewCliCommand)
 }
 
 // waitForWorkerReady polls the worker's activity until the CLI has produced
