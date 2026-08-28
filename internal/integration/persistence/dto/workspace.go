@@ -13,6 +13,7 @@ type WorkspaceRow struct {
 	Name             string
 	ClaudeConfigPath string
 	McpConfigPath    string
+	CrewCliCommand   string
 	CreatedAt        string
 	UpdatedAt        string
 }
@@ -27,6 +28,7 @@ func (r WorkspaceRow) ToEntity() entity.Workspace {
 		Name:             r.Name,
 		ClaudeConfigPath: r.ClaudeConfigPath,
 		McpConfigPath:    r.McpConfigPath,
+		CrewCliCommand:   r.CrewCliCommand,
 		CreatedAt:        createdAt,
 		UpdatedAt:        updatedAt,
 	}
@@ -39,6 +41,7 @@ func WorkspaceRowFromEntity(workspace entity.Workspace) WorkspaceRow {
 		Name:             workspace.Name,
 		ClaudeConfigPath: workspace.ClaudeConfigPath,
 		McpConfigPath:    workspace.McpConfigPath,
+		CrewCliCommand:   workspace.CrewCliCommand,
 		CreatedAt:        workspace.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:        workspace.UpdatedAt.Format(time.RFC3339),
 	}

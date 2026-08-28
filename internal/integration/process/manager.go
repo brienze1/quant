@@ -198,7 +198,14 @@ func (m *processManager) resolvePersona() string {
 // getClaudeBinary returns the binary to use for a session.
 // It checks overrides against the original repo path first (so worktree sessions still match),
 // then falls back to checking the working directory, then the configured default.
-func (m *processManager) getClaudeBinary(directory string, repoPath string) string {
+// A non-empty sessionCommand wins outright: it is the command the session was
+// created with (a crew worker records its workspace's crew CLI command there),
+// and it must survive restarts and path-override changes.
+func (m *processManager) getClaudeBinary(directory string, repoPath string, sessionCommand string) string {
+	if sessionCommand != "" {
+		return sessionCommand
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -235,7 +242,7 @@ func (m *processManager) outputPath(sessionID string) string {
 
 // Spawn starts a process in a PTY and streams output to the frontend.
 // For "claude" sessions it launches the Claude CLI; for "terminal" sessions it launches a shell.
-func (m *processManager) Spawn(sessionID string, sessionType string, directory string, repoPath string, conversationID string, skipPermissions bool, model string, extraCliArgs string, rows uint16, cols uint16, noFlicker bool) (int, error) {
+func (m *processManager) Spawn(sessionID string, sessionType string, directory string, repoPath string, conversationID string, skipPermissions bool, model string, extraCliArgs string, rows uint16, cols uint16, noFlicker bool, cliCommand string) (int, error) {
 	// Stop any existing process for this session.
 	m.mu.RLock()
 	_, exists := m.processes[sessionID]
@@ -290,7 +297,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 			shell = "/bin/zsh"
 		}
 		parts := make([]string, 0, len(args)+1)
-		parts = append(parts, shellQuote(m.getClaudeBinary(directory, repoPath)))
+		parts = append(parts, shellQuote(m.getClaudeBinary(directory, repoPath, cliCommand)))
 		for _, a := range args {
 			parts = append(parts, shellQuote(a))
 		}
@@ -434,7 +441,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 			_ = os.Truncate(m.outputPath(sessionID), 0)
 
 			// Respawn fresh with --session-id.
-			newPid, err := m.Spawn(sessionID, sessionType, directory, repoPath, "", skipPermissions, model, extraCliArgs, rows, cols, noFlicker)
+			newPid, err := m.Spawn(sessionID, sessionType, directory, repoPath, "", skipPermissions, model, extraCliArgs, rows, cols, noFlicker, cliCommand)
 			if err == nil && m.ctx != nil {
 				// Notify frontend of the new PID via a restart event.
 				remote.Emit(m.ctx, "session:restarted", map[string]interface{}{

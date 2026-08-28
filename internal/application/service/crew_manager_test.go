@@ -236,7 +236,7 @@ func newTestCrewManager(sessions ...entity.Session) (adapter.CrewManager, *fakeC
 		finder.sessions[s.ID] = s
 	}
 	emitter := &fakeEventEmitter{}
-	manager := NewCrewManagerService(store, store, store, finder, nil, nil, nil, emitter, crewEnabledConfig())
+	manager := NewCrewManagerService(store, store, store, finder, nil, nil, nil, emitter, crewEnabledConfig(), nil)
 	return manager, store, emitter
 }
 
@@ -252,7 +252,7 @@ func crewDisabledConfig() stubLoadConfig {
 func TestCrewDisabledBlocksMutations(t *testing.T) {
 	store := newFakeCrewStore()
 	finder := &fakeSessionFinder{sessions: map[string]entity.Session{}}
-	manager := NewCrewManagerService(store, store, store, finder, nil, nil, nil, &fakeEventEmitter{}, crewDisabledConfig())
+	manager := NewCrewManagerService(store, store, store, finder, nil, nil, nil, &fakeEventEmitter{}, crewDisabledConfig(), nil)
 
 	if err := manager.AssignWorker("worker", "supervisor"); err == nil {
 		t.Error("AssignWorker: expected an error while crew is off")
@@ -469,7 +469,7 @@ func newTestCrewManagerWithActivity(activity *fakeSessionActivity, sessions ...e
 		finder.sessions[s.ID] = s
 	}
 	emitter := &fakeEventEmitter{}
-	manager := NewCrewManagerService(store, store, store, finder, nil, nil, activity, emitter, crewEnabledConfig())
+	manager := NewCrewManagerService(store, store, store, finder, nil, nil, activity, emitter, crewEnabledConfig(), nil)
 	return manager.(*crewManagerService), store, emitter
 }
 
@@ -736,6 +736,27 @@ func TestCrewStuckEmittedOnce(t *testing.T) {
 	}
 }
 
+// fakeWorkspaceFinder serves workspaces to the crew CLI command lookup.
+type fakeWorkspaceFinder struct {
+	workspaces map[string]entity.Workspace
+}
+
+func (f *fakeWorkspaceFinder) FindWorkspaceByID(id string) (*entity.Workspace, error) {
+	ws, ok := f.workspaces[id]
+	if !ok {
+		return nil, nil
+	}
+	return &ws, nil
+}
+
+func (f *fakeWorkspaceFinder) FindAllWorkspaces() ([]entity.Workspace, error) {
+	all := make([]entity.Workspace, 0, len(f.workspaces))
+	for _, ws := range f.workspaces {
+		all = append(all, ws)
+	}
+	return all, nil
+}
+
 // fakeDispatchSessionManager implements the SessionManager methods Dispatch
 // uses; the embedded interface panics on anything else.
 type fakeDispatchSessionManager struct {
@@ -777,7 +798,10 @@ func newTestDispatchManager(sessions ...entity.Session) (*crewManagerService, *f
 		live:       make(map[string]bool),
 	}
 	sm := &fakeDispatchSessionManager{finder: finder, activity: activity, sent: make(map[string]string)}
-	manager := NewCrewManagerService(store, store, store, finder, sm, nil, activity, &fakeEventEmitter{}, crewEnabledConfig()).(*crewManagerService)
+	workspaces := &fakeWorkspaceFinder{workspaces: map[string]entity.Workspace{
+		"ws-1": {ID: "ws-1", Name: "aliased", CrewCliCommand: "claude-da"},
+	}}
+	manager := NewCrewManagerService(store, store, store, finder, sm, nil, activity, &fakeEventEmitter{}, crewEnabledConfig(), workspaces).(*crewManagerService)
 	manager.dispatchReadyTimeout = 300 * time.Millisecond
 	manager.dispatchPollInterval = 10 * time.Millisecond
 	return manager, store, sm, activity
@@ -881,6 +905,37 @@ func TestCrewDispatch_CreatesWhenNoMatch(t *testing.T) {
 	}
 }
 
+// TestCrewDispatch_UsesWorkspaceCliCommand verifies a worker created by crew
+// launches with the workspace's configured CLI command (an alias), and that a
+// workspace without one leaves the command unset so the usual resolution wins.
+func TestCrewDispatch_UsesWorkspaceCliCommand(t *testing.T) {
+	sup := claudeSession("sup")
+	sup.WorkspaceID = "ws-1" // the fixture workspace configured with "claude-da"
+	manager, _, sm, _ := newTestDispatchManager(sup)
+
+	if _, err := manager.Dispatch("sup", "build it", adapter.CrewDispatchOptions{Name: "fresh", RepoID: "r1"}); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(sm.createdOpts) != 1 {
+		t.Fatalf("want one CreateSession call, got %d", len(sm.createdOpts))
+	}
+	if got := sm.createdOpts[0].CliCommand; got != "claude-da" {
+		t.Errorf("cli command: got %q want %q", got, "claude-da")
+	}
+
+	// A workspace with no crew command configured leaves it empty.
+	other := claudeSession("sup2")
+	other.WorkspaceID = "ws-unconfigured"
+	manager2, _, sm2, _ := newTestDispatchManager(other)
+
+	if _, err := manager2.Dispatch("sup2", "build it", adapter.CrewDispatchOptions{Name: "fresh2", RepoID: "r1"}); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if got := sm2.createdOpts[0].CliCommand; got != "" {
+		t.Errorf("cli command: got %q want empty", got)
+	}
+}
+
 func TestCrewDispatch_ReadyTimeoutIsNotAnError(t *testing.T) {
 	manager, store, sm, activity := newTestDispatchManager(claudeSession("sup"), claudeSession("w"))
 	activity.live["w"] = true
@@ -977,7 +1032,7 @@ func newBoardTestCrewManager(activity *fakeSessionActivity, sessions ...entity.S
 	if activity != nil {
 		act = activity
 	}
-	manager := NewCrewManagerService(store, store, store, finder, nil, board, act, emitter, crewEnabledConfig()).(*crewManagerService)
+	manager := NewCrewManagerService(store, store, store, finder, nil, board, act, emitter, crewEnabledConfig(), nil).(*crewManagerService)
 	return manager, store, board, emitter
 }
 

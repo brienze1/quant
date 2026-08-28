@@ -10,6 +10,7 @@ type CreateWorkspaceRequest struct {
 	Name             string `json:"name"`
 	ClaudeConfigPath string `json:"claudeConfigPath"`
 	McpConfigPath    string `json:"mcpConfigPath"`
+	CrewCliCommand   string `json:"crewCliCommand"`
 }
 
 // UpdateWorkspaceRequest represents the request payload for updating an existing workspace.
@@ -18,6 +19,7 @@ type UpdateWorkspaceRequest struct {
 	Name             string `json:"name"`
 	ClaudeConfigPath string `json:"claudeConfigPath"`
 	McpConfigPath    string `json:"mcpConfigPath"`
+	CrewCliCommand   string `json:"crewCliCommand"`
 }
 
 // WorkspaceResponse represents the response payload for workspace data.
@@ -26,6 +28,7 @@ type WorkspaceResponse struct {
 	Name             string `json:"name"`
 	ClaudeConfigPath string `json:"claudeConfigPath"`
 	McpConfigPath    string `json:"mcpConfigPath"`
+	CrewCliCommand   string `json:"crewCliCommand"`
 	CreatedAt        string `json:"createdAt"`
 	UpdatedAt        string `json:"updatedAt"`
 }
@@ -45,6 +48,7 @@ func WorkspaceResponseFromEntity(workspace entity.Workspace) WorkspaceResponse {
 		Name:             workspace.Name,
 		ClaudeConfigPath: workspace.ClaudeConfigPath,
 		McpConfigPath:    workspace.McpConfigPath,
+		CrewCliCommand:   workspace.CrewCliCommand,
 		CreatedAt:        workspace.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:        workspace.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
