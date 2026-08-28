@@ -78,6 +78,7 @@ func TestVoiceToolsRoundTrip(t *testing.T) {
 		injector.FileManager(),
 		injector.CrewManager(),
 		injector.TaskManager(),
+		injector.SessionPersistence(),
 		injector.ConfigPersistence(),
 		bridge,
 	)

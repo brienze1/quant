@@ -202,6 +202,7 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 		WorkspaceID:     opts.WorkspaceID,
 		NoFlicker:       opts.NoFlicker,
 		CliCommand:      opts.CliCommand,
+		McpToken:        uuid.New().String(),
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		LastActiveAt:    now,
@@ -404,8 +405,13 @@ func (s *sessionManagerService) StartSession(id string, rows int, cols int) erro
 		return fmt.Errorf("session not found: %s", id)
 	}
 
+	token, err := s.ensureMcpToken(session)
+	if err != nil {
+		return err
+	}
+
 	repoPath := s.repoPathForSession(session)
-	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols), session.NoFlicker, session.CliCommand)
+	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols), session.NoFlicker, session.CliCommand, token)
 	if err != nil {
 		_ = s.updateSession.UpdateStatus(id, sessionstatus.Error)
 		return fmt.Errorf("failed to spawn process: %w", err)
@@ -441,8 +447,13 @@ func (s *sessionManagerService) ResumeSession(id string, rows int, cols int) err
 		return fmt.Errorf("session not found: %s", id)
 	}
 
+	token, err := s.ensureMcpToken(session)
+	if err != nil {
+		return err
+	}
+
 	repoPath := s.repoPathForSession(session)
-	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols), session.NoFlicker, session.CliCommand)
+	pid, err := s.spawnProcess.Spawn(session.ID, session.SessionType, session.Directory, repoPath, session.ClaudeConvID, session.SkipPermissions, session.Model, session.ExtraCliArgs, uint16(rows), uint16(cols), session.NoFlicker, session.CliCommand, token)
 	if err != nil {
 		_ = s.updateSession.UpdateStatus(id, sessionstatus.Error)
 		return fmt.Errorf("failed to resume process: %w", err)
@@ -706,6 +717,22 @@ func (s *sessionManagerService) ReorderSessions(taskID string, orderedSessionIDs
 	}
 
 	return nil
+}
+
+// ensureMcpToken mints and persists an MCP token for a session that has none,
+// so sessions created before tokens existed authenticate from their next start.
+func (s *sessionManagerService) ensureMcpToken(session *entity.Session) (string, error) {
+	if session.McpToken != "" {
+		return session.McpToken, nil
+	}
+
+	session.McpToken = uuid.New().String()
+	session.UpdatedAt = time.Now()
+	if err := s.updateSession.Update(*session); err != nil {
+		return "", fmt.Errorf("failed to persist session mcp token: %w", err)
+	}
+
+	return session.McpToken, nil
 }
 
 // SetSessionMessaging updates a session's messaging policy: the direction mode

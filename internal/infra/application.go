@@ -144,6 +144,9 @@ func injectQuantMCP(port int) {
 		// process env, so each session's mindmap MCP calls are scoped to it.
 		"headers": map[string]interface{}{
 			"X-Quant-Session": "${QUANT_SESSION_ID}",
+			// The token authenticates the session; the server locks a
+			// token-bearing caller to its own workspace.
+			"X-Quant-Session-Token": "${QUANT_SESSION_TOKEN}",
 		},
 	}
 	config["mcpServers"] = mcpServers
@@ -262,7 +265,7 @@ func Run(assets embed.FS, changelogData []byte) error {
 	processManager := injector.ProcessManager()
 
 	// Start MCP server for external AI tools to manage jobs.
-	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager(), injector.FileManager(), crewManager, injector.TaskManager(), injector.ConfigPersistence(), voiceBridge)
+	mcpServer := quantmcp.NewQuantMCPServer(injector.JobManager(), injector.AgentManager(), injector.SessionManager(), injector.WorkspaceManager(), injector.RepoManager(), injector.JobGroupManager(), injector.MindmapManager(), injector.FileManager(), crewManager, injector.TaskManager(), injector.SessionPersistence(), injector.ConfigPersistence(), voiceBridge)
 	mcpPort := mcpServer.Port()
 	fmt.Printf("[quant] MCP server on port %d → http://localhost:%d/mcp\n", mcpPort, mcpPort)
 	if mcpPort != quantmcp.DefaultPort {

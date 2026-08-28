@@ -40,6 +40,11 @@ type Session struct {
 	// MessagingPeers is the allowlist of session IDs this session may message.
 	// Empty means every session is allowed, which is the default.
 	MessagingPeers []string
+	// McpToken authenticates this session's calls to the quant MCP server. It is
+	// minted by quant, handed to the process through the environment, and never
+	// appears in any tool result — a session id alone is not proof of identity,
+	// since list_sessions hands out every id.
+	McpToken string
 	// CliCommand overrides the shell command used to launch this session's CLI.
 	// Empty means resolve it the usual way (path overrides, then the global
 	// setting). Crew workers record the command they were created with here.

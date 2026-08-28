@@ -214,6 +214,8 @@ func (f *fakeSessionFinder) FindByRepoID(repoID string) ([]entity.Session, error
 
 func (f *fakeSessionFinder) FindByTaskID(string) ([]entity.Session, error) { return nil, nil }
 
+func (f *fakeSessionFinder) FindByMcpToken(string) (*entity.Session, error) { return nil, nil }
+
 // fakeEventEmitter records emitted events and their payloads.
 type fakeEventEmitter struct {
 	events   []string

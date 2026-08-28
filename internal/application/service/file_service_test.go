@@ -30,6 +30,8 @@ func (s *stubFindSession) FindAll() ([]entity.Session, error)            { retur
 func (s *stubFindSession) FindByRepoID(string) ([]entity.Session, error) { return nil, nil }
 func (s *stubFindSession) FindByTaskID(string) ([]entity.Session, error) { return nil, nil }
 
+func (s *stubFindSession) FindByMcpToken(string) (*entity.Session, error) { return nil, nil }
+
 // captureEmitter records emitted events for assertions.
 type captureEmitter struct {
 	names    []string

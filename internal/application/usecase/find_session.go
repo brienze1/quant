@@ -11,4 +11,5 @@ type FindSession interface {
 	FindAll() ([]entity.Session, error)
 	FindByRepoID(repoID string) ([]entity.Session, error)
 	FindByTaskID(taskID string) ([]entity.Session, error)
+	FindByMcpToken(token string) (*entity.Session, error)
 }

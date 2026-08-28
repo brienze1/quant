@@ -242,7 +242,7 @@ func (m *processManager) outputPath(sessionID string) string {
 
 // Spawn starts a process in a PTY and streams output to the frontend.
 // For "claude" sessions it launches the Claude CLI; for "terminal" sessions it launches a shell.
-func (m *processManager) Spawn(sessionID string, sessionType string, directory string, repoPath string, conversationID string, skipPermissions bool, model string, extraCliArgs string, rows uint16, cols uint16, noFlicker bool, cliCommand string) (int, error) {
+func (m *processManager) Spawn(sessionID string, sessionType string, directory string, repoPath string, conversationID string, skipPermissions bool, model string, extraCliArgs string, rows uint16, cols uint16, noFlicker bool, cliCommand string, mcpToken string) (int, error) {
 	// Stop any existing process for this session.
 	m.mu.RLock()
 	_, exists := m.processes[sessionID]
@@ -325,6 +325,12 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 	// Carry the session id so the child claude process can scope its mindmap
 	// MCP calls (the quant MCP server reads this via the X-Quant-Session header).
 	baseEnv = append(baseEnv, fmt.Sprintf("QUANT_SESSION_ID=%s", sessionID))
+	// The token proves the request really comes from this session. The id alone
+	// is not proof — list_sessions hands every id out — so the MCP server
+	// authenticates by token and locks the caller to its own workspace.
+	if mcpToken != "" {
+		baseEnv = append(baseEnv, fmt.Sprintf("QUANT_SESSION_TOKEN=%s", mcpToken))
+	}
 	// Provide the base persona text for the $QUANT_BASE_PERSONA token added to the
 	// claude args above. Only set it when persona is not skipped (and it is never
 	// referenced by terminal sessions, which take the other branch). Passing it via
@@ -441,7 +447,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 			_ = os.Truncate(m.outputPath(sessionID), 0)
 
 			// Respawn fresh with --session-id.
-			newPid, err := m.Spawn(sessionID, sessionType, directory, repoPath, "", skipPermissions, model, extraCliArgs, rows, cols, noFlicker, cliCommand)
+			newPid, err := m.Spawn(sessionID, sessionType, directory, repoPath, "", skipPermissions, model, extraCliArgs, rows, cols, noFlicker, cliCommand, mcpToken)
 			if err == nil && m.ctx != nil {
 				// Notify frontend of the new PID via a restart event.
 				remote.Emit(m.ctx, "session:restarted", map[string]interface{}{

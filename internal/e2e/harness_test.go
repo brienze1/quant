@@ -72,6 +72,7 @@ func newHarness(t *testing.T) *harness {
 		injector.FileManager(),
 		injector.CrewManager(),
 		injector.TaskManager(),
+		injector.SessionPersistence(),
 		injector.ConfigPersistence(),
 		nil, // voice bridge — voice tools aren't exercised by these tests
 	)
