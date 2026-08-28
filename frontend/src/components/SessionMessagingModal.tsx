@@ -25,11 +25,22 @@ interface Props {
  */
 export function SessionMessagingModal({ session, sessions, contextBySession, onSave, onClose }: Props) {
   const [mode, setMode] = useState<"both" | "out">(session.messagingMode === "out" ? "out" : "both");
-  const [peers, setPeers] = useState<string[]>(session.messagingPeers ?? []);
 
   const others = sessions
     .filter((s) => s.id !== session.id && s.sessionType !== "terminal" && !s.archivedAt)
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Links are only meaningful inside one workspace, so a stored peer that is no
+  // longer listed (left over from before the boundary was enforced) is dropped
+  // here — saving would otherwise be refused for a link the user cannot see or
+  // untick. Skipped while the list is still empty so nothing is wiped on a
+  // first render.
+  const [peers, setPeers] = useState<string[]>(() => {
+    const stored = session.messagingPeers ?? [];
+    if (others.length === 0) return stored;
+    const listed = new Set(others.map((s) => s.id));
+    return stored.filter((id) => listed.has(id));
+  });
 
   function togglePeer(id: string) {
     setPeers((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));

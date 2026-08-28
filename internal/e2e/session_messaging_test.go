@@ -210,3 +210,59 @@ func TestSessionMessagingCanBeTurnedOff(t *testing.T) {
 		t.Fatalf("expected a switched-off refusal, got: %s", errText)
 	}
 }
+
+// TestSessionLinksAreWorkspaceScoped verifies links cannot cross a workspace
+// boundary, whichever path writes them: the session page (SetSessionMessaging)
+// or the MCP (LinkSessionPeer).
+func TestSessionLinksAreWorkspaceScoped(t *testing.T) {
+	h := newHarness(t)
+
+	repo, err := h.injector.RepoManager().OpenRepo("links-repo", t.TempDir(), h.wsID)
+	if err != nil {
+		t.Fatalf("OpenRepo: %v", err)
+	}
+	task, err := h.injector.TaskManager().CreateTask(repo.ID, "links", "links")
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	sessions := h.injector.SessionManager()
+	mine, err := sessions.CreateSession("mine", "", "claude", repo.ID, task.ID, entity.SessionOptions{
+		WorkspaceID: h.wsID,
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	peer, err := sessions.CreateSession("peer", "", "claude", repo.ID, task.ID, entity.SessionOptions{
+		WorkspaceID: h.wsID,
+	})
+	if err != nil {
+		t.Fatalf("CreateSession(peer): %v", err)
+	}
+	foreign := otherWorkspaceSession(t, h, "links-foreign")
+
+	// A peer in the same workspace is accepted, by either path.
+	if err := sessions.SetSessionMessaging(mine.ID, entity.MessagingBoth, []string{peer.ID}); err != nil {
+		t.Fatalf("SetSessionMessaging with an in-workspace peer: %v", err)
+	}
+	if err := sessions.LinkSessionPeer(mine.ID, peer.ID); err != nil {
+		t.Fatalf("LinkSessionPeer with an in-workspace peer: %v", err)
+	}
+
+	// A peer in another workspace is refused, by either path.
+	if err := sessions.SetSessionMessaging(mine.ID, entity.MessagingBoth, []string{foreign.ID}); err == nil {
+		t.Error("SetSessionMessaging accepted a peer from another workspace")
+	}
+	if err := sessions.LinkSessionPeer(mine.ID, foreign.ID); err == nil {
+		t.Error("LinkSessionPeer accepted a peer from another workspace")
+	}
+
+	// The refusals left the existing links untouched.
+	after, err := sessions.GetSession(mine.ID)
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if len(after.MessagingPeers) != 1 || after.MessagingPeers[0] != peer.ID {
+		t.Errorf("links changed by a rejected write: %v", after.MessagingPeers)
+	}
+}

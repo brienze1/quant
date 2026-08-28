@@ -2069,14 +2069,16 @@ function App() {
 
   // Every non-archived claude session in the workspace, plus a "repo · task"
   // label for each, so the session page can show and edit who a session talks to.
-  const allWorkspaceSessions = Object.values(sessionsByTask)
-    .flat()
-    .filter((s) => s.sessionType !== "terminal" && !s.archivedAt);
-
+  // Walk the current workspace's repos → tasks → sessions rather than flattening
+  // sessionsByTask, which keeps entries for tasks fetched under other workspaces
+  // and would otherwise offer those sessions as link targets.
+  const allWorkspaceSessions: Session[] = [];
   const sessionContextLabels: Record<string, string> = {};
   for (const repo of repos) {
     for (const task of tasksByRepo[repo.id] ?? []) {
       for (const s of sessionsByTask[task.id] ?? []) {
+        if (s.sessionType === "terminal" || s.archivedAt) continue;
+        allWorkspaceSessions.push(s);
         sessionContextLabels[s.id] = `${repo.name} · ${task.tag}`;
       }
     }
