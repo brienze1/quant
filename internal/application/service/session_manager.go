@@ -869,10 +869,33 @@ const (
 	syncCliTitleQuietPeriod  = 1500 * time.Millisecond
 )
 
+// cliTitleFor builds the title pushed into the CLI: "<repo>-<session>". Session
+// names are only unique within a repo, so the repo has to be part of the title
+// — otherwise two sessions called "qa" in different repos are indistinguishable
+// in the phone's Remote Control list. A session with no repo keeps its bare
+// name.
+func (s *sessionManagerService) cliTitleFor(session entity.Session) string {
+	name := strings.TrimSpace(session.Name)
+	if name == "" || session.RepoID == "" {
+		return name
+	}
+
+	repo, err := s.findRepo.FindRepoByID(session.RepoID)
+	if err != nil || repo == nil {
+		return name
+	}
+	repoName := strings.TrimSpace(repo.Name)
+	if repoName == "" {
+		return name
+	}
+
+	return repoName + "-" + name
+}
+
 // syncCliTitle tells the claude CLI what this session is called, so the title
 // it reports — which is what Claude Code Remote Control shows on a phone —
-// matches the name the session has in quant. Without this the CLI invents its
-// own title from the first prompt and the two never agree.
+// matches the session in quant. Without this the CLI invents its own title from
+// the first prompt and the two never agree.
 //
 // It waits for the CLI to render and go quiet before typing, the same readiness
 // gate crew dispatch uses, then submits /rename. Best-effort throughout: a
@@ -881,7 +904,7 @@ func (s *sessionManagerService) syncCliTitle(session entity.Session) {
 	if session.SessionType == sessiontype.Terminal || s.sessionActivity == nil {
 		return
 	}
-	name := strings.TrimSpace(session.Name)
+	name := s.cliTitleFor(session)
 	if name == "" {
 		return
 	}
@@ -920,9 +943,12 @@ func (s *sessionManagerService) RenameSession(id string, newName string) error {
 		return err
 	}
 
+	// Renaming pushes the same repo-qualified title the CLI was given at start,
+	// so a rename here does not undo the qualification.
 	if session.SessionType != sessiontype.Terminal && session.Status == sessionstatus.Running {
+		title := s.cliTitleFor(*session)
 		go func() {
-			if err := s.SendMessageAndSubmit(id, "/rename "+newName); err != nil {
+			if err := s.SendMessageAndSubmit(id, "/rename "+title); err != nil {
 				log.Printf("rename sync: failed to inject /rename into session %s: %v", id, err)
 			}
 		}()

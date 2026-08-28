@@ -47,6 +47,21 @@ func (f titleSessionFinder) FindByRepoID(string) ([]entity.Session, error)  { re
 func (f titleSessionFinder) FindByTaskID(string) ([]entity.Session, error)  { return nil, nil }
 func (f titleSessionFinder) FindByMcpToken(string) (*entity.Session, error) { return nil, nil }
 
+// titleRepoFinder serves the repo a session belongs to.
+type titleRepoFinder struct{ repo *entity.Repo }
+
+func (f titleRepoFinder) FindRepoByID(string) (*entity.Repo, error) { return f.repo, nil }
+func (f titleRepoFinder) FindRepoByPathAndWorkspace(string, string) (*entity.Repo, error) {
+	return nil, nil
+}
+func (f titleRepoFinder) FindAllRepos() ([]entity.Repo, error) { return nil, nil }
+func (f titleRepoFinder) FindReposByWorkspace(string) ([]entity.Repo, error) {
+	return nil, nil
+}
+func (f titleRepoFinder) FindClosedReposByWorkspace(string, int, int) ([]entity.Repo, error) {
+	return nil, nil
+}
+
 // noopSessionUpdater satisfies the last-active bookkeeping SendMessage does.
 type noopSessionUpdater struct{}
 
@@ -85,20 +100,70 @@ func waitForMessage(t *testing.T, spawn *recordingSpawn) []string {
 // CLI once it is ready, so the title Remote Control shows on a phone matches
 // the name the session has in quant.
 func TestSyncCliTitleRenamesTheCli(t *testing.T) {
-	session := entity.Session{ID: "s1", Name: "qa runner", SessionType: sessiontype.Claude}
+	session := entity.Session{ID: "s1", Name: "qa runner", SessionType: sessiontype.Claude, RepoID: "r1"}
 	spawn := &recordingSpawn{}
 	s := &sessionManagerService{
 		spawnProcess:    spawn,
 		sessionActivity: readyActivity{ready: true},
 		findSession:     titleSessionFinder{session: session},
+		findRepo:        titleRepoFinder{repo: &entity.Repo{ID: "r1", Name: "quant"}},
 		updateSession:   noopSessionUpdater{},
 	}
 
 	s.syncCliTitle(session)
 
 	msgs := waitForMessage(t, spawn)
-	if len(msgs) == 0 || msgs[0] != "/rename qa runner" {
-		t.Fatalf("expected the CLI to be renamed to the quant name, got %v", msgs)
+	if len(msgs) == 0 || msgs[0] != "/rename quant-qa runner" {
+		t.Fatalf("expected the CLI title to be repo-qualified, got %v", msgs)
+	}
+}
+
+// TestCliTitleForQualifiesWithRepo covers the title itself: session names are
+// only unique within a repo, so the repo has to be part of the title.
+func TestCliTitleForQualifiesWithRepo(t *testing.T) {
+	cases := []struct {
+		name    string
+		session entity.Session
+		repo    *entity.Repo
+		want    string
+	}{
+		{
+			name:    "repo qualifies the name",
+			session: entity.Session{Name: "qa", RepoID: "r1"},
+			repo:    &entity.Repo{ID: "r1", Name: "quant"},
+			want:    "quant-qa",
+		},
+		{
+			name:    "another repo, same session name",
+			session: entity.Session{Name: "qa", RepoID: "r2"},
+			repo:    &entity.Repo{ID: "r2", Name: "poco-pace-api"},
+			want:    "poco-pace-api-qa",
+		},
+		{
+			name:    "no repo leaves the bare name",
+			session: entity.Session{Name: "assistant"},
+			want:    "assistant",
+		},
+		{
+			name:    "unknown repo falls back to the bare name",
+			session: entity.Session{Name: "qa", RepoID: "gone"},
+			want:    "qa",
+		},
+		{
+			name:    "blank name stays blank",
+			session: entity.Session{Name: "  ", RepoID: "r1"},
+			repo:    &entity.Repo{ID: "r1", Name: "quant"},
+			want:    "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &sessionManagerService{findRepo: titleRepoFinder{repo: tc.repo}}
+			if got := s.cliTitleFor(tc.session); got != tc.want {
+				t.Errorf("cliTitleFor: got %q want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -120,6 +185,7 @@ func TestSyncCliTitleSkips(t *testing.T) {
 				spawnProcess:    spawn,
 				sessionActivity: readyActivity{ready: true},
 				findSession:     titleSessionFinder{session: tc.session},
+				findRepo:        titleRepoFinder{},
 				updateSession:   noopSessionUpdater{},
 			}
 
