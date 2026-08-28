@@ -2977,21 +2977,18 @@ function App() {
         />
         </span>
 
-        {/* Center: command palette pill (absolutely centered) */}
+        {/* Center: command palette pill. Absolutely centered on wide (desktop)
+            windows; collapses to a static icon-only button on narrow/mobile
+            widths (see .titlebar-cmdk in style.css) so it can't overlap the
+            Sessions/Jobs/Agents tabs to its left. */}
         <button
           type="button"
+          className="titlebar-cmdk"
           onClick={() => setCommandPaletteOpen(true)}
           title="Search or run a command  ⌘K"
           style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            transform: "translate(-50%, -50%)",
-            display: "flex",
             alignItems: "center",
             gap: 9,
-            width: 360,
-            maxWidth: "32vw",
             height: 30,
             padding: "0 12px",
             borderRadius: 9,
@@ -3003,8 +3000,8 @@ function App() {
           }}
         >
           <Icon name="search" size={14} color="var(--fg-3)" />
-          <span style={{ flex: 1, fontSize: 12, color: "var(--fg-3)" }}>Search or run a command</span>
-          <Kbd>⌘K</Kbd>
+          <span className="titlebar-cmdk-label" style={{ flex: 1, fontSize: 12, color: "var(--fg-3)" }}>Search or run a command</span>
+          <span className="titlebar-cmdk-kbd"><Kbd>⌘K</Kbd></span>
         </button>
 
         <span style={{ flex: 1 }} />
@@ -3604,7 +3601,7 @@ function App() {
     return (
       <>
         {renderQuantiOverlay()}
-        <div className="flex flex-col h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
+        <div className="flex flex-col h-full w-full" style={{ backgroundColor: "var(--bg)" }}>
           {renderTitleBar()}
           <div className="flex-1 min-h-0 relative">
             <Settings repos={repos} onBack={() => { fetchShortcuts(); api.getConfig().then(setDockTermConfig).catch(() => {}); setView("dashboard"); }} />
@@ -3620,7 +3617,7 @@ function App() {
     return (
       <>
         {renderQuantiOverlay()}
-        <div className="flex flex-col h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
+        <div className="flex flex-col h-full w-full" style={{ backgroundColor: "var(--bg)" }}>
           {renderTitleBar()}
           <div className="flex-1 min-h-0 relative">
             <DiffView
@@ -3643,7 +3640,7 @@ function App() {
     <>
       {renderQuantiOverlay()}
 
-    <div className="flex flex-col h-screen w-screen" style={{ backgroundColor: "var(--bg)" }}>
+    <div className="flex flex-col h-full w-full" style={{ backgroundColor: "var(--bg)" }}>
       {renderTitleBar()}
       <div className="flex-1 min-h-0 relative">
 
@@ -3679,6 +3676,7 @@ function App() {
 
     <div key={view} className="view-swap flex h-full w-full" style={{ backgroundColor: "var(--bg)", gap: 8, padding: "0 8px 8px" }}>
       {!sidebarHidden && (
+      <div className="app-sidebar-slot">
       <Sidebar
         repos={repos}
         tasksByRepo={tasksByRepo}
@@ -3737,6 +3735,7 @@ function App() {
         onShowChangelog={() => setModal({ type: "changelog" })}
         workspaceSwitcher={renderWorkspaceSwitcher()}
       />
+      </div>
       )}
 
       <main className="panel flex-1 flex flex-col relative">
