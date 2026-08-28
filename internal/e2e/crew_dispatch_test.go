@@ -46,8 +46,16 @@ func newSessionClient(t *testing.T, h *harness, sessionID string) *sessionClient
 
 	ctx := context.Background()
 	url := fmt.Sprintf("http://localhost:%d/mcp", h.server.Port())
+
+	// Real sessions authenticate with the token quant minted for them; the id
+	// alone is not accepted, exactly as for a spawned claude process.
+	headers := map[string]string{"X-Quant-Session": sessionID}
+	if session, err := h.injector.SessionManager().GetSession(sessionID); err == nil && session != nil && session.McpToken != "" {
+		headers["X-Quant-Session-Token"] = session.McpToken
+	}
+
 	client, err := mcpclient.NewStreamableHttpClient(url,
-		transport.WithHTTPHeaders(map[string]string{"X-Quant-Session": sessionID}),
+		transport.WithHTTPHeaders(headers),
 	)
 	if err != nil {
 		t.Fatalf("NewStreamableHttpClient: %v", err)

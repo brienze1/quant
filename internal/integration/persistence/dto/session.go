@@ -30,6 +30,7 @@ type SessionRow struct {
 	NoFlicker       int
 	SortOrder       int
 	CliCommand      string
+	McpToken        string
 	MessagingMode   string
 	MessagingPeers  string
 	CreatedAt       string
@@ -69,6 +70,7 @@ func (r SessionRow) ToEntity() entity.Session {
 		WorkspaceID:     r.WorkspaceID,
 		NoFlicker:       r.NoFlicker == 1,
 		CliCommand:      r.CliCommand,
+		McpToken:        r.McpToken,
 		MessagingMode:   r.MessagingMode,
 		MessagingPeers:  splitPeers(r.MessagingPeers),
 		SortOrder:       r.SortOrder,
@@ -105,6 +107,7 @@ func SessionRowFromEntity(session entity.Session) SessionRow {
 		WorkspaceID:     session.WorkspaceID,
 		NoFlicker:       boolToInt(session.NoFlicker),
 		CliCommand:      session.CliCommand,
+		McpToken:        session.McpToken,
 		MessagingMode:   session.MessagingMode,
 		MessagingPeers:  joinPeers(session.MessagingPeers),
 		SortOrder:       session.SortOrder,

@@ -23,7 +23,7 @@ func NewSessionPersistence(db *sql.DB) adapter.SessionPersistence {
 
 const sessionColumns = `id, name, description, session_type, status, directory, worktree_path, branch_name,
 		claude_conv_id, pid, repo_id, task_id, skip_permissions, model, extra_cli_args, workspace_id, no_flicker,
-		sort_order, cli_command, messaging_mode, messaging_peers, created_at, updated_at, last_active_at, archived_at`
+		sort_order, cli_command, mcp_token, messaging_mode, messaging_peers, created_at, updated_at, last_active_at, archived_at`
 
 func scanSessionRow(scanner interface{ Scan(...any) error }) (pdto.SessionRow, error) {
 	var row pdto.SessionRow
@@ -31,7 +31,7 @@ func scanSessionRow(scanner interface{ Scan(...any) error }) (pdto.SessionRow, e
 		&row.ID, &row.Name, &row.Description, &row.SessionType, &row.Status, &row.Directory,
 		&row.WorktreePath, &row.BranchName, &row.ClaudeConvID, &row.PID,
 		&row.RepoID, &row.TaskID, &row.SkipPermissions, &row.Model, &row.ExtraCliArgs,
-		&row.WorkspaceID, &row.NoFlicker, &row.SortOrder, &row.CliCommand, &row.MessagingMode, &row.MessagingPeers,
+		&row.WorkspaceID, &row.NoFlicker, &row.SortOrder, &row.CliCommand, &row.McpToken, &row.MessagingMode, &row.MessagingPeers,
 		&row.CreatedAt, &row.UpdatedAt, &row.LastActiveAt, &row.ArchivedAt,
 	)
 	return row, err
@@ -106,6 +106,27 @@ func (p *sessionPersistence) FindByRepoID(repoID string) ([]entity.Session, erro
 	return sessions, nil
 }
 
+// FindByMcpToken retrieves the session that owns an MCP token. It is the only
+// trustworthy way to tell which session a request came from.
+func (p *sessionPersistence) FindByMcpToken(token string) (*entity.Session, error) {
+	if token == "" {
+		return nil, nil
+	}
+
+	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE mcp_token = ?`
+
+	row, err := scanSessionRow(p.db.QueryRow(query, token))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find session by mcp token: %w", err)
+	}
+
+	session := row.ToEntity()
+	return &session, nil
+}
+
 // FindByTaskID retrieves all sessions for a given task.
 func (p *sessionPersistence) FindByTaskID(taskID string) ([]entity.Session, error) {
 	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE task_id = ? ORDER BY sort_order ASC, last_active_at DESC`
@@ -138,14 +159,14 @@ func (p *sessionPersistence) Save(session entity.Session) error {
 
 	query := `INSERT INTO sessions (id, name, description, session_type, status, directory, worktree_path,
 		branch_name, claude_conv_id, pid, repo_id, task_id, skip_permissions, model, extra_cli_args,
-		workspace_id, no_flicker, sort_order, cli_command, messaging_mode, messaging_peers, created_at, updated_at, last_active_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		workspace_id, no_flicker, sort_order, cli_command, mcp_token, messaging_mode, messaging_peers, created_at, updated_at, last_active_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := p.db.Exec(query,
 		row.ID, row.Name, row.Description, row.SessionType, row.Status, row.Directory,
 		row.WorktreePath, row.BranchName, row.ClaudeConvID, row.PID,
 		row.RepoID, row.TaskID, row.SkipPermissions, row.Model, row.ExtraCliArgs,
-		row.WorkspaceID, row.NoFlicker, row.SortOrder, row.CliCommand, row.MessagingMode, row.MessagingPeers, row.CreatedAt, row.UpdatedAt, row.LastActiveAt, row.ArchivedAt,
+		row.WorkspaceID, row.NoFlicker, row.SortOrder, row.CliCommand, row.McpToken, row.MessagingMode, row.MessagingPeers, row.CreatedAt, row.UpdatedAt, row.LastActiveAt, row.ArchivedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save session: %w", err)
@@ -205,13 +226,13 @@ func (p *sessionPersistence) Update(session entity.Session) error {
 	query := `UPDATE sessions SET name = ?, description = ?, status = ?, directory = ?,
 		worktree_path = ?, branch_name = ?, claude_conv_id = ?, pid = ?,
 		repo_id = ?, task_id = ?, skip_permissions = ?, model = ?, extra_cli_args = ?,
-		workspace_id = ?, no_flicker = ?, sort_order = ?, cli_command = ?, messaging_mode = ?, messaging_peers = ?, updated_at = ?, last_active_at = ?, archived_at = ? WHERE id = ?`
+		workspace_id = ?, no_flicker = ?, sort_order = ?, cli_command = ?, mcp_token = ?, messaging_mode = ?, messaging_peers = ?, updated_at = ?, last_active_at = ?, archived_at = ? WHERE id = ?`
 
 	result, err := p.db.Exec(query,
 		row.Name, row.Description, row.Status, row.Directory,
 		row.WorktreePath, row.BranchName, row.ClaudeConvID, row.PID,
 		row.RepoID, row.TaskID, row.SkipPermissions, row.Model, row.ExtraCliArgs,
-		row.WorkspaceID, row.NoFlicker, row.SortOrder, row.CliCommand, row.MessagingMode, row.MessagingPeers, row.UpdatedAt, row.LastActiveAt, row.ArchivedAt, row.ID,
+		row.WorkspaceID, row.NoFlicker, row.SortOrder, row.CliCommand, row.McpToken, row.MessagingMode, row.MessagingPeers, row.UpdatedAt, row.LastActiveAt, row.ArchivedAt, row.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update session: %w", err)

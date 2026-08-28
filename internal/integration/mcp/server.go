@@ -32,6 +32,12 @@ type ctxKey string
 // sessionCtxKey holds the session id extracted from the X-Quant-Session request header.
 const sessionCtxKey ctxKey = "quant-session"
 
+// sessionTokenCtxKey holds the per-session MCP token from the
+// X-Quant-Session-Token header. The token is what actually identifies the
+// calling session: the id header is self-asserted, and every id is public
+// through list_sessions.
+const sessionTokenCtxKey ctxKey = "quant-session-token"
+
 // QuantMCPServer wraps an MCP server that exposes job, agent, session, workspace, and repo management tools.
 type QuantMCPServer struct {
 	jobManager       appAdapter.JobManager
@@ -44,6 +50,7 @@ type QuantMCPServer struct {
 	fileManager      appAdapter.FileManager
 	crewManager      appAdapter.CrewManager
 	taskManager      appAdapter.TaskManager
+	findSession      usecase.FindSession
 	loadConfig       usecase.LoadConfig
 	voiceBridge      *voice.Bridge
 	httpServer       *http.Server
@@ -53,7 +60,7 @@ type QuantMCPServer struct {
 
 // NewQuantMCPServer creates a new MCP server with all management tools registered.
 // It tries the default port first, then probes up to 10 consecutive ports to find one that's free.
-func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, crewManager appAdapter.CrewManager, taskManager appAdapter.TaskManager, loadConfig usecase.LoadConfig, voiceBridge *voice.Bridge) *QuantMCPServer {
+func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter.AgentManager, sessionManager appAdapter.SessionManager, workspaceManager appAdapter.WorkspaceManager, repoManager appAdapter.RepoManager, jobGroupManager appAdapter.JobGroupManager, mindmapManager appAdapter.MindmapManager, fileManager appAdapter.FileManager, crewManager appAdapter.CrewManager, taskManager appAdapter.TaskManager, findSession usecase.FindSession, loadConfig usecase.LoadConfig, voiceBridge *voice.Bridge) *QuantMCPServer {
 	mcpServer := server.NewMCPServer("quant", "1.0.0")
 
 	s := &QuantMCPServer{
@@ -67,6 +74,7 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 		fileManager:      fileManager,
 		crewManager:      crewManager,
 		taskManager:      taskManager,
+		findSession:      findSession,
 		loadConfig:       loadConfig,
 		voiceBridge:      voiceBridge,
 	}
@@ -76,6 +84,7 @@ func NewQuantMCPServer(jobManager appAdapter.JobManager, agentManager appAdapter
 	// Extract the per-session id from the X-Quant-Session header into the request
 	// context so mindmap tools can scope their writes to the calling session.
 	streamable := server.NewStreamableHTTPServer(mcpServer, server.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
+		ctx = context.WithValue(ctx, sessionTokenCtxKey, r.Header.Get("X-Quant-Session-Token"))
 		return context.WithValue(ctx, sessionCtxKey, r.Header.Get("X-Quant-Session"))
 	}))
 
@@ -2290,9 +2299,15 @@ func (s *QuantMCPServer) handleListSessions(ctx context.Context, request mcp.Cal
 	includeArchived := boolArg(args, "includeArchived")
 	caller := sessionFromCtx(ctx)
 
-	var callerSession *entity.Session
-	if caller != "" {
-		callerSession, _ = s.sessionManager.GetSession(caller)
+	callerSession, authErr := s.callerSession(ctx)
+	if authErr != nil {
+		return mcp.NewToolResultError(authErr.Error()), nil
+	}
+	// A session only ever sees its own workspace. The filter is not a
+	// suggestion the caller can widen — it replaces any workspaceId passed in.
+	if callerSession != nil {
+		wsFilter = callerSession.WorkspaceID
+		caller = callerSession.ID
 	}
 
 	// Repos and tasks are looked up once per id — a workspace has few of each,
@@ -2360,9 +2375,13 @@ func (s *QuantMCPServer) handleListSessions(ctx context.Context, request mcp.Cal
 	return marshalResult(result)
 }
 
-func (s *QuantMCPServer) handleGetSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleGetSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.requireSameWorkspace(ctx, id); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2506,9 +2525,13 @@ func (s *QuantMCPServer) handleCreateTask(_ context.Context, request mcp.CallToo
 	})
 }
 
-func (s *QuantMCPServer) handleStartSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleStartSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.requireSameWorkspace(ctx, id); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2519,9 +2542,13 @@ func (s *QuantMCPServer) handleStartSession(_ context.Context, request mcp.CallT
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s started successfully", id)), nil
 }
 
-func (s *QuantMCPServer) handleStopSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleStopSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.requireSameWorkspace(ctx, id); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2545,9 +2572,13 @@ func (s *QuantMCPServer) handleResumeSession(_ context.Context, request mcp.Call
 	return mcp.NewToolResultText(fmt.Sprintf("Session %s resumed successfully", id)), nil
 }
 
-func (s *QuantMCPServer) handleDeleteSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleDeleteSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.requireSameWorkspace(ctx, id); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2590,12 +2621,18 @@ func (s *QuantMCPServer) handleLinkSession(ctx context.Context, request mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	caller := sessionFromCtx(ctx)
-	if caller == "" {
+	callerSession, err := s.callerSession(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if callerSession == nil {
 		return mcp.NewToolResultError("link_session requires the calling session context (X-Quant-Session header) — call it from within a quant session"), nil
 	}
+	if err := s.requireSameWorkspace(ctx, peerID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 
-	if err := s.sessionManager.LinkSessionPeer(caller, peerID); err != nil {
+	if err := s.sessionManager.LinkSessionPeer(callerSession.ID, peerID); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2608,12 +2645,15 @@ func (s *QuantMCPServer) handleUnlinkSession(ctx context.Context, request mcp.Ca
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	caller := sessionFromCtx(ctx)
-	if caller == "" {
+	callerSession, err := s.callerSession(ctx)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if callerSession == nil {
 		return mcp.NewToolResultError("unlink_session requires the calling session context (X-Quant-Session header) — call it from within a quant session"), nil
 	}
 
-	if err := s.sessionManager.UnlinkSessionPeer(caller, peerID); err != nil {
+	if err := s.sessionManager.UnlinkSessionPeer(callerSession.ID, peerID); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2628,6 +2668,12 @@ func (s *QuantMCPServer) handleSendMessage(ctx context.Context, request mcp.Call
 
 	message, err := requiredString(request, "message")
 	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// A session may only reach sessions in its own workspace. This is not
+	// configurable and is checked before every other messaging rule.
+	if err := s.requireSameWorkspace(ctx, id); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2695,9 +2741,13 @@ func (s *QuantMCPServer) handleSendMessage(ctx context.Context, request mcp.Call
 	return mcp.NewToolResultText(fmt.Sprintf("Message typed (not submitted) to session %s", id)), nil
 }
 
-func (s *QuantMCPServer) handleGetSessionOutput(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleGetSessionOutput(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.requireSameWorkspace(ctx, id); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2709,9 +2759,13 @@ func (s *QuantMCPServer) handleGetSessionOutput(_ context.Context, request mcp.C
 	return paginateText(output, request), nil
 }
 
-func (s *QuantMCPServer) handleArchiveSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleArchiveSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := requiredString(request, "id")
 	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if err := s.requireSameWorkspace(ctx, id); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -2823,6 +2877,14 @@ func (s *QuantMCPServer) handleAssignSession(ctx context.Context, request mcp.Ca
 	}
 	if supervisorID == "" {
 		return mcp.NewToolResultError("no supervisor — pass supervisorSessionId or call from within a quant session (X-Quant-Session header missing)"), nil
+	}
+
+	// A crew never spans workspaces: both ends must be reachable by the caller.
+	if err := s.requireSameWorkspace(ctx, sessionID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if err := s.requireSameWorkspace(ctx, supervisorID); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	if err := s.crewManager.AssignWorker(sessionID, supervisorID); err != nil {
@@ -3079,6 +3141,81 @@ func sessionFromCtx(ctx context.Context) string {
 		return sid
 	}
 	return ""
+}
+
+func sessionTokenFromCtx(ctx context.Context) string {
+	if token, ok := ctx.Value(sessionTokenCtxKey).(string); ok {
+		// The header carries the literal placeholder when the client expanded
+		// no value for it, which means "no token presented".
+		if strings.HasPrefix(token, "${") {
+			return ""
+		}
+		return token
+	}
+	return ""
+}
+
+// errImpersonation is returned when a request claims a session id it cannot
+// prove it owns.
+const errImpersonation = "this request claims to be session %s but presented no matching session token — call the quant MCP from inside that session"
+
+// callerSession resolves the session a request came from, and reports whether
+// the claim is authenticated.
+//
+// A token identifies the caller outright. Without one, the id header is taken
+// at face value only when that session has no token stored — i.e. it was
+// created before tokens existed and has not been restarted since. Once a
+// session has a token, its id can no longer be borrowed.
+func (s *QuantMCPServer) callerSession(ctx context.Context) (*entity.Session, error) {
+	if token := sessionTokenFromCtx(ctx); token != "" {
+		session, err := s.findSession.FindByMcpToken(token)
+		if err != nil {
+			return nil, err
+		}
+		if session == nil {
+			return nil, fmt.Errorf("the session token presented does not match any session")
+		}
+		return session, nil
+	}
+
+	id := sessionFromCtx(ctx)
+	if id == "" {
+		return nil, nil // headerless client — the user's own tooling
+	}
+
+	session, err := s.sessionManager.GetSession(id)
+	if err != nil || session == nil {
+		return nil, nil
+	}
+	if session.McpToken != "" {
+		return nil, fmt.Errorf(errImpersonation, id)
+	}
+
+	return session, nil
+}
+
+// requireSameWorkspace blocks a session from reaching a session in another
+// workspace. The workspace boundary is not configurable: a session only ever
+// sees and reaches its own workspace. Headerless clients are not sessions and
+// are not scoped.
+func (s *QuantMCPServer) requireSameWorkspace(ctx context.Context, targetID string) error {
+	caller, err := s.callerSession(ctx)
+	if err != nil {
+		return err
+	}
+	if caller == nil || caller.ID == targetID {
+		return nil
+	}
+
+	target, err := s.sessionManager.GetSession(targetID)
+	if err != nil || target == nil {
+		return nil // let the calling tool report "not found" in its own words
+	}
+	if target.WorkspaceID != caller.WorkspaceID {
+		return fmt.Errorf("session %s is in another workspace — a session can only reach sessions in its own workspace", targetID)
+	}
+
+	return nil
 }
 
 // voiceTurnResult wraps a heard transcript with a standing reminder to KEEP the

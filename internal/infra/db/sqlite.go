@@ -401,6 +401,7 @@ func runMigrations(db *sql.DB) error {
 		`ALTER TABLE sessions ADD COLUMN cli_command TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN messaging_mode TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN messaging_peers TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN mcp_token TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE jobs ADD COLUMN triage_prompt TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE job_runs ADD COLUMN correlation_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE job_runs ADD COLUMN injected_context TEXT NOT NULL DEFAULT ''`,
