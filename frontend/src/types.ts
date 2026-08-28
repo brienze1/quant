@@ -244,6 +244,8 @@ export interface Config {
   // General
   startOnLogin: boolean;
   notifications: boolean;
+  systemNotifications: boolean;
+  crew: boolean;
   autoUpdate: boolean;
   shortcuts: Shortcut[];
 

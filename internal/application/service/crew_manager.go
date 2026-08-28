@@ -2,6 +2,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -90,6 +91,7 @@ type crewManagerService struct {
 	mindmapManager  adapter.MindmapManager
 	sessionActivity usecase.SessionActivity
 	emitter         adapter.EventEmitter
+	loadConfig      usecase.LoadConfig
 
 	drainMu    sync.Mutex
 	drainState map[string]*crewDrainState
@@ -111,6 +113,7 @@ func NewCrewManagerService(
 	mindmapManager adapter.MindmapManager,
 	sessionActivity usecase.SessionActivity,
 	emitter adapter.EventEmitter,
+	loadConfig usecase.LoadConfig,
 ) adapter.CrewManager {
 	return &crewManagerService{
 		findCrew:        find,
@@ -121,6 +124,7 @@ func NewCrewManagerService(
 		mindmapManager:  mindmapManager,
 		sessionActivity: sessionActivity,
 		emitter:         emitter,
+		loadConfig:      loadConfig,
 		drainState:      make(map[string]*crewDrainState),
 
 		dispatchReadyTimeout: crewDispatchReadyTimeout,
@@ -129,9 +133,33 @@ func NewCrewManagerService(
 	}
 }
 
+// errCrewDisabled is what every crew mutation returns while the feature is
+// switched off in settings. The message is the one an agent sees, so it says
+// where the switch lives.
+const crewDisabledMessage = "crew is turned off in quant settings (settings → application → crew), so sessions cannot recruit or dispatch to other sessions"
+
+// crewEnabled reports whether crew orchestration is switched on. A config that
+// cannot be read is treated as enabled, so a transient read failure never
+// silently strands a running crew.
+func (s *crewManagerService) crewEnabled() bool {
+	if s.loadConfig == nil {
+		return true
+	}
+	cfg, err := s.loadConfig.LoadConfig()
+	if err != nil || cfg == nil {
+		log.Printf("crew: failed to read config, assuming crew is enabled: %v", err)
+		return true
+	}
+	return cfg.Crew
+}
+
 // AssignWorker validates both sessions and upserts the worker→supervisor edge,
 // so assigning an already-assigned worker moves it between crews.
 func (s *crewManagerService) AssignWorker(workerSessionID, supervisorSessionID string) error {
+	if !s.crewEnabled() {
+		return errors.New(crewDisabledMessage)
+	}
+
 	if workerSessionID == supervisorSessionID {
 		return fmt.Errorf("a session cannot supervise itself: %s", workerSessionID)
 	}
@@ -242,6 +270,10 @@ func (s *crewManagerService) QueuedCounts() (map[string]int, error) {
 // Report validates and queues a worker's report to its supervisor, clearing any
 // watchdogs waiting on that worker.
 func (s *crewManagerService) Report(fromSessionID, reportType, summary string) error {
+	if !s.crewEnabled() {
+		return errors.New(crewDisabledMessage)
+	}
+
 	if !validCrewReportTypes[reportType] {
 		return fmt.Errorf("invalid crew report type %q: must be one of done, progress, question, blocked", reportType)
 	}
@@ -278,6 +310,10 @@ func (s *crewManagerService) Report(fromSessionID, reportType, summary string) e
 
 // SetWatchdog records a deadline by which the worker is expected to report.
 func (s *crewManagerService) SetWatchdog(workerSessionID string, expectedBy time.Time) error {
+	if !s.crewEnabled() {
+		return errors.New(crewDisabledMessage)
+	}
+
 	assignment, err := s.findCrew.FindAssignmentByWorker(workerSessionID)
 	if err != nil {
 		return fmt.Errorf("failed to look up crew assignment: %w", err)
@@ -306,6 +342,10 @@ func (s *crewManagerService) SetWatchdog(workerSessionID string, expectedBy time
 // CLI-ready timeout is reported as promptDelivered:false, not as an error.
 func (s *crewManagerService) Dispatch(supervisorSessionID, prompt string, opts adapter.CrewDispatchOptions) (adapter.CrewDispatchResult, error) {
 	var result adapter.CrewDispatchResult
+
+	if !s.crewEnabled() {
+		return result, errors.New(crewDisabledMessage)
+	}
 
 	if s.sessionManager == nil || s.sessionActivity == nil {
 		return result, fmt.Errorf("crew dispatch is not available")
@@ -557,6 +597,12 @@ func (s *crewManagerService) drainTick(now time.Time) {
 			log.Printf("crew: recovered from panic in drain tick: %v", r)
 		}
 	}()
+
+	// While crew is off nothing is injected into a supervisor's terminal and no
+	// watchdog fires; queued envelopes simply wait until it is switched back on.
+	if !s.crewEnabled() {
+		return
+	}
 
 	s.fireDueWatchdogs(now)
 

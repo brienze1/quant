@@ -236,8 +236,50 @@ func newTestCrewManager(sessions ...entity.Session) (adapter.CrewManager, *fakeC
 		finder.sessions[s.ID] = s
 	}
 	emitter := &fakeEventEmitter{}
-	manager := NewCrewManagerService(store, store, store, finder, nil, nil, nil, emitter)
+	manager := NewCrewManagerService(store, store, store, finder, nil, nil, nil, emitter, crewEnabledConfig())
 	return manager, store, emitter
+}
+
+// crewDisabledConfig switches the crew feature off.
+func crewDisabledConfig() stubLoadConfig {
+	cfg := entity.NewDefaultConfig()
+	cfg.Crew = false
+	return stubLoadConfig{cfg: &cfg}
+}
+
+// TestCrewDisabledBlocksMutations verifies the settings switch stops a session
+// from recruiting, dispatching to, or reporting to another session.
+func TestCrewDisabledBlocksMutations(t *testing.T) {
+	store := newFakeCrewStore()
+	finder := &fakeSessionFinder{sessions: map[string]entity.Session{}}
+	manager := NewCrewManagerService(store, store, store, finder, nil, nil, nil, &fakeEventEmitter{}, crewDisabledConfig())
+
+	if err := manager.AssignWorker("worker", "supervisor"); err == nil {
+		t.Error("AssignWorker: expected an error while crew is off")
+	}
+	if err := manager.Report("worker", "done", "finished"); err == nil {
+		t.Error("Report: expected an error while crew is off")
+	}
+	if err := manager.SetWatchdog("worker", time.Now().Add(time.Minute)); err == nil {
+		t.Error("SetWatchdog: expected an error while crew is off")
+	}
+	if _, err := manager.Dispatch("supervisor", "do the thing", adapter.CrewDispatchOptions{}); err == nil {
+		t.Error("Dispatch: expected an error while crew is off")
+	}
+}
+
+// TestDefaultConfigEnablesCrew pins the default so existing installs keep the
+// behaviour they had before the switch existed.
+func TestDefaultConfigEnablesCrew(t *testing.T) {
+	if !entity.NewDefaultConfig().Crew {
+		t.Error("crew should default to on")
+	}
+}
+
+// crewEnabledConfig is the default config every crew test runs under: crew on.
+func crewEnabledConfig() stubLoadConfig {
+	cfg := entity.NewDefaultConfig()
+	return stubLoadConfig{cfg: &cfg}
 }
 
 func TestCrewAssignWorker_SelfRejected(t *testing.T) {
@@ -427,7 +469,7 @@ func newTestCrewManagerWithActivity(activity *fakeSessionActivity, sessions ...e
 		finder.sessions[s.ID] = s
 	}
 	emitter := &fakeEventEmitter{}
-	manager := NewCrewManagerService(store, store, store, finder, nil, nil, activity, emitter)
+	manager := NewCrewManagerService(store, store, store, finder, nil, nil, activity, emitter, crewEnabledConfig())
 	return manager.(*crewManagerService), store, emitter
 }
 
@@ -735,7 +777,7 @@ func newTestDispatchManager(sessions ...entity.Session) (*crewManagerService, *f
 		live:       make(map[string]bool),
 	}
 	sm := &fakeDispatchSessionManager{finder: finder, activity: activity, sent: make(map[string]string)}
-	manager := NewCrewManagerService(store, store, store, finder, sm, nil, activity, &fakeEventEmitter{}).(*crewManagerService)
+	manager := NewCrewManagerService(store, store, store, finder, sm, nil, activity, &fakeEventEmitter{}, crewEnabledConfig()).(*crewManagerService)
 	manager.dispatchReadyTimeout = 300 * time.Millisecond
 	manager.dispatchPollInterval = 10 * time.Millisecond
 	return manager, store, sm, activity
@@ -935,7 +977,7 @@ func newBoardTestCrewManager(activity *fakeSessionActivity, sessions ...entity.S
 	if activity != nil {
 		act = activity
 	}
-	manager := NewCrewManagerService(store, store, store, finder, nil, board, act, emitter).(*crewManagerService)
+	manager := NewCrewManagerService(store, store, store, finder, nil, board, act, emitter, crewEnabledConfig()).(*crewManagerService)
 	return manager, store, board, emitter
 }
 
