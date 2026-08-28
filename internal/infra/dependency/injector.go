@@ -191,6 +191,7 @@ func (i *Injector) SessionManager() appAdapter.SessionManager {
 			i.WorktreeManager(), // ManageWorktree
 			cp,                  // LoadConfig
 			cp,                  // SaveConfig
+			i.ProcessManager(),  // SessionActivity
 		)
 	}
 	return i.sessionManager

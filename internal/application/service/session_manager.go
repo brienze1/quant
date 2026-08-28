@@ -21,16 +21,17 @@ import (
 
 // sessionManagerService implements the adapter.SessionManager interface.
 type sessionManagerService struct {
-	findSession    usecase.FindSession
-	saveSession    usecase.SaveSession
-	deleteSession  usecase.DeleteSession
-	updateSession  usecase.UpdateSession
-	spawnProcess   usecase.SpawnProcess
-	findRepo       usecase.FindRepo
-	manageWorktree usecase.ManageWorktree
-	loadConfig     usecase.LoadConfig
-	saveConfig     usecase.SaveConfig
-	transcripts    claudeTranscripts
+	findSession     usecase.FindSession
+	saveSession     usecase.SaveSession
+	deleteSession   usecase.DeleteSession
+	updateSession   usecase.UpdateSession
+	spawnProcess    usecase.SpawnProcess
+	findRepo        usecase.FindRepo
+	manageWorktree  usecase.ManageWorktree
+	loadConfig      usecase.LoadConfig
+	saveConfig      usecase.SaveConfig
+	sessionActivity usecase.SessionActivity
+	transcripts     claudeTranscripts
 }
 
 // NewSessionManagerService creates a new SessionManager service.
@@ -45,18 +46,20 @@ func NewSessionManagerService(
 	manageWorktree usecase.ManageWorktree,
 	loadConfig usecase.LoadConfig,
 	saveConfig usecase.SaveConfig,
+	sessionActivity usecase.SessionActivity,
 ) adapter.SessionManager {
 	return &sessionManagerService{
-		findSession:    findSession,
-		saveSession:    saveSession,
-		deleteSession:  deleteSession,
-		updateSession:  updateSession,
-		spawnProcess:   spawnProcess,
-		findRepo:       findRepo,
-		manageWorktree: manageWorktree,
-		loadConfig:     loadConfig,
-		saveConfig:     saveConfig,
-		transcripts:    newClaudeTranscripts(),
+		findSession:     findSession,
+		saveSession:     saveSession,
+		deleteSession:   deleteSession,
+		updateSession:   updateSession,
+		spawnProcess:    spawnProcess,
+		findRepo:        findRepo,
+		manageWorktree:  manageWorktree,
+		loadConfig:      loadConfig,
+		saveConfig:      saveConfig,
+		sessionActivity: sessionActivity,
+		transcripts:     newClaudeTranscripts(),
 	}
 }
 
@@ -433,6 +436,10 @@ func (s *sessionManagerService) StartSession(id string, rows int, cols int) erro
 
 	s.persistActiveSessionID(id)
 
+	// Push quant's name into the CLI so its reported title — what Remote
+	// Control shows on a phone — matches the session name here.
+	s.syncCliTitle(*session)
+
 	return nil
 }
 
@@ -470,6 +477,10 @@ func (s *sessionManagerService) ResumeSession(id string, rows int, cols int) err
 	}
 
 	s.persistActiveSessionID(id)
+
+	// Push quant's name into the CLI so its reported title — what Remote
+	// Control shows on a phone — matches the session name here.
+	s.syncCliTitle(*session)
 
 	return nil
 }
@@ -848,6 +859,48 @@ func (s *sessionManagerService) UpdateSessionWorkspace(id string, workspaceID st
 	session.WorkspaceID = workspaceID
 	session.UpdatedAt = time.Now()
 	return s.updateSession.Update(*session)
+}
+
+// syncCliTitleTimeout bounds the wait for the CLI to come up before the title
+// is pushed into it.
+const (
+	syncCliTitleTimeout      = 60 * time.Second
+	syncCliTitlePollInterval = 250 * time.Millisecond
+	syncCliTitleQuietPeriod  = 1500 * time.Millisecond
+)
+
+// syncCliTitle tells the claude CLI what this session is called, so the title
+// it reports — which is what Claude Code Remote Control shows on a phone —
+// matches the name the session has in quant. Without this the CLI invents its
+// own title from the first prompt and the two never agree.
+//
+// It waits for the CLI to render and go quiet before typing, the same readiness
+// gate crew dispatch uses, then submits /rename. Best-effort throughout: a
+// session that never becomes ready simply keeps the CLI's own title.
+func (s *sessionManagerService) syncCliTitle(session entity.Session) {
+	if session.SessionType == sessiontype.Terminal || s.sessionActivity == nil {
+		return
+	}
+	name := strings.TrimSpace(session.Name)
+	if name == "" {
+		return
+	}
+
+	go func() {
+		deadline := time.Now().Add(syncCliTitleTimeout)
+		for time.Now().Before(deadline) {
+			activity, ok := s.sessionActivity.Activity(session.ID)
+			if ok && !activity.LastOutputAt.IsZero() && !activity.Busy &&
+				time.Since(activity.LastOutputAt) >= syncCliTitleQuietPeriod {
+				if err := s.SendMessageAndSubmit(session.ID, "/rename "+name); err != nil {
+					log.Printf("title sync: failed to inject /rename into session %s: %v", session.ID, err)
+				}
+				return
+			}
+			time.Sleep(syncCliTitlePollInterval)
+		}
+		log.Printf("title sync: session %s never became ready, leaving the CLI title as-is", session.ID)
+	}()
 }
 
 // RenameSession updates the name of a session. For a running claude session it
