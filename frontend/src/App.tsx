@@ -20,6 +20,7 @@ import type {
   CrewAssignment,
 } from "./types";
 import * as api from "./api";
+import { mergeKey, replaceIfChanged } from "./pollState";
 import { Sidebar } from "./components/Sidebar";
 import { SessionPanel } from "./components/SessionPanel";
 import { EmptyState } from "./components/EmptyState";
@@ -686,7 +687,7 @@ function App() {
   const fetchSessionsForRepo = useCallback(async (repoId: string) => {
     try {
       const list = await api.listSessionsByRepo(repoId);
-      setSessionsByRepo((prev) => ({ ...prev, [repoId]: list ?? [] }));
+      setSessionsByRepo((prev) => mergeKey(prev, repoId, list ?? []));
       return list ?? [];
     } catch (err) {
       console.error("failed to list sessions for repo:", err);
@@ -697,7 +698,7 @@ function App() {
   const fetchSessionsForTask = useCallback(async (taskId: string) => {
     try {
       const list = await api.listSessionsByTask(taskId);
-      setSessionsByTask((prev) => ({ ...prev, [taskId]: list ?? [] }));
+      setSessionsByTask((prev) => mergeKey(prev, taskId, list ?? []));
       return list ?? [];
     } catch (err) {
       console.error("failed to list sessions for task:", err);
@@ -708,7 +709,7 @@ function App() {
   const fetchActions = useCallback(async (sessionId: string) => {
     try {
       const list = await api.getActions(sessionId);
-      setActionsBySession((prev) => ({ ...prev, [sessionId]: list ?? [] }));
+      setActionsBySession((prev) => mergeKey(prev, sessionId, list ?? []));
     } catch (err) {
       console.error("failed to get actions:", err);
     }
@@ -769,9 +770,9 @@ function App() {
         api.getCrewQueuedCounts(),
         api.getCrewDeliveryLocks(),
       ]);
-      setCrewAssignments(assignments ?? []);
-      setCrewQueued(queued ?? {});
-      setCrewDeliveryLocks(locks ?? {});
+      setCrewAssignments((prev) => replaceIfChanged(prev, assignments ?? []));
+      setCrewQueued((prev) => replaceIfChanged(prev, queued ?? {}));
+      setCrewDeliveryLocks((prev) => replaceIfChanged(prev, locks ?? {}));
     } catch (err) {
       console.error("failed to load crew state:", err);
     }
@@ -1236,6 +1237,7 @@ function App() {
   // poll sessions every 3s (crew piggybacks as the event fallback)
   useEffect(() => {
     const interval = setInterval(async () => {
+      if (document.hidden) return; // a hidden window has nothing to refresh
       fetchCrew();
       const currentRepos = reposRef.current;
       const currentTasks = tasksByRepoRef.current;
@@ -1253,6 +1255,7 @@ function App() {
   // poll actions for all open tabs + expanded session every 2s
   useEffect(() => {
     const interval = setInterval(() => {
+      if (document.hidden) return;
       const ids = new Set<string>();
       for (const tabId of openTabIdsRef.current) {
         if (isFileTabId(tabId)) continue; // file tabs have no actions
@@ -1263,6 +1266,24 @@ function App() {
     }, 2000);
     return () => clearInterval(interval);
   }, [fetchActions]);
+
+  // Polling pauses while the window is hidden, so refresh once as soon as it
+  // comes back rather than leaving the sidebar stale for up to a tick.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden) return;
+      fetchCrew();
+      for (const repo of reposRef.current) {
+        void fetchSessionsForRepo(repo.id);
+        for (const task of tasksByRepoRef.current[repo.id] ?? []) {
+          void fetchSessionsForTask(task.id);
+        }
+      }
+      if (activeTabIdRef.current && !isFileTabId(activeTabIdRef.current)) fetchActions(activeTabIdRef.current);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [fetchCrew, fetchSessionsForRepo, fetchSessionsForTask, fetchActions]);
 
   // fetch actions when active tab or expanded session changes
   useEffect(() => {
