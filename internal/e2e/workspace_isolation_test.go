@@ -156,3 +156,66 @@ func TestSessionIdAloneCannotImpersonate(t *testing.T) {
 		t.Errorf("expected an identity error, got: %s", text.Text)
 	}
 }
+
+// TestStaleClientGetsRestartGuidance verifies that a session left running
+// across a quant upgrade — its MCP client still sends the unexpanded
+// "${QUANT_SESSION_TOKEN}" placeholder — is told to restart, not accused of
+// impersonating itself.
+func TestStaleClientGetsRestartGuidance(t *testing.T) {
+	h := newHarness(t)
+
+	repo, err := h.injector.RepoManager().OpenRepo("stale-repo", t.TempDir(), h.wsID)
+	if err != nil {
+		t.Fatalf("OpenRepo: %v", err)
+	}
+	task, err := h.injector.TaskManager().CreateTask(repo.ID, "stale", "stale")
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	caller, err := h.injector.SessionManager().CreateSession("stale", "", "claude", repo.ID, task.ID, entity.SessionOptions{
+		WorkspaceID: h.wsID,
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	ctx := context.Background()
+	client, err := mcpclient.NewStreamableHttpClient(
+		fmt.Sprintf("http://localhost:%d/mcp", h.server.Port()),
+		transport.WithHTTPHeaders(map[string]string{
+			"X-Quant-Session":       caller.ID,
+			"X-Quant-Session-Token": "${QUANT_SESSION_TOKEN}",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewStreamableHttpClient: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Start(ctx); err != nil {
+		t.Fatalf("client.Start: %v", err)
+	}
+	initReq := mcp.InitializeRequest{}
+	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initReq.Params.ClientInfo = mcp.Implementation{Name: "quant-e2e-stale", Version: "1.0.0"}
+	if _, err := client.Initialize(ctx, initReq); err != nil {
+		t.Fatalf("client.Initialize: %v", err)
+	}
+
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "link_session"
+	req.Params.Arguments = map[string]any{"sessionId": caller.ID}
+	res, err := client.CallTool(ctx, req)
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("a stale client presenting no usable token should still be refused")
+	}
+	text, _ := res.Content[0].(mcp.TextContent)
+	if !strings.Contains(text.Text, "restart the session") {
+		t.Errorf("expected restart guidance, got: %s", text.Text)
+	}
+	if strings.Contains(text.Text, "claims to be session") {
+		t.Errorf("a stale client should not be told it is impersonating: %s", text.Text)
+	}
+}
