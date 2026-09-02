@@ -4,6 +4,7 @@ package process
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -607,8 +608,15 @@ func (m *processManager) GetOutput(sessionID string) ([]byte, error) {
 	}
 	tail = tail[start:]
 
+	// The elided output holds the mode sequences the CLI emitted at startup —
+	// bracketed paste above all — which the tail alone would not restore. Replay
+	// their final state first, so a terminal that mounts on a long-running
+	// session pastes and renders the way the application expects.
+	preamble := []byte(decModePreamble(io.NewSectionReader(f, 0, size-maxReplayBytes)))
+
 	notice := []byte("\x1b[90m// [earlier output truncated]\x1b[0m\r\n")
-	out := make([]byte, 0, len(notice)+len(tail))
+	out := make([]byte, 0, len(preamble)+len(notice)+len(tail))
+	out = append(out, preamble...)
 	out = append(out, notice...)
 	out = append(out, tail...)
 	return out, nil
