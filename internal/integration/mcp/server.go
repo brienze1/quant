@@ -3144,20 +3144,37 @@ func sessionFromCtx(ctx context.Context) string {
 }
 
 func sessionTokenFromCtx(ctx context.Context) string {
-	if token, ok := ctx.Value(sessionTokenCtxKey).(string); ok {
-		// The header carries the literal placeholder when the client expanded
-		// no value for it, which means "no token presented".
-		if strings.HasPrefix(token, "${") {
-			return ""
-		}
-		return token
+	token, _ := ctx.Value(sessionTokenCtxKey).(string)
+	// The header carries the literal placeholder when the client expanded no
+	// value for it, which means "no token presented".
+	if strings.HasPrefix(token, "${") {
+		return ""
 	}
-	return ""
+	return token
 }
 
+// staleTokenHeader reports whether the request carried the token header but
+// with the literal "${...}" placeholder in it. That only happens when the
+// client was configured from quant's own MCP entry and failed to expand
+// QUANT_SESSION_TOKEN — positive evidence of a stale client, not of a caller
+// borrowing someone else's session id.
+func staleTokenHeader(ctx context.Context) bool {
+	token, _ := ctx.Value(sessionTokenCtxKey).(string)
+	return strings.HasPrefix(token, "${")
+}
+
+// errStaleClient is returned when a session that has a token presents none:
+// the client was started before per-session MCP tokens existed (or before the
+// running quant build minted one) and still speaks the old MCP config.
+const errStaleClient = "session %s presented no MCP session token, so quant cannot verify this request came from it. The session's MCP client predates per-session tokens: restart the session (or reconnect its MCP servers) from the Quant UI to pick up the current MCP config — the token is already in the session environment as QUANT_SESSION_TOKEN. Session-control tools stay blocked until then; other tools are unaffected."
+
 // errImpersonation is returned when a request claims a session id it cannot
-// prove it owns.
-const errImpersonation = "this request claims to be session %s but presented no matching session token — call the quant MCP from inside that session"
+// prove it owns, and gave no sign of being a stale quant-configured client.
+const errImpersonation = "this request claims to be session %s but presented no session token — the X-Quant-Session-Token header was absent entirely. Call the quant MCP from inside that session; if you are that session and it has been running since before quant was upgraded, restart it to pick up the current MCP config"
+
+// errUnknownToken is returned when a token is presented that matches no session
+// — typically a session that was deleted, or a token from another quant install.
+const errUnknownToken = "the session token presented does not match any session — restart the session from the Quant UI to refresh its MCP config"
 
 // callerSession resolves the session a request came from, and reports whether
 // the claim is authenticated.
@@ -3165,7 +3182,9 @@ const errImpersonation = "this request claims to be session %s but presented no 
 // A token identifies the caller outright. Without one, the id header is taken
 // at face value only when that session has no token stored — i.e. it was
 // created before tokens existed and has not been restarted since. Once a
-// session has a token, its id can no longer be borrowed.
+// session has a token, its id can no longer be borrowed; the refusal explains
+// which of the two shapes it is, since a session left running across a quant
+// upgrade lands here through no fault of its own.
 func (s *QuantMCPServer) callerSession(ctx context.Context) (*entity.Session, error) {
 	if token := sessionTokenFromCtx(ctx); token != "" {
 		session, err := s.findSession.FindByMcpToken(token)
@@ -3173,7 +3192,7 @@ func (s *QuantMCPServer) callerSession(ctx context.Context) (*entity.Session, er
 			return nil, err
 		}
 		if session == nil {
-			return nil, fmt.Errorf("the session token presented does not match any session")
+			return nil, errors.New(errUnknownToken)
 		}
 		return session, nil
 	}
@@ -3188,6 +3207,12 @@ func (s *QuantMCPServer) callerSession(ctx context.Context) (*entity.Session, er
 		return nil, nil
 	}
 	if session.McpToken != "" {
+		// The two cases look alike from here — neither presented a token — but
+		// a placeholder header means quant itself wrote the client's config, so
+		// name the stale-client fix instead of accusing the caller.
+		if staleTokenHeader(ctx) {
+			return nil, fmt.Errorf(errStaleClient, id)
+		}
 		return nil, fmt.Errorf(errImpersonation, id)
 	}
 
