@@ -104,6 +104,18 @@ func runMigrations(db *sql.DB) error {
 		return fmt.Errorf("failed to create sessions table: %w", err)
 	}
 
+	// The sidebar lists sessions per repo and per task on a timer, so these two
+	// lookups run constantly. Without an index each one scans the whole sessions
+	// table, which grows without bound as sessions accumulate.
+	for _, index := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_sessions_repo ON sessions(repo_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_task ON sessions(task_id);`,
+	} {
+		if _, err = db.Exec(index); err != nil {
+			return fmt.Errorf("failed to create sessions index: %w", err)
+		}
+	}
+
 	actionsTable := `
 	CREATE TABLE IF NOT EXISTS actions (
 		id TEXT PRIMARY KEY,
@@ -117,6 +129,11 @@ func runMigrations(db *sql.DB) error {
 	_, err = db.Exec(actionsTable)
 	if err != nil {
 		return fmt.Errorf("failed to create actions table: %w", err)
+	}
+
+	// Actions are read per session on a 2s timer for every open tab.
+	if _, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_actions_session ON actions(session_id);`); err != nil {
+		return fmt.Errorf("failed to create actions session index: %w", err)
 	}
 
 	jobsTable := `

@@ -241,6 +241,11 @@ func (m *processManager) outputPath(sessionID string) string {
 	return filepath.Join(m.outputDir, sessionID+".log")
 }
 
+// spawnErrorTailCap bounds the in-memory output tail kept per running process.
+// It only has to be wide enough to still contain the CLI's startup error after
+// whatever it printed around it.
+const spawnErrorTailCap = 64 * 1024
+
 // Spawn starts a process in a PTY and streams output to the frontend.
 // For "claude" sessions it launches the Claude CLI; for "terminal" sessions it launches a shell.
 func (m *processManager) Spawn(sessionID string, sessionType string, directory string, repoPath string, conversationID string, skipPermissions bool, model string, extraCliArgs string, rows uint16, cols uint16, noFlicker bool, cliCommand string, mcpToken string) (int, error) {
@@ -376,8 +381,11 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 	// Stream PTY output in a goroutine.
 	go func() {
 		buf := make([]byte, 32*1024)
-		var carry []byte     // buffer for incomplete UTF-8 sequences at chunk boundaries
-		var allOutput []byte // collect output to detect errors after exit
+		var carry []byte // buffer for incomplete UTF-8 sequences at chunk boundaries
+		// Tail of the output, kept only to spot the CLI's "No conversation found"
+		// error after it exits. It is capped: the full stream reaches gigabytes
+		// over a long session and holding it in memory served nothing.
+		var outputTail []byte
 
 		for {
 			n, readErr := ptm.Read(buf)
@@ -405,7 +413,10 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 				}
 
 				if len(data) > 0 {
-					allOutput = append(allOutput, data...)
+					outputTail = append(outputTail, data...)
+					if len(outputTail) > spawnErrorTailCap {
+						outputTail = append(outputTail[:0], outputTail[len(outputTail)-spawnErrorTailCap:]...)
+					}
 
 					cp.activity.recordOutput(data, time.Now())
 
@@ -443,7 +454,7 @@ func (m *processManager) Spawn(sessionID string, sessionType string, directory s
 
 		// If the process exited because the conversation ID doesn't exist,
 		// automatically respawn with --session-id (fresh start) instead of --resume.
-		if sessionType != "terminal" && conversationID != "" && strings.Contains(string(allOutput), "No conversation found") {
+		if sessionType != "terminal" && conversationID != "" && strings.Contains(string(outputTail), "No conversation found") {
 			// Truncate the error output so it doesn't persist.
 			_ = os.Truncate(m.outputPath(sessionID), 0)
 
