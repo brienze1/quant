@@ -105,6 +105,26 @@ func (s *sessionManagerService) resolvePull(repo *entity.Repo, opts entity.Sessi
 	return true, branch
 }
 
+// branchNamePattern returns the pattern a worktree branch is named after: the
+// caller's when it set one, otherwise the configured default. Callers that do
+// not fill the option (the MCP and crew paths) would otherwise ask git for an
+// empty branch name, which fails the worktree outright.
+func (s *sessionManagerService) branchNamePattern(opts entity.SessionOptions) string {
+	if pattern := strings.TrimSpace(opts.BranchNamePattern); pattern != "" {
+		return pattern
+	}
+	if cfg, err := s.loadConfig.LoadConfig(); err == nil && cfg != nil {
+		if pattern := strings.TrimSpace(cfg.BranchNamePattern); pattern != "" {
+			return pattern
+		}
+	}
+	return defaultBranchNamePattern
+}
+
+// defaultBranchNamePattern matches entity.NewDefaultConfig, and is the last
+// resort when the config cannot be read at all.
+const defaultBranchNamePattern = "quant/{session}"
+
 // CreateSession creates a new session with the given parameters.
 // The directory is resolved from the repo's path.
 // Per-session options override config defaults (set via advanced options in the create session modal).
@@ -176,7 +196,7 @@ func (s *sessionManagerService) CreateSession(name string, description string, s
 			return nil, fmt.Errorf("failed to find repo for worktree: %v", wtRepoErr)
 		}
 		sanitizedName := strings.ReplaceAll(strings.ToLower(name), " ", "-")
-		branch := strings.ReplaceAll(opts.BranchNamePattern, "{session}", sanitizedName)
+		branch := strings.ReplaceAll(s.branchNamePattern(opts), "{session}", sanitizedName)
 		wt, wtErr := s.manageWorktree.Create(repoForWt.Path, branch)
 		if wtErr != nil {
 			return nil, fmt.Errorf("failed to create worktree: %w", wtErr)

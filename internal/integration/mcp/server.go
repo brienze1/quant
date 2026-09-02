@@ -20,6 +20,7 @@ import (
 	appAdapter "quant/internal/application/adapter"
 	"quant/internal/application/usecase"
 	"quant/internal/domain/entity"
+	"quant/internal/domain/enums/sessiontype"
 	"quant/internal/integration/voice"
 )
 
@@ -684,6 +685,8 @@ Returns the full system prompt text, or a message indicating the prompt is empty
 
 A repo-backed session (repoId set) must be filed under a task: pass taskId for an existing task, or taskTag to file it under the task with that tag (a new task is created if none matches). Use list_tasks to see existing tasks, or create_task to make one. Repoless sessions have no task.
 
+Anything you leave out follows the user's session settings, exactly as the create-session modal does: worktree default, permission default, default model, extra CLI args, the branch-name pattern for worktrees, auto-pull and the pull branch configured for that repo, and the workspace's own CLI command. Omit an option rather than guessing a value; passing one overrides the default.
+
 Returns the created session object with generated ID. The session starts in 'idle' status — use start_session to begin execution.`),
 			mcp.WithString("name", mcp.Required(), mcp.Description("Session name (e.g. 'review-pr-123', 'debug-auth')")),
 			mcp.WithString("description", mcp.Description("What this session is for")),
@@ -692,10 +695,10 @@ Returns the created session object with generated ID. The session starts in 'idl
 			mcp.WithString("taskId", mcp.Description("Task ID to associate with this session")),
 			mcp.WithString("taskTag", mcp.Description("File the session under the task with this tag in the repo; created if none matches")),
 			mcp.WithString("taskName", mcp.Description("Name for the task when taskTag creates a new one")),
-			mcp.WithString("workspaceId", mcp.Description("Workspace ID to assign the session to")),
-			mcp.WithBoolean("useWorktree", mcp.Description("Create a git worktree for this session. Default: false")),
-			mcp.WithBoolean("skipPermissions", mcp.Description("Skip permission prompts (--dangerously-skip-permissions). Default: false")),
-			mcp.WithString("model", mcp.Description("Claude model for claude sessions (e.g. 'claude-sonnet-4-6')")),
+			mcp.WithString("workspaceId", mcp.Description("Workspace ID to assign the session to. Omit to use your own workspace (or the one currently open).")),
+			mcp.WithBoolean("useWorktree", mcp.Description("Create a git worktree for this session, branched with the configured branch-name pattern. Omit to follow the configured default.")),
+			mcp.WithBoolean("skipPermissions", mcp.Description("Skip permission prompts (--dangerously-skip-permissions). Omit to follow the configured default.")),
+			mcp.WithString("model", mcp.Description("Claude model for claude sessions (e.g. 'claude-sonnet-4-6'). Omit to use the configured default model.")),
 			mcp.WithString("claudeSessionId", mcp.Description("Adopt an existing claude CLI session: its UUID from another terminal. The session will resume that conversation; incompatible with useWorktree.")),
 		),
 		s.handleCreateSession,
@@ -2393,7 +2396,7 @@ func (s *QuantMCPServer) handleGetSession(ctx context.Context, request mcp.CallT
 	return marshalResult(sessionToMap(session))
 }
 
-func (s *QuantMCPServer) handleCreateSession(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *QuantMCPServer) handleCreateSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	name, err := requiredString(request, "name")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -2414,21 +2417,86 @@ func (s *QuantMCPServer) handleCreateSession(_ context.Context, request mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	opts := entity.SessionOptions{
-		UseWorktree:     boolArg(args, "useWorktree"),
-		SkipPermissions: boolArg(args, "skipPermissions"),
-		Model:           stringArg(args, "model"),
-		WorkspaceID:     stringArg(args, "workspaceId"),
-		NoFlicker:       true,
-		ClaudeSessionID: stringArg(args, "claudeSessionId"),
-	}
-
-	session, err := s.sessionManager.CreateSession(name, description, sessionType, repoID, taskID, opts)
+	session, err := s.sessionManager.CreateSession(name, description, sessionType, repoID, taskID, s.sessionOptions(ctx, args, sessionType))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	return marshalResult(sessionToMap(session))
+}
+
+// sessionOptions builds the options for a session created through the MCP,
+// filling everything the caller left out from the same configuration the
+// create-session modal reads. An agent creating a session gets what the user
+// would have got by hand: their workspace, the configured worktree and
+// permission defaults, the default model and CLI args, the branch pattern
+// worktrees are named after, and the workspace's own CLI command.
+//
+// Options the caller did pass still win — an explicit useWorktree:false stays
+// false even when the config default is on.
+func (s *QuantMCPServer) sessionOptions(ctx context.Context, args map[string]any, sessionType string) entity.SessionOptions {
+	cfg, err := s.loadConfig.LoadConfig()
+	if err != nil || cfg == nil {
+		defaults := entity.NewDefaultConfig()
+		cfg = &defaults
+	}
+
+	workspaceID := s.resolveWorkspaceID(ctx, stringArg(args, "workspaceId"), cfg)
+
+	opts := entity.SessionOptions{
+		UseWorktree: boolArgOr(args, "useWorktree", cfg.UseWorktreeDefault),
+		// AutoPull stays nil so the config decides, which also lets the repo's
+		// own branch override pick the branch to pull from.
+		BranchNamePattern: cfg.BranchNamePattern,
+		WorkspaceID:       workspaceID,
+		NoFlicker:         true,
+		ClaudeSessionID:   stringArg(args, "claudeSessionId"),
+	}
+
+	// CLI settings belong to claude sessions only — a terminal session gets a
+	// shell, exactly as the modal does it.
+	if sessionType != sessiontype.Terminal {
+		opts.SkipPermissions = boolArgOr(args, "skipPermissions", cfg.SkipPermissions)
+		opts.Model = firstNonEmpty(stringArg(args, "model"), cfg.DefaultModel)
+		opts.ExtraCliArgs = cfg.ExtraCliArgs
+		opts.CliCommand = s.workspaceCliCommand(workspaceID)
+	}
+
+	return opts
+}
+
+// resolveWorkspaceID decides which workspace a session created through the MCP
+// belongs to: the one asked for, else the calling session's own workspace, else
+// the workspace the user currently has open. A session created from inside
+// another session should land beside it, not in workspace limbo.
+func (s *QuantMCPServer) resolveWorkspaceID(ctx context.Context, explicit string, cfg *entity.Config) string {
+	if explicit != "" {
+		return explicit
+	}
+	// A stale or unauthenticated caller is not an error here — it just means we
+	// fall back to the current workspace.
+	if caller, err := s.callerSession(ctx); err == nil && caller != nil && caller.WorkspaceID != "" {
+		return caller.WorkspaceID
+	}
+	if cfg != nil {
+		return cfg.CurrentWorkspaceID
+	}
+	return ""
+}
+
+// workspaceCliCommand returns the CLI command configured for agent-created
+// sessions in a workspace — an alias or wrapper script rather than plain
+// "claude". Empty means the session resolves its command the usual way (path
+// overrides, then the global setting).
+func (s *QuantMCPServer) workspaceCliCommand(workspaceID string) string {
+	if workspaceID == "" || s.workspaceManager == nil {
+		return ""
+	}
+	workspace, err := s.workspaceManager.GetWorkspace(workspaceID)
+	if err != nil || workspace == nil {
+		return ""
+	}
+	return strings.TrimSpace(workspace.CrewCliCommand)
 }
 
 // resolveSessionTask returns the task id a session should be filed under so
@@ -3036,13 +3104,16 @@ func (s *QuantMCPServer) handleCrewDispatch(ctx context.Context, request mcp.Cal
 	}
 
 	args := request.GetArguments()
+	// A worker the supervisor did not configure follows the same session
+	// defaults the user set for hand-created sessions.
+	defaults := s.sessionOptions(ctx, args, sessiontype.Claude)
 	opts := appAdapter.CrewDispatchOptions{
 		SessionID:         stringArg(args, "sessionId"),
 		Name:              stringArg(args, "name"),
 		RepoID:            stringArg(args, "repoId"),
-		UseWorktree:       boolArg(args, "useWorktree"),
-		Model:             stringArg(args, "model"),
-		SkipPermissions:   boolArg(args, "skipPermissions"),
+		UseWorktree:       defaults.UseWorktree,
+		Model:             defaults.Model,
+		SkipPermissions:   defaults.SkipPermissions,
 		ExpectedByMinutes: intArg(args, "expectedByMinutes"),
 	}
 
@@ -3947,6 +4018,21 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// boolArgOr returns the boolean argument, or fallback when the caller omitted
+// it — the difference between "the agent said no" and "the agent said nothing",
+// which is what lets a config default apply.
+func boolArgOr(args map[string]any, key string, fallback bool) bool {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return fallback
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return fallback
+	}
+	return b
 }
 
 func boolArg(args map[string]any, key string) bool {
